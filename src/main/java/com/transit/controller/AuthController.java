@@ -3,6 +3,7 @@ package com.transit.controller;
 import com.transit.service.AuthService;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
 
@@ -23,6 +24,12 @@ public class AuthController {
     @PostMapping("/login")
     public Mono<Map<String, Object>> login(@RequestBody LoginRequest request) {
         return authService.login(request.getUsername(), request.getPassword());
+    }
+
+    @PostMapping("/logout")
+    public Mono<Map<String, Object>> logout(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+        String token = authHeader != null && authHeader.startsWith("Bearer ") ? authHeader.substring(7) : null;
+        return authService.logout(token);
     }
 
     @Data
