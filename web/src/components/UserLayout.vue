@@ -3,9 +3,9 @@
     <el-header class="user-header">
       <div class="header-left">
         <div class="logo" @click="$router.push('/')">API Transit</div>
-        <el-menu mode="horizontal" :default-active="activeMenu" router class="header-menu">
-          <el-menu-item index="/">首页</el-menu-item>
-          <el-menu-item index="/market">模型广场</el-menu-item>
+        <el-menu mode="horizontal" :default-active="activeMenu" router class="header-menu" :ellipsis="false">
+          <el-menu-item index="/">总览</el-menu-item>
+          <el-menu-item index="/market">模型目录</el-menu-item>
           <el-menu-item v-if="isLoggedIn" index="/console">控制台</el-menu-item>
         </el-menu>
       </div>
@@ -21,8 +21,8 @@
             </span>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item command="console">个人中心</el-dropdown-item>
-                <el-dropdown-item v-if="isAdmin" command="admin">系统管理</el-dropdown-item>
+                <el-dropdown-item command="console">控制台</el-dropdown-item>
+                <el-dropdown-item v-if="isAdmin" command="admin">管理后台</el-dropdown-item>
                 <el-dropdown-item divided command="logout">退出登录</el-dropdown-item>
               </el-dropdown-menu>
             </template>
@@ -31,17 +31,18 @@
       </div>
     </el-header>
     <el-main class="user-main">
-      <router-view></router-view>
+      <router-view />
     </el-main>
     <el-footer class="user-footer">
-      <p>&copy; 2026 API Transit Station. All rights reserved.</p>
+      <p>API Transit Station · Multi-Provider AI Gateway</p>
     </el-footer>
   </el-container>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted } from 'vue'
+import { computed, ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { clearAuth } from '@/utils/auth'
 
 const route = useRoute()
 const router = useRouter()
@@ -68,7 +69,6 @@ const checkLogin = () => {
 
 const handleCommand = (command: string) => {
   if (command === 'logout') {
-    const { clearAuth } = require('@/utils/auth')
     clearAuth()
     isLoggedIn.value = false
     router.push('/')
@@ -83,6 +83,10 @@ onMounted(() => {
   checkLogin()
   window.addEventListener('auth-changed', checkLogin)
 })
+
+onBeforeUnmount(() => {
+  window.removeEventListener('auth-changed', checkLogin)
+})
 </script>
 
 <style scoped>
@@ -96,27 +100,39 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0 50px;
-  background-color: #fff;
-  box-shadow: 0 2px 12px 0 rgba(0,0,0,0.1);
+  padding: 0 28px;
+  background: rgba(255, 255, 255, 0.85);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+  backdrop-filter: blur(16px);
   z-index: 100;
 }
 
 .header-left {
   display: flex;
   align-items: center;
+  flex-shrink: 0;
 }
 
 .logo {
-  font-size: 1.5rem;
-  font-weight: bold;
-  color: #409eff;
-  margin-right: 40px;
+  font-size: 20px;
+  font-weight: 700;
+  color: #0f172a;
+  margin-right: 28px;
   cursor: pointer;
 }
 
 .header-menu {
   border-bottom: none;
+  flex-grow: 1;
+}
+
+:deep(.el-menu--horizontal) {
+  border-bottom: none;
+  background: transparent;
+}
+
+:deep(.el-menu-item) {
+  padding: 0 18px;
 }
 
 .user-info {
@@ -133,8 +149,17 @@ onMounted(() => {
 
 .user-footer {
   text-align: center;
-  color: #909399;
-  padding: 20px 0;
-  border-top: 1px solid #dcdfe6;
+  color: #64748b;
+  padding: 18px 0 24px;
+}
+
+@media (max-width: 860px) {
+  .user-header {
+    padding: 0 12px;
+  }
+
+  .logo {
+    margin-right: 12px;
+  }
 }
 </style>

@@ -11,12 +11,11 @@ import com.transit.model.Channel;
 import com.transit.model.ModelMapping;
 import com.transit.model.Token;
 import com.transit.model.Log;
+import com.transit.provider.ProviderGateway;
+import com.transit.provider.ProviderGatewayFactory;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
-import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
@@ -31,7 +30,7 @@ public class TransitService {
     private final ChannelMapper channelMapper;
     private final TokenMapper tokenMapper;
     private final LogMapper logMapper;
-    private final WebClient webClient;
+    private final ProviderGatewayFactory providerGatewayFactory;
 
     public Mono<ChatResponse> chatCompletions(String authorization, ChatRequest request) {
         String tokenKey = extractToken(authorization);
@@ -56,17 +55,12 @@ public class TransitService {
             return Mono.error(new RuntimeException("Channel not found or disabled for model: " + publicModel));
         }
 
-        request.setModel(mapping.getChannelModelName());
+        ProviderGateway providerGateway = providerGatewayFactory.resolve(channel.getType());
 
-        log.info("Routing request for {} to channel {} (model: {})", publicModel, channel.getName(), mapping.getChannelModelName());
+        log.info("Routing request for {} to channel {} (provider: {}, model: {})",
+                publicModel, channel.getName(), channel.getType(), mapping.getChannelModelName());
 
-        return webClient.post()
-                .uri(channel.getBaseUrl() + "/v1/chat/completions")
-                .header(HttpHeaders.AUTHORIZATION, "Bearer " + channel.getApiKey())
-                .contentType(MediaType.APPLICATION_JSON)
-                .bodyValue(request)
-                .retrieve()
-                .bodyToMono(ChatResponse.class)
+        return providerGateway.chatCompletions(channel, request, publicModel, mapping.getChannelModelName())
                 .flatMap(resp -> {
                     int prompt = resp.getUsage() != null && resp.getUsage().getPromptTokens() != null ? resp.getUsage().getPromptTokens() : 0;
                     int completion = resp.getUsage() != null && resp.getUsage().getCompletionTokens() != null ? resp.getUsage().getCompletionTokens() : 0;

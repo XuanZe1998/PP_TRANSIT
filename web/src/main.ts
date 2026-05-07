@@ -19,7 +19,7 @@ app.use(ElementPlus)
 app.mount('#app')
 
 initInactivityGuard(3 * 60 * 1000, () => {
-  ElMessage.warning('长时间未操作，已自动退出登录')
+  ElMessage.warning('长时间未操作，登录状态已自动退出')
   router.push('/login')
 })
 
@@ -34,7 +34,7 @@ window.addEventListener('beforeunload', () => {
     fetch('http://localhost:8080/auth/logout', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${token}`,
+        Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json'
       }
     }).catch(() => {})

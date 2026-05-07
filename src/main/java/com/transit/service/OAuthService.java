@@ -34,22 +34,22 @@ public class OAuthService {
     private final OAuthUserBindingMapper bindingMapper;
     private final UserMapper userMapper;
 
-    @Value("${oauth.github.client-id}")
+    @Value("${oauth.github.client-id:}")
     private String githubClientId;
 
-    @Value("${oauth.github.client-secret}")
+    @Value("${oauth.github.client-secret:}")
     private String githubClientSecret;
 
-    @Value("${oauth.github.redirect-uri}")
+    @Value("${oauth.github.redirect-uri:http://localhost:8080/oauth/callback/github}")
     private String githubRedirectUri;
 
-    @Value("${oauth.google.client-id}")
+    @Value("${oauth.google.client-id:}")
     private String googleClientId;
 
-    @Value("${oauth.google.client-secret}")
+    @Value("${oauth.google.client-secret:}")
     private String googleClientSecret;
 
-    @Value("${oauth.google.redirect-uri}")
+    @Value("${oauth.google.redirect-uri:http://localhost:8080/oauth/callback/google}")
     private String googleRedirectUri;
 
     @Value("${oauth.token.access-token-expiry:900}")
@@ -58,6 +58,7 @@ public class OAuthService {
     @Value("${oauth.token.refresh-token-expiry:604800}")
     private long refreshTokenExpiry;
 
+    private static final WebClient webClient = WebClient.create();
     private final SecureRandom secureRandom = new SecureRandom();
 
     public String getAuthorizeUrl(String provider, String state) {
@@ -88,7 +89,7 @@ public class OAuthService {
         params.put("client_secret", githubClientSecret);
         params.put("code", code);
 
-        Map<String, Object> response = WebClient.post()
+        Map<String, Object> response = webClient.post()
             .uri("https://github.com/login/oauth/access_token")
             .bodyValue(params)
             .header("Accept", "application/json")
@@ -112,7 +113,7 @@ public class OAuthService {
         params.put("grant_type", "authorization_code");
         params.put("redirect_uri", googleRedirectUri);
 
-        Map<String, Object> response = WebClient.post()
+        Map<String, Object> response = webClient.post()
             .uri("https://oauth2.googleapis.com/token")
             .bodyValue(params)
             .retrieve()
@@ -171,7 +172,7 @@ public class OAuthService {
     private Map<String, Object> getUserInfo(String provider, String accessToken) {
         return switch (provider.toLowerCase()) {
             case "github" -> {
-                Map<String, Object> userInfo = WebClient.get()
+                Map<String, Object> userInfo = webClient.get()
                     .uri("https://api.github.com/user")
                     .header("Authorization", "Bearer " + accessToken)
                     .header("Accept", "application/json")
@@ -180,7 +181,7 @@ public class OAuthService {
                     .block();
                 String email = (String) userInfo.get("email");
                 if (email == null) {
-                    Map<String, Object> emails = WebClient.get()
+                    Map<String, Object> emails = webClient.get()
                         .uri("https://api.github.com/user/emails")
                         .header("Authorization", "Bearer " + accessToken)
                         .retrieve()
@@ -190,7 +191,7 @@ public class OAuthService {
                 yield userInfo;
             }
             case "google" -> {
-                Map<String, Object> userInfo = WebClient.get()
+                Map<String, Object> userInfo = webClient.get()
                     .uri("https://www.googleapis.com/oauth2/v2/userinfo")
                     .header("Authorization", "Bearer " + accessToken)
                     .retrieve()

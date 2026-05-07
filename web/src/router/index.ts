@@ -4,19 +4,10 @@ import Auth from '../views/Auth.vue'
 import ModelMarket from '../views/ModelMarket.vue'
 import UserLayout from '../components/UserLayout.vue'
 import AdminLayout from '../components/AdminLayout.vue'
-
-// Admin Views
 import Channels from '../views/Channels.vue'
-import AdminTokens from '../views/Tokens.vue'
 import ModelMappings from '../views/ModelMappings.vue'
-
-// User Views
-import UserConsole from '../views/UserConsole.vue'
-import UserDashboard from '../views/UserDashboard.vue'
-import UserTokens from '../views/UserTokens.vue'
-import UserLogs from '../views/UserLogs.vue'
-import UserWallet from '../views/UserWallet.vue'
-import UserApiReference from '../views/UserApiReference.vue'
+import AdminTokens from '../views/Tokens.vue'
+import CommandCenter from '../views/CommandCenter.vue'
 
 const routes = [
   {
@@ -29,16 +20,8 @@ const routes = [
       { path: 'register', component: Auth },
       {
         path: 'console',
-        component: UserConsole,
-        meta: { requiresAuth: true },
-        children: [
-          { path: '', redirect: '/console/dashboard' },
-          { path: 'dashboard', component: UserDashboard },
-          { path: 'reference', component: UserApiReference },
-          { path: 'tokens', component: UserTokens },
-          { path: 'logs', component: UserLogs },
-          { path: 'wallet', component: UserWallet }
-        ]
+        component: CommandCenter,
+        meta: { requiresAuth: true }
       }
     ]
   },
