@@ -1,0 +1,98 @@
+CREATE TABLE IF NOT EXISTS users (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    username VARCHAR(128) NOT NULL,
+    password VARCHAR(255),
+    email VARCHAR(255),
+    role VARCHAR(32) NOT NULL DEFAULT 'USER',
+    balance BIGINT NOT NULL DEFAULT 0,
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS channels (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(128) NOT NULL,
+    type VARCHAR(64) NOT NULL,
+    base_url VARCHAR(255) NOT NULL,
+    api_key VARCHAR(255),
+    models TEXT,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS model_mappings (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    public_model_name VARCHAR(128) NOT NULL,
+    channel_model_name VARCHAR(128) NOT NULL,
+    channel_id BIGINT NOT NULL,
+    priority INT NOT NULL DEFAULT 10,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE
+);
+
+CREATE TABLE IF NOT EXISTS tokens (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    `key` VARCHAR(255) NOT NULL,
+    user_id BIGINT,
+    name VARCHAR(128) NOT NULL,
+    used_quota BIGINT NOT NULL DEFAULT 0,
+    total_quota BIGINT NOT NULL DEFAULT 0,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    expired_at TIMESTAMP NULL
+);
+
+CREATE TABLE IF NOT EXISTS logs (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id BIGINT,
+    token_key VARCHAR(255),
+    model VARCHAR(128),
+    prompt_tokens INT NOT NULL DEFAULT 0,
+    completion_tokens INT NOT NULL DEFAULT 0,
+    total_tokens INT NOT NULL DEFAULT 0,
+    cost BIGINT NOT NULL DEFAULT 0,
+    status VARCHAR(32),
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS oauth_clients (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    client_id VARCHAR(128) NOT NULL,
+    client_secret VARCHAR(255) NOT NULL,
+    provider VARCHAR(64) NOT NULL,
+    redirect_uri VARCHAR(255),
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS oauth_codes (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    code VARCHAR(255) NOT NULL,
+    client_id VARCHAR(128) NOT NULL,
+    user_id BIGINT,
+    redirect_uri VARCHAR(255),
+    scope VARCHAR(255),
+    expires_at TIMESTAMP NULL
+);
+
+CREATE TABLE IF NOT EXISTS oauth_tokens (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    access_token VARCHAR(255) NOT NULL,
+    refresh_token VARCHAR(255),
+    token_type VARCHAR(64) NOT NULL,
+    user_id BIGINT,
+    client_id VARCHAR(128),
+    scope VARCHAR(255),
+    expires_at TIMESTAMP NULL,
+    revoked BOOLEAN NOT NULL DEFAULT FALSE,
+    revoked_at TIMESTAMP NULL,
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS oauth_user_bindings (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id BIGINT,
+    provider VARCHAR(64) NOT NULL,
+    provider_user_id VARCHAR(255) NOT NULL,
+    access_token VARCHAR(255),
+    refresh_token VARCHAR(255),
+    expires_at TIMESTAMP NULL,
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP
+);
