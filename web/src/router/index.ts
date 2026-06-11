@@ -8,6 +8,9 @@ import Channels from '../views/Channels.vue'
 import ModelMappings from '../views/ModelMappings.vue'
 import AdminTokens from '../views/Tokens.vue'
 import CommandCenter from '../views/CommandCenter.vue'
+import PlusStore from '../views/PlusStore.vue'
+import AdminPlusOrders from '../views/AdminPlusOrders.vue'
+import AdminFinishedProducts from '../views/AdminFinishedProducts.vue'
 
 const routes = [
   {
@@ -16,8 +19,14 @@ const routes = [
     children: [
       { path: '', component: Home },
       { path: 'market', component: ModelMarket },
+      {
+        path: 'plus',
+        component: PlusStore,
+        meta: { requiresAuth: true }
+      },
       { path: 'login', component: Auth },
       { path: 'register', component: Auth },
+      { path: 'oauth/callback/:provider', component: Auth },
       {
         path: 'console',
         component: CommandCenter,
@@ -33,7 +42,9 @@ const routes = [
       { path: '', redirect: '/admin/channels' },
       { path: 'channels', component: Channels },
       { path: 'tokens', component: AdminTokens },
-      { path: 'mappings', component: ModelMappings }
+      { path: 'mappings', component: ModelMappings },
+      { path: 'finished-products', component: AdminFinishedProducts },
+      { path: 'plus-orders', component: AdminPlusOrders }
     ]
   }
 ]

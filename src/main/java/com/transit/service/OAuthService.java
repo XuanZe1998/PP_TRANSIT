@@ -15,6 +15,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.util.UriComponentsBuilder;
 import reactor.core.publisher.Mono;
 
 import java.security.SecureRandom;
@@ -40,7 +41,7 @@ public class OAuthService {
     @Value("${oauth.github.client-secret:}")
     private String githubClientSecret;
 
-    @Value("${oauth.github.redirect-uri:http://localhost:8080/oauth/callback/github}")
+    @Value("${oauth.github.redirect-uri:http://localhost:5173/oauth/callback/github}")
     private String githubRedirectUri;
 
     @Value("${oauth.google.client-id:}")
@@ -49,7 +50,7 @@ public class OAuthService {
     @Value("${oauth.google.client-secret:}")
     private String googleClientSecret;
 
-    @Value("${oauth.google.redirect-uri:http://localhost:8080/oauth/callback/google}")
+    @Value("${oauth.google.redirect-uri:http://localhost:5173/oauth/callback/google}")
     private String googleRedirectUri;
 
     @Value("${oauth.token.access-token-expiry:900}")
@@ -63,14 +64,25 @@ public class OAuthService {
 
     public String getAuthorizeUrl(String provider, String state) {
         return switch (provider.toLowerCase()) {
-            case "github" -> String.format(
-                "https://github.com/login/oauth/authorize?client_id=%s&redirect_uri=%s&scope=read:user&state=%s",
-                githubClientId, githubRedirectUri, state
-            );
-            case "google" -> String.format(
-                "https://accounts.google.com/o/oauth2/v2/auth?client_id=%s&redirect_uri=%s&scope=openid%%20email%%20profile&state=%s&response_type=code",
-                googleClientId, googleRedirectUri, state
-            );
+            case "github" -> UriComponentsBuilder
+                    .fromUriString("https://github.com/login/oauth/authorize")
+                    .queryParam("client_id", githubClientId)
+                    .queryParam("redirect_uri", githubRedirectUri)
+                    .queryParam("scope", "read:user")
+                    .queryParam("state", state)
+                    .build()
+                    .encode()
+                    .toUriString();
+            case "google" -> UriComponentsBuilder
+                    .fromUriString("https://accounts.google.com/o/oauth2/v2/auth")
+                    .queryParam("client_id", googleClientId)
+                    .queryParam("redirect_uri", googleRedirectUri)
+                    .queryParam("scope", "openid email profile")
+                    .queryParam("state", state)
+                    .queryParam("response_type", "code")
+                    .build()
+                    .encode()
+                    .toUriString();
             default -> throw new RuntimeException("Unsupported provider: " + provider);
         };
     }

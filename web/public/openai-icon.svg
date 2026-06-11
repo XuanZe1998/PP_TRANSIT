@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="OpenAI">
+  <rect width="512" height="512" rx="96" fill="#0f172a"/>
+  <circle cx="256" cy="256" r="166" fill="none" stroke="#ffffff" stroke-width="28" opacity=".96"/>
+  <circle cx="256" cy="256" r="96" fill="none" stroke="#ffffff" stroke-width="24" opacity=".8"/>
+  <path d="M256 85v342M85 256h342M135 135l242 242M377 135 135 377" stroke="#ffffff" stroke-width="20" stroke-linecap="round" opacity=".42"/>
+  <text x="256" y="276" text-anchor="middle" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="58" font-weight="700" fill="#ffffff">AI</text>
+</svg>

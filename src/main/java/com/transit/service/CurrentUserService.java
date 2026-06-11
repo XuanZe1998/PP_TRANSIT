@@ -1,0 +1,37 @@
+package com.transit.service;
+
+import com.transit.model.User;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
+
+@Service
+@RequiredArgsConstructor
+public class CurrentUserService {
+
+    private final OAuthService oauthService;
+
+    public User requireUser(String authHeader) {
+        String token = extractBearerToken(authHeader);
+        return oauthService.getUserFromToken(token);
+    }
+
+    public User requireAdmin(String authHeader) {
+        User user = requireUser(authHeader);
+        if (!"ADMIN".equalsIgnoreCase(user.getRole())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Admin access required");
+        }
+        return user;
+    }
+
+    public String extractBearerToken(String authHeader) {
+        if (authHeader == null || authHeader.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Missing Authorization header");
+        }
+        if (!authHeader.startsWith("Bearer ")) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid Authorization header");
+        }
+        return authHeader.substring(7);
+    }
+}

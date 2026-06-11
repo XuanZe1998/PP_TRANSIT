@@ -63,7 +63,7 @@ onMounted(() => {
   }
 
   const code = route.query.code as string
-  const provider = route.query.provider as string
+  const provider = (route.params.provider || route.query.provider) as string
   if (code && provider) {
     handleOAuthCallback(provider, code)
   }

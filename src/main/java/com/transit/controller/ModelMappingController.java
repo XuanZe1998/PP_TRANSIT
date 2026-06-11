@@ -3,8 +3,10 @@ package com.transit.controller;
 import com.transit.mapper.ChannelMapper;
 import com.transit.mapper.ModelMappingMapper;
 import com.transit.model.ModelMapping;
+import com.transit.service.CurrentUserService;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -16,9 +18,11 @@ public class ModelMappingController {
 
     private final ModelMappingMapper modelMappingMapper;
     private final ChannelMapper channelMapper;
+    private final CurrentUserService currentUserService;
 
     @GetMapping
-    public Flux<ModelMapping> getAllMappings() {
+    public Flux<ModelMapping> getAllMappings(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+        currentUserService.requireAdmin(authHeader);
         return Flux.fromIterable(modelMappingMapper.selectList(null))
                 .map(mapping -> {
                     mapping.setChannel(channelMapper.selectById(mapping.getChannelId()));
@@ -27,7 +31,9 @@ public class ModelMappingController {
     }
 
     @PostMapping
-    public Mono<ModelMapping> createMapping(@RequestBody MappingRequest request) {
+    public Mono<ModelMapping> createMapping(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+                                            @RequestBody MappingRequest request) {
+        currentUserService.requireAdmin(authHeader);
         return Mono.fromCallable(() -> {
             ModelMapping mapping = ModelMapping.builder()
                     .publicModelName(request.getPublicModelName())
@@ -42,7 +48,10 @@ public class ModelMappingController {
     }
 
     @PutMapping("/{id}")
-    public Mono<ModelMapping> updateMapping(@PathVariable Long id, @RequestBody MappingRequest request) {
+    public Mono<ModelMapping> updateMapping(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+                                            @PathVariable Long id,
+                                            @RequestBody MappingRequest request) {
+        currentUserService.requireAdmin(authHeader);
         return Mono.fromCallable(() -> {
             ModelMapping mapping = modelMappingMapper.selectById(id);
             mapping.setPublicModelName(request.getPublicModelName());
@@ -56,7 +65,9 @@ public class ModelMappingController {
     }
 
     @DeleteMapping("/{id}")
-    public Mono<Void> deleteMapping(@PathVariable Long id) {
+    public Mono<Void> deleteMapping(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+                                    @PathVariable Long id) {
+        currentUserService.requireAdmin(authHeader);
         return Mono.fromRunnable(() -> modelMappingMapper.deleteById(id));
     }
 

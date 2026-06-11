@@ -31,3 +31,15 @@ build/
 
 ### VS Code ###
 .vscode/
+
+### Frontend ###
+web/node_modules/
+web/dist/
+web/.vite/
+web/.vue-global-types/
+web/vite-dev.log
+
+### Runtime data and logs ###
+data/
+*.log
+*.err.log

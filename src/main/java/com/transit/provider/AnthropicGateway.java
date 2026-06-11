@@ -25,7 +25,9 @@ public class AnthropicGateway implements ProviderGateway {
 
     @Override
     public boolean supports(String providerType) {
-        return providerType != null && "anthropic".equalsIgnoreCase(providerType);
+        return providerType != null
+                && ("anthropic".equalsIgnoreCase(providerType)
+                || "deepseek-anthropic".equalsIgnoreCase(providerType));
     }
 
     @Override

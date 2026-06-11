@@ -21,6 +21,14 @@
           <el-icon><Key /></el-icon>
           <span>令牌治理</span>
         </el-menu-item>
+        <el-menu-item index="/admin/finished-products">
+          <el-icon><Goods /></el-icon>
+          <span>成品管理</span>
+        </el-menu-item>
+        <el-menu-item index="/admin/plus-orders">
+          <el-icon><Tickets /></el-icon>
+          <span>成品订单</span>
+        </el-menu-item>
       </el-menu>
     </el-aside>
     <el-container>

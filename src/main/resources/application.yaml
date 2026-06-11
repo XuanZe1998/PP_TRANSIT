@@ -1,3 +1,4 @@
+#
 spring:
   application:
     name: API_transit_station
@@ -6,9 +7,6 @@ spring:
     username: ${DB_USERNAME:root}
     password: ${DB_PASSWORD:123456}
     driver-class-name: ${DB_DRIVER:com.mysql.cj.jdbc.Driver}
-  sql:
-    init:
-      mode: always
 
 mybatis-plus:
   mapper-locations: classpath*:/mapper/**/*.xml
@@ -17,17 +15,17 @@ mybatis-plus:
     map-underscore-to-camel-case: true
 
 server:
-  port: ${SERVER_PORT:8088}
+  port: ${SERVER_PORT:8089}
 
 oauth:
   github:
     client-id: ${GITHUB_CLIENT_ID:}
     client-secret: ${GITHUB_CLIENT_SECRET:}
-    redirect-uri: ${GITHUB_REDIRECT_URI:http://localhost:8080/oauth/callback/github}
+    redirect-uri: ${GITHUB_REDIRECT_URI:http://localhost:5173/oauth/callback/github}
   google:
     client-id: ${GOOGLE_CLIENT_ID:}
     client-secret: ${GOOGLE_CLIENT_SECRET:}
-    redirect-uri: ${GOOGLE_REDIRECT_URI:http://localhost:8080/oauth/callback/google}
+    redirect-uri: ${GOOGLE_REDIRECT_URI:http://localhost:5173/oauth/callback/google}
   token:
     access-token-expiry: ${OAUTH_ACCESS_TOKEN_EXPIRY:900}
     refresh-token-expiry: ${OAUTH_REFRESH_TOKEN_EXPIRY:604800}

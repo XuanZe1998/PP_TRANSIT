@@ -6,6 +6,7 @@
         <el-menu mode="horizontal" :default-active="activeMenu" router class="header-menu" :ellipsis="false">
           <el-menu-item index="/">总览</el-menu-item>
           <el-menu-item index="/market">模型目录</el-menu-item>
+          <el-menu-item v-if="isLoggedIn" index="/plus">成品服务</el-menu-item>
           <el-menu-item v-if="isLoggedIn" index="/console">控制台</el-menu-item>
         </el-menu>
       </div>
@@ -22,6 +23,7 @@
             <template #dropdown>
               <el-dropdown-menu>
                 <el-dropdown-item command="console">控制台</el-dropdown-item>
+                <el-dropdown-item command="plus">成品服务</el-dropdown-item>
                 <el-dropdown-item v-if="isAdmin" command="admin">管理后台</el-dropdown-item>
                 <el-dropdown-item divided command="logout">退出登录</el-dropdown-item>
               </el-dropdown-menu>
@@ -74,6 +76,8 @@ const handleCommand = (command: string) => {
     router.push('/')
   } else if (command === 'console') {
     router.push('/console')
+  } else if (command === 'plus') {
+    router.push('/plus')
   } else if (command === 'admin') {
     router.push('/admin')
   }
