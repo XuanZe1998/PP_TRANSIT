@@ -107,6 +107,13 @@ public class PlusOrderController {
         return Mono.fromCallable(() -> plusOrderService.fulfillOrder(id, request.getStatus(), request.getFulfillmentNote()));
     }
 
+    @DeleteMapping("/plus/admin/orders/{id}")
+    public Mono<Void> deleteOrder(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+                                  @PathVariable Long id) {
+        currentUserService.requireAdmin(authHeader);
+        return Mono.fromRunnable(() -> plusOrderService.deleteOrder(id));
+    }
+
     @Data
     public static class FulfillRequest {
         private String status;

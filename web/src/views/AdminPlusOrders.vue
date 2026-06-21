@@ -4,7 +4,7 @@
       <div class="panel-head">
         <div>
           <h2 class="section-title">成品订单</h2>
-          <p class="section-subtitle">查看成品服务订单并更新确认/履约状态。</p>
+          <p class="section-subtitle">查看成品服务订单，并更新确认、履约状态。</p>
         </div>
         <el-button type="primary" @click="fetchOrders">刷新</el-button>
       </div>
@@ -14,7 +14,7 @@
         <el-table-column prop="userId" label="用户" width="90" />
         <el-table-column prop="productName" label="成品服务" min-width="220" />
         <el-table-column label="金额" width="110">
-          <template #default="{ row }">¥{{ formatPrice(row.amountCents) }}</template>
+          <template #default="{ row }">${{ formatPrice(row.amountCents) }}</template>
         </el-table-column>
         <el-table-column prop="status" label="状态" width="110">
           <template #default="{ row }">
@@ -22,9 +22,10 @@
           </template>
         </el-table-column>
         <el-table-column prop="createdAt" label="创建时间" min-width="170" />
-        <el-table-column label="操作" width="120" fixed="right">
+        <el-table-column label="操作" width="150" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="openEdit(row)">处理</el-button>
+            <el-button link type="danger" @click="deleteOrder(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -57,7 +58,7 @@
 
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import http from '@/utils/http'
 
 type FinishedOrder = {
@@ -106,6 +107,13 @@ const saveOrder = async () => {
   await http.put(`/api/plus/admin/orders/${selectedOrder.value.id}`, form.value)
   ElMessage.success('订单已更新')
   dialogVisible.value = false
+  await fetchOrders()
+}
+
+const deleteOrder = async (order: FinishedOrder) => {
+  await ElMessageBox.confirm(`确认删除订单 ${order.orderNo}？`, '删除确认', { type: 'warning' })
+  await http.delete(`/api/plus/admin/orders/${order.id}`)
+  ElMessage.success('订单已删除')
   await fetchOrders()
 }
 

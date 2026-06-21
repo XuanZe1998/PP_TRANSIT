@@ -23,9 +23,9 @@
           <p>{{ product.description }}</p>
           <div class="product-foot">
             <div>
-              <div class="price">¥{{ formatPrice(totalPriceCents(product)) }}</div>
+              <div class="price">＄{{ formatPrice(totalPriceCents(product)) }}</div>
               <div class="price-detail">
-                单价 ¥{{ formatPrice(product.priceCents) }} + 服务费 ¥{{ formatPrice(product.serviceFeeCents) }}
+                单价 ＄{{ formatPrice(product.priceCents) }} + 服务费 ＄{{ formatPrice(product.serviceFeeCents) }}
               </div>
             </div>
             <el-button type="primary" :loading="creatingProductId === product.id" @click="buyProduct(product)">
@@ -47,7 +47,7 @@
         <el-table-column prop="orderNo" label="订单号" min-width="190" />
         <el-table-column prop="productName" label="成品服务" min-width="220" />
         <el-table-column label="金额" width="110">
-          <template #default="{ row }">¥{{ formatPrice(row.amountCents) }}</template>
+          <template #default="{ row }">${{ formatPrice(row.amountCents) }}</template>
         </el-table-column>
         <el-table-column prop="status" label="状态" width="110">
           <template #default="{ row }">
@@ -95,7 +95,7 @@ const creatingProductId = ref<number | null>(null)
 
 const formatPrice = (cents: number) => ((cents || 0) / 100).toFixed(2)
 const totalPriceCents = (product: FinishedProduct) => (product.priceCents || 0) + (product.serviceFeeCents || 0)
-const formatDate = (date: string) => date ? String(date).replace('T', ' ').slice(0, 16) : '-'
+const formatDate = (date: string) => date ? String(date).slice(0, 10) : '-'
 
 const statusType = (status: string) => {
   if (status === 'CONFIRMED') return 'success'

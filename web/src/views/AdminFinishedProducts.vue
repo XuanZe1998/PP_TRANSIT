@@ -21,15 +21,17 @@
         <el-table-column prop="name" label="名称" min-width="160" />
         <el-table-column prop="description" label="描述" min-width="260" show-overflow-tooltip />
         <el-table-column label="单价" width="120">
-          <template #default="{ row }">¥{{ formatPrice(row.priceCents) }}</template>
+          <template #default="{ row }">${{ formatPrice(row.priceCents) }}</template>
         </el-table-column>
         <el-table-column label="服务费" width="120">
-          <template #default="{ row }">¥{{ formatPrice(row.serviceFeeCents) }}</template>
+          <template #default="{ row }">${{ formatPrice(row.serviceFeeCents) }}</template>
         </el-table-column>
         <el-table-column label="前台价格" width="130">
-          <template #default="{ row }">¥{{ formatPrice(totalPriceCents(row)) }}</template>
+          <template #default="{ row }">${{ formatPrice(totalPriceCents(row)) }}</template>
         </el-table-column>
-        <el-table-column prop="createdAt" label="创建时间" min-width="170" />
+        <el-table-column label="创建时间" width="130">
+          <template #default="{ row }">{{ formatDate(row.createdAt) }}</template>
+        </el-table-column>
         <el-table-column label="操作" width="150" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="openDialog(row)">编辑</el-button>
@@ -57,6 +59,14 @@
         <el-form-item label="服务费">
           <el-input-number v-model="form.serviceFeeYuan" :min="0" :precision="2" :step="1" />
           <span class="price-hint">元</span>
+        </el-form-item>
+        <el-form-item label="创建日期">
+          <el-date-picker
+            v-model="form.createdDate"
+            type="date"
+            value-format="YYYY-MM-DD"
+            placeholder="选择创建日期"
+          />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -89,6 +99,7 @@ type ProductForm = {
   imageUrl: string
   priceYuan: number
   serviceFeeYuan: number
+  createdDate: string
 }
 
 const products = ref<FinishedProduct[]>([])
@@ -99,11 +110,21 @@ const form = ref<ProductForm>({
   description: '',
   imageUrl: '',
   priceYuan: 0,
-  serviceFeeYuan: 0
+  serviceFeeYuan: 0,
+  createdDate: todayDate()
 })
 
 const formatPrice = (cents: number) => ((cents || 0) / 100).toFixed(2)
 const totalPriceCents = (product: FinishedProduct) => (product.priceCents || 0) + (product.serviceFeeCents || 0)
+const formatDate = (date: string) => date ? String(date).slice(0, 10) : '-'
+
+function todayDate() {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
 
 const fetchProducts = async () => {
   const res = await http.get('/api/plus/admin/products')
@@ -118,7 +139,8 @@ const openDialog = (product?: FinishedProduct) => {
       description: product.description || '',
       imageUrl: product.imageUrl || '',
       priceYuan: (product.priceCents || 0) / 100,
-      serviceFeeYuan: (product.serviceFeeCents || 0) / 100
+      serviceFeeYuan: (product.serviceFeeCents || 0) / 100,
+      createdDate: formatDate(product.createdAt) === '-' ? todayDate() : formatDate(product.createdAt)
     }
   } else {
     form.value = {
@@ -127,7 +149,8 @@ const openDialog = (product?: FinishedProduct) => {
       description: '',
       imageUrl: '',
       priceYuan: 0,
-      serviceFeeYuan: 0
+      serviceFeeYuan: 0,
+      createdDate: todayDate()
     }
   }
   dialogVisible.value = true
@@ -143,7 +166,8 @@ const saveProduct = async () => {
     description: form.value.description,
     imageUrl: form.value.imageUrl,
     priceCents: Math.round((form.value.priceYuan || 0) * 100),
-    serviceFeeCents: Math.round((form.value.serviceFeeYuan || 0) * 100)
+    serviceFeeCents: Math.round((form.value.serviceFeeYuan || 0) * 100),
+    createdAt: `${form.value.createdDate || todayDate()}T00:00:00`
   }
   if (form.value.id) {
     await http.put(`/api/plus/admin/products/${form.value.id}`, payload)

@@ -13,8 +13,13 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
@@ -30,6 +35,8 @@ public class PlusOrderService {
 
     private final PlusProductMapper productMapper;
     private final PlusOrderMapper orderMapper;
+    private Double cachedUsdRate;
+    private LocalDate cachedUsdRateDate;
 
     public List<PlusProduct> listEnabledProducts() {
         return productMapper.selectList(new LambdaQueryWrapper<PlusProduct>()
@@ -48,7 +55,7 @@ public class PlusOrderService {
                 .imageUrl(request.getImageUrl())
                 .priceCents(request.getPriceCents() == null ? 0 : request.getPriceCents())
                 .serviceFeeCents(request.getServiceFeeCents() == null ? 0 : request.getServiceFeeCents())
-                .createdAt(LocalDateTime.now())
+                .createdAt(request.getCreatedAt() == null ? LocalDateTime.now() : request.getCreatedAt())
                 .build();
         productMapper.insert(product);
         return product;
@@ -64,6 +71,9 @@ public class PlusOrderService {
         product.setImageUrl(request.getImageUrl());
         product.setPriceCents(request.getPriceCents() == null ? 0 : request.getPriceCents());
         product.setServiceFeeCents(request.getServiceFeeCents() == null ? 0 : request.getServiceFeeCents());
+        if (request.getCreatedAt() != null) {
+            product.setCreatedAt(request.getCreatedAt());
+        }
         productMapper.updateById(product);
         return product;
     }
@@ -136,6 +146,14 @@ public class PlusOrderService {
         return order;
     }
 
+    public void deleteOrder(Long id) {
+        PlusOrder order = orderMapper.selectById(id);
+        if (order == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Order not found");
+        }
+        orderMapper.deleteById(id);
+    }
+
     public byte[] buildDownload(User user, Long id) {
         PlusOrder order = getUserOrder(user, id);
         order.setDownloadedAt(LocalDateTime.now());
@@ -161,6 +179,9 @@ public class PlusOrderService {
         String unitPrice = formatUsd(unitPriceCents);
         String fee = formatUsd(serviceFeeCents);
         String amount = formatUsd(unitPriceCents + serviceFeeCents);
+        double usdRate = getUSDRate();
+        String cnyAmount = formatCny(unitPriceCents + serviceFeeCents, usdRate);
+        String rateText = String.format(Locale.US, "USD/CNY rate %.4f", usdRate);
         String buyerName = ascii(safe(user.getUsername()));
         String buyerEmail = ascii(user.getEmail() == null || user.getEmail().isBlank() ? "customer@example.com" : user.getEmail());
         String productName = ascii(order.getProductName() == null || order.getProductName().isBlank()
@@ -175,8 +196,8 @@ public class PlusOrderService {
         canvas.text("Date paid", 54, 720, 9, false);
         canvas.text(paidDate, 154, 720, 9, false);
 
-        canvas.text("bewild.ai", 54, 660, 10, true);
-        canvas.text("Skyfall Tech Limited", 54, 642, 9, false);
+        canvas.text("start.ai", 54, 660, 10, true);
+        canvas.text("Star Tech Limited", 54, 642, 9, false);
         canvas.text("614 E 85TH ST FL2", 54, 628, 9, false);
         canvas.text("BROOKLYN, NY 11236", 54, 614, 9, false);
         canvas.text("bqrlgm69987s@hotmail.com", 54, 600, 9, false);
@@ -211,13 +232,57 @@ public class PlusOrderService {
         canvas.line(392, 326, 542, 326);
         canvas.text("Amount paid", 392, 304, 9, true);
         canvas.text(amount + " USD", 502, 304, 9, true);
+        canvas.text("Settled in CNY", 392, 282, 9, false);
+        canvas.text(cnyAmount, 502, 282, 9, false);
+        canvas.text(rateText, 392, 264, 9, false);
 
         canvas.text(receiptNumber + " - " + amount + " Page 1 of 1", 54, 36, 9, false);
         return canvas.toPdf();
     }
 
+
+    //获取美元汇率
+    private synchronized Double getUSDRate() {
+        LocalDate today = LocalDate.now(ZoneId.of("Asia/Shanghai"));
+        if (cachedUsdRate != null && today.equals(cachedUsdRateDate)) {
+            return cachedUsdRate;
+        }
+        try {
+            URL url = new URL("https://v6.exchangerate-api.com/v6/d437fdf27cab7d1fad098776/latest/USD");
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("GET");
+            conn.setConnectTimeout(5000);
+            conn.setReadTimeout(5000);
+
+            BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8));
+            String line;
+            StringBuilder response = new StringBuilder();
+            while ((line = br.readLine()) != null) {
+                response.append(line);
+            }
+            br.close();
+
+            // 解析JSON获取CNY汇率
+            String json = response.toString();
+            double rate = Double.parseDouble(json.split("\"CNY\":")[1].split(",")[0]);
+            cachedUsdRate = rate;
+            cachedUsdRateDate = today;
+            return rate;
+        } catch (Exception e) {
+            if (cachedUsdRate != null) {
+                return cachedUsdRate;
+            }
+        }
+
+        return 6.78;
+    }
+
     private String formatUsd(Long cents) {
         return "$" + String.format(Locale.US, "%.2f", (cents == null ? 0 : cents) / 100.0);
+    }
+
+    private String formatCny(long usdCents, double usdRate) {
+        return "CNY " + String.format(Locale.US, "%.2f", usdCents * usdRate / 100.0);
     }
 
     private long receiptUnitPriceCents(PlusOrder order) {
