@@ -3,14 +3,14 @@
     <el-aside width="260px" class="admin-aside">
       <div class="brand" @click="$router.push('/')">
         <div class="brand-mark">AT</div>
-        <div>
+        <div class="brand-copy">
           <div class="brand-title">API Transit</div>
           <div class="brand-subtitle">商业运营后台</div>
         </div>
       </div>
 
       <el-menu :default-active="activeRoute" class="admin-menu" router>
-        <el-menu-item v-for="item in navItems" :key="item.path" :index="item.path">
+        <el-menu-item v-for="item in navItems" :key="item.path" :index="item.path" :title="item.label">
           <el-icon><component :is="item.icon" /></el-icon>
           <span>{{ item.label }}</span>
         </el-menu-item>
@@ -80,6 +80,10 @@ const logout = async () => {
 <style scoped>
 .admin-shell {
   min-height: 100vh;
+}
+
+.admin-shell > .el-container {
+  min-width: 0;
 }
 
 .admin-aside {
@@ -159,23 +163,54 @@ const logout = async () => {
 
 .header-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
 }
 
 .admin-main {
+  min-width: 0;
+  overflow-x: hidden;
   padding: 24px 30px 40px;
   background: #f3f6fb;
 }
 
 @media (max-width: 900px) {
-  .admin-shell {
-    display: block;
-  }
-
   .admin-aside {
-    width: auto !important;
+    flex: 0 0 76px;
+    width: 76px !important;
+    padding: 16px 10px;
+    overflow: hidden;
   }
 
+  .brand {
+    justify-content: center;
+  }
+
+  .brand-copy,
+  .admin-menu :deep(.el-menu-item span) {
+    display: none;
+  }
+
+  .admin-menu :deep(.el-menu-item) {
+    justify-content: center;
+    padding: 0 !important;
+  }
+
+  .admin-menu :deep(.el-menu-item .el-icon) {
+    margin-right: 0;
+  }
+
+  .admin-header {
+    flex-wrap: wrap;
+    padding: 16px 20px;
+  }
+
+  .admin-main {
+    padding: 18px 16px 32px;
+  }
+}
+
+@media (max-width: 680px) {
   .admin-header {
     align-items: flex-start;
     flex-direction: column;

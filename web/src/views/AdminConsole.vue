@@ -756,7 +756,9 @@ async function load() {
       }
     }
   } catch (error: any) {
-    ElMessage.error(error?.response?.data?.message || '加载后台数据失败')
+    const requestId = error?.response?.data?.requestId
+    const message = getHttpErrorMessage(error, '加载后台数据失败')
+    ElMessage.error(requestId ? `${message}（请求 ID：${requestId}）` : message)
   } finally {
     loading.value = false
   }
@@ -1198,6 +1200,7 @@ function healthType(value: string) {
   display: flex;
   flex-direction: column;
   gap: 18px;
+  min-width: 0;
 }
 
 .console-toolbar {
@@ -1205,6 +1208,10 @@ function healthType(value: string) {
   align-items: flex-end;
   justify-content: space-between;
   gap: 18px;
+}
+
+.console-toolbar > div {
+  min-width: 0;
 }
 
 .console-toolbar h2 {
@@ -1221,7 +1228,9 @@ function healthType(value: string) {
 .toolbar-actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
+  max-width: 100%;
 }
 
 .toolbar-actions .el-input {
@@ -1233,11 +1242,17 @@ function healthType(value: string) {
 }
 
 .panel {
+  min-width: 0;
+  overflow: hidden;
   padding: 18px;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
   background: #fff;
   box-shadow: 0 12px 28px rgba(15, 23, 42, 0.05);
+}
+
+.panel :deep(.el-table) {
+  width: 100%;
 }
 
 .admin-grid {
@@ -1389,14 +1404,19 @@ function healthType(value: string) {
 }
 
 @media (max-width: 1100px) {
-  .console-toolbar,
-  .toolbar-actions {
+  .console-toolbar {
     align-items: stretch;
     flex-direction: column;
   }
 
-  .toolbar-actions .el-input {
+  .toolbar-actions {
     width: 100%;
+  }
+
+  .toolbar-actions .el-input {
+    flex: 1 1 260px;
+    width: auto;
+    min-width: 0;
   }
 
   .admin-grid {
@@ -1405,6 +1425,19 @@ function healthType(value: string) {
 
   .discovery-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 680px) {
+  .toolbar-actions > * {
+    flex: 1 1 100%;
+    margin-left: 0 !important;
+  }
+
+  .discovery-summary,
+  .report-summary,
+  .issued-secret {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 </style>

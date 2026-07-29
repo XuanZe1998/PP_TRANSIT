@@ -112,8 +112,10 @@ public class ChannelSecretService {
         String stored = channel.getApiKey();
         channel.setApiKeyConfigured(stored != null && !stored.isBlank());
         if (stored != null && !stored.isBlank()) {
-            String plaintext = decrypt(stored);
-            channel.setApiKeyPreview(mask(plaintext));
+            // Listing channels must remain available even when a deployment
+            // accidentally starts without the master key. Never decrypt a
+            // credential merely to render an administrative preview.
+            channel.setApiKeyPreview(isEncrypted(stored) ? "****" : mask(stored));
         }
         channel.setApiKey(null);
     }
