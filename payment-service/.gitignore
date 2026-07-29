@@ -1,0 +1,18 @@
+# 敏感配置文件
+.env
+payment_config.json
+session.txt
+
+# Python 运行时
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+
+# Playwright
+.playwright/
+
+# 临时文件
+.temp/
+*.log

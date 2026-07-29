@@ -33,6 +33,14 @@ public class PlusProduct {
     @TableField("service_fee_cents")
     private Long serviceFeeCents;
 
+    private String currency;
+
+    /**
+     * A disabled product remains available to administrators and historical orders,
+     * but must never be offered to customers or accepted for a new order.
+     */
+    private Boolean enabled;
+
     @TableField("created_at")
     private LocalDateTime createdAt;
 }

@@ -2,35 +2,232 @@
 spring:
   application:
     name: API_transit_station
+  autoconfigure:
+    exclude: org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+  mvc:
+    async:
+      request-timeout: 120s
+  codec:
+    max-in-memory-size: 2MB
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 6MB
   datasource:
     url: ${DB_URL:jdbc:mysql://localhost:3306/api_transit?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC}
     username: ${DB_USERNAME:root}
     password: ${DB_PASSWORD:123456}
     driver-class-name: ${DB_DRIVER:com.mysql.cj.jdbc.Driver}
+    hikari:
+      maximum-pool-size: ${DB_POOL_MAX_SIZE:20}
+      minimum-idle: ${DB_POOL_MIN_IDLE:2}
+      connection-timeout: ${DB_CONNECTION_TIMEOUT_MS:5000}
+      validation-timeout: ${DB_VALIDATION_TIMEOUT_MS:3000}
+      max-lifetime: ${DB_MAX_LIFETIME_MS:1800000}
 
 mybatis-plus:
   mapper-locations: classpath*:/mapper/**/*.xml
   configuration:
-    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+    log-impl: ${MYBATIS_LOG_IMPL:org.apache.ibatis.logging.nologging.NoLoggingImpl}
     map-underscore-to-camel-case: true
 
 server:
   port: ${SERVER_PORT:8089}
+  shutdown: graceful
+  compression:
+    enabled: true
+    min-response-size: 1024
+  error:
+    include-message: never
+    include-binding-errors: never
+    include-stacktrace: never
+
+storage:
+  other-service-images:
+    directory: ${OTHER_SERVICE_IMAGE_DIR:data/uploads/other-services}
+    max-bytes: ${OTHER_SERVICE_IMAGE_MAX_BYTES:5242880}
+
+gateway:
+  trust-forwarded-headers: ${TRUST_FORWARDED_HEADERS:false}
+  allow-private-upstreams: ${ALLOW_PRIVATE_UPSTREAMS:false}
+  async:
+    core-pool-size: ${GATEWAY_ASYNC_CORE_POOL_SIZE:16}
+    max-pool-size: ${GATEWAY_ASYNC_MAX_POOL_SIZE:128}
+    queue-capacity: ${GATEWAY_ASYNC_QUEUE_CAPACITY:1000}
+    timeout-ms: ${GATEWAY_ASYNC_TIMEOUT_MS:120000}
+  http:
+    max-connections: ${GATEWAY_HTTP_MAX_CONNECTIONS:200}
+    pending-acquire-max-count: ${GATEWAY_HTTP_PENDING_ACQUIRE_MAX_COUNT:500}
+    pending-acquire-timeout-ms: ${GATEWAY_HTTP_PENDING_ACQUIRE_TIMEOUT_MS:10000}
+    connect-timeout-ms: ${GATEWAY_HTTP_CONNECT_TIMEOUT_MS:10000}
+    response-timeout-seconds: ${GATEWAY_HTTP_RESPONSE_TIMEOUT_SECONDS:90}
+    max-in-memory-bytes: ${GATEWAY_HTTP_MAX_IN_MEMORY_BYTES:8388608}
+  rate-limit:
+    default-token-rpm: ${GATEWAY_DEFAULT_TOKEN_RPM:120}
+
+# The spelling "nvida" is retained as the local configuration contract.
+# One encrypted channel key is shared by every NVIDIA catalog model.
+nvida:
+  key: ${NVIDIA_API_KEY:}
+  verify-on-startup: ${NVIDIA_VERIFY_ON_STARTUP:false}
+
+features:
+  # External purchasing is fail-closed until explicitly enabled and configured.
+  shopgpt:
+    enabled: ${SHOPGPT_ENABLED:false}
+
+shopgpt:
+  base-url: ${SHOPGPT_BASE_URL:}
+  item-id: ${SHOPGPT_ITEM_ID:0}
+  max-quantity: ${SHOPGPT_MAX_QUANTITY:10}
+  request-timeout-seconds: ${SHOPGPT_REQUEST_TIMEOUT_SECONDS:20}
+
+vmcard:
+  # Fail closed until sandbox credentials and RSA keys are configured.
+  enabled: ${VMCARD_ENABLED:false}
+  environment: ${VMCARD_ENVIRONMENT:sandbox}
+  app-id: ${VMCARD_APP_ID:}
+  app-secret: ${VMCARD_APP_SECRET:}
+  public-key: ${VMCARD_PUBLIC_KEY:}
+  private-key: ${VMCARD_PRIVATE_KEY:}
+  # Sandbox write operations are enabled for the admin API tester by default.
+  # Production still requires the independent switch below.
+  allow-mutations: ${VMCARD_ALLOW_MUTATIONS:false}
+  allow-production-mutations: ${VMCARD_ALLOW_PRODUCTION_MUTATIONS:false}
+  request-timeout-seconds: ${VMCARD_REQUEST_TIMEOUT_SECONDS:30}
+  webhook-secret: ${VMCARD_WEBHOOK_SECRET:}
+  product-code-sync:
+    enabled: ${VMCARD_PRODUCT_CODE_SYNC_ENABLED:false}
+    interval-ms: ${VMCARD_PRODUCT_CODE_SYNC_INTERVAL_MS:60000}
+    initial-delay-ms: ${VMCARD_PRODUCT_CODE_SYNC_INITIAL_DELAY_MS:5000}
+
+# AnyiPay (a.tjrl3.cn). All credentials remain server-side. The merchant
+# private key must be PKCS#8 and the platform public key must be X.509 format,
+# matching the values shown in the AnyiPay merchant console.
+anyipay:
+  enabled: ${ANYIPAY_ENABLED:false}
+  # Refund, close-order, and transfer calls require this second explicit switch.
+  allow-money-mutations: ${ANYIPAY_ALLOW_MONEY_MUTATIONS:false}
+  base-url: ${ANYIPAY_BASE_URL:https://a.tjrl3.cn}
+  merchant-id: ${ANYIPAY_MERCHANT_ID:}
+  merchant-private-key: ${ANYIPAY_MERCHANT_PRIVATE_KEY:}
+  platform-public-key: ${ANYIPAY_PLATFORM_PUBLIC_KEY:}
+  notify-url: ${ANYIPAY_NOTIFY_URL:}
+  return-url: ${ANYIPAY_RETURN_URL:}
+  default-payment-type: ${ANYIPAY_DEFAULT_PAYMENT_TYPE:alipay}
+  # Latest available ECB reference cross-rate on 2026-07-20: CNY/EUR 7.7319 / USD/EUR 1.1426.
+  # The rate is snapshotted when the order is created; update this value when your pricing policy changes.
+  usd-cny-rate: ${ANYIPAY_USD_CNY_RATE:6.76693506}
+  request-timeout-seconds: ${ANYIPAY_REQUEST_TIMEOUT_SECONDS:15}
+  timestamp-tolerance-seconds: ${ANYIPAY_TIMESTAMP_TOLERANCE_SECONDS:300}
+
+creative:
+  # Creative generation is disabled by default so no paid provider call can happen
+  # until a server-side API key is explicitly supplied.
+  seedance:
+    enabled: ${SEEDANCE_ENABLED:false}
+    base-url: ${SEEDANCE_BASE_URL:https://ark.cn-beijing.volces.com}
+    api-key: ${SEEDANCE_API_KEY:}
+    default-model: ${SEEDANCE_DEFAULT_MODEL:doubao-seedance-1-5-pro-251215}
+    request-timeout-seconds: ${SEEDANCE_REQUEST_TIMEOUT_SECONDS:45}
+
+plus:
+  payment:
+    # Never mark an order paid without provider evidence unless explicitly enabled for tests.
+    local-test-mode: ${PLUS_PAYMENT_LOCAL_TEST_MODE:false}
+  receipt:
+    merchant:
+      display-name: ${PLUS_MERCHANT_DISPLAY_NAME:}
+      legal-name: ${PLUS_MERCHANT_LEGAL_NAME:}
+      address-line-1: ${PLUS_MERCHANT_ADDRESS_LINE_1:}
+      address-line-2: ${PLUS_MERCHANT_ADDRESS_LINE_2:}
+      contact-email: ${PLUS_MERCHANT_CONTACT_EMAIL:}
+      registration-id: ${PLUS_MERCHANT_REGISTRATION_ID:}
+    time-zone: ${PLUS_RECEIPT_TIME_ZONE:UTC}
+
+billing:
+  currency: ${BILLING_CURRENCY:CNY}
+  # Monetary values returned by APIs are integer units of 1/10000 CNY.
+  amount-scale: ${BILLING_AMOUNT_SCALE:10000}
+  default-max-output-tokens: ${BILLING_DEFAULT_MAX_OUTPUT_TOKENS:4096}
+  reservation-expiry-seconds: ${BILLING_RESERVATION_EXPIRY_SECONDS:600}
+  reservation-cleanup-ms: ${BILLING_RESERVATION_CLEANUP_MS:60000}
+  reservation-cleanup-initial-delay-ms: ${BILLING_RESERVATION_CLEANUP_INITIAL_DELAY_MS:60000}
+  max-admin-adjustment: ${BILLING_MAX_ADMIN_ADJUSTMENT:1000000000000}
 
 oauth:
   github:
     client-id: ${GITHUB_CLIENT_ID:}
     client-secret: ${GITHUB_CLIENT_SECRET:}
-    redirect-uri: ${GITHUB_REDIRECT_URI:http://localhost:5173/oauth/callback/github}
+    redirect-uri: ${GITHUB_REDIRECT_URI:https://modelhub.qzz.io/oauth/callback/github}
   google:
     client-id: ${GOOGLE_CLIENT_ID:}
     client-secret: ${GOOGLE_CLIENT_SECRET:}
-    redirect-uri: ${GOOGLE_REDIRECT_URI:http://localhost:5173/oauth/callback/google}
+    redirect-uri: ${GOOGLE_REDIRECT_URI:https://modelhub.qzz.io/oauth/callback/google}
   token:
     access-token-expiry: ${OAUTH_ACCESS_TOKEN_EXPIRY:900}
     refresh-token-expiry: ${OAUTH_REFRESH_TOKEN_EXPIRY:604800}
 
 security:
+  # Base64-encoded 32-byte AES key. Keep this in your external local YAML or
+  # production secret manager. Generate with: openssl rand -base64 32
+  data-encryption-key: ${DATA_ENCRYPTION_KEY:}
+  password:
+    bcrypt-strength: ${BCRYPT_STRENGTH:12}
+  login:
+    max-failures: ${LOGIN_MAX_FAILURES:5}
+    lock-seconds: ${LOGIN_LOCK_SECONDS:300}
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://127.0.0.1:5173,http://localhost:5173,https://modelhub.qzz.io}
+  bootstrap-admin:
+    username: ${BOOTSTRAP_ADMIN_USERNAME:}
+    password: ${BOOTSTRAP_ADMIN_PASSWORD:}
   jwt:
-    secret: ${JWT_SECRET:ChangeThisJwtSecretBeforeProduction1234567890}
+    secret: ${JWT_SECRET:FAfnqXjPCFZuEqq4Q0O4tVrCgT7k49ZjSHKVounZZ6M}
     expiration-ms: ${JWT_EXPIRATION_MS:86400000}
+
+management:
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: when-authorized
+      roles: ADMIN
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+# Payment Service (Python microservice for ChatGPT payment link generation)
+payment-service:
+  url: ${PAYMENT_SERVICE_URL:http://localhost:5000}
+  timeout-seconds: ${PAYMENT_SERVICE_TIMEOUT_SECONDS:120}
+  # Must match PAYMENT_SERVICE_INTERNAL_TOKEN in the Python process.
+  internal-token: ${PAYMENT_SERVICE_INTERNAL_TOKEN:}
+  fulfillment-timeout-seconds: ${PAYMENT_SERVICE_FULFILLMENT_TIMEOUT_SECONDS:240}
+
+service-07:
+  service-id: ${SERVICE_07_ID:7}
+  vmcard:
+    first-name: ${SERVICE_07_VMCARD_FIRST_NAME:Service}
+    last-name: ${SERVICE_07_VMCARD_LAST_NAME:User}
+    amount: ${SERVICE_07_VMCARD_AMOUNT:20}
+    address-line-one: ${SERVICE_07_VMCARD_ADDRESS_LINE_ONE:123 Test Street}
+    address-line-two: ${SERVICE_07_VMCARD_ADDRESS_LINE_TWO:}
+    city: ${SERVICE_07_VMCARD_CITY:New York}
+    state: ${SERVICE_07_VMCARD_STATE:NY}
+    country: ${SERVICE_07_VMCARD_COUNTRY:US}
+    post-code: ${SERVICE_07_VMCARD_POST_CODE:10001}
+    area-code: ${SERVICE_07_VMCARD_AREA_CODE:+1}
+    mobile: ${SERVICE_07_VMCARD_MOBILE:2025550100}
+    # Falls back to the signed-in user's email when empty.
+    email: ${SERVICE_07_VMCARD_EMAIL:}

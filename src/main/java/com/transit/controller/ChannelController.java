@@ -1,7 +1,7 @@
 package com.transit.controller;
 
-import com.transit.mapper.ChannelMapper;
 import com.transit.model.Channel;
+import com.transit.service.AdminChannelService;
 import com.transit.service.CurrentUserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
@@ -16,23 +16,20 @@ import java.util.List;
 @RequiredArgsConstructor
 public class ChannelController {
 
-    private final ChannelMapper channelMapper;
+    private final AdminChannelService channelService;
     private final CurrentUserService currentUserService;
 
     @GetMapping
     public Flux<Channel> getAllChannels(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
         currentUserService.requireAdmin(authHeader);
-        return Flux.fromIterable(channelMapper.selectList(null));
+        return Flux.fromIterable(channelService.list());
     }
 
     @PostMapping
     public Mono<Channel> createChannel(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
                                        @RequestBody Channel channel) {
         currentUserService.requireAdmin(authHeader);
-        return Mono.fromCallable(() -> {
-            channelMapper.insert(channel);
-            return channel;
-        });
+        return Mono.fromCallable(() -> channelService.create(channel));
     }
 
     @PutMapping("/{id}")
@@ -40,17 +37,13 @@ public class ChannelController {
                                        @PathVariable Long id,
                                        @RequestBody Channel channel) {
         currentUserService.requireAdmin(authHeader);
-        channel.setId(id);
-        return Mono.fromCallable(() -> {
-            channelMapper.updateById(channel);
-            return channel;
-        });
+        return Mono.fromCallable(() -> channelService.update(id, channel));
     }
 
     @DeleteMapping("/{id}")
     public Mono<Void> deleteChannel(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
                                     @PathVariable Long id) {
         currentUserService.requireAdmin(authHeader);
-        return Mono.fromRunnable(() -> channelMapper.deleteById(id));
+        return Mono.fromRunnable(() -> channelService.delete(id));
     }
 }

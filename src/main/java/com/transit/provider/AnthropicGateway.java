@@ -92,6 +92,8 @@ public class AnthropicGateway implements ProviderGateway {
         if (response.getUsage() != null) {
             usage.setPromptTokens(response.getUsage().getInputTokens());
             usage.setCompletionTokens(response.getUsage().getOutputTokens());
+            usage.setCacheReadInputTokens(response.getUsage().getCacheReadInputTokens());
+            usage.setCacheCreationInputTokens(response.getUsage().getCacheCreationInputTokens());
             usage.setTotalTokens((response.getUsage().getInputTokens() == null ? 0 : response.getUsage().getInputTokens())
                     + (response.getUsage().getOutputTokens() == null ? 0 : response.getUsage().getOutputTokens()));
         }
@@ -150,5 +152,9 @@ public class AnthropicGateway implements ProviderGateway {
         private Integer inputTokens;
         @JsonProperty("output_tokens")
         private Integer outputTokens;
+        @JsonProperty("cache_read_input_tokens")
+        private Integer cacheReadInputTokens;
+        @JsonProperty("cache_creation_input_tokens")
+        private Integer cacheCreationInputTokens;
     }
 }

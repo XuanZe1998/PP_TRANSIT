@@ -9,6 +9,8 @@ import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 
+import java.math.BigDecimal;
+
 @TableName("model_mappings")
 @Data
 @Builder
@@ -32,6 +34,49 @@ public class ModelMapping {
 
     @Builder.Default
     private boolean enabled = true;
+
+    @TableField("price_ratio")
+    @Builder.Default
+    private BigDecimal priceRatio = BigDecimal.ONE;
+
+    @TableField("cost_per_million")
+    @Builder.Default
+    private BigDecimal costPerMillion = BigDecimal.ZERO;
+
+    @TableField("input_price_per_million")
+    @Builder.Default
+    private BigDecimal inputPricePerMillion = BigDecimal.ONE;
+
+    @TableField("output_price_per_million")
+    @Builder.Default
+    private BigDecimal outputPricePerMillion = BigDecimal.ONE;
+
+    @TableField("cached_price_per_million")
+    @Builder.Default
+    private BigDecimal cachedPricePerMillion = BigDecimal.ZERO;
+
+    @TableField("input_cost_per_million")
+    @Builder.Default
+    private BigDecimal inputCostPerMillion = BigDecimal.ZERO;
+
+    @TableField("output_cost_per_million")
+    @Builder.Default
+    private BigDecimal outputCostPerMillion = BigDecimal.ZERO;
+
+    @TableField("cached_cost_per_million")
+    @Builder.Default
+    private BigDecimal cachedCostPerMillion = BigDecimal.ZERO;
+
+    @TableField("billing_enabled")
+    @Builder.Default
+    private boolean billingEnabled = true;
+
+    @TableField("traffic_percent")
+    @Builder.Default
+    private int trafficPercent = 100;
+
+    @TableField("capability_tags")
+    private String capabilityTags;
 
     // Use a transient field for the Channel object if needed, 
     // or handle join manually in mapper.

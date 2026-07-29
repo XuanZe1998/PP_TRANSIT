@@ -26,14 +26,23 @@ public class Log {
     @TableField("token_key")
     private String tokenKey;
 
+    @TableField("token_id")
+    private Long tokenId;
+
     @TableField("model")
     private String model;
+
+    @TableField("channel_id")
+    private Long channelId;
 
     @TableField("prompt_tokens")
     private int promptTokens;
 
     @TableField("completion_tokens")
     private int completionTokens;
+
+    @TableField("cached_tokens")
+    private int cachedTokens;
 
     @TableField("total_tokens")
     private int totalTokens;
@@ -43,6 +52,45 @@ public class Log {
 
     @TableField("status")
     private String status; // SUCCESS, FAILED
+
+    @TableField("latency_ms")
+    private long latencyMs;
+
+    @TableField("trace_id")
+    private String traceId;
+
+    @TableField("error_message")
+    private String errorMessage;
+
+    @TableField("sale_amount")
+    private long saleAmount;
+
+    @TableField("cost_amount")
+    private long costAmount;
+
+    @TableField("input_amount")
+    private long inputAmount;
+
+    @TableField("output_amount")
+    private long outputAmount;
+
+    @TableField("cached_amount")
+    private long cachedAmount;
+
+    @TableField("total_amount")
+    private long totalAmount;
+
+    @TableField("input_cost_amount")
+    private long inputCostAmount;
+
+    @TableField("output_cost_amount")
+    private long outputCostAmount;
+
+    @TableField("cached_cost_amount")
+    private long cachedCostAmount;
+
+    @TableField("gross_profit")
+    private long grossProfit;
 
     @TableField("created_at")
     private LocalDateTime createdAt;

@@ -41,5 +41,23 @@ web/vite-dev.log
 
 ### Runtime data and logs ###
 data/
+output/pdf/
+**/__pycache__/
+*.py[cod]
 *.log
 *.err.log
+
+# Local secrets (merchant keys, OAuth credentials, JWT/AES keys)
+config/application-local.yaml
+.env
+.env.*
+!.env.example
+
+### Payment Service (Python 微服务) ###
+payment-service/.env
+payment-service/payment_config.json
+payment-service/session.txt
+payment-service/__pycache__/
+payment-service/**/__pycache__/
+payment-service/venv/
+payment-service/.playwright/

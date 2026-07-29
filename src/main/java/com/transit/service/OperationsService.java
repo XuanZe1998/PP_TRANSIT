@@ -1,110 +1,127 @@
 package com.transit.service;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.transit.dto.OperationsOverview;
 import com.transit.dto.ProviderCatalogItem;
-import com.transit.mapper.ChannelMapper;
-import com.transit.mapper.LogMapper;
-import com.transit.mapper.ModelMappingMapper;
-import com.transit.mapper.TokenMapper;
-import com.transit.mapper.UserMapper;
-import com.transit.model.Channel;
-import com.transit.model.Log;
 import lombok.RequiredArgsConstructor;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
-import java.util.Comparator;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
 public class OperationsService {
-
-    private final ChannelMapper channelMapper;
-    private final ModelMappingMapper modelMappingMapper;
-    private final TokenMapper tokenMapper;
-    private final UserMapper userMapper;
-    private final LogMapper logMapper;
+    private final JdbcTemplate jdbcTemplate;
 
     public OperationsOverview overview() {
-        List<Channel> channels = channelMapper.selectList(null);
-        List<Log> logs = logMapper.selectList(null);
-
-        long successRequests = logs.stream().filter(log -> "SUCCESS".equalsIgnoreCase(log.getStatus())).count();
-        long failedRequests = logs.stream().filter(log -> "FAILED".equalsIgnoreCase(log.getStatus())).count();
-        long totalConsumedTokens = logs.stream().mapToLong(Log::getTotalTokens).sum();
-
-        List<String> activeProviders = channels.stream()
-                .filter(Channel::isEnabled)
-                .map(Channel::getType)
-                .filter(type -> type != null && !type.isBlank())
-                .map(type -> type.toLowerCase(Locale.ROOT))
-                .distinct()
-                .sorted()
-                .toList();
-
+        Map<String, Object> requestStats = jdbcTemplate.queryForMap("""
+                SELECT COUNT(*) AS total_requests,
+                       COALESCE(SUM(CASE WHEN status LIKE 'SUCCESS%' THEN 1 ELSE 0 END), 0) AS success_requests,
+                       COALESCE(SUM(CASE WHEN status = 'FAILED' THEN 1 ELSE 0 END), 0) AS failed_requests,
+                       COALESCE(SUM(total_tokens), 0) AS total_consumed_tokens
+                FROM logs
+                """);
+        List<String> activeProviders = jdbcTemplate.queryForList("""
+                SELECT DISTINCT LOWER(type)
+                FROM channels
+                WHERE enabled = TRUE AND health_status = 'HEALTHY'
+                  AND api_key IS NOT NULL AND api_key <> ''
+                  AND (cooldown_until IS NULL OR cooldown_until < CURRENT_TIMESTAMP)
+                ORDER BY LOWER(type)
+                """, String.class);
         return OperationsOverview.builder()
-                .totalChannels(channels.size())
-                .enabledChannels(channels.stream().filter(Channel::isEnabled).count())
-                .totalMappings(modelMappingMapper.selectCount(null))
-                .totalTokens(tokenMapper.selectCount(null))
-                .totalUsers(userMapper.selectCount(null))
-                .totalRequests(logs.size())
-                .successRequests(successRequests)
-                .failedRequests(failedRequests)
-                .totalConsumedTokens(totalConsumedTokens)
+                .totalChannels(count("SELECT COUNT(*) FROM channels"))
+                .enabledChannels(count("""
+                        SELECT COUNT(*) FROM channels
+                        WHERE enabled = TRUE AND health_status = 'HEALTHY'
+                          AND api_key IS NOT NULL AND api_key <> ''
+                          AND (cooldown_until IS NULL OR cooldown_until < CURRENT_TIMESTAMP)
+                        """))
+                .totalMappings(count("SELECT COUNT(*) FROM model_mappings WHERE enabled = TRUE"))
+                .totalTokens(count("SELECT COUNT(*) FROM tokens WHERE enabled = TRUE"))
+                .totalUsers(count("SELECT COUNT(*) FROM users WHERE status = 'ACTIVE'"))
+                .totalRequests(number(requestStats.get("total_requests")))
+                .successRequests(number(requestStats.get("success_requests")))
+                .failedRequests(number(requestStats.get("failed_requests")))
+                .totalConsumedTokens(number(requestStats.get("total_consumed_tokens")))
                 .activeProviders(activeProviders)
                 .build();
     }
 
+    /** Public catalog generated only from configured, currently routable
+     * channels. It intentionally makes no claims about providers that are not
+     * actually available in this installation. */
     public List<ProviderCatalogItem> providerCatalog() {
-        return List.of(
-                ProviderCatalogItem.builder()
-                        .provider("OpenAI")
-                        .providerType("openai")
-                        .headline("旗舰通用模型与高兼容 OpenAI 接口，适合作为默认标准面。")
-                        .endpointStyle("OpenAI Chat Completions")
-                        .recommendedBaseUrl("https://api.openai.com")
-                        .modelFamilies(List.of("GPT-5 family", "GPT-4.1 family", "o-series reasoning"))
-                        .highlights(List.of("生态最成熟", "SDK 覆盖完整", "企业接入成本低"))
-                        .build(),
-                ProviderCatalogItem.builder()
-                        .provider("Anthropic")
-                        .providerType("anthropic")
-                        .headline("长上下文与代码/文档生成表现稳定，适合作为高质量备份主路由。")
-                        .endpointStyle("Anthropic Messages")
-                        .recommendedBaseUrl("https://api.anthropic.com")
-                        .modelFamilies(List.of("Claude 4 family"))
-                        .highlights(List.of("长文本稳定", "企业风控接受度高", "适合分析与写作"))
-                        .build(),
-                ProviderCatalogItem.builder()
-                        .provider("Google Gemini")
-                        .providerType("gemini")
-                        .headline("多模态与长上下文能力强，适合作为搜索、图文、长文任务供应商。")
-                        .endpointStyle("Gemini generateContent")
-                        .recommendedBaseUrl("https://generativelanguage.googleapis.com")
-                        .modelFamilies(List.of("Gemini 2.5 family"))
-                        .highlights(List.of("多模态成熟", "长上下文强", "谷歌生态集成方便"))
-                        .build(),
-                ProviderCatalogItem.builder()
-                        .provider("DeepSeek")
-                        .providerType("deepseek")
-                        .headline("高性价比推理与中文场景能力强，适合作为成本优化层。")
-                        .endpointStyle("OpenAI Chat Completions")
-                        .recommendedBaseUrl("https://api.deepseek.com")
-                        .modelFamilies(List.of("DeepSeek chat family", "DeepSeek reasoner family"))
-                        .highlights(List.of("中文友好", "性价比高", "适合高并发"))
-                        .build(),
-                ProviderCatalogItem.builder()
-                        .provider("xAI Grok")
-                        .providerType("xai")
-                        .headline("实时感强的通用模型族，可作为补充型外部供应商接入。")
-                        .endpointStyle("OpenAI-compatible")
-                        .recommendedBaseUrl("https://api.x.ai")
-                        .modelFamilies(List.of("Grok family"))
-                        .highlights(List.of("接入简单", "可作为外部冗余", "适合扩展供应商池"))
-                        .build()
-        ).stream().sorted(Comparator.comparing(ProviderCatalogItem::getProvider)).toList();
+        List<Map<String, Object>> providers = jdbcTemplate.queryForList("""
+                SELECT LOWER(c.type) AS provider_type,
+                       COUNT(DISTINCT c.id) AS channel_count,
+                       COUNT(DISTINCT mm.public_model_name) AS model_count
+                FROM channels c
+                JOIN model_mappings mm ON mm.channel_id = c.id AND mm.enabled = TRUE
+                WHERE c.enabled = TRUE AND c.health_status = 'HEALTHY'
+                  AND c.api_key IS NOT NULL AND c.api_key <> ''
+                  AND (c.cooldown_until IS NULL OR c.cooldown_until < CURRENT_TIMESTAMP)
+                GROUP BY LOWER(c.type)
+                ORDER BY LOWER(c.type)
+                """);
+        List<ProviderCatalogItem> result = new ArrayList<>();
+        for (Map<String, Object> row : providers) {
+            String type = String.valueOf(row.get("provider_type")).toLowerCase(Locale.ROOT);
+            long channelCount = number(row.get("channel_count"));
+            long modelCount = number(row.get("model_count"));
+            List<String> models = jdbcTemplate.queryForList("""
+                    SELECT DISTINCT mm.public_model_name
+                    FROM model_mappings mm
+                    JOIN channels c ON c.id = mm.channel_id
+                    WHERE mm.enabled = TRUE AND c.enabled = TRUE AND c.health_status = 'HEALTHY'
+                      AND LOWER(c.type) = ? AND c.api_key IS NOT NULL AND c.api_key <> ''
+                      AND (c.cooldown_until IS NULL OR c.cooldown_until < CURRENT_TIMESTAMP)
+                    ORDER BY mm.public_model_name LIMIT 8
+                    """, String.class, type);
+            result.add(ProviderCatalogItem.builder()
+                    .provider(displayName(type))
+                    .providerType(type)
+                    .headline("当前已配置且健康的 " + displayName(type) + " 上游")
+                    .endpointStyle(endpointStyle(type))
+                    .recommendedBaseUrl("/v1")
+                    .modelFamilies(models)
+                    .highlights(List.of(
+                            channelCount + " 个健康渠道",
+                            modelCount + " 个可路由模型",
+                            "公开价格范围见模型目录"))
+                    .build());
+        }
+        return result;
+    }
+
+    private String displayName(String type) {
+        return switch (type) {
+            case "openai", "openai-compatible" -> "OpenAI Compatible";
+            case "anthropic" -> "Anthropic";
+            case "gemini", "google" -> "Google Gemini";
+            case "deepseek" -> "DeepSeek";
+            case "xai" -> "xAI";
+            default -> type;
+        };
+    }
+
+    private String endpointStyle(String type) {
+        return switch (type) {
+            case "anthropic" -> "Anthropic Messages";
+            case "gemini", "google" -> "Gemini generateContent";
+            default -> "OpenAI Chat Completions";
+        };
+    }
+
+    private long count(String sql) {
+        Number value = jdbcTemplate.queryForObject(sql, Number.class);
+        return value == null ? 0 : value.longValue();
+    }
+
+    private long number(Object value) {
+        return value instanceof Number number ? number.longValue() : 0;
     }
 }

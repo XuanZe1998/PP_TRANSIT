@@ -1,43 +1,32 @@
 <template>
   <el-container class="admin-shell">
-    <el-aside width="248px" class="admin-aside">
+    <el-aside width="260px" class="admin-aside">
       <div class="brand" @click="$router.push('/')">
-        <div class="brand-mark">A</div>
+        <div class="brand-mark">AT</div>
         <div>
           <div class="brand-title">API Transit</div>
-          <div class="brand-subtitle">Enterprise Console</div>
+          <div class="brand-subtitle">商业运营后台</div>
         </div>
       </div>
+
       <el-menu :default-active="activeRoute" class="admin-menu" router>
-        <el-menu-item index="/admin/channels">
-          <el-icon><Connection /></el-icon>
-          <span>渠道管理</span>
-        </el-menu-item>
-        <el-menu-item index="/admin/mappings">
-          <el-icon><Switch /></el-icon>
-          <span>模型映射</span>
-        </el-menu-item>
-        <el-menu-item index="/admin/tokens">
-          <el-icon><Key /></el-icon>
-          <span>令牌治理</span>
-        </el-menu-item>
-        <el-menu-item index="/admin/finished-products">
-          <el-icon><Goods /></el-icon>
-          <span>成品管理</span>
-        </el-menu-item>
-        <el-menu-item index="/admin/plus-orders">
-          <el-icon><Tickets /></el-icon>
-          <span>成品订单</span>
+        <el-menu-item v-for="item in navItems" :key="item.path" :index="item.path">
+          <el-icon><component :is="item.icon" /></el-icon>
+          <span>{{ item.label }}</span>
         </el-menu-item>
       </el-menu>
     </el-aside>
+
     <el-container>
       <el-header class="admin-header">
-        <div>
-          <h1>运营控制台</h1>
-          <p>统一管理供应商渠道、模型路由与访问令牌。</p>
+        <div class="header-copy">
+          <h1>{{ currentTitle }}</h1>
+          <p>统一管理渠道、模型、用户、计费、安全、审计和履约。</p>
         </div>
-        <el-button plain @click="$router.push('/console')">返回控制台</el-button>
+        <div class="header-actions">
+          <el-button plain @click="$router.push('/market')">前台模型市场</el-button>
+          <el-button type="danger" plain @click="logout">退出登录</el-button>
+        </div>
       </el-header>
       <el-main class="admin-main">
         <router-view />
@@ -48,10 +37,44 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
+import http from '@/utils/http'
+import { clearAuth } from '@/utils/auth'
 
 const route = useRoute()
-const activeRoute = computed(() => route.path)
+const router = useRouter()
+
+const navItems = [
+  { path: '/admin', label: '运营总览', icon: 'DataBoard' },
+  { path: '/admin/users', label: '用户与分组', icon: 'User' },
+  { path: '/admin/channels', label: '渠道治理', icon: 'Connection' },
+  { path: '/admin/models', label: '模型与定价', icon: 'Switch' },
+  { path: '/admin/tokens', label: 'Token 与权限', icon: 'Key' },
+  { path: '/admin/audit-logs', label: '调用审计', icon: 'Document' },
+  { path: '/admin/finance', label: '钱包财务', icon: 'Wallet' },
+  { path: '/admin/other-services', label: '服务与订单', icon: 'Grid' },
+  { path: '/admin/payment-link', label: '支付链接生成', icon: 'Link' },
+  { path: '/admin/vmcard-test', label: 'VMCard 接口测试', icon: 'CreditCard' },
+  { path: '/admin/security', label: '安全策略', icon: 'Lock' },
+  { path: '/admin/settings', label: '系统配置与报表', icon: 'Setting' }
+]
+
+const activeRoute = computed(() => {
+  if (route.path === '/admin/mappings') return '/admin/models'
+  if (route.path === '/admin/reports') return '/admin/settings'
+  return route.path
+})
+const currentTitle = computed(() => navItems.find(item => item.path === activeRoute.value)?.label || '管理员后台')
+
+const logout = async () => {
+  try {
+    await http.post('/api/admin/auth/logout')
+  } catch {
+    // Local logout should still proceed if the server is unreachable.
+  }
+  clearAuth()
+  router.replace('/admin/login')
+}
 </script>
 
 <style scoped>
@@ -60,39 +83,39 @@ const activeRoute = computed(() => route.path)
 }
 
 .admin-aside {
-  padding: 24px 18px;
-  background: linear-gradient(180deg, #0f172a 0%, #111827 100%);
-  color: #e2e8f0;
+  padding: 24px 16px;
+  background: #111827;
+  color: #e5e7eb;
 }
 
 .brand {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 28px;
+  margin-bottom: 24px;
   cursor: pointer;
 }
 
 .brand-mark {
-  width: 40px;
-  height: 40px;
+  width: 42px;
+  height: 42px;
   border-radius: 8px;
   display: grid;
   place-items: center;
-  background: linear-gradient(135deg, #0ea5e9, #22c55e);
+  background: #2563eb;
   color: #fff;
-  font-weight: 700;
+  font-weight: 800;
 }
 
 .brand-title {
-  font-weight: 700;
-  color: #f8fafc;
+  font-weight: 800;
+  color: #f9fafb;
 }
 
 .brand-subtitle {
   margin-top: 2px;
+  color: #9ca3af;
   font-size: 12px;
-  color: #94a3b8;
 }
 
 .admin-menu {
@@ -101,40 +124,47 @@ const activeRoute = computed(() => route.path)
 }
 
 .admin-menu :deep(.el-menu-item) {
-  margin-bottom: 8px;
+  height: 42px;
+  margin-bottom: 6px;
   border-radius: 8px;
-  color: #cbd5e1;
+  color: #d1d5db;
 }
 
-.admin-menu :deep(.el-menu-item.is-active) {
-  background: rgba(14, 165, 233, 0.12);
-  color: #f8fafc;
+.admin-menu :deep(.el-menu-item.is-active),
+.admin-menu :deep(.el-menu-item:hover) {
+  background: rgba(37, 99, 235, 0.2);
+  color: #fff;
 }
 
 .admin-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  min-height: 80px;
-  padding: 20px 32px;
-  background: rgba(255, 255, 255, 0.82);
-  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+  min-height: 82px;
+  padding: 18px 30px;
+  background: #fff;
+  border-bottom: 1px solid #e5e7eb;
 }
 
-.admin-header h1 {
+.header-copy h1 {
   margin: 0;
   font-size: 24px;
-  color: #0f172a;
+  color: #111827;
 }
 
-.admin-header p {
+.header-copy p {
   margin: 6px 0 0;
-  color: #64748b;
+  color: #6b7280;
+}
+
+.header-actions {
+  display: flex;
+  gap: 10px;
 }
 
 .admin-main {
-  padding: 24px 32px 40px;
-  background: transparent;
+  padding: 24px 30px 40px;
+  background: #f3f6fb;
 }
 
 @media (max-width: 900px) {
@@ -144,6 +174,12 @@ const activeRoute = computed(() => route.path)
 
   .admin-aside {
     width: auto !important;
+  }
+
+  .admin-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 14px;
   }
 }
 </style>

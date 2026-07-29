@@ -2,30 +2,42 @@ package com.transit.controller;
 
 import com.transit.dto.PageResponse;
 import com.transit.dto.PublicModel;
-import com.transit.mapper.ChannelMapper;
 import com.transit.mapper.ModelMappingMapper;
-import com.transit.model.Channel;
+import com.transit.model.OtherService;
+import com.transit.service.OtherServiceCatalogService;
+import com.transit.service.OtherServiceImageStorageService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.Resource;
+import org.springframework.http.CacheControl;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
-import java.util.TreeMap;
+import java.time.Duration;
 
 @RestController
 @RequestMapping("/public")
 @RequiredArgsConstructor
 public class PublicController {
     private final ModelMappingMapper modelMappingMapper;
-    private final ChannelMapper channelMapper;
+    private final OtherServiceCatalogService otherServiceCatalogService;
+    private final OtherServiceImageStorageService otherServiceImageStorageService;
+
+    @Value("${billing.currency:CNY}")
+    private String billingCurrency;
+
+    @Value("${billing.amount-scale:10000}")
+    private long amountScale;
 
     @GetMapping("/models")
     public Mono<PageResponse<PublicModel>> models(@RequestParam(value = "page", required = false, defaultValue = "1") int page,
@@ -33,50 +45,44 @@ public class PublicController {
                                                   @RequestParam(value = "query", required = false) String query,
                                                   @RequestParam(value = "type", required = false) String type,
                                                   @RequestParam(value = "sort", required = false, defaultValue = "name") String sort) {
-        if (page < 1) page = 1;
-        if (size < 1) size = 12;
-        int offset = (page - 1) * size;
-
-        Long total = modelMappingMapper.countPublicModels(query,type);
-        List<PublicModel> items;
-        if ("hot".equalsIgnoreCase(sort)) {
-            items = modelMappingMapper.findPublicModelsPagedHot(query, type, size, offset);
-        } else if ("recent".equalsIgnoreCase(sort)) {
-            items = modelMappingMapper.findPublicModelsPagedRecent(query, type, size, offset);
-        } else {
-            items = modelMappingMapper.findPublicModelsPagedByName(query, type, size, offset);
+        if (page < 1 || page > 1_000_000) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "page must be between 1 and 1000000");
+        }
+        if (size < 1 || size > 100) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "size must be between 1 and 100");
+        }
+        final String normalizedQuery = normalizeBlank(query);
+        final String normalizedType = normalizeBlank(type);
+        if (normalizedQuery != null && normalizedQuery.length() > 160) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "query is too long");
+        }
+        int offset;
+        try {
+            offset = Math.multiplyExact(page - 1, size);
+        } catch (ArithmeticException overflow) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "page offset is too large");
         }
 
-        // Fallback: if no rows in model_mappings, derive from channels.models
-        if ((total == null || total == 0) && (items == null || items.isEmpty())) {
-            List<Channel> channels = channelMapper.selectList(null);
-            Map<String, String> uniq = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
-            for (Channel c : channels) {
-                if (c.isEnabled() && c.getModels() != null && !c.getModels().isEmpty()) {
-                    String t = c.getType() == null ? "" : c.getType().toLowerCase(Locale.ROOT);
-                    Arrays.stream(c.getModels().split(","))
-                            .map(String::trim)
-                            .filter(s -> !s.isEmpty())
-                            .forEach(m -> uniq.putIfAbsent(m, t));
-                }
-            }
-            List<PublicModel> all = new ArrayList<>();
-            uniq.forEach((name, tp) -> {
-                if ((query == null || name.toLowerCase(Locale.ROOT).contains(query.toLowerCase(Locale.ROOT)))
-                        && (type == null || type.equalsIgnoreCase(tp))) {
-                    PublicModel pm = new PublicModel();
-                    pm.setPublicName(name);
-                    pm.setType(tp);
-                    all.add(pm);
-                }
-            });
-            if ("name".equalsIgnoreCase(sort)) {
-                all.sort(Comparator.comparing(PublicModel::getPublicName, String.CASE_INSENSITIVE_ORDER));
-            }
-            int from = Math.min(offset, all.size());
-            int to = Math.min(from + size, all.size());
-            items = all.subList(from, to);
-            total = (long) all.size();
+        Long total = modelMappingMapper.countPublicModels(normalizedQuery, normalizedType);
+        List<PublicModel> items;
+        if ("hot".equalsIgnoreCase(sort)) {
+            items = modelMappingMapper.findPublicModelsPagedHot(normalizedQuery, normalizedType, size, offset);
+        } else if ("recent".equalsIgnoreCase(sort)) {
+            items = modelMappingMapper.findPublicModelsPagedRecent(normalizedQuery, normalizedType, size, offset);
+        } else {
+            items = modelMappingMapper.findPublicModelsPagedByName(normalizedQuery, normalizedType, size, offset);
+        }
+
+        if (items == null) {
+            items = List.of();
+        }
+        for (PublicModel item : items) {
+            item.setCurrency(billingCurrency.toUpperCase(Locale.ROOT));
+            item.setAmountScale(Math.max(1, amountScale));
+            item.setPriceUnit("currency_per_1m_tokens");
+            item.setPriceVariesByRoute(differs(item.getMinInputPricePerMillion(), item.getMaxInputPricePerMillion())
+                    || differs(item.getMinOutputPricePerMillion(), item.getMaxOutputPricePerMillion())
+                    || differs(item.getMinCachedPricePerMillion(), item.getMaxCachedPricePerMillion()));
         }
 
         PageResponse<PublicModel> resp = new PageResponse<>();
@@ -85,5 +91,31 @@ public class PublicController {
         resp.setSize(size);
         resp.setItems(items);
         return Mono.just(resp);
+    }
+
+    @GetMapping("/other-services")
+    public Flux<OtherService> otherServices() {
+        return Flux.fromIterable(otherServiceCatalogService.listPublicServices());
+    }
+
+    @GetMapping("/other-service-images/{fileName:.+}")
+    public ResponseEntity<Resource> otherServiceImage(@PathVariable String fileName) {
+        OtherServiceImageStorageService.StoredImage image = otherServiceImageStorageService.load(fileName);
+        return ResponseEntity.ok()
+                .contentType(image.mediaType())
+                .cacheControl(CacheControl.maxAge(Duration.ofDays(365)).cachePublic().immutable())
+                .body(image.resource());
+    }
+
+    private boolean differs(java.math.BigDecimal left, java.math.BigDecimal right) {
+        return left != null && right != null && left.compareTo(right) != 0;
+    }
+
+    private String normalizeBlank(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 }

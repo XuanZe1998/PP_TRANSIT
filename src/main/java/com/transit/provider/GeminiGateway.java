@@ -8,6 +8,7 @@ import lombok.Data;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.util.UriComponentsBuilder;
 import reactor.core.publisher.Mono;
 
 import java.time.Instant;
@@ -32,7 +33,12 @@ public class GeminiGateway implements ProviderGateway {
     public Mono<ChatResponse> chatCompletions(Channel channel, ChatRequest request, String publicModel, String providerModel) {
         GeminiRequest payload = toGeminiRequest(request);
         return webClient.post()
-                .uri(channel.getBaseUrl() + "/v1beta/models/" + providerModel + ":generateContent?key=" + channel.getApiKey())
+                .uri(UriComponentsBuilder.fromUriString(channel.getBaseUrl())
+                        .pathSegment("v1beta", "models", providerModel + ":generateContent")
+                        .build().encode().toUri())
+                // Keeping credentials out of the URL prevents them from leaking
+                // through access logs, proxies, browser history, and traces.
+                .header("x-goog-api-key", channel.getApiKey())
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(payload)
                 .retrieve()

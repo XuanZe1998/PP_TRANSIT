@@ -28,30 +28,66 @@ export function setAuth(token: string, user: UserInfo) {
 export function clearAuth() {
   localStorage.removeItem(TOKEN_KEY)
   localStorage.removeItem(USER_KEY)
+  localStorage.removeItem(LAST_ACTIVE_KEY)
   window.dispatchEvent(new Event('auth-changed'))
 }
 
 export function touchActivity() {
+  if (!getToken()) return
   localStorage.setItem(LAST_ACTIVE_KEY, String(Date.now()))
 }
 
 export function initInactivityGuard(timeoutMs: number, onTimeout: () => void) {
   let timer: number | null = null
+  let lastActivityWrite = 0
+  const clearTimer = () => {
+    if (timer !== null) window.clearTimeout(timer)
+    timer = null
+  }
+  const expire = () => {
+    clearTimer()
+    if (!getToken()) return
+    clearAuth()
+    window.dispatchEvent(new Event('auth-timeout'))
+    onTimeout()
+  }
+  const schedule = () => {
+    clearTimer()
+    if (!getToken()) return
+
+    const stored = Number(localStorage.getItem(LAST_ACTIVE_KEY))
+    const hasStoredActivity = Number.isFinite(stored) && stored > 0 && stored <= Date.now()
+    const lastActiveAt = hasStoredActivity ? stored : Date.now()
+    if (!hasStoredActivity) {
+      localStorage.setItem(LAST_ACTIVE_KEY, String(lastActiveAt))
+    }
+    const remaining = timeoutMs - (Date.now() - lastActiveAt)
+    if (remaining <= 0) {
+      expire()
+      return
+    }
+    timer = window.setTimeout(expire, remaining)
+  }
   const reset = () => {
+    if (!getToken()) {
+      clearTimer()
+      return
+    }
+    const now = Date.now()
+    if (now - lastActivityWrite < 15_000) return
+    lastActivityWrite = now
     touchActivity()
-    if (timer) window.clearTimeout(timer)
-    timer = window.setTimeout(() => {
-      clearAuth()
-      window.dispatchEvent(new Event('auth-timeout'))
-      onTimeout()
-    }, timeoutMs)
+    schedule()
   }
   const events = ['click', 'mousemove', 'keydown', 'scroll', 'touchstart', 'visibilitychange']
   events.forEach(e => window.addEventListener(e, reset, { passive: true }))
-  reset()
+  window.addEventListener('auth-changed', schedule)
+  window.addEventListener('storage', schedule)
+  schedule()
   return () => {
-    if (timer) window.clearTimeout(timer)
+    clearTimer()
     events.forEach(e => window.removeEventListener(e, reset))
+    window.removeEventListener('auth-changed', schedule)
+    window.removeEventListener('storage', schedule)
   }
 }
-

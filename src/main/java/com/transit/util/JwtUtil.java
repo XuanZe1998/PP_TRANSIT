@@ -18,8 +18,11 @@ public class JwtUtil {
     private final SecretKey secretKey;
     private final long expirationTime;
 
-    public JwtUtil(@Value("${security.jwt.secret:ChangeThisJwtSecretBeforeProduction1234567890}") String secret,
+    public JwtUtil(@Value("${security.jwt.secret}") String secret,
                    @Value("${security.jwt.expiration-ms:86400000}") long expirationTime) {
+        if (secret == null || secret.length() < 32) {
+            throw new IllegalStateException("JWT_SECRET must contain at least 32 characters");
+        }
         this.secretKey = Keys.hmacShaKeyFor(secret.getBytes());
         this.expirationTime = expirationTime;
     }

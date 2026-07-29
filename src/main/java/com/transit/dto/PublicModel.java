@@ -2,9 +2,20 @@ package com.transit.dto;
 
 import lombok.Data;
 
+import java.math.BigDecimal;
+
 @Data
 public class PublicModel {
     private String publicName;
     private String type;
+    private BigDecimal minInputPricePerMillion;
+    private BigDecimal maxInputPricePerMillion;
+    private BigDecimal minOutputPricePerMillion;
+    private BigDecimal maxOutputPricePerMillion;
+    private BigDecimal minCachedPricePerMillion;
+    private BigDecimal maxCachedPricePerMillion;
+    private String currency;
+    private long amountScale;
+    private String priceUnit;
+    private boolean priceVariesByRoute;
 }
-

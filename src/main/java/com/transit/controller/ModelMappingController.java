@@ -1,8 +1,7 @@
 package com.transit.controller;
 
-import com.transit.mapper.ChannelMapper;
-import com.transit.mapper.ModelMappingMapper;
 import com.transit.model.ModelMapping;
+import com.transit.service.AdminModelService;
 import com.transit.service.CurrentUserService;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
@@ -16,18 +15,13 @@ import reactor.core.publisher.Mono;
 @RequiredArgsConstructor
 public class ModelMappingController {
 
-    private final ModelMappingMapper modelMappingMapper;
-    private final ChannelMapper channelMapper;
+    private final AdminModelService modelService;
     private final CurrentUserService currentUserService;
 
     @GetMapping
     public Flux<ModelMapping> getAllMappings(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
         currentUserService.requireAdmin(authHeader);
-        return Flux.fromIterable(modelMappingMapper.selectList(null))
-                .map(mapping -> {
-                    mapping.setChannel(channelMapper.selectById(mapping.getChannelId()));
-                    return mapping;
-                });
+        return Flux.fromIterable(modelService.list());
     }
 
     @PostMapping
@@ -42,8 +36,7 @@ public class ModelMappingController {
                     .priority(request.getPriority())
                     .enabled(request.isEnabled())
                     .build();
-            modelMappingMapper.insert(mapping);
-            return mapping;
+            return modelService.create(mapping);
         });
     }
 
@@ -53,14 +46,9 @@ public class ModelMappingController {
                                             @RequestBody MappingRequest request) {
         currentUserService.requireAdmin(authHeader);
         return Mono.fromCallable(() -> {
-            ModelMapping mapping = modelMappingMapper.selectById(id);
-            mapping.setPublicModelName(request.getPublicModelName());
-            mapping.setChannelModelName(request.getChannelModelName());
-            mapping.setChannelId(request.getChannelId());
-            mapping.setPriority(request.getPriority());
-            mapping.setEnabled(request.isEnabled());
-            modelMappingMapper.updateById(mapping);
-            return mapping;
+            return modelService.updateRouting(id, request.getPublicModelName(),
+                    request.getChannelModelName(), request.getChannelId(),
+                    request.getPriority(), request.isEnabled());
         });
     }
 
@@ -68,7 +56,7 @@ public class ModelMappingController {
     public Mono<Void> deleteMapping(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
                                     @PathVariable Long id) {
         currentUserService.requireAdmin(authHeader);
-        return Mono.fromRunnable(() -> modelMappingMapper.deleteById(id));
+        return Mono.fromRunnable(() -> modelService.delete(id));
     }
 
     @Data

@@ -9,4 +9,7 @@ import lombok.Data;
 public class PlusOrderResponse {
     private PlusOrder order;
     private String message;
+    private String payType;
+    private String paymentUrl;
+    private String providerTradeNo;
 }
