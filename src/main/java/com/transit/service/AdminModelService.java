@@ -9,7 +9,10 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Locale;
+import java.util.Objects;
 
 @Service
 @RequiredArgsConstructor
@@ -21,15 +24,14 @@ public class AdminModelService {
 
     public List<ModelMapping> list() {
         return modelMappingMapper.selectList(null).stream()
-                .peek(mapping -> mapping.setChannel(redactedChannel(mapping.getChannelId())))
+                .map(this::decorateAvailability)
                 .toList();
     }
 
     public ModelMapping create(ModelMapping mapping) {
         normalize(mapping);
         modelMappingMapper.insert(mapping);
-        mapping.setChannel(redactedChannel(mapping.getChannelId()));
-        return mapping;
+        return decorateAvailability(mapping);
     }
 
     public ModelMapping update(Long id, ModelMapping request) {
@@ -55,8 +57,7 @@ public class AdminModelService {
         mapping.setCapabilityTags(request.getCapabilityTags());
         normalize(mapping);
         modelMappingMapper.updateById(mapping);
-        mapping.setChannel(redactedChannel(mapping.getChannelId()));
-        return mapping;
+        return decorateAvailability(mapping);
     }
 
     public ModelMapping updateRouting(Long id, String publicModelName, String channelModelName,
@@ -72,8 +73,7 @@ public class AdminModelService {
         mapping.setEnabled(enabled);
         normalize(mapping);
         modelMappingMapper.updateById(mapping);
-        mapping.setChannel(redactedChannel(channelId));
-        return mapping;
+        return decorateAvailability(mapping);
     }
 
     public void delete(Long id) {
@@ -124,8 +124,58 @@ public class AdminModelService {
     }
 
     private com.transit.model.Channel redactedChannel(Long channelId) {
+        if (channelId == null) {
+            return null;
+        }
         com.transit.model.Channel channel = channelMapper.selectById(channelId);
         channelSecretService.redact(channel);
         return channel;
+    }
+
+    private ModelMapping decorateAvailability(ModelMapping mapping) {
+        com.transit.model.Channel channel = redactedChannel(mapping.getChannelId());
+        mapping.setChannel(channel);
+        if (!mapping.isEnabled()) {
+            unavailable(mapping, "MAPPING_DISABLED", "映射未发布");
+            return mapping;
+        }
+        if (channel == null) {
+            unavailable(mapping, "CHANNEL_MISSING", "绑定渠道不存在");
+            return mapping;
+        }
+        if (!channel.isEnabled()) {
+            unavailable(mapping, "CHANNEL_DISABLED", "渠道已停用");
+            return mapping;
+        }
+        if (!channel.isApiKeyConfigured()) {
+            unavailable(mapping, "CREDENTIAL_MISSING", "渠道未配置 API Key");
+            return mapping;
+        }
+
+        String health = Objects.toString(channel.getHealthStatus(), "UNTESTED")
+                .trim().toUpperCase(Locale.ROOT);
+        if ("COOLDOWN".equals(health)
+                && channel.getCooldownUntil() != null
+                && channel.getCooldownUntil().isAfter(LocalDateTime.now())) {
+            unavailable(mapping, "CHANNEL_COOLDOWN", "渠道熔断冷却中");
+            return mapping;
+        }
+        if (!"HEALTHY".equals(health)
+                && !"DEGRADED".equals(health)
+                && !"COOLDOWN".equals(health)) {
+            unavailable(mapping, "CHANNEL_" + health, "渠道状态为 " + health + "，请先完成测试");
+            return mapping;
+        }
+
+        mapping.setCallable(true);
+        mapping.setAvailabilityStatus("CALLABLE");
+        mapping.setAvailabilityMessage("DEGRADED".equals(health) ? "可调用（渠道降级）" : "可供前端用户调用");
+        return mapping;
+    }
+
+    private void unavailable(ModelMapping mapping, String status, String message) {
+        mapping.setCallable(false);
+        mapping.setAvailabilityStatus(status);
+        mapping.setAvailabilityMessage(message);
     }
 }

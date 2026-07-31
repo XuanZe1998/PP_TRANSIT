@@ -58,6 +58,14 @@
 
 同一个公开模型可以配置多条映射。高优先级映射始终先于低优先级；同优先级映射才按权重分流。渠道到达连续失败阈值后进入 `COOLDOWN`，冷却到期允许探测性请求，成功后恢复为 `HEALTHY`。
 
+后台的“前台调用”状态是最终发布判定。只有模型映射已发布，且绑定渠道已启用、已配置 API Key、健康状态为 `HEALTHY` / `DEGRADED`（或冷却已到期）时，模型才会同时出现在：
+
+- 公共模型市场 `/market` 与 `GET /public/models`；
+- 用户控制台“在线调试”的模型下拉框；
+- 使用 API Key 查询的 OpenAI 兼容 `GET /v1/models`。
+
+用户在模型市场点击“立即调用”会进入 `/console/playground` 并自动选中该模型；如果 API Key 配置了 `allowedModels`，控制台与 `GET /v1/models` 都只返回该 Key 有权调用的模型。真实调用统一走 `POST /v1/chat/completions`，服务端仍会再次验证模型权限、渠道状态、额度、限流与计费，不能通过前端参数绕过。
+
 ## API 示例
 
 ```bash

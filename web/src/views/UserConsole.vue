@@ -208,7 +208,12 @@
             </div>
             <el-form label-position="top">
               <el-form-item label="API Key">
-                <el-select v-model="playground.tokenId" placeholder="选择当前账户的 API Key" style="width: 100%">
+                <el-select
+                  v-model="playground.tokenId"
+                  placeholder="选择当前账户的 API Key"
+                  style="width: 100%"
+                  @change="syncPlaygroundModel()"
+                >
                   <el-option
                     v-for="token in dashboard.tokens"
                     :key="token.id"
@@ -219,15 +224,31 @@
                 </el-select>
               </el-form-item>
               <el-form-item label="模型">
-                <el-select v-model="playground.model" filterable placeholder="选择模型广场中的模型" style="width: 100%">
+                <el-select v-model="playground.model" filterable placeholder="选择后台已发布的可调用模型" style="width: 100%">
                   <el-option
-                    v-for="model in dashboard.models"
-                    :key="model"
-                    :label="model"
-                    :value="model"
+                    v-for="model in playgroundModels"
+                    :key="model.publicName"
+                    :label="`${model.publicName} · ${model.type}`"
+                    :value="model.publicName"
                   />
+                  <template #empty>
+                    <div class="playground-model-empty">当前 API Key 没有可调用模型</div>
+                  </template>
                 </el-select>
+                <div v-if="selectedModelDetail" class="playground-model-summary">
+                  <span>{{ selectedModelDetail.type }}</span>
+                  <span>{{ selectedModelDetail.routeCount }} 条可用路由</span>
+                  <span>输入 {{ formatPerMillionCny(selectedModelDetail.minInputPricePerMillion) }}</span>
+                  <span>输出 {{ formatPerMillionCny(selectedModelDetail.minOutputPricePerMillion) }}</span>
+                </div>
               </el-form-item>
+              <el-alert
+                v-if="dashboard.modelCatalog.length === 0"
+                title="管理员尚未发布可调用模型，或所有模型渠道当前不可用。"
+                type="warning"
+                :closable="false"
+                show-icon
+              />
               <el-form-item label="Prompt">
                 <el-input
                   v-model="playground.prompt"
@@ -527,11 +548,17 @@ import { ElMessage } from 'element-plus'
 import { clearAuth, getUser } from '@/utils/auth'
 import http, { getHttpErrorMessage } from '@/utils/http'
 import { formatCny, formatPerMillionCny, formatSignedCny, type AmountUnits } from '@/utils/money'
+import {
+  modelScopeLabel,
+  modelsAllowedForToken,
+  normalizeModelCatalog,
+  type CallableModel,
+} from '@/utils/modelCatalog'
 
 const router = useRouter()
 const route = useRoute()
 const currentUser = computed(() => getUser())
-const dashboard = ref<any>({ stats: {}, tokens: [], recentLogs: [], models: [] })
+const dashboard = ref<any>({ stats: {}, tokens: [], recentLogs: [], models: [], modelCatalog: [] as CallableModel[] })
 const billingRows = ref<any[]>([])
 const billingSummary = ref<any[]>([])
 const playgroundLoading = ref(false)
@@ -597,6 +624,14 @@ const primaryAccessKey = computed(() => {
   const tokens = dashboard.value.tokens || []
   return tokens.find((token: any) => token.enabled) || tokens[0] || null
 })
+const selectedPlaygroundToken = computed(() => (dashboard.value.tokens || [])
+  .find((token: any) => Number(token.id) === Number(playground.value.tokenId)) || null)
+const playgroundModels = computed<CallableModel[]>(() => modelsAllowedForToken(
+  dashboard.value.modelCatalog || [],
+  selectedPlaygroundToken.value,
+))
+const selectedModelDetail = computed<CallableModel | null>(() => playgroundModels.value
+  .find(model => model.publicName === playground.value.model) || null)
 const primaryAction = computed(() => {
   if (current.value.key === 'overview') return { label: '在线调试', path: '/console/playground', icon: Monitor }
   if (current.value.key === 'wallet') return { label: '兑换码充值', path: '/console/wallet', icon: Wallet }
@@ -684,22 +719,36 @@ const logout = () => {
 
 async function loadDashboard() {
   const res = await http.get('/api/user/dashboard')
+  const modelCatalog = normalizeModelCatalog(res.data?.modelCatalog, res.data?.models)
   dashboard.value = {
     stats: res.data?.stats || {},
     tokens: res.data?.tokens || [],
     recentLogs: res.data?.recentLogs || [],
-    models: res.data?.models || []
+    models: modelCatalog.map(model => model.publicName),
+    modelCatalog
   }
-  if (!playground.value.tokenId) {
+  const selectedTokenStillEnabled = dashboard.value.tokens.some((token: any) =>
+    Number(token.id) === Number(playground.value.tokenId) && token.enabled)
+  if (!selectedTokenStillEnabled) {
     playground.value.tokenId = dashboard.value.tokens.find((token: any) => token.enabled)?.id
-  }
-  if (!playground.value.model) {
-    playground.value.model = dashboard.value.models[0] || ''
   }
   const requestedModel = route.query.model?.toString().trim()
   if (requestedModel && dashboard.value.models.includes(requestedModel)) {
-    playground.value.model = requestedModel
+    const matchingToken = dashboard.value.tokens.find((token: any) =>
+      token.enabled && modelsAllowedForToken(modelCatalog, token)
+        .some(model => model.publicName === requestedModel))
+    if (matchingToken) playground.value.tokenId = matchingToken.id
   }
+  syncPlaygroundModel(requestedModel || playground.value.model)
+}
+
+function syncPlaygroundModel(preferredModel = playground.value.model) {
+  const available = playgroundModels.value
+  if (preferredModel && available.some(model => model.publicName === preferredModel)) {
+    playground.value.model = preferredModel
+    return
+  }
+  playground.value.model = available[0]?.publicName || ''
 }
 
 async function sendPlaygroundRequest() {
@@ -946,7 +995,7 @@ const keys = computed(() => (dashboard.value.tokens || []).map((token: any) => (
   name: token.name || `Key #${token.id}`,
   key: keyPreview(token),
   quota: `${number(token.usedQuota)} / ${number(token.totalQuota)}`,
-  models: '全部模型',
+  models: modelScopeLabel(token.allowedModels),
   lastUsed: token.requestCount > 0 ? `${number(token.requestCount)} 次 / ${number(token.totalTokens)} tokens` : '从未调用',
   status: token.enabled ? '启用' : '停用'
 })))

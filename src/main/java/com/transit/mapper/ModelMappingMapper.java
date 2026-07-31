@@ -15,9 +15,14 @@ public interface ModelMappingMapper extends BaseMapper<ModelMapping> {
     String ROUTABLE = """
             mm.enabled = TRUE
             AND c.enabled = TRUE
-            AND c.health_status = 'HEALTHY'
             AND c.api_key IS NOT NULL AND c.api_key <> ''
-            AND (c.cooldown_until IS NULL OR c.cooldown_until < CURRENT_TIMESTAMP)
+            AND (
+                UPPER(COALESCE(c.health_status, 'UNTESTED')) IN ('HEALTHY', 'DEGRADED')
+                OR (
+                    UPPER(COALESCE(c.health_status, 'UNTESTED')) = 'COOLDOWN'
+                    AND (c.cooldown_until IS NULL OR c.cooldown_until < CURRENT_TIMESTAMP)
+                )
+            )
             """;
 
     String PUBLIC_COLUMNS = """
@@ -28,7 +33,9 @@ public interface ModelMappingMapper extends BaseMapper<ModelMapping> {
             MIN(CASE WHEN mm.billing_enabled = TRUE THEN COALESCE(mm.output_price_per_million, mm.price_ratio, 0) ELSE 0 END) AS minOutputPricePerMillion,
             MAX(CASE WHEN mm.billing_enabled = TRUE THEN COALESCE(mm.output_price_per_million, mm.price_ratio, 0) ELSE 0 END) AS maxOutputPricePerMillion,
             MIN(CASE WHEN mm.billing_enabled = TRUE THEN COALESCE(mm.cached_price_per_million, 0) ELSE 0 END) AS minCachedPricePerMillion,
-            MAX(CASE WHEN mm.billing_enabled = TRUE THEN COALESCE(mm.cached_price_per_million, 0) ELSE 0 END) AS maxCachedPricePerMillion
+            MAX(CASE WHEN mm.billing_enabled = TRUE THEN COALESCE(mm.cached_price_per_million, 0) ELSE 0 END) AS maxCachedPricePerMillion,
+            COUNT(DISTINCT c.id) AS routeCount,
+            COUNT(DISTINCT LOWER(c.type)) AS providerCount
             """;
 
     @Select("""

@@ -142,13 +142,25 @@
           <el-select v-model="modelProviderFilter" clearable placeholder="按模型厂商筛选" style="width: 220px">
             <el-option v-for="provider in modelProviderOptions" :key="provider" :label="provider" :value="provider" />
           </el-select>
-          <span>{{ filteredRows.length }} 个模型映射</span>
+          <el-tag type="success">{{ callablePublicModelCount }} 个前台可用模型</el-tag>
+          <el-tag>{{ callableRouteCount }} / {{ filteredRows.length }} 条路由可调用</el-tag>
         </div>
+        <el-alert
+          v-if="module === 'models' && rows.length > 0 && callableRouteCount === 0"
+          title="当前没有可供用户调用的模型。请启用模型映射，并确认绑定渠道已启用、已配置 API Key 且健康检查通过。"
+          type="warning"
+          :closable="false"
+          show-icon
+          class="model-availability-alert"
+        />
         <el-table :data="displayRows" v-loading="loading" row-key="id">
           <el-table-column v-for="column in config.columns" :key="column.prop" :prop="column.prop" :label="column.label" :min-width="column.minWidth" :width="column.width">
             <template #default="{ row }">
               <el-tag v-if="column.kind === 'status'" :type="statusType(getValue(row, column.prop))">{{ getValue(row, column.prop) }}</el-tag>
               <el-tag v-else-if="column.kind === 'bool'" :type="getValue(row, column.prop) ? 'success' : 'info'">{{ getValue(row, column.prop) ? '启用' : '停用' }}</el-tag>
+              <el-tag v-else-if="column.kind === 'callable'" :type="getValue(row, column.prop) ? 'success' : 'warning'">
+                {{ getValue(row, column.prop) ? '可调用' : '不可调用' }}
+              </el-tag>
               <span v-else-if="column.kind === 'money'">{{ money(getValue(row, column.prop)) }}</span>
               <span v-else-if="column.kind === 'rate'">{{ rateMoney(getValue(row, column.prop)) }}</span>
               <span v-else>{{ display(getValue(row, column.prop)) }}</span>
@@ -212,6 +224,14 @@
         v-if="module === 'users'"
         title="用户余额不能在基本资料中修改；请关闭后使用列表中的“调账”操作，以便留下原因和财务流水。"
         type="warning"
+        :closable="false"
+        show-icon
+        class="drawer-alert"
+      />
+      <el-alert
+        v-if="module === 'models'"
+        title="模型只有在映射已发布、渠道已启用、API Key 已配置且健康检查通过时，才会显示在模型广场和用户控制台。"
+        type="info"
         :closable="false"
         show-icon
         class="drawer-alert"
@@ -381,7 +401,7 @@ import http, { getHttpErrorMessage } from '@/utils/http'
 import { formatCny, formatPerMillionCny } from '@/utils/money'
 
 type ModuleKey = 'dashboard' | 'users' | 'channels' | 'models' | 'tokens' | 'audit' | 'finance' | 'security' | 'settings'
-type Column = { prop: string; label: string; width?: number; minWidth?: number; kind?: 'status' | 'bool' | 'money' | 'rate' }
+type Column = { prop: string; label: string; width?: number; minWidth?: number; kind?: 'status' | 'bool' | 'callable' | 'money' | 'rate' }
 type Field = { prop: string; label: string; type?: 'text' | 'password' | 'textarea' | 'number' | 'switch' | 'select'; min?: number; step?: number; options?: Array<{ label: string; value: any }> }
 type Config = {
   title: string
@@ -519,12 +539,14 @@ const configs: Record<ModuleKey, Config> = {
       { prop: 'cachedPricePerMillion', label: '缓存 CNY/百万', width: 190, kind: 'rate' },
       { prop: 'billingEnabled', label: '计费', width: 90, kind: 'bool' },
       { prop: 'trafficPercent', label: '灰度', width: 90 },
+      { prop: 'callable', label: '前台调用', width: 110, kind: 'callable' },
+      { prop: 'availabilityMessage', label: '可用性说明', minWidth: 190 },
       { prop: 'enabled', label: '状态', width: 100, kind: 'bool' }
     ],
     fields: [
       { prop: 'publicModelName', label: '公开模型名' },
       { prop: 'channelModelName', label: '渠道模型名' },
-      { prop: 'channelId', label: '渠道 ID', type: 'number', min: 1 },
+      { prop: 'channelId', label: '绑定渠道', type: 'select', options: [] },
       { prop: 'priority', label: '优先级', type: 'number', min: 0 },
       { prop: 'priceRatio', label: '售卖倍率', type: 'number', min: 0, step: 0.1 },
       { prop: 'costPerMillion', label: '兼容成本（CNY / 1M Token）', type: 'number', min: 0, step: 0.000001 },
@@ -537,7 +559,7 @@ const configs: Record<ModuleKey, Config> = {
       { prop: 'billingEnabled', label: '启用计费', type: 'switch' },
       { prop: 'trafficPercent', label: '灰度比例', type: 'number', min: 0 },
       { prop: 'capabilityTags', label: '能力标签' },
-      { prop: 'enabled', label: '启用', type: 'switch' }
+      { prop: 'enabled', label: '发布到前台并允许调用', type: 'switch' }
     ],
     editable: true,
     deletable: true
@@ -668,6 +690,11 @@ const modelProviderOptions = computed(() => {
     .sort()
 })
 
+const callableRouteCount = computed(() => rows.value.filter(row => row.callable).length)
+const callablePublicModelCount = computed(() => new Set(rows.value
+  .filter(row => row.callable && row.publicModelName)
+  .map(row => row.publicModelName)).size)
+
 const metrics = computed(() => {
   if (module.value === 'dashboard') {
     const m = dashboard.value.metrics || {}
@@ -736,6 +763,19 @@ async function load() {
       ])
       rows.value = settings.data
       report.value = reports.data
+    } else if (module.value === 'models') {
+      const [modelRes, channelRes] = await Promise.all([
+        http.get('/api/admin/api/models'),
+        http.get('/api/admin/api/channels')
+      ])
+      rows.value = modelRes.data || []
+      const channelField = configs.models.fields.find(field => field.prop === 'channelId')
+      if (channelField) {
+        channelField.options = (channelRes.data || []).map((channel: any) => ({
+          label: `${channel.name} · ${channel.type} · ${channel.enabled ? channel.healthStatus : 'DISABLED'}`,
+          value: channel.id
+        }))
+      }
     } else if (config.value.endpoint) {
       const res = await http.get(`/api${config.value.endpoint}`)
       rows.value = res.data
@@ -769,6 +809,24 @@ function openCreate() {
   Object.keys(form).forEach(key => delete form[key])
   for (const field of activeFields.value) {
     form[field.prop] = field.type === 'switch' ? true : field.type === 'number' ? 0 : ''
+  }
+  if (module.value === 'models') {
+    const channelOptions = configs.models.fields.find(field => field.prop === 'channelId')?.options || []
+    Object.assign(form, {
+      channelId: channelOptions[0]?.value ?? '',
+      priority: 10,
+      priceRatio: 1,
+      costPerMillion: 0,
+      inputPricePerMillion: 1,
+      outputPricePerMillion: 1,
+      cachedPricePerMillion: 0,
+      inputCostPerMillion: 0,
+      outputCostPerMillion: 0,
+      cachedCostPerMillion: 0,
+      billingEnabled: true,
+      trafficPercent: 100,
+      enabled: false
+    })
   }
   drawerVisible.value = true
 }

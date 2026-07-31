@@ -6,7 +6,6 @@ import com.transit.mapper.LogMapper;
 import com.transit.mapper.TokenMapper;
 import com.transit.mapper.UserMapper;
 import com.transit.model.Log;
-import com.transit.model.ModelMapping;
 import com.transit.model.Token;
 import com.transit.model.User;
 import com.transit.service.CurrentUserService;
@@ -14,6 +13,7 @@ import com.transit.service.ApiKeyService;
 import com.transit.service.TransitService;
 import com.transit.dto.ChatRequest;
 import com.transit.dto.ChatResponse;
+import com.transit.dto.PublicModel;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
@@ -28,6 +28,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
 
@@ -47,6 +48,12 @@ public class UserController {
 
     @Value("${billing.default-max-output-tokens:4096}")
     private int playgroundMaxOutputTokens;
+
+    @Value("${billing.currency:CNY}")
+    private String billingCurrency;
+
+    @Value("${billing.amount-scale:10000}")
+    private long amountScale;
 
     @GetMapping("/profile")
     public Mono<Map<String, Object>> getProfile(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
@@ -157,9 +164,18 @@ public class UserController {
             List<Log> logs = logMapper.selectList(new LambdaQueryWrapper<Log>()
                     .eq(Log::getUserId, user.getId())
                     .orderByDesc(Log::getCreatedAt));
-            List<ModelMapping> mappings = modelMappingMapper.selectList(new LambdaQueryWrapper<ModelMapping>()
-                    .eq(ModelMapping::isEnabled, true)
-                    .orderByDesc(ModelMapping::getPriority));
+            List<PublicModel> modelCatalog = modelMappingMapper.findPublicModels();
+            if (modelCatalog == null) {
+                modelCatalog = List.of();
+            }
+            for (PublicModel item : modelCatalog) {
+                item.setCurrency(billingCurrency.toUpperCase(Locale.ROOT));
+                item.setAmountScale(Math.max(1, amountScale));
+                item.setPriceUnit("currency_per_1m_tokens");
+                item.setPriceVariesByRoute(differs(item.getMinInputPricePerMillion(), item.getMaxInputPricePerMillion())
+                        || differs(item.getMinOutputPricePerMillion(), item.getMaxOutputPricePerMillion())
+                        || differs(item.getMinCachedPricePerMillion(), item.getMaxCachedPricePerMillion()));
+            }
             LocalDateTime todayStart = LocalDateTime.now().toLocalDate().atStartOfDay();
             LocalDateTime monthStart = LocalDateTime.now().withDayOfMonth(1).toLocalDate().atStartOfDay();
 
@@ -190,6 +206,7 @@ public class UserController {
                 item.put("totalQuota", token.getTotalQuota());
                 item.put("expiredAt", token.getExpiredAt());
                 item.put("createdAt", token.getCreatedAt());
+                item.put("allowedModels", token.getAllowedModels());
                 long requestCount = logs.stream().filter(log -> logBelongsToToken(log, token)).count();
                 long tokenTotal = logs.stream().filter(log -> logBelongsToToken(log, token)).mapToLong(Log::getTotalTokens).sum();
                 item.put("requestCount", requestCount);
@@ -210,11 +227,9 @@ public class UserController {
                 return item;
             }).toList();
 
-            List<String> models = mappings.stream()
-                    .map(ModelMapping::getPublicModelName)
+            List<String> models = modelCatalog.stream()
+                    .map(PublicModel::getPublicName)
                     .filter(name -> name != null && !name.isBlank())
-                    .distinct()
-                    .sorted()
                     .toList();
 
             Map<String, Object> payload = new HashMap<>();
@@ -222,6 +237,7 @@ public class UserController {
             payload.put("tokens", tokenCards);
             payload.put("recentLogs", recentLogs);
             payload.put("models", models);
+            payload.put("modelCatalog", modelCatalog);
             payload.put("serverTime", LocalDateTime.now());
             return payload;
         });
@@ -389,6 +405,10 @@ public class UserController {
     private boolean logBelongsToToken(Log log, Token token) {
         if (log.getTokenId() != null) return Objects.equals(log.getTokenId(), token.getId());
         return token.getKey() != null && token.getKey().equals(log.getTokenKey());
+    }
+
+    private boolean differs(java.math.BigDecimal left, java.math.BigDecimal right) {
+        return left != null && right != null && left.compareTo(right) != 0;
     }
 
     private Map<String, Object> logView(Log log) {

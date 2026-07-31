@@ -82,4 +82,16 @@ public class ModelMapping {
     // or handle join manually in mapper.
     @TableField(exist = false)
     private Channel channel;
+
+    /** Whether this mapping can currently receive end-user traffic. */
+    @TableField(exist = false)
+    private boolean callable;
+
+    /** Stable machine-readable status used by the administration console. */
+    @TableField(exist = false)
+    private String availabilityStatus;
+
+    /** Human-readable explanation when a mapping is not callable. */
+    @TableField(exist = false)
+    private String availabilityMessage;
 }

@@ -354,10 +354,15 @@ textarea {
 
 .model-filter-bar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
   margin-bottom: 14px;
   color: #64748b;
+}
+
+.model-availability-alert {
+  margin-bottom: 14px;
 }
 
 .admin-pagination {
@@ -1480,6 +1485,29 @@ textarea {
   display: grid;
   grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
   gap: 16px;
+}
+
+.playground-model-empty {
+  padding: 14px 16px;
+  color: #94a3b8;
+  text-align: center;
+}
+
+.playground-model-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.playground-model-summary span {
+  padding: 4px 8px;
+  border: 1px solid #dbe4ef;
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #526173;
+  font-size: 11px;
+  line-height: 1.35;
 }
 
 .response-panel {
