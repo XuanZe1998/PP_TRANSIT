@@ -9,12 +9,18 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.regex.Pattern;
 
 @Slf4j
 @Configuration
 @RequiredArgsConstructor
 public class SchemaRepairService {
+
+    private static final Pattern MODEL_NAME = Pattern.compile("[A-Za-z0-9._:/-]{1,160}");
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -31,7 +37,61 @@ public class SchemaRepairService {
             ensureColumns();
             ensureIndexes();
             seedDefaults();
+            backfillChannelModelMappings();
         };
+    }
+
+    /**
+     * Repairs channels created before model mappings became channel-owned. The
+     * migration is deliberately additive: it creates only missing same-name
+     * mappings and never changes existing aliases, prices, costs or publication
+     * settings.
+     */
+    int backfillChannelModelMappings() {
+        List<Map<String, Object>> channels = jdbcTemplate.queryForList("""
+                SELECT id, models FROM channels
+                WHERE models IS NOT NULL AND TRIM(models) <> ''
+                """);
+        int created = 0;
+        for (Map<String, Object> channel : channels) {
+            long channelId = ((Number) channel.get("id")).longValue();
+            Set<String> models = new LinkedHashSet<>();
+            for (String item : String.valueOf(channel.get("models")).split("[,，、\\r\\n]+")) {
+                String model = item.trim();
+                if (model.isBlank()) continue;
+                if (!MODEL_NAME.matcher(model).matches()) {
+                    log.warn("Skipped invalid legacy model name while repairing channel {}", channelId);
+                    continue;
+                }
+                models.add(model);
+            }
+            for (String model : models) {
+                created += jdbcTemplate.update("""
+                        INSERT INTO model_mappings(
+                            public_model_name, channel_model_name, channel_id,
+                            priority, enabled, price_ratio, cost_per_million,
+                            input_price_per_million, output_price_per_million, cached_price_per_million,
+                            input_cost_per_million, output_cost_per_million, cached_cost_per_million,
+                            billing_enabled, traffic_percent, created_at
+                        )
+                        SELECT ?, ?, c.id,
+                               10, TRUE, 1, 0,
+                               1, 1, 0,
+                               0, 0, 0,
+                               TRUE, 100, CURRENT_TIMESTAMP
+                        FROM channels c
+                        WHERE c.id = ?
+                          AND NOT EXISTS (
+                              SELECT 1 FROM model_mappings mm
+                              WHERE mm.channel_id = c.id AND mm.channel_model_name = ?
+                          )
+                        """, model, model, channelId, model);
+            }
+        }
+        if (created > 0) {
+            log.info("Backfilled {} channel-owned model mapping(s)", created);
+        }
+        return created;
     }
 
     private void ensureCoreTables() {
