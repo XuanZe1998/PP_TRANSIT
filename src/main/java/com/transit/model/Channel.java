@@ -11,6 +11,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @TableName("channels")
 @Data
@@ -39,6 +40,14 @@ public class Channel {
     private String apiKeyPreview;
 
     private String models; // Comma separated list of models supported by this channel
+
+    /**
+     * Per-model routing, sale and upstream cost configuration submitted together
+     * with the channel. It is persisted in model_mappings rather than channels.
+     */
+    @TableField(exist = false)
+    @Builder.Default
+    private List<ModelMapping> modelPricing = List.of();
 
     @Builder.Default
     private boolean enabled = true;

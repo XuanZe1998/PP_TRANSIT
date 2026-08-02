@@ -163,6 +163,7 @@
               </el-tag>
               <span v-else-if="column.kind === 'money'">{{ money(getValue(row, column.prop)) }}</span>
               <span v-else-if="column.kind === 'rate'">{{ rateMoney(getValue(row, column.prop)) }}</span>
+              <span v-else-if="column.kind === 'profit'" :class="{ 'negative-profit': routeHasLoss(row) }">{{ routeProfitSummary(row) }}</span>
               <span v-else>{{ display(getValue(row, column.prop)) }}</span>
             </template>
           </el-table-column>
@@ -219,7 +220,7 @@
       </section>
     </template>
 
-    <el-drawer v-model="drawerVisible" :title="drawerTitle" size="520px">
+    <el-drawer v-model="drawerVisible" :title="drawerTitle" :size="module === 'channels' ? 'min(1180px, 96vw)' : '520px'">
       <el-alert
         v-if="module === 'users'"
         title="用户余额不能在基本资料中修改；请关闭后使用列表中的“调账”操作，以便留下原因和财务流水。"
@@ -246,6 +247,52 @@
           <el-input v-else-if="field.type === 'textarea'" v-model="form[field.prop]" type="textarea" :rows="4" />
           <el-input v-else v-model="form[field.prop]" :type="field.type === 'password' ? 'password' : 'text'" :show-password="field.type === 'password'" />
         </el-form-item>
+        <section v-if="module === 'channels'" class="channel-pricing-editor">
+          <div class="channel-pricing-head">
+            <div>
+              <h3>逐模型采购成本与销售定价</h3>
+              <p>已根据模型清单生成 {{ channelModelPricing.length }} 条路由；保存渠道时会自动同步到“模型与定价”。</p>
+            </div>
+            <el-button v-if="channelModelPricing.length > 1" @click="copyFirstPricingToAll">复制第一行定价到全部</el-button>
+          </div>
+          <el-alert
+            title="同一供应商有多个 API Key 时，请分别新建渠道并填写相同渠道分组和模型。系统会把它们作为同模型的多条货源路由，按优先级、渠道权重和灰度比例分流，并按实际命中的 Key 计算成本与毛利。"
+            type="info"
+            :closable="false"
+            show-icon
+          />
+          <el-empty v-if="channelModelPricing.length === 0" description="请先在上方模型清单中填写模型名称，可用逗号、顿号或换行分隔" :image-size="72" />
+          <article v-for="pricing in channelModelPricing" :key="pricing.channelModelName" class="channel-model-pricing-card">
+            <div class="channel-model-pricing-title">
+              <div>
+                <strong>{{ pricing.channelModelName }}</strong>
+                <span>自动公开为同名模型</span>
+              </div>
+              <div class="channel-model-pricing-switches">
+                <el-switch v-model="pricing.billingEnabled" active-text="计费" />
+                <el-switch v-model="pricing.enabled" active-text="发布" />
+              </div>
+            </div>
+            <div class="channel-price-grid">
+              <label>路由优先级<el-input-number v-model="pricing.priority" :min="-10000" :max="10000" :step="10" /></label>
+              <label>模型流量比例 %<el-input-number v-model="pricing.trafficPercent" :min="1" :max="100" /></label>
+              <label>售卖倍率<el-input-number v-model="pricing.priceRatio" :min="0" :step="0.1" /></label>
+              <label>兼容成本<el-input-number v-model="pricing.costPerMillion" :min="0" :step="0.000001" /></label>
+              <label>输入售价<el-input-number v-model="pricing.inputPricePerMillion" :min="0" :step="0.000001" /></label>
+              <label>输出售价<el-input-number v-model="pricing.outputPricePerMillion" :min="0" :step="0.000001" /></label>
+              <label>缓存售价<el-input-number v-model="pricing.cachedPricePerMillion" :min="0" :step="0.000001" /></label>
+              <label>输入成本<el-input-number v-model="pricing.inputCostPerMillion" :min="0" :step="0.000001" /></label>
+              <label>输出成本<el-input-number v-model="pricing.outputCostPerMillion" :min="0" :step="0.000001" /></label>
+              <label>缓存成本<el-input-number v-model="pricing.cachedCostPerMillion" :min="0" :step="0.000001" /></label>
+            </div>
+            <div class="channel-price-actions">
+              <el-button link type="primary" @click="calculateSalePrices(pricing)">按成本 × 售卖倍率计算售价</el-button>
+              <span :class="{ loss: modelProfit(pricing).hasLoss }">
+                每百万 Token 毛利：输入 {{ decimalMoney(modelProfit(pricing).input) }} / 输出 {{ decimalMoney(modelProfit(pricing).output) }} / 缓存 {{ decimalMoney(modelProfit(pricing).cached) }}
+              </span>
+            </div>
+          </article>
+        </section>
       </el-form>
       <template #footer>
         <el-button @click="drawerVisible = false">取消</el-button>
@@ -401,7 +448,7 @@ import http, { getHttpErrorMessage } from '@/utils/http'
 import { formatCny, formatPerMillionCny } from '@/utils/money'
 
 type ModuleKey = 'dashboard' | 'users' | 'channels' | 'models' | 'tokens' | 'audit' | 'finance' | 'security' | 'settings'
-type Column = { prop: string; label: string; width?: number; minWidth?: number; kind?: 'status' | 'bool' | 'callable' | 'money' | 'rate' }
+type Column = { prop: string; label: string; width?: number; minWidth?: number; kind?: 'status' | 'bool' | 'callable' | 'money' | 'rate' | 'profit' }
 type Field = { prop: string; label: string; type?: 'text' | 'password' | 'textarea' | 'number' | 'switch' | 'select'; min?: number; step?: number; options?: Array<{ label: string; value: any }> }
 type Config = {
   title: string
@@ -438,7 +485,7 @@ const testRunning = ref(false)
 const testTarget = ref<any | null>(null)
 const testForm = reactive({
   providerModelName: '',
-  prompt: 'Hello',
+  prompt: '你是什么模型',
   timeoutSeconds: 20,
   pythonCode: ''
 })
@@ -456,6 +503,26 @@ const modelPage = ref(1)
 const modelPageSize = ref(20)
 const issuedSecretVisible = ref(false)
 const issuedSecret = ref('')
+
+type ChannelModelPricing = {
+  publicModelName: string
+  channelModelName: string
+  priority: number
+  enabled: boolean
+  priceRatio: number
+  costPerMillion: number
+  inputPricePerMillion: number
+  outputPricePerMillion: number
+  cachedPricePerMillion: number
+  inputCostPerMillion: number
+  outputCostPerMillion: number
+  cachedCostPerMillion: number
+  billingEnabled: boolean
+  trafficPercent: number
+  capabilityTags?: string
+}
+
+const channelModelPricing = ref<ChannelModelPricing[]>([])
 
 const configs: Record<ModuleKey, Config> = {
   dashboard: {
@@ -524,9 +591,8 @@ const configs: Record<ModuleKey, Config> = {
   },
   models: {
     title: '模型与定价',
-    description: '配置公开模型、路由和服务端计费。输入、输出、缓存价格均为 CNY / 1M Token。',
+    description: '由渠道治理中的模型清单与逐模型定价自动生成。这里仅展示路由、售价、上游成本和毛利。',
     endpoint: '/admin/api/models',
-    createLabel: '新建模型映射',
     columns: [
       { prop: 'publicModelName', label: '公开模型', minWidth: 180 },
       { prop: 'channelModelName', label: '渠道模型', minWidth: 180 },
@@ -537,32 +603,17 @@ const configs: Record<ModuleKey, Config> = {
       { prop: 'inputPricePerMillion', label: '输入 CNY/百万', width: 190, kind: 'rate' },
       { prop: 'outputPricePerMillion', label: '输出 CNY/百万', width: 190, kind: 'rate' },
       { prop: 'cachedPricePerMillion', label: '缓存 CNY/百万', width: 190, kind: 'rate' },
+      { prop: 'inputCostPerMillion', label: '输入成本 CNY/百万', width: 190, kind: 'rate' },
+      { prop: 'outputCostPerMillion', label: '输出成本 CNY/百万', width: 190, kind: 'rate' },
+      { prop: 'cachedCostPerMillion', label: '缓存成本 CNY/百万', width: 190, kind: 'rate' },
+      { prop: 'grossProfitPerMillion', label: '毛利 输入/输出/缓存', minWidth: 280, kind: 'profit' },
       { prop: 'billingEnabled', label: '计费', width: 90, kind: 'bool' },
       { prop: 'trafficPercent', label: '灰度', width: 90 },
       { prop: 'callable', label: '前台调用', width: 110, kind: 'callable' },
       { prop: 'availabilityMessage', label: '可用性说明', minWidth: 190 },
       { prop: 'enabled', label: '状态', width: 100, kind: 'bool' }
     ],
-    fields: [
-      { prop: 'publicModelName', label: '公开模型名' },
-      { prop: 'channelModelName', label: '渠道模型名' },
-      { prop: 'channelId', label: '绑定渠道', type: 'select', options: [] },
-      { prop: 'priority', label: '优先级', type: 'number', min: 0 },
-      { prop: 'priceRatio', label: '售卖倍率', type: 'number', min: 0, step: 0.1 },
-      { prop: 'costPerMillion', label: '兼容成本（CNY / 1M Token）', type: 'number', min: 0, step: 0.000001 },
-      { prop: 'inputPricePerMillion', label: '输入售价（CNY / 1M Token）', type: 'number', min: 0, step: 0.000001 },
-      { prop: 'outputPricePerMillion', label: '输出售价（CNY / 1M Token）', type: 'number', min: 0, step: 0.000001 },
-      { prop: 'cachedPricePerMillion', label: '缓存售价（CNY / 1M Token）', type: 'number', min: 0, step: 0.000001 },
-      { prop: 'inputCostPerMillion', label: '输入成本（CNY / 1M Token）', type: 'number', min: 0, step: 0.000001 },
-      { prop: 'outputCostPerMillion', label: '输出成本（CNY / 1M Token）', type: 'number', min: 0, step: 0.000001 },
-      { prop: 'cachedCostPerMillion', label: '缓存成本（CNY / 1M Token）', type: 'number', min: 0, step: 0.000001 },
-      { prop: 'billingEnabled', label: '启用计费', type: 'switch' },
-      { prop: 'trafficPercent', label: '灰度比例', type: 'number', min: 0 },
-      { prop: 'capabilityTags', label: '能力标签' },
-      { prop: 'enabled', label: '发布到前台并允许调用', type: 'switch' }
-    ],
-    editable: true,
-    deletable: true
+    fields: []
   },
   tokens: {
     title: 'Token 与权限',
@@ -735,6 +786,16 @@ watch(() => form.type, value => {
   if (provider?.defaultBaseUrl) form.baseUrl = provider.defaultBaseUrl
 })
 
+watch(() => form.models, value => {
+  if (module.value === 'channels' && drawerVisible.value) {
+    syncChannelPricingRows(value)
+  }
+})
+
+watch([() => testForm.prompt, () => testForm.timeoutSeconds], () => {
+  if (testTarget.value) refreshTestPython()
+})
+
 onMounted(load)
 
 async function load() {
@@ -810,22 +871,18 @@ function openCreate() {
   for (const field of activeFields.value) {
     form[field.prop] = field.type === 'switch' ? true : field.type === 'number' ? 0 : ''
   }
-  if (module.value === 'models') {
-    const channelOptions = configs.models.fields.find(field => field.prop === 'channelId')?.options || []
+  if (module.value === 'channels') {
+    channelModelPricing.value = []
     Object.assign(form, {
-      channelId: channelOptions[0]?.value ?? '',
-      priority: 10,
-      priceRatio: 1,
-      costPerMillion: 0,
-      inputPricePerMillion: 1,
-      outputPricePerMillion: 1,
-      cachedPricePerMillion: 0,
-      inputCostPerMillion: 0,
-      outputCostPerMillion: 0,
-      cachedCostPerMillion: 0,
-      billingEnabled: true,
-      trafficPercent: 100,
-      enabled: false
+      type: 'openai-compatible',
+      groupName: 'default',
+      weight: 100,
+      rpmLimit: 0,
+      tpmLimit: 0,
+      autoDisable: true,
+      failureThreshold: 3,
+      cooldownSeconds: 60,
+      enabled: true
     })
   }
   drawerVisible.value = true
@@ -839,6 +896,10 @@ function openEdit(row: any) {
     form[field.prop] = row[sourceKey] ?? row[field.prop] ?? ''
   }
   if (module.value === 'users') form.groupId = row.group_id ?? row.groupId ?? null
+  if (module.value === 'channels') {
+    channelModelPricing.value = (row.modelPricing || []).map((item: any) => normalizePricing(item.channelModelName, item))
+    syncChannelPricingRows(form.models)
+  }
   drawerVisible.value = true
 }
 
@@ -883,7 +944,97 @@ async function save() {
 }
 
 function activeFormPayload() {
-  return Object.fromEntries(activeFields.value.map(field => [field.prop, form[field.prop]]))
+  const payload = Object.fromEntries(activeFields.value.map(field => [field.prop, form[field.prop]]))
+  if (module.value === 'channels') {
+    payload.modelPricing = channelModelPricing.value.map(item => ({ ...item }))
+  }
+  return payload
+}
+
+function splitChannelModels(value: unknown): string[] {
+  return uniqueStrings(String(value || '')
+    .split(/[,，、\r\n]+/)
+    .map(item => item.trim())
+    .filter(Boolean))
+}
+
+function syncChannelPricingRows(value: unknown) {
+  const existing = new Map(channelModelPricing.value.map(item => [item.channelModelName, item]))
+  channelModelPricing.value = splitChannelModels(value).map(model => existing.get(model) || normalizePricing(model))
+}
+
+function normalizePricing(model: string, source: Partial<ChannelModelPricing> = {}): ChannelModelPricing {
+  return {
+    publicModelName: model,
+    channelModelName: model,
+    priority: Number(source.priority ?? 10),
+    enabled: source.enabled ?? true,
+    priceRatio: decimal(source.priceRatio, 1),
+    costPerMillion: decimal(source.costPerMillion, 0),
+    inputPricePerMillion: decimal(source.inputPricePerMillion, 1),
+    outputPricePerMillion: decimal(source.outputPricePerMillion, 1),
+    cachedPricePerMillion: decimal(source.cachedPricePerMillion, 0),
+    inputCostPerMillion: decimal(source.inputCostPerMillion, 0),
+    outputCostPerMillion: decimal(source.outputCostPerMillion, 0),
+    cachedCostPerMillion: decimal(source.cachedCostPerMillion, 0),
+    billingEnabled: source.billingEnabled ?? true,
+    trafficPercent: Number(source.trafficPercent ?? 100),
+    capabilityTags: source.capabilityTags || ''
+  }
+}
+
+function calculateSalePrices(pricing: ChannelModelPricing) {
+  const ratio = Math.max(0, Number(pricing.priceRatio || 0))
+  pricing.inputPricePerMillion = roundPrice(Number(pricing.inputCostPerMillion || pricing.costPerMillion || 0) * ratio)
+  pricing.outputPricePerMillion = roundPrice(Number(pricing.outputCostPerMillion || pricing.costPerMillion || 0) * ratio)
+  pricing.cachedPricePerMillion = roundPrice(Number(pricing.cachedCostPerMillion || 0) * ratio)
+}
+
+function copyFirstPricingToAll() {
+  const first = channelModelPricing.value[0]
+  if (!first) return
+  channelModelPricing.value = channelModelPricing.value.map(item => normalizePricing(item.channelModelName, {
+    ...first,
+    publicModelName: item.channelModelName,
+    channelModelName: item.channelModelName
+  }))
+}
+
+function modelProfit(pricing: ChannelModelPricing) {
+  const input = Number(pricing.inputPricePerMillion || 0) - Number(pricing.inputCostPerMillion || pricing.costPerMillion || 0)
+  const output = Number(pricing.outputPricePerMillion || 0) - Number(pricing.outputCostPerMillion || pricing.costPerMillion || 0)
+  const cached = Number(pricing.cachedPricePerMillion || 0) - Number(pricing.cachedCostPerMillion || 0)
+  return { input, output, cached, hasLoss: input < 0 || output < 0 || cached < 0 }
+}
+
+function decimal(value: unknown, fallback: number): number {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback
+}
+
+function roundPrice(value: number): number {
+  return Math.round(value * 1_000_000) / 1_000_000
+}
+
+function decimalMoney(value: number): string {
+  return `¥${roundPrice(value).toFixed(6).replace(/\.?0+$/, '') || '0'}`
+}
+
+function routeProfit(row: any) {
+  const input = Number(row.inputPricePerMillion || 0) - Number(row.inputCostPerMillion || row.costPerMillion || 0)
+  const output = Number(row.outputPricePerMillion || 0) - Number(row.outputCostPerMillion || row.costPerMillion || 0)
+  const cached = Number(row.cachedPricePerMillion || 0) - Number(row.cachedCostPerMillion || 0)
+  return { input, output, cached }
+}
+
+function routeHasLoss(row: any): boolean {
+  const profit = routeProfit(row)
+  return profit.input < 0 || profit.output < 0 || profit.cached < 0
+}
+
+function routeProfitSummary(row: any): string {
+  const profit = routeProfit(row)
+  return `${decimalMoney(profit.input)} / ${decimalMoney(profit.output)} / ${decimalMoney(profit.cached)}`
 }
 
 async function write(url: string, payload: Record<string, any>) {
@@ -922,7 +1073,7 @@ async function testChannel(row: any) {
   const providerModelName = testModelOptions.value[0]
   testTarget.value = row
   testForm.providerModelName = providerModelName || ''
-  testForm.prompt = 'Hello'
+  testForm.prompt = '你是什么模型'
   testForm.timeoutSeconds = row.type === 'nvidia' ? 120 : 20
   refreshTestPython()
   testResult.value = null
@@ -992,7 +1143,7 @@ function uniqueStrings(values: string[]) {
 
 function refreshTestPython() {
   if (!testTarget.value) return
-  testForm.pythonCode = buildProbePython(testTarget.value, testForm.providerModelName)
+  testForm.pythonCode = buildProbePython(testTarget.value, testForm.providerModelName, testForm.prompt, testForm.timeoutSeconds)
 }
 
 async function runChannelTest() {
@@ -1026,7 +1177,7 @@ async function runChannelTest() {
   }
 }
 
-function buildProbePython(row: any, model: string) {
+function buildProbePython(row: any, model: string, promptValue: string, timeoutValue: number) {
   const provider = row.type || 'openai-compatible'
   const baseUrl = row.baseUrl || ''
   return `#!/usr/bin/env python3
@@ -1044,8 +1195,8 @@ provider = os.environ.get("CHANNEL_PROVIDER", ${JSON.stringify(provider)})
 base_url = os.environ.get("CHANNEL_BASE_URL", ${JSON.stringify(baseUrl)}).rstrip("/")
 api_key = os.environ["CHANNEL_API_KEY"]
 model = os.environ.get("CHANNEL_MODEL", ${JSON.stringify(model)})
-prompt = os.environ.get("CHANNEL_PROMPT", "Hello")
-timeout = int(os.environ.get("CHANNEL_TIMEOUT", "20"))
+prompt = os.environ.get("CHANNEL_PROMPT", ${JSON.stringify(promptValue || '你是什么模型')})
+timeout = int(os.environ.get("CHANNEL_TIMEOUT", ${JSON.stringify(String(timeoutValue || 20))}))
 
 def chat_url(base, provider):
     if base.endswith("/chat/completions"):

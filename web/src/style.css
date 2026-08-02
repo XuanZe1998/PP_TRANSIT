@@ -365,6 +365,113 @@ textarea {
   margin-bottom: 14px;
 }
 
+.channel-pricing-editor {
+  display: grid;
+  gap: 16px;
+  margin-top: 22px;
+  padding-top: 22px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.channel-pricing-head,
+.channel-model-pricing-title,
+.channel-price-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.channel-pricing-head h3,
+.channel-pricing-head p {
+  margin: 0;
+}
+
+.channel-pricing-head p {
+  margin-top: 5px;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.channel-model-pricing-card {
+  padding: 18px;
+  border: 1px solid #dbe4ef;
+  border-radius: 14px;
+  background: #f8fafc;
+}
+
+.channel-model-pricing-title > div:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.channel-model-pricing-title strong {
+  color: #172033;
+  font-size: 16px;
+}
+
+.channel-model-pricing-title span,
+.channel-price-actions span {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.channel-model-pricing-switches {
+  display: flex;
+  gap: 18px;
+}
+
+.channel-price-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(180px, 1fr));
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.channel-price-grid label {
+  display: grid;
+  gap: 7px;
+  color: #475569;
+  font-size: 12px;
+}
+
+.channel-price-grid .el-input-number {
+  width: 100%;
+}
+
+.channel-price-actions {
+  margin-top: 12px;
+}
+
+.channel-price-actions .loss {
+  color: #dc2626;
+  font-weight: 600;
+}
+
+.negative-profit {
+  color: #dc2626;
+  font-weight: 600;
+}
+
+@media (max-width: 900px) {
+  .channel-price-grid {
+    grid-template-columns: repeat(2, minmax(150px, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .channel-pricing-head,
+  .channel-model-pricing-title,
+  .channel-price-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .channel-price-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .admin-pagination {
   margin-top: 16px;
   justify-content: flex-end;

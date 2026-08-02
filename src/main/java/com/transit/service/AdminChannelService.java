@@ -13,6 +13,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -21,9 +22,13 @@ import java.math.RoundingMode;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import java.util.concurrent.TimeoutException;
 
 @Service
@@ -37,30 +42,46 @@ public class AdminChannelService {
     private final ProviderGatewayFactory providerGatewayFactory;
     private final ChannelSecretService channelSecretService;
 
+    @Transactional(readOnly = true)
     public List<Channel> list() {
-        return channelMapper.selectList(null).stream()
-                .peek(channelSecretService::redact)
-                .toList();
+        List<Channel> channels = channelMapper.selectList(null);
+        if (channels.isEmpty()) return channels;
+        Map<Long, List<ModelMapping>> pricingByChannel = modelMappingMapper.selectList(
+                        new LambdaQueryWrapper<ModelMapping>()
+                                .in(ModelMapping::getChannelId, channels.stream().map(Channel::getId).toList())
+                                .orderByAsc(ModelMapping::getChannelId)
+                                .orderByAsc(ModelMapping::getChannelModelName))
+                .stream()
+                .collect(Collectors.groupingBy(ModelMapping::getChannelId,
+                        LinkedHashMap::new, Collectors.toList()));
+        channels.forEach(channel -> {
+            channel.setModelPricing(pricingByChannel.getOrDefault(channel.getId(), List.of()));
+            channelSecretService.redact(channel);
+        });
+        return channels;
     }
 
+    @Transactional
     public Channel create(Channel channel) {
+        List<ModelMapping> requestedPricing = safePricing(channel.getModelPricing());
         normalize(channel);
         requireCredentialEncryption();
         channel.setApiKey(channelSecretService.encrypt(channel.getApiKey()));
         channelMapper.insert(channel);
-        Channel saved = channelMapper.selectById(channel.getId());
-        channelSecretService.redact(saved);
-        return saved;
+        synchronizeModelMappings(channel.getId(), parseModels(channel.getModels()), requestedPricing);
+        return channelView(channelMapper.selectById(channel.getId()));
     }
 
+    @Transactional
     public Channel update(Long id, Channel request) {
         Channel current = channelMapper.selectById(id);
         if (current == null) {
             throw new IllegalArgumentException("Channel not found");
         }
+        String requestedModels = normalizedModels(request.getModels());
         boolean routingConfigurationChanged = !Objects.equals(current.getType(), request.getType())
                 || !Objects.equals(current.getBaseUrl(), request.getBaseUrl())
-                || !Objects.equals(current.getModels(), request.getModels());
+                || !Objects.equals(normalizedModels(current.getModels()), requestedModels);
         current.setName(request.getName());
         current.setType(request.getType());
         current.setBaseUrl(request.getBaseUrl());
@@ -69,7 +90,7 @@ public class AdminChannelService {
             current.setApiKey(channelSecretService.encrypt(request.getApiKey()));
             routingConfigurationChanged = true;
         }
-        current.setModels(request.getModels());
+        current.setModels(requestedModels);
         current.setEnabled(request.isEnabled());
         current.setGroupName(defaultString(request.getGroupName(), "default"));
         current.setWeight(request.getWeight() <= 0 ? 100 : request.getWeight());
@@ -83,17 +104,14 @@ public class AdminChannelService {
         current.setCooldownUntil(request.getCooldownUntil());
         validateChannel(current);
         channelMapper.updateById(current);
-        channelSecretService.redact(current);
-        return current;
+        synchronizeModelMappings(id, parseModels(current.getModels()), safePricing(request.getModelPricing()));
+        return channelView(channelMapper.selectById(id));
     }
 
+    @Transactional
     public void delete(Long id) {
-        Long mappings = modelMappingMapper.selectCount(new LambdaQueryWrapper<ModelMapping>()
+        modelMappingMapper.delete(new LambdaQueryWrapper<ModelMapping>()
                 .eq(ModelMapping::getChannelId, id));
-        if (mappings != null && mappings > 0) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    "Delete or move this channel's model mappings first");
-        }
         channelMapper.deleteById(id);
     }
 
@@ -109,7 +127,7 @@ public class AdminChannelService {
         }
         Map<String, Object> result = testModel(id, Map.of(
                 "providerModelName", model,
-                "prompt", "Reply with OK.",
+                "prompt", "你是什么模型",
                 "timeoutSeconds", 20));
         String status = stringValue(result.get("healthStatus"), "DEGRADED");
         long latency = longValue(result.get("latencyMs"), 0);
@@ -139,7 +157,13 @@ public class AdminChannelService {
         }
 
         int timeoutSeconds = Math.max(3, Math.min(120, intValue(request.get("timeoutSeconds"), 20)));
-        String prompt = stringValue(request.get("prompt"), "Reply with OK.");
+        String prompt = stringValue(request.get("prompt"), "你是什么模型").trim();
+        if (prompt.isBlank()) {
+            prompt = "你是什么模型";
+        }
+        if (prompt.length() > 10_000) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "prompt is too long");
+        }
         String pythonCode = stringValue(request.get("pythonCode"), null);
         if (pythonCode != null && !pythonCode.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
@@ -338,7 +362,7 @@ public class AdminChannelService {
         if (channel.getModels() == null || channel.getModels().isBlank()) {
             return null;
         }
-        return channel.getModels().split("[,，\\n]")[0].trim();
+        return parseModels(channel.getModels()).stream().findFirst().orElse(null);
     }
 
     private Map<String, Object> failedProbe(String status, long latencyMs, String model, String error, int exitCode) {
@@ -390,7 +414,150 @@ public class AdminChannelService {
         channel.setFailureThreshold(channel.getFailureThreshold() <= 0 ? 3 : channel.getFailureThreshold());
         channel.setCooldownSeconds(channel.getCooldownSeconds() <= 0 ? 60 : channel.getCooldownSeconds());
         channel.setHealthStatus("UNTESTED");
+        channel.setModels(normalizedModels(channel.getModels()));
         validateChannel(channel);
+    }
+
+    private Channel channelView(Channel channel) {
+        if (channel == null) return null;
+        channel.setModelPricing(modelMappingMapper.selectList(new LambdaQueryWrapper<ModelMapping>()
+                .eq(ModelMapping::getChannelId, channel.getId())
+                .orderByAsc(ModelMapping::getChannelModelName)));
+        channelSecretService.redact(channel);
+        return channel;
+    }
+
+    private List<ModelMapping> safePricing(List<ModelMapping> pricing) {
+        return pricing == null ? List.of() : pricing;
+    }
+
+    private String normalizedModels(String value) {
+        return String.join("\n", parseModels(value));
+    }
+
+    private List<String> parseModels(String value) {
+        if (value == null || value.isBlank()) return List.of();
+        Set<String> unique = new LinkedHashSet<>();
+        for (String item : value.split("[,，、\\r\\n]+")) {
+            String model = item.trim();
+            if (model.isBlank()) continue;
+            if (!model.matches("[A-Za-z0-9._:/-]{1,160}")) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Model name is invalid: " + model);
+            }
+            unique.add(model);
+        }
+        return List.copyOf(unique);
+    }
+
+    private void synchronizeModelMappings(Long channelId, List<String> models,
+                                          List<ModelMapping> requestedPricing) {
+        List<ModelMapping> existing = modelMappingMapper.selectList(new LambdaQueryWrapper<ModelMapping>()
+                .eq(ModelMapping::getChannelId, channelId));
+        Map<String, ModelMapping> existingByModel = existing.stream().collect(Collectors.toMap(
+                ModelMapping::getChannelModelName, Function.identity(), (left, right) -> left, LinkedHashMap::new));
+        Map<String, ModelMapping> requestedByModel = requestedPricing.stream()
+                .filter(Objects::nonNull)
+                .filter(item -> item.getChannelModelName() != null || item.getPublicModelName() != null)
+                .collect(Collectors.toMap(
+                        item -> defaultString(item.getChannelModelName(), item.getPublicModelName()).trim(),
+                        Function.identity(), (left, right) -> right, LinkedHashMap::new));
+
+        Set<Long> retainedIds = new LinkedHashSet<>();
+        for (String model : models) {
+            ModelMapping target = existingByModel.get(model);
+            ModelMapping requested = requestedByModel.get(model);
+            if (target == null) {
+                target = defaultMapping(channelId, model);
+            }
+            if (requested != null) {
+                applyPricing(target, requested);
+            }
+            // Model names and channel ownership are derived from the channel and
+            // cannot drift through a second manual administration surface.
+            target.setPublicModelName(model);
+            target.setChannelModelName(model);
+            target.setChannelId(channelId);
+            validatePricing(target);
+            if (target.getId() == null) {
+                modelMappingMapper.insert(target);
+            } else {
+                modelMappingMapper.updateById(target);
+            }
+            retainedIds.add(target.getId());
+        }
+
+        for (ModelMapping mapping : existing) {
+            if (!retainedIds.contains(mapping.getId())) {
+                modelMappingMapper.deleteById(mapping.getId());
+            }
+        }
+    }
+
+    private ModelMapping defaultMapping(Long channelId, String model) {
+        return ModelMapping.builder()
+                .publicModelName(model)
+                .channelModelName(model)
+                .channelId(channelId)
+                .priority(10)
+                .enabled(true)
+                .priceRatio(BigDecimal.ONE)
+                .costPerMillion(BigDecimal.ZERO)
+                .inputPricePerMillion(BigDecimal.ONE)
+                .outputPricePerMillion(BigDecimal.ONE)
+                .cachedPricePerMillion(BigDecimal.ZERO)
+                .inputCostPerMillion(BigDecimal.ZERO)
+                .outputCostPerMillion(BigDecimal.ZERO)
+                .cachedCostPerMillion(BigDecimal.ZERO)
+                .billingEnabled(true)
+                .trafficPercent(100)
+                .build();
+    }
+
+    private void applyPricing(ModelMapping target, ModelMapping source) {
+        target.setPriority(source.getPriority());
+        target.setEnabled(source.isEnabled());
+        target.setPriceRatio(coalesce(source.getPriceRatio(), BigDecimal.ONE));
+        target.setCostPerMillion(coalesce(source.getCostPerMillion(), BigDecimal.ZERO));
+        target.setInputCostPerMillion(coalesce(source.getInputCostPerMillion(), target.getCostPerMillion()));
+        target.setOutputCostPerMillion(coalesce(source.getOutputCostPerMillion(), target.getCostPerMillion()));
+        target.setCachedCostPerMillion(coalesce(source.getCachedCostPerMillion(), BigDecimal.ZERO));
+        target.setInputPricePerMillion(coalesce(source.getInputPricePerMillion(),
+                suggestedSale(target.getInputCostPerMillion(), target.getPriceRatio(), BigDecimal.ONE)));
+        target.setOutputPricePerMillion(coalesce(source.getOutputPricePerMillion(),
+                suggestedSale(target.getOutputCostPerMillion(), target.getPriceRatio(), BigDecimal.ONE)));
+        target.setCachedPricePerMillion(coalesce(source.getCachedPricePerMillion(),
+                suggestedSale(target.getCachedCostPerMillion(), target.getPriceRatio(), BigDecimal.ZERO)));
+        target.setBillingEnabled(source.isBillingEnabled());
+        target.setTrafficPercent(source.getTrafficPercent() <= 0 ? 100 : source.getTrafficPercent());
+        target.setCapabilityTags(source.getCapabilityTags());
+    }
+
+    private BigDecimal suggestedSale(BigDecimal cost, BigDecimal ratio, BigDecimal fallback) {
+        if (cost == null || cost.signum() == 0) return fallback;
+        return cost.multiply(coalesce(ratio, BigDecimal.ONE));
+    }
+
+    private void validatePricing(ModelMapping mapping) {
+        if (mapping.getPriority() < -10_000 || mapping.getPriority() > 10_000) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "priority is out of range");
+        }
+        if (mapping.getTrafficPercent() < 1 || mapping.getTrafficPercent() > 100) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "trafficPercent must be between 1 and 100");
+        }
+        validateAmount(mapping.getPriceRatio(), "priceRatio");
+        validateAmount(mapping.getCostPerMillion(), "costPerMillion");
+        validateAmount(mapping.getInputPricePerMillion(), "inputPricePerMillion");
+        validateAmount(mapping.getOutputPricePerMillion(), "outputPricePerMillion");
+        validateAmount(mapping.getCachedPricePerMillion(), "cachedPricePerMillion");
+        validateAmount(mapping.getInputCostPerMillion(), "inputCostPerMillion");
+        validateAmount(mapping.getOutputCostPerMillion(), "outputCostPerMillion");
+        validateAmount(mapping.getCachedCostPerMillion(), "cachedCostPerMillion");
+    }
+
+    private void validateAmount(BigDecimal value, String field) {
+        if (value == null || value.signum() < 0 || value.compareTo(new BigDecimal("1000000")) > 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, field + " is out of range");
+        }
     }
 
     private void validateChannel(Channel channel) {
