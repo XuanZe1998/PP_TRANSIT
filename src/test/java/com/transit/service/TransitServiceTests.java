@@ -259,6 +259,17 @@ class TransitServiceTests {
         ModelMapping mapping = mapping(1L, 11L, 100);
         ModelPriceTier low = pricedTier("短上下文", 500, "1", "2", "0.5", "0.5", "0.5", "0.2", "0.1", "0.1");
         ModelPriceTier high = pricedTier("长上下文", null, "4", "8", "1", "2", "2", "3", "0.5", "1");
+        high.setSaleInputPrice(new BigDecimal("0.004"));
+        high.setSaleOutputPrice(new BigDecimal("0.008"));
+        high.setSaleCacheReadPrice(new BigDecimal("0.001"));
+        high.setSaleCacheWritePrice(new BigDecimal("0.002"));
+        high.setSalePriceUnit("KB");
+        high.setSalePriceSuffix("CNY / 1KB Token");
+        high.setCostInputPrice(new BigDecimal("0.002"));
+        high.setCostOutputPrice(new BigDecimal("0.003"));
+        high.setCostCacheReadPrice(new BigDecimal("0.0005"));
+        high.setCostCacheWritePrice(new BigDecimal("0.001"));
+        high.setCostPriceUnit("KB");
         mapping.setPriceTiers(List.of(low, high));
         when(mappingMapper.selectList(any())).thenReturn(List.of(mapping));
         when(channelMapper.selectById(11L)).thenReturn(channel(11L, "primary", "primary"));
@@ -283,6 +294,8 @@ class TransitServiceTests {
         StepVerifier.create(service.chatCompletions(token, request(), "203.0.113.10"))
                 .expectNextMatches(result -> result.getBilling() != null
                         && "长上下文".equals(result.getBilling().getPriceTier())
+                        && "KB".equals(result.getBilling().getPriceUnit())
+                        && "CNY / 1KB Token".equals(result.getBilling().getPriceSuffix())
                         && result.getBilling().getCacheReadTokens() == 200
                         && result.getBilling().getCacheWriteTokens() == 100
                         && result.getBilling().getBillableInputTokens() == 700

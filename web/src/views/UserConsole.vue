@@ -336,7 +336,8 @@
               </div>
               <div class="playground-rate-grid">
                 <div><span>计价挡位</span><b>{{ playgroundUsage.priceTier || '默认挡位' }}</b></div>
-                <div><span>售价组</span><b>{{ playgroundUsage.saleGroupName || '本站售价' }}</b></div>
+                <div><span>售价组 / 单位</span><b>{{ playgroundUsage.saleGroupName || '本站售价' }} · {{ playgroundUsage.priceUnit || 'M' }}</b></div>
+                <div><span>价格后缀</span><b>{{ playgroundUsage.priceSuffix || 'CNY / 1M Token' }}</b></div>
                 <div><span>输入单价</span><b>{{ formatPerMillionCny(playgroundUsage.inputPricePerMillion) }}</b></div>
                 <div><span>输出单价</span><b>{{ formatPerMillionCny(playgroundUsage.outputPricePerMillion) }}</b></div>
                 <div><span>缓存读取单价</span><b>{{ formatPerMillionCny(playgroundUsage.cacheReadPricePerMillion) }}</b></div>
@@ -589,6 +590,8 @@ type PlaygroundUsage = {
   estimated: boolean
   priceTier: string
   saleGroupName: string
+  priceUnit: string
+  priceSuffix: string
   inputPricePerMillion: number | string
   outputPricePerMillion: number | string
   cachedPricePerMillion: number | string
@@ -868,6 +871,8 @@ function extractPlaygroundUsage(data: any): PlaygroundUsage | null {
     estimated: Boolean(usage.estimated),
     priceTier: String(billing.price_tier || '默认挡位'),
     saleGroupName: String(billing.sale_group_name || '本站售价'),
+    priceUnit: String(billing.price_unit || 'M'),
+    priceSuffix: String(billing.price_suffix || 'CNY / 1M Token'),
     inputPricePerMillion: billing.input_price_per_million ?? 0,
     outputPricePerMillion: billing.output_price_per_million ?? 0,
     cachedPricePerMillion: billing.cached_price_per_million ?? 0,

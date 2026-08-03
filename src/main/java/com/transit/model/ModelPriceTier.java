@@ -44,6 +44,10 @@ public class ModelPriceTier {
     private BigDecimal officialCacheReadPrice;
     @TableField("official_cache_write_price")
     private BigDecimal officialCacheWritePrice;
+    @TableField("official_price_unit")
+    private String officialPriceUnit;
+    @TableField("official_price_suffix")
+    private String officialPriceSuffix;
 
     @TableField("cost_group_name")
     private String costGroupName;
@@ -55,6 +59,10 @@ public class ModelPriceTier {
     private BigDecimal costCacheReadPrice;
     @TableField("cost_cache_write_price")
     private BigDecimal costCacheWritePrice;
+    @TableField("cost_price_unit")
+    private String costPriceUnit;
+    @TableField("cost_price_suffix")
+    private String costPriceSuffix;
 
     @TableField("sale_group_name")
     private String saleGroupName;
@@ -66,6 +74,10 @@ public class ModelPriceTier {
     private BigDecimal saleCacheReadPrice;
     @TableField("sale_cache_write_price")
     private BigDecimal saleCacheWritePrice;
+    @TableField("sale_price_unit")
+    private String salePriceUnit;
+    @TableField("sale_price_suffix")
+    private String salePriceSuffix;
 
     @TableField("created_at")
     private LocalDateTime createdAt;

@@ -534,14 +534,14 @@ public class TransitService {
         int cachedTokens = Math.addExact(cacheReadTokens, cacheWriteTokens);
         int billableInputTokens = Math.max(0, promptTokens - cachedTokens);
         BigDecimal ratio = customerPriceRatio == null ? BigDecimal.ONE : customerPriceRatio;
-        long inputAmount = price(billableInputTokens, tier.getSaleInputPrice().multiply(ratio));
-        long outputAmount = price(completionTokens, tier.getSaleOutputPrice().multiply(ratio));
-        long cacheReadAmount = price(cacheReadTokens, tier.getSaleCacheReadPrice().multiply(ratio));
-        long cacheWriteAmount = price(cacheWriteTokens, tier.getSaleCacheWritePrice().multiply(ratio));
-        long inputCostAmount = price(billableInputTokens, tier.getCostInputPrice());
-        long outputCostAmount = price(completionTokens, tier.getCostOutputPrice());
-        long cacheReadCostAmount = price(cacheReadTokens, tier.getCostCacheReadPrice());
-        long cacheWriteCostAmount = price(cacheWriteTokens, tier.getCostCacheWritePrice());
+        long inputAmount = price(billableInputTokens, tier.getSaleInputPrice().multiply(ratio), tier.getSalePriceUnit());
+        long outputAmount = price(completionTokens, tier.getSaleOutputPrice().multiply(ratio), tier.getSalePriceUnit());
+        long cacheReadAmount = price(cacheReadTokens, tier.getSaleCacheReadPrice().multiply(ratio), tier.getSalePriceUnit());
+        long cacheWriteAmount = price(cacheWriteTokens, tier.getSaleCacheWritePrice().multiply(ratio), tier.getSalePriceUnit());
+        long inputCostAmount = price(billableInputTokens, tier.getCostInputPrice(), tier.getCostPriceUnit());
+        long outputCostAmount = price(completionTokens, tier.getCostOutputPrice(), tier.getCostPriceUnit());
+        long cacheReadCostAmount = price(cacheReadTokens, tier.getCostCacheReadPrice(), tier.getCostPriceUnit());
+        long cacheWriteCostAmount = price(cacheWriteTokens, tier.getCostCacheWritePrice(), tier.getCostPriceUnit());
         return new BillingBreakdown(tier, inputAmount, outputAmount, cacheReadAmount, cacheWriteAmount,
                 inputCostAmount, outputCostAmount, cacheReadCostAmount, cacheWriteCostAmount);
     }
@@ -565,6 +565,8 @@ public class TransitService {
         details.setCacheWriteTokens(cacheWriteTokens);
         details.setPriceTier(tier.getTierName());
         details.setSaleGroupName(tier.getSaleGroupName());
+        details.setPriceUnit(tier.getSalePriceUnit());
+        details.setPriceSuffix(tier.getSalePriceSuffix());
         details.setInputPricePerMillion(enabled
                 ? tier.getSaleInputPrice().multiply(ratio)
                 : BigDecimal.ZERO);
@@ -595,10 +597,14 @@ public class TransitService {
                 .saleOutputPrice(coalesce(mapping.getOutputPricePerMillion(), mapping.getPriceRatio(), BigDecimal.ONE))
                 .saleCacheReadPrice(coalesce(mapping.getCachedPricePerMillion(), BigDecimal.ZERO))
                 .saleCacheWritePrice(BigDecimal.ZERO)
+                .salePriceUnit("M")
+                .salePriceSuffix("CNY / 1M Token")
                 .costInputPrice(coalesce(mapping.getInputCostPerMillion(), mapping.getCostPerMillion(), BigDecimal.ZERO))
                 .costOutputPrice(coalesce(mapping.getOutputCostPerMillion(), mapping.getCostPerMillion(), BigDecimal.ZERO))
                 .costCacheReadPrice(coalesce(mapping.getCachedCostPerMillion(), BigDecimal.ZERO))
                 .costCacheWritePrice(BigDecimal.ZERO)
+                .costPriceUnit("M")
+                .costPriceSuffix("CNY / 1M Token")
                 .build();
     }
 
@@ -614,14 +620,19 @@ public class TransitService {
     }
 
     private long price(int tokens, BigDecimal pricePerMillion) {
-        if (tokens <= 0 || pricePerMillion == null || BigDecimal.ZERO.compareTo(pricePerMillion) == 0) return 0;
-        if (pricePerMillion.signum() < 0) {
+        return price(tokens, pricePerMillion, "M");
+    }
+
+    private long price(int tokens, BigDecimal priceAmount, String unit) {
+        if (tokens <= 0 || priceAmount == null || BigDecimal.ZERO.compareTo(priceAmount) == 0) return 0;
+        if (priceAmount.signum() < 0) {
             throw new IllegalStateException("Negative model pricing is not allowed");
         }
-        return pricePerMillion
+        long unitDivisor = "KB".equalsIgnoreCase(unit) ? 1_000L : 1_000_000L;
+        return priceAmount
                 .multiply(BigDecimal.valueOf(tokens))
                 .multiply(BigDecimal.valueOf(Math.max(1, amountScale)))
-                .divide(BigDecimal.valueOf(1_000_000), 0, RoundingMode.CEILING)
+                .divide(BigDecimal.valueOf(unitDivisor), 0, RoundingMode.CEILING)
                 .longValueExact();
     }
 

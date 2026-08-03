@@ -89,6 +89,10 @@ public class ChatResponse {
         private String priceTier;
         @JsonProperty("sale_group_name")
         private String saleGroupName;
+        @JsonProperty("price_unit")
+        private String priceUnit;
+        @JsonProperty("price_suffix")
+        private String priceSuffix;
         @JsonProperty("input_price_per_million")
         private BigDecimal inputPricePerMillion;
         @JsonProperty("output_price_per_million")

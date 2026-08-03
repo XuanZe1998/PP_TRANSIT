@@ -82,6 +82,31 @@ class ModelPriceTierServiceTests {
                 .hasMessageContaining("上下文");
     }
 
+    @Test
+    void acceptsOnlyMOrKbAsPriceUnitsAndKeepsCustomSuffixes() {
+        ModelMapping mapping = ModelMapping.builder().id(12L).build();
+        ModelPriceTier requested = tier("按 KB 计价", null, 0);
+        requested.setSalePriceUnit("KB");
+        requested.setSalePriceSuffix("USD / 1KB input");
+        when(tierMapper.insert(any(ModelPriceTier.class))).thenAnswer(invocation -> 1);
+
+        service.synchronize(mapping, List.of(requested));
+
+        assertThat(mapping.getPriceTiers().get(0).getSalePriceUnit()).isEqualTo("KB");
+        assertThat(mapping.getPriceTiers().get(0).getSalePriceSuffix()).isEqualTo("USD / 1KB input");
+        assertThat(mapping.getInputPricePerMillion()).isEqualByComparingTo("0");
+
+        requested.setSaleInputPrice(new BigDecimal("0.002"));
+        service.synchronize(mapping, List.of(requested));
+        assertThat(mapping.getInputPricePerMillion()).isEqualByComparingTo("2");
+
+        ModelPriceTier invalid = tier("非法单位", null, 0);
+        invalid.setCostPriceUnit("TOKEN");
+        assertThatThrownBy(() -> service.synchronize(mapping, List.of(invalid)))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("M 或 KB");
+    }
+
     private ModelPriceTier tier(String name, Integer maxContext, int order) {
         return ModelPriceTier.builder()
                 .tierName(name)

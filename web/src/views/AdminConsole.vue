@@ -319,7 +319,14 @@
                 <section class="tier-price-group official-group">
                   <div class="price-group-head">
                     <strong>官网基准</strong>
-                    <el-input v-model="tier.officialGroupName" maxlength="120" placeholder="价格组名称" />
+                    <div class="price-group-meta">
+                      <el-input v-model="tier.officialGroupName" maxlength="120" placeholder="价格组名称" />
+                      <el-select v-model="tier.officialPriceUnit" class="price-unit-select" aria-label="官网价格单位">
+                        <el-option label="M" value="M" />
+                        <el-option label="KB" value="KB" />
+                      </el-select>
+                      <el-input v-model="tier.officialPriceSuffix" maxlength="120" placeholder="价格后缀，如 CNY / 1M Token" />
+                    </div>
                   </div>
                   <div class="price-dimension-grid">
                     <label>输入<el-input-number v-model="tier.officialInputPrice" :min="0" :step="0.000001" /></label>
@@ -331,7 +338,14 @@
                 <section class="tier-price-group cost-group">
                   <div class="price-group-head">
                     <strong>采购成本</strong>
-                    <el-input v-model="tier.costGroupName" maxlength="120" placeholder="例如：供应商 A 0.5 倍 Key" />
+                    <div class="price-group-meta">
+                      <el-input v-model="tier.costGroupName" maxlength="120" placeholder="例如：供应商 A 0.5 倍 Key" />
+                      <el-select v-model="tier.costPriceUnit" class="price-unit-select" aria-label="成本价格单位">
+                        <el-option label="M" value="M" />
+                        <el-option label="KB" value="KB" />
+                      </el-select>
+                      <el-input v-model="tier.costPriceSuffix" maxlength="120" placeholder="价格后缀，如 CNY / 1M Token" />
+                    </div>
                   </div>
                   <div class="price-dimension-grid">
                     <label>输入<el-input-number v-model="tier.costInputPrice" :min="0" :step="0.000001" /></label>
@@ -343,7 +357,14 @@
                 <section class="tier-price-group sale-group">
                   <div class="price-group-head">
                     <strong>本站售价</strong>
-                    <el-input v-model="tier.saleGroupName" maxlength="120" placeholder="例如：标准零售价" />
+                    <div class="price-group-meta">
+                      <el-input v-model="tier.saleGroupName" maxlength="120" placeholder="例如：标准零售价" />
+                      <el-select v-model="tier.salePriceUnit" class="price-unit-select" aria-label="售价价格单位">
+                        <el-option label="M" value="M" />
+                        <el-option label="KB" value="KB" />
+                      </el-select>
+                      <el-input v-model="tier.salePriceSuffix" maxlength="120" placeholder="价格后缀，如 CNY / 1M Token" />
+                    </div>
                   </div>
                   <div class="price-dimension-grid">
                     <label>输入<el-input-number v-model="tier.saleInputPrice" :min="0" :step="0.000001" /></label>
@@ -611,16 +632,22 @@ type ModelPriceTier = {
   officialOutputPrice: number
   officialCacheReadPrice: number
   officialCacheWritePrice: number
+  officialPriceUnit: 'M' | 'KB'
+  officialPriceSuffix: string
   costGroupName: string
   costInputPrice: number
   costOutputPrice: number
   costCacheReadPrice: number
   costCacheWritePrice: number
+  costPriceUnit: 'M' | 'KB'
+  costPriceSuffix: string
   saleGroupName: string
   saleInputPrice: number
   saleOutputPrice: number
   saleCacheReadPrice: number
   saleCacheWritePrice: number
+  salePriceUnit: 'M' | 'KB'
+  salePriceSuffix: string
 }
 
 const channelModelPricing = ref<ChannelModelPricing[]>([])
@@ -1035,7 +1062,9 @@ async function save() {
     drawerVisible.value = false
     await load()
   } catch (error: any) {
-    ElMessage.error(error?.response?.data?.message || '保存失败')
+    const requestId = error?.response?.data?.requestId
+    const message = getHttpErrorMessage(error, '保存失败')
+    ElMessage.error(requestId ? `${message}（请求 ID：${requestId}）` : message)
   } finally {
     saving.value = false
   }
@@ -1049,6 +1078,12 @@ function activeFormPayload() {
       priceTiers: item.priceTiers.map((tier, index) => ({
         ...tier,
         sortOrder: index,
+        officialPriceUnit: normalizePriceUnit(tier.officialPriceUnit, 'M'),
+        costPriceUnit: normalizePriceUnit(tier.costPriceUnit, 'M'),
+        salePriceUnit: normalizePriceUnit(tier.salePriceUnit, 'M'),
+        officialPriceSuffix: String(tier.officialPriceSuffix || 'CNY / 1M Token').trim(),
+        costPriceSuffix: String(tier.costPriceSuffix || 'CNY / 1M Token').trim(),
+        salePriceSuffix: String(tier.salePriceSuffix || 'CNY / 1M Token').trim(),
         maxContextTokens: index === item.priceTiers.length - 1
           ? null
           : Math.max(1, Number(tier.maxContextTokens || 1))
@@ -1105,16 +1140,22 @@ function legacyPriceTier(source: Partial<ChannelModelPricing>): ModelPriceTier {
     officialOutputPrice: 0,
     officialCacheReadPrice: 0,
     officialCacheWritePrice: 0,
+    officialPriceUnit: 'M',
+    officialPriceSuffix: 'CNY / 1M Token',
     costGroupName: '采购成本',
     costInputPrice: decimal(source.inputCostPerMillion ?? source.costPerMillion, 0),
     costOutputPrice: decimal(source.outputCostPerMillion ?? source.costPerMillion, 0),
     costCacheReadPrice: decimal(source.cachedCostPerMillion, 0),
     costCacheWritePrice: 0,
+    costPriceUnit: 'M',
+    costPriceSuffix: 'CNY / 1M Token',
     saleGroupName: '本站售价',
     saleInputPrice: decimal(source.inputPricePerMillion, 1),
     saleOutputPrice: decimal(source.outputPricePerMillion, 1),
     saleCacheReadPrice: decimal(source.cachedPricePerMillion, 0),
-    saleCacheWritePrice: 0
+    saleCacheWritePrice: 0,
+    salePriceUnit: 'M',
+    salePriceSuffix: 'CNY / 1M Token'
   }
 }
 
@@ -1130,17 +1171,27 @@ function normalizePriceTier(source: Partial<ModelPriceTier>, index: number, coun
     officialOutputPrice: decimal(source.officialOutputPrice, fallback.officialOutputPrice),
     officialCacheReadPrice: decimal(source.officialCacheReadPrice, fallback.officialCacheReadPrice),
     officialCacheWritePrice: decimal(source.officialCacheWritePrice, fallback.officialCacheWritePrice),
+    officialPriceUnit: normalizePriceUnit(source.officialPriceUnit, fallback.officialPriceUnit),
+    officialPriceSuffix: String(source.officialPriceSuffix || fallback.officialPriceSuffix),
     costGroupName: String(source.costGroupName || fallback.costGroupName),
     costInputPrice: decimal(source.costInputPrice, fallback.costInputPrice),
     costOutputPrice: decimal(source.costOutputPrice, fallback.costOutputPrice),
     costCacheReadPrice: decimal(source.costCacheReadPrice, fallback.costCacheReadPrice),
     costCacheWritePrice: decimal(source.costCacheWritePrice, fallback.costCacheWritePrice),
+    costPriceUnit: normalizePriceUnit(source.costPriceUnit, fallback.costPriceUnit),
+    costPriceSuffix: String(source.costPriceSuffix || fallback.costPriceSuffix),
     saleGroupName: String(source.saleGroupName || fallback.saleGroupName),
     saleInputPrice: decimal(source.saleInputPrice, fallback.saleInputPrice),
     saleOutputPrice: decimal(source.saleOutputPrice, fallback.saleOutputPrice),
     saleCacheReadPrice: decimal(source.saleCacheReadPrice, fallback.saleCacheReadPrice),
-    saleCacheWritePrice: decimal(source.saleCacheWritePrice, fallback.saleCacheWritePrice)
+    saleCacheWritePrice: decimal(source.saleCacheWritePrice, fallback.saleCacheWritePrice),
+    salePriceUnit: normalizePriceUnit(source.salePriceUnit, fallback.salePriceUnit),
+    salePriceSuffix: String(source.salePriceSuffix || fallback.salePriceSuffix)
   }
+}
+
+function normalizePriceUnit(value: unknown, fallback: 'M' | 'KB'): 'M' | 'KB' {
+  return String(value || fallback).toUpperCase() === 'KB' ? 'KB' : 'M'
 }
 
 function addPriceTier(pricing: ChannelModelPricing) {
@@ -1237,12 +1288,14 @@ function tierRangeLines(row: any): string[] {
 function tierPriceLines(row: any, group: 'official' | 'cost' | 'sale'): string[] {
   return rowPriceTiers(row).map(tier => {
     const name = group === 'official' ? tier.officialGroupName : group === 'cost' ? tier.costGroupName : tier.saleGroupName
+    const unit = group === 'official' ? tier.officialPriceUnit : group === 'cost' ? tier.costPriceUnit : tier.salePriceUnit
+    const suffix = group === 'official' ? tier.officialPriceSuffix : group === 'cost' ? tier.costPriceSuffix : tier.salePriceSuffix
     const prices = group === 'official'
       ? [tier.officialInputPrice, tier.officialOutputPrice, tier.officialCacheReadPrice, tier.officialCacheWritePrice]
       : group === 'cost'
         ? [tier.costInputPrice, tier.costOutputPrice, tier.costCacheReadPrice, tier.costCacheWritePrice]
         : [tier.saleInputPrice, tier.saleOutputPrice, tier.saleCacheReadPrice, tier.saleCacheWritePrice]
-    return `${tier.tierName} · ${name}：${prices.map(decimalMoney).join(' / ')}`
+    return `${tier.tierName} · ${name} [${unit}]：${prices.map(decimalMoney).join(' / ')}（${suffix}）`
   })
 }
 
@@ -1987,8 +2040,16 @@ function healthType(value: string) {
   color: #0f172a;
 }
 
-.price-group-head :deep(.el-input) {
-  max-width: 210px;
+.price-group-meta {
+  display: grid;
+  grid-template-columns: minmax(100px, 1fr) 72px minmax(120px, 1.15fr);
+  flex: 1;
+  gap: 6px;
+  min-width: 0;
+}
+
+.price-unit-select {
+  width: 72px;
 }
 
 .price-dimension-grid {
@@ -2075,6 +2136,15 @@ function healthType(value: string) {
   .tier-identity,
   .price-dimension-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .price-group-meta {
+    width: 100%;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .price-unit-select {
+    width: 100%;
   }
 
   .channel-model-pricing-card,

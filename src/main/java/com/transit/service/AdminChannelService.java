@@ -331,23 +331,24 @@ public class AdminChannelService {
         priceTierService.attach(List.of(mapping));
         ModelPriceTier tier = priceTierService.select(mapping, promptTokens);
         if (tier == null) {
-            return price(billableInputTokens, positiveCoalesce(mapping.getInputCostPerMillion(), mapping.getCostPerMillion(), BigDecimal.ZERO))
-                    + price(completionTokens, positiveCoalesce(mapping.getOutputCostPerMillion(), mapping.getCostPerMillion(), BigDecimal.ZERO))
-                    + price(cacheReadTokens, positiveCoalesce(mapping.getCachedCostPerMillion(), BigDecimal.ZERO));
+            return price(billableInputTokens, positiveCoalesce(mapping.getInputCostPerMillion(), mapping.getCostPerMillion(), BigDecimal.ZERO), "M")
+                    + price(completionTokens, positiveCoalesce(mapping.getOutputCostPerMillion(), mapping.getCostPerMillion(), BigDecimal.ZERO), "M")
+                    + price(cacheReadTokens, positiveCoalesce(mapping.getCachedCostPerMillion(), BigDecimal.ZERO), "M");
         }
-        return price(billableInputTokens, tier.getCostInputPrice())
-                + price(completionTokens, tier.getCostOutputPrice())
-                + price(cacheReadTokens, tier.getCostCacheReadPrice())
-                + price(cacheWriteTokens, tier.getCostCacheWritePrice());
+        return price(billableInputTokens, tier.getCostInputPrice(), tier.getCostPriceUnit())
+                + price(completionTokens, tier.getCostOutputPrice(), tier.getCostPriceUnit())
+                + price(cacheReadTokens, tier.getCostCacheReadPrice(), tier.getCostPriceUnit())
+                + price(cacheWriteTokens, tier.getCostCacheWritePrice(), tier.getCostPriceUnit());
     }
 
-    private long price(int tokens, BigDecimal amountPerMillion) {
-        if (tokens <= 0 || amountPerMillion == null || BigDecimal.ZERO.compareTo(amountPerMillion) == 0) {
+    private long price(int tokens, BigDecimal amount, String unit) {
+        if (tokens <= 0 || amount == null || BigDecimal.ZERO.compareTo(amount) == 0) {
             return 0;
         }
-        return amountPerMillion
+        long divisor = "KB".equalsIgnoreCase(unit) ? 1_000L : 1_000_000L;
+        return amount
                 .multiply(BigDecimal.valueOf(tokens))
-                .divide(BigDecimal.valueOf(1_000_000), 0, RoundingMode.CEILING)
+                .divide(BigDecimal.valueOf(divisor), 0, RoundingMode.CEILING)
                 .longValue();
     }
 

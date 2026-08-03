@@ -18,6 +18,8 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Locale;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -25,6 +27,7 @@ import java.util.stream.Collectors;
 public class ModelPriceTierService {
     private static final BigDecimal MAX_PRICE = new BigDecimal("1000000");
     private static final int MAX_CONTEXT_TOKENS = 100_000_000;
+    private static final Set<String> PRICE_UNITS = Set.of("M", "KB");
 
     private final ModelPriceTierMapper tierMapper;
     private final ModelMappingMapper mappingMapper;
@@ -134,23 +137,32 @@ public class ModelPriceTierService {
                     .officialOutputPrice(amount(item.getOfficialOutputPrice(), "官网输出价格"))
                     .officialCacheReadPrice(amount(item.getOfficialCacheReadPrice(), "官网缓存读取价格"))
                     .officialCacheWritePrice(amount(item.getOfficialCacheWritePrice(), "官网缓存写入价格"))
+                    .officialPriceUnit(unit(item.getOfficialPriceUnit(), "M"))
+                    .officialPriceSuffix(suffix(item.getOfficialPriceSuffix(), item.getOfficialPriceUnit()))
                     .costGroupName(text(item.getCostGroupName(), "采购成本"))
                     .costInputPrice(amount(item.getCostInputPrice(), "输入成本"))
                     .costOutputPrice(amount(item.getCostOutputPrice(), "输出成本"))
                     .costCacheReadPrice(amount(item.getCostCacheReadPrice(), "缓存读取成本"))
                     .costCacheWritePrice(amount(item.getCostCacheWritePrice(), "缓存写入成本"))
+                    .costPriceUnit(unit(item.getCostPriceUnit(), "M"))
+                    .costPriceSuffix(suffix(item.getCostPriceSuffix(), item.getCostPriceUnit()))
                     .saleGroupName(text(item.getSaleGroupName(), "本站售价"))
                     .saleInputPrice(amount(item.getSaleInputPrice(), "输入售价"))
                     .saleOutputPrice(amount(item.getSaleOutputPrice(), "输出售价"))
                     .saleCacheReadPrice(amount(item.getSaleCacheReadPrice(), "缓存读取售价"))
                     .saleCacheWritePrice(amount(item.getSaleCacheWritePrice(), "缓存写入售价"))
+                    .salePriceUnit(unit(item.getSalePriceUnit(), "M"))
+                    .salePriceSuffix(suffix(item.getSalePriceSuffix(), item.getSalePriceUnit()))
                     .createdAt(LocalDateTime.now())
                     .updatedAt(LocalDateTime.now())
                     .build();
             validateName(tier.getTierName(), "挡位名称");
             validateName(tier.getOfficialGroupName(), "官网价格组名称");
+            validateName(tier.getOfficialPriceSuffix(), "官网价格后缀");
             validateName(tier.getCostGroupName(), "成本价格组名称");
+            validateName(tier.getCostPriceSuffix(), "成本价格后缀");
             validateName(tier.getSaleGroupName(), "售价价格组名称");
+            validateName(tier.getSalePriceSuffix(), "售价价格后缀");
             result.add(tier);
             previousMax = max;
         }
@@ -168,28 +180,42 @@ public class ModelPriceTierService {
                 .officialOutputPrice(BigDecimal.ZERO)
                 .officialCacheReadPrice(BigDecimal.ZERO)
                 .officialCacheWritePrice(BigDecimal.ZERO)
+                .officialPriceUnit("M")
+                .officialPriceSuffix(defaultSuffix("M"))
                 .costGroupName("采购成本")
                 .costInputPrice(value(mapping.getInputCostPerMillion(), mapping.getCostPerMillion()))
                 .costOutputPrice(value(mapping.getOutputCostPerMillion(), mapping.getCostPerMillion()))
                 .costCacheReadPrice(value(mapping.getCachedCostPerMillion(), BigDecimal.ZERO))
                 .costCacheWritePrice(BigDecimal.ZERO)
+                .costPriceUnit("M")
+                .costPriceSuffix(defaultSuffix("M"))
                 .saleGroupName("本站售价")
                 .saleInputPrice(value(mapping.getInputPricePerMillion(), mapping.getPriceRatio()))
                 .saleOutputPrice(value(mapping.getOutputPricePerMillion(), mapping.getPriceRatio()))
                 .saleCacheReadPrice(value(mapping.getCachedPricePerMillion(), BigDecimal.ZERO))
                 .saleCacheWritePrice(BigDecimal.ZERO)
+                .salePriceUnit("M")
+                .salePriceSuffix(defaultSuffix("M"))
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
                 .build();
     }
 
     private void mirrorPrimaryTier(ModelMapping mapping, ModelPriceTier tier) {
-        mapping.setInputPricePerMillion(tier.getSaleInputPrice());
-        mapping.setOutputPricePerMillion(tier.getSaleOutputPrice());
-        mapping.setCachedPricePerMillion(tier.getSaleCacheReadPrice());
-        mapping.setInputCostPerMillion(tier.getCostInputPrice());
-        mapping.setOutputCostPerMillion(tier.getCostOutputPrice());
-        mapping.setCachedCostPerMillion(tier.getCostCacheReadPrice());
+        // Keep legacy flat columns in their historical per-million unit. The
+        // tier itself remains the source of truth and retains its configured
+        // M/KB unit for billing and display.
+        mapping.setInputPricePerMillion(toPerMillion(tier.getSaleInputPrice(), tier.getSalePriceUnit()));
+        mapping.setOutputPricePerMillion(toPerMillion(tier.getSaleOutputPrice(), tier.getSalePriceUnit()));
+        mapping.setCachedPricePerMillion(toPerMillion(tier.getSaleCacheReadPrice(), tier.getSalePriceUnit()));
+        mapping.setInputCostPerMillion(toPerMillion(tier.getCostInputPrice(), tier.getCostPriceUnit()));
+        mapping.setOutputCostPerMillion(toPerMillion(tier.getCostOutputPrice(), tier.getCostPriceUnit()));
+        mapping.setCachedCostPerMillion(toPerMillion(tier.getCostCacheReadPrice(), tier.getCostPriceUnit()));
+    }
+
+    private BigDecimal toPerMillion(BigDecimal amount, String unit) {
+        BigDecimal value = amount == null ? BigDecimal.ZERO : amount;
+        return "KB".equalsIgnoreCase(unit) ? value.multiply(BigDecimal.valueOf(1_000L)) : value;
     }
 
     private BigDecimal amount(BigDecimal value, String field) {
@@ -206,6 +232,23 @@ public class ModelPriceTierService {
 
     private String text(String value, String fallback) {
         return value == null || value.isBlank() ? fallback : value.trim();
+    }
+
+    private String unit(String value, String fallback) {
+        String normalized = value == null ? "" : value.trim().toUpperCase(Locale.ROOT);
+        if (normalized.isBlank()) normalized = fallback;
+        if (!PRICE_UNITS.contains(normalized)) {
+            throw badRequest("价格单位只能是 M 或 KB");
+        }
+        return normalized;
+    }
+
+    private String suffix(String value, String unit) {
+        return text(value, defaultSuffix(unit(unit, "M")));
+    }
+
+    private String defaultSuffix(String unit) {
+        return "CNY / 1" + ("KB".equalsIgnoreCase(unit) ? "KB" : "M") + " Token";
     }
 
     private void validateName(String value, String field) {

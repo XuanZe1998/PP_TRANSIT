@@ -217,16 +217,22 @@ public class SchemaRepairService {
                     official_output_price DECIMAL(18,6) NOT NULL DEFAULT 0,
                     official_cache_read_price DECIMAL(18,6) NOT NULL DEFAULT 0,
                     official_cache_write_price DECIMAL(18,6) NOT NULL DEFAULT 0,
+                    official_price_unit VARCHAR(8) NOT NULL DEFAULT 'M',
+                    official_price_suffix VARCHAR(120) NOT NULL DEFAULT 'CNY / 1M Token',
                     cost_group_name VARCHAR(120) NOT NULL DEFAULT '采购成本',
                     cost_input_price DECIMAL(18,6) NOT NULL DEFAULT 0,
                     cost_output_price DECIMAL(18,6) NOT NULL DEFAULT 0,
                     cost_cache_read_price DECIMAL(18,6) NOT NULL DEFAULT 0,
                     cost_cache_write_price DECIMAL(18,6) NOT NULL DEFAULT 0,
+                    cost_price_unit VARCHAR(8) NOT NULL DEFAULT 'M',
+                    cost_price_suffix VARCHAR(120) NOT NULL DEFAULT 'CNY / 1M Token',
                     sale_group_name VARCHAR(120) NOT NULL DEFAULT '本站售价',
                     sale_input_price DECIMAL(18,6) NOT NULL DEFAULT 0,
                     sale_output_price DECIMAL(18,6) NOT NULL DEFAULT 0,
                     sale_cache_read_price DECIMAL(18,6) NOT NULL DEFAULT 0,
                     sale_cache_write_price DECIMAL(18,6) NOT NULL DEFAULT 0,
+                    sale_price_unit VARCHAR(8) NOT NULL DEFAULT 'M',
+                    sale_price_suffix VARCHAR(120) NOT NULL DEFAULT 'CNY / 1M Token',
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
@@ -709,6 +715,12 @@ public class SchemaRepairService {
         ensureColumn("model_mappings", "traffic_percent", "ALTER TABLE model_mappings ADD COLUMN traffic_percent INT NOT NULL DEFAULT 100");
         ensureColumn("model_mappings", "capability_tags", "ALTER TABLE model_mappings ADD COLUMN capability_tags VARCHAR(1000) NULL");
         ensureColumn("model_mappings", "created_at", "ALTER TABLE model_mappings ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP");
+        ensureColumn("model_price_tiers", "official_price_unit", "ALTER TABLE model_price_tiers ADD COLUMN official_price_unit VARCHAR(8) NOT NULL DEFAULT 'M'");
+        ensureColumn("model_price_tiers", "official_price_suffix", "ALTER TABLE model_price_tiers ADD COLUMN official_price_suffix VARCHAR(120) NOT NULL DEFAULT 'CNY / 1M Token'");
+        ensureColumn("model_price_tiers", "cost_price_unit", "ALTER TABLE model_price_tiers ADD COLUMN cost_price_unit VARCHAR(8) NOT NULL DEFAULT 'M'");
+        ensureColumn("model_price_tiers", "cost_price_suffix", "ALTER TABLE model_price_tiers ADD COLUMN cost_price_suffix VARCHAR(120) NOT NULL DEFAULT 'CNY / 1M Token'");
+        ensureColumn("model_price_tiers", "sale_price_unit", "ALTER TABLE model_price_tiers ADD COLUMN sale_price_unit VARCHAR(8) NOT NULL DEFAULT 'M'");
+        ensureColumn("model_price_tiers", "sale_price_suffix", "ALTER TABLE model_price_tiers ADD COLUMN sale_price_suffix VARCHAR(120) NOT NULL DEFAULT 'CNY / 1M Token'");
         ensureColumn("logs", "channel_id", "ALTER TABLE logs ADD COLUMN channel_id BIGINT NULL");
         ensureColumn("logs", "token_id", "ALTER TABLE logs ADD COLUMN token_id BIGINT NULL");
         ensureColumn("logs", "latency_ms", "ALTER TABLE logs ADD COLUMN latency_ms BIGINT NOT NULL DEFAULT 0");
