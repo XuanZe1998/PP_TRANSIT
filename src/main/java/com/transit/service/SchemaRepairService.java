@@ -38,6 +38,7 @@ public class SchemaRepairService {
             ensureIndexes();
             seedDefaults();
             backfillChannelModelMappings();
+            backfillModelPriceTiers();
         };
     }
 
@@ -90,6 +91,37 @@ public class SchemaRepairService {
         }
         if (created > 0) {
             log.info("Backfilled {} channel-owned model mapping(s)", created);
+        }
+        return created;
+    }
+
+    int backfillModelPriceTiers() {
+        int created = jdbcTemplate.update("""
+                INSERT INTO model_price_tiers(
+                    model_mapping_id, tier_name, max_context_tokens, sort_order,
+                    official_group_name, official_input_price, official_output_price,
+                    official_cache_read_price, official_cache_write_price,
+                    cost_group_name, cost_input_price, cost_output_price,
+                    cost_cache_read_price, cost_cache_write_price,
+                    sale_group_name, sale_input_price, sale_output_price,
+                    sale_cache_read_price, sale_cache_write_price, created_at, updated_at
+                )
+                SELECT mm.id, '默认挡位', NULL, 0,
+                       '官网价格（待补充）', 0, 0, 0, 0,
+                       '采购成本', COALESCE(mm.input_cost_per_million, mm.cost_per_million, 0),
+                       COALESCE(mm.output_cost_per_million, mm.cost_per_million, 0),
+                       COALESCE(mm.cached_cost_per_million, 0), 0,
+                       '本站售价', COALESCE(mm.input_price_per_million, mm.price_ratio, 1),
+                       COALESCE(mm.output_price_per_million, mm.price_ratio, 1),
+                       COALESCE(mm.cached_price_per_million, 0), 0,
+                       CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                FROM model_mappings mm
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM model_price_tiers tier WHERE tier.model_mapping_id = mm.id
+                )
+                """);
+        if (created > 0) {
+            log.info("Backfilled {} default model price tier(s)", created);
         }
         return created;
     }
@@ -174,6 +206,32 @@ public class SchemaRepairService {
                 )
                 """);
         jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS model_price_tiers (
+                    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+                    model_mapping_id BIGINT NOT NULL,
+                    tier_name VARCHAR(120) NOT NULL,
+                    max_context_tokens INT NULL,
+                    sort_order INT NOT NULL DEFAULT 0,
+                    official_group_name VARCHAR(120) NOT NULL DEFAULT '官网价格',
+                    official_input_price DECIMAL(18,6) NOT NULL DEFAULT 0,
+                    official_output_price DECIMAL(18,6) NOT NULL DEFAULT 0,
+                    official_cache_read_price DECIMAL(18,6) NOT NULL DEFAULT 0,
+                    official_cache_write_price DECIMAL(18,6) NOT NULL DEFAULT 0,
+                    cost_group_name VARCHAR(120) NOT NULL DEFAULT '采购成本',
+                    cost_input_price DECIMAL(18,6) NOT NULL DEFAULT 0,
+                    cost_output_price DECIMAL(18,6) NOT NULL DEFAULT 0,
+                    cost_cache_read_price DECIMAL(18,6) NOT NULL DEFAULT 0,
+                    cost_cache_write_price DECIMAL(18,6) NOT NULL DEFAULT 0,
+                    sale_group_name VARCHAR(120) NOT NULL DEFAULT '本站售价',
+                    sale_input_price DECIMAL(18,6) NOT NULL DEFAULT 0,
+                    sale_output_price DECIMAL(18,6) NOT NULL DEFAULT 0,
+                    sale_cache_read_price DECIMAL(18,6) NOT NULL DEFAULT 0,
+                    sale_cache_write_price DECIMAL(18,6) NOT NULL DEFAULT 0,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+                """);
+        jdbcTemplate.execute("""
                 CREATE TABLE IF NOT EXISTS tokens (
                     id BIGINT PRIMARY KEY AUTO_INCREMENT,
                     `key` VARCHAR(255) NOT NULL UNIQUE,
@@ -202,6 +260,8 @@ public class SchemaRepairService {
                     completion_tokens INT NOT NULL DEFAULT 0,
                     total_tokens INT NOT NULL DEFAULT 0,
                     cached_tokens INT NOT NULL DEFAULT 0,
+                    cache_read_tokens INT NOT NULL DEFAULT 0,
+                    cache_write_tokens INT NOT NULL DEFAULT 0,
                     cost BIGINT NOT NULL DEFAULT 0,
                     status VARCHAR(40) NOT NULL DEFAULT 'SUCCESS',
                     latency_ms BIGINT NOT NULL DEFAULT 0,
@@ -212,10 +272,14 @@ public class SchemaRepairService {
                     input_amount BIGINT NOT NULL DEFAULT 0,
                     output_amount BIGINT NOT NULL DEFAULT 0,
                     cached_amount BIGINT NOT NULL DEFAULT 0,
+                    cache_read_amount BIGINT NOT NULL DEFAULT 0,
+                    cache_write_amount BIGINT NOT NULL DEFAULT 0,
                     total_amount BIGINT NOT NULL DEFAULT 0,
                     input_cost_amount BIGINT NOT NULL DEFAULT 0,
                     output_cost_amount BIGINT NOT NULL DEFAULT 0,
                     cached_cost_amount BIGINT NOT NULL DEFAULT 0,
+                    cache_read_cost_amount BIGINT NOT NULL DEFAULT 0,
+                    cache_write_cost_amount BIGINT NOT NULL DEFAULT 0,
                     gross_profit BIGINT NOT NULL DEFAULT 0,
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
@@ -653,13 +717,19 @@ public class SchemaRepairService {
         ensureColumn("logs", "sale_amount", "ALTER TABLE logs ADD COLUMN sale_amount BIGINT NOT NULL DEFAULT 0");
         ensureColumn("logs", "cost_amount", "ALTER TABLE logs ADD COLUMN cost_amount BIGINT NOT NULL DEFAULT 0");
         ensureColumn("logs", "cached_tokens", "ALTER TABLE logs ADD COLUMN cached_tokens INT NOT NULL DEFAULT 0");
+        ensureColumn("logs", "cache_read_tokens", "ALTER TABLE logs ADD COLUMN cache_read_tokens INT NOT NULL DEFAULT 0");
+        ensureColumn("logs", "cache_write_tokens", "ALTER TABLE logs ADD COLUMN cache_write_tokens INT NOT NULL DEFAULT 0");
         ensureColumn("logs", "input_amount", "ALTER TABLE logs ADD COLUMN input_amount BIGINT NOT NULL DEFAULT 0");
         ensureColumn("logs", "output_amount", "ALTER TABLE logs ADD COLUMN output_amount BIGINT NOT NULL DEFAULT 0");
         ensureColumn("logs", "cached_amount", "ALTER TABLE logs ADD COLUMN cached_amount BIGINT NOT NULL DEFAULT 0");
+        ensureColumn("logs", "cache_read_amount", "ALTER TABLE logs ADD COLUMN cache_read_amount BIGINT NOT NULL DEFAULT 0");
+        ensureColumn("logs", "cache_write_amount", "ALTER TABLE logs ADD COLUMN cache_write_amount BIGINT NOT NULL DEFAULT 0");
         ensureColumn("logs", "total_amount", "ALTER TABLE logs ADD COLUMN total_amount BIGINT NOT NULL DEFAULT 0");
         ensureColumn("logs", "input_cost_amount", "ALTER TABLE logs ADD COLUMN input_cost_amount BIGINT NOT NULL DEFAULT 0");
         ensureColumn("logs", "output_cost_amount", "ALTER TABLE logs ADD COLUMN output_cost_amount BIGINT NOT NULL DEFAULT 0");
         ensureColumn("logs", "cached_cost_amount", "ALTER TABLE logs ADD COLUMN cached_cost_amount BIGINT NOT NULL DEFAULT 0");
+        ensureColumn("logs", "cache_read_cost_amount", "ALTER TABLE logs ADD COLUMN cache_read_cost_amount BIGINT NOT NULL DEFAULT 0");
+        ensureColumn("logs", "cache_write_cost_amount", "ALTER TABLE logs ADD COLUMN cache_write_cost_amount BIGINT NOT NULL DEFAULT 0");
         ensureColumn("logs", "gross_profit", "ALTER TABLE logs ADD COLUMN gross_profit BIGINT NOT NULL DEFAULT 0");
         ensureColumn("channel_test_logs", "estimated_cost_amount", "ALTER TABLE channel_test_logs ADD COLUMN estimated_cost_amount BIGINT NOT NULL DEFAULT 0");
         ensureColumn("creative_tasks", "provider_config_id", "ALTER TABLE creative_tasks ADD COLUMN provider_config_id BIGINT NULL");
@@ -717,6 +787,8 @@ public class SchemaRepairService {
                 "CREATE INDEX idx_logs_model_created ON logs(model, created_at)");
         ensureIndex("model_mappings", "idx_mapping_public_route",
                 "CREATE INDEX idx_mapping_public_route ON model_mappings(public_model_name, enabled, priority)");
+        ensureIndex("model_price_tiers", "idx_model_price_tier_mapping_context",
+                "CREATE INDEX idx_model_price_tier_mapping_context ON model_price_tiers(model_mapping_id, sort_order, max_context_tokens)");
         ensureIndex("channels", "idx_channel_route_health",
                 "CREATE INDEX idx_channel_route_health ON channels(enabled, health_status, cooldown_until)");
         ensureIndex("gateway_reservations", "idx_reservation_expiry",

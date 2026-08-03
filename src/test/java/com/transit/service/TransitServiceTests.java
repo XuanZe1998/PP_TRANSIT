@@ -9,6 +9,7 @@ import com.transit.mapper.UserMapper;
 import com.transit.model.Channel;
 import com.transit.model.Log;
 import com.transit.model.ModelMapping;
+import com.transit.model.ModelPriceTier;
 import com.transit.model.Token;
 import com.transit.model.User;
 import com.transit.provider.ProviderGateway;
@@ -55,6 +56,7 @@ class TransitServiceTests {
     @Mock private ChannelHealthService channelHealthService;
     @Mock private OpenAiStreamAdapter streamAdapter;
     @Mock private JdbcTemplate jdbcTemplate;
+    @Mock private ModelPriceTierService priceTierService;
     @Mock private ProviderGateway primaryGateway;
     @Mock private ProviderGateway fallbackGateway;
 
@@ -64,7 +66,8 @@ class TransitServiceTests {
     void setUp() {
         service = new TransitService(mappingMapper, channelMapper, logMapper, userMapper,
                 gatewayFactory, settlementService, channelUrlPolicy, rateLimiter, apiKeyService,
-                channelSecretService, new ChannelRoutePlanner(), channelHealthService, streamAdapter, jdbcTemplate);
+                channelSecretService, new ChannelRoutePlanner(), channelHealthService, streamAdapter,
+                jdbcTemplate, priceTierService);
         ReflectionTestUtils.setField(service, "amountScale", 10_000L);
         ReflectionTestUtils.setField(service, "defaultMaxOutputTokens", 64);
         ReflectionTestUtils.setField(service, "maxRequestContentBytes", 2_097_152);
@@ -248,6 +251,57 @@ class TransitServiceTests {
     }
 
     @Test
+    void selectsTheHighContextTierAndChargesCacheReadAndWriteSeparately() {
+        Token token = token(141L);
+        User user = user(1410L);
+        GatewaySettlementService.Reservation reservation = reservation(token, user);
+        arrangeBillableRequest(token, user, reservation);
+        ModelMapping mapping = mapping(1L, 11L, 100);
+        ModelPriceTier low = pricedTier("短上下文", 500, "1", "2", "0.5", "0.5", "0.5", "0.2", "0.1", "0.1");
+        ModelPriceTier high = pricedTier("长上下文", null, "4", "8", "1", "2", "2", "3", "0.5", "1");
+        mapping.setPriceTiers(List.of(low, high));
+        when(mappingMapper.selectList(any())).thenReturn(List.of(mapping));
+        when(channelMapper.selectById(11L)).thenReturn(channel(11L, "primary", "primary"));
+        when(gatewayFactory.resolve("primary")).thenReturn(primaryGateway);
+        when(priceTierService.select(any(ModelMapping.class), anyInt()))
+                .thenAnswer(invocation -> invocation.getArgument(1, Integer.class) <= 500 ? low : high);
+
+        ChatResponse response = new ChatResponse();
+        ChatResponse.Usage usage = new ChatResponse.Usage();
+        usage.setPromptTokens(1_000);
+        usage.setCompletionTokens(500);
+        usage.setTotalTokens(1_500);
+        ChatResponse.PromptTokensDetails promptDetails = new ChatResponse.PromptTokensDetails();
+        promptDetails.setCachedTokens(200);
+        usage.setPromptTokensDetails(promptDetails);
+        usage.setCacheCreationInputTokens(100);
+        response.setUsage(usage);
+        response.setChoices(List.of(choice("ok")));
+        when(primaryGateway.chatCompletions(any(), any(), anyString(), anyString()))
+                .thenReturn(Mono.just(response));
+
+        StepVerifier.create(service.chatCompletions(token, request(), "203.0.113.10"))
+                .expectNextMatches(result -> result.getBilling() != null
+                        && "长上下文".equals(result.getBilling().getPriceTier())
+                        && result.getBilling().getCacheReadTokens() == 200
+                        && result.getBilling().getCacheWriteTokens() == 100
+                        && result.getBilling().getBillableInputTokens() == 700
+                        && result.getBilling().getInputAmount() == 28L
+                        && result.getBilling().getOutputAmount() == 40L
+                        && result.getBilling().getCacheReadAmount() == 2L
+                        && result.getBilling().getCacheWriteAmount() == 2L
+                        && result.getBilling().getTotalAmount() == 72L)
+                .verifyComplete();
+
+        verify(settlementService).settle(eq(reservation), eq(1_500), eq(72L), startsWith("API usage public-model"));
+        verify(logMapper).insert(org.mockito.ArgumentMatchers.<Log>argThat(log ->
+                log.getCacheReadTokens() == 200
+                        && log.getCacheWriteTokens() == 100
+                        && log.getCacheReadAmount() == 2L
+                        && log.getCacheWriteAmount() == 2L));
+    }
+
+    @Test
     void emptyAssistantAnswerIsRejectedAndReservationIsReleased() {
         Token token = token(15L);
         User user = user(150L);
@@ -280,6 +334,25 @@ class TransitServiceTests {
                 .priority(priority)
                 .enabled(true)
                 .billingEnabled(true)
+                .build();
+    }
+
+    private ModelPriceTier pricedTier(String name, Integer maxContext, String saleInput, String saleOutput,
+                                      String saleRead, String saleWrite, String costInput, String costOutput,
+                                      String costRead, String costWrite) {
+        return ModelPriceTier.builder()
+                .tierName(name)
+                .maxContextTokens(maxContext)
+                .saleGroupName("本站售价")
+                .saleInputPrice(new BigDecimal(saleInput))
+                .saleOutputPrice(new BigDecimal(saleOutput))
+                .saleCacheReadPrice(new BigDecimal(saleRead))
+                .saleCacheWritePrice(new BigDecimal(saleWrite))
+                .costGroupName("采购成本")
+                .costInputPrice(new BigDecimal(costInput))
+                .costOutputPrice(new BigDecimal(costOutput))
+                .costCacheReadPrice(new BigDecimal(costRead))
+                .costCacheWritePrice(new BigDecimal(costWrite))
                 .build();
     }
 

@@ -9,6 +9,7 @@ import com.transit.mapper.LogMapper;
 import com.transit.mapper.UserMapper;
 import com.transit.model.Channel;
 import com.transit.model.ModelMapping;
+import com.transit.model.ModelPriceTier;
 import com.transit.model.Token;
 import com.transit.model.Log;
 import com.transit.model.User;
@@ -54,6 +55,7 @@ public class TransitService {
     private final ChannelHealthService channelHealthService;
     private final OpenAiStreamAdapter streamAdapter;
     private final JdbcTemplate jdbcTemplate;
+    private final ModelPriceTierService priceTierService;
 
     @Value("${billing.amount-scale:10000}")
     private long amountScale;
@@ -131,6 +133,7 @@ public class TransitService {
             updateQuotaAndLog(callerToken, null, tokenKey, publicModel, 0, 0, 0, 0, "FAILED", traceId, startedAt, "MODEL_NOT_MAPPED", BillingBreakdown.zero());
             return Mono.error(new ResponseStatusException(HttpStatus.NOT_FOUND, "No available channel for model: " + publicModel));
         }
+        priceTierService.attach(mappings);
 
         List<Route> routes = routePlanner.plan(mappings.stream()
                         .map(candidate -> new ChannelRoutePlanner.Candidate(candidate,
@@ -157,7 +160,7 @@ public class TransitService {
         }
         long reservedAmount = routes.stream()
                 .mapToLong(route -> calculateBilling(route.mapping(), estimatedPromptTokens,
-                        estimatedCompletionTokens, 0, customerPriceRatio).totalAmount())
+                        estimatedCompletionTokens, 0, 0, customerPriceRatio).totalAmount())
                 .max()
                 .orElse(0L);
 
@@ -186,15 +189,17 @@ public class TransitService {
                     int prompt = resp.getUsage().getPromptTokens();
                     int completion = resp.getUsage().getCompletionTokens();
                     int total = resp.getUsage().getTotalTokens();
-                    int cached = Math.min(prompt, Math.max(0, resp.getUsage().cachedTokens()));
+                    int cacheRead = Math.min(prompt, resp.getUsage().cacheReadTokens());
+                    int cacheWrite = Math.min(Math.max(0, prompt - cacheRead), resp.getUsage().cacheWriteTokens());
+                    int cached = Math.addExact(cacheRead, cacheWrite);
                     BillingBreakdown billing = calculateBilling(routeMapping, prompt, completion,
-                            cached, customerPriceRatio);
-                    resp.setBilling(billingDetails(routeMapping, prompt, cached, customerPriceRatio,
+                            cacheRead, cacheWrite, customerPriceRatio);
+                    resp.setBilling(billingDetails(routeMapping, prompt, cacheRead, cacheWrite, customerPriceRatio,
                             billing, traceId));
                     settlementService.settle(reservation, total, billing.totalAmount(),
                             "API usage " + publicModel + " (" + traceId + ")");
                     updateQuotaAndLog(callerToken, routeChannel, tokenKey, publicModel, prompt,
-                            completion, cached, total, estimatedUsage ? "SUCCESS_ESTIMATED" : "SUCCESS",
+                            completion, cacheRead, cacheWrite, total, estimatedUsage ? "SUCCESS_ESTIMATED" : "SUCCESS",
                             traceId, startedAt, null, billing);
                     return Mono.just(resp);
                 })
@@ -442,6 +447,14 @@ public class TransitService {
 
     private void updateQuotaAndLog(Token t, Channel channel, String tokenKey, String model, int prompt, int completion, int cached, int total,
                                    String status, String traceId, long startedAt, String errorMessage, BillingBreakdown billing) {
+        updateQuotaAndLog(t, channel, tokenKey, model, prompt, completion, cached, 0, total,
+                status, traceId, startedAt, errorMessage, billing);
+    }
+
+    private void updateQuotaAndLog(Token t, Channel channel, String tokenKey, String model, int prompt, int completion,
+                                   int cacheRead, int cacheWrite, int total, String status, String traceId,
+                                   long startedAt, String errorMessage, BillingBreakdown billing) {
+        int cached = Math.addExact(cacheRead, cacheWrite);
         Log logRow = Log.builder()
                 .userId(t.getUserId())
                 .tokenKey(tokenKey)
@@ -451,6 +464,8 @@ public class TransitService {
                 .promptTokens(prompt)
                 .completionTokens(completion)
                 .cachedTokens(cached)
+                .cacheReadTokens(cacheRead)
+                .cacheWriteTokens(cacheWrite)
                 .totalTokens(total)
                 .cost(billing.totalAmount() > 0 ? billing.totalAmount() : total)
                 .status(status)
@@ -462,10 +477,14 @@ public class TransitService {
                 .inputAmount(billing.inputAmount())
                 .outputAmount(billing.outputAmount())
                 .cachedAmount(billing.cachedAmount())
+                .cacheReadAmount(billing.cacheReadAmount())
+                .cacheWriteAmount(billing.cacheWriteAmount())
                 .totalAmount(billing.totalAmount())
                 .inputCostAmount(billing.inputCostAmount())
                 .outputCostAmount(billing.outputCostAmount())
                 .cachedCostAmount(billing.cachedCostAmount())
+                .cacheReadCostAmount(billing.cacheReadCostAmount())
+                .cacheWriteCostAmount(billing.cacheWriteCostAmount())
                 .grossProfit(billing.grossProfit())
                 .createdAt(LocalDateTime.now())
                 .build();
@@ -506,29 +525,35 @@ public class TransitService {
     }
 
     private BillingBreakdown calculateBilling(ModelMapping mapping, int promptTokens, int completionTokens,
-                                              int cachedTokens, BigDecimal customerPriceRatio) {
+                                              int cacheReadTokens, int cacheWriteTokens,
+                                              BigDecimal customerPriceRatio) {
         if (!mapping.isBillingEnabled()) {
             return BillingBreakdown.zero();
         }
+        ModelPriceTier tier = priceTier(mapping, promptTokens);
+        int cachedTokens = Math.addExact(cacheReadTokens, cacheWriteTokens);
         int billableInputTokens = Math.max(0, promptTokens - cachedTokens);
         BigDecimal ratio = customerPriceRatio == null ? BigDecimal.ONE : customerPriceRatio;
-        long inputAmount = price(billableInputTokens,
-                coalesce(mapping.getInputPricePerMillion(), mapping.getPriceRatio(), BigDecimal.ONE).multiply(ratio));
-        long outputAmount = price(completionTokens,
-                coalesce(mapping.getOutputPricePerMillion(), mapping.getPriceRatio(), BigDecimal.ONE).multiply(ratio));
-        long cachedAmount = price(cachedTokens,
-                coalesce(mapping.getCachedPricePerMillion(), BigDecimal.ZERO).multiply(ratio));
-        long inputCostAmount = price(billableInputTokens, coalesce(mapping.getInputCostPerMillion(), mapping.getCostPerMillion(), BigDecimal.ZERO));
-        long outputCostAmount = price(completionTokens, coalesce(mapping.getOutputCostPerMillion(), mapping.getCostPerMillion(), BigDecimal.ZERO));
-        long cachedCostAmount = price(cachedTokens, coalesce(mapping.getCachedCostPerMillion(), BigDecimal.ZERO));
-        return new BillingBreakdown(inputAmount, outputAmount, cachedAmount, inputCostAmount, outputCostAmount, cachedCostAmount);
+        long inputAmount = price(billableInputTokens, tier.getSaleInputPrice().multiply(ratio));
+        long outputAmount = price(completionTokens, tier.getSaleOutputPrice().multiply(ratio));
+        long cacheReadAmount = price(cacheReadTokens, tier.getSaleCacheReadPrice().multiply(ratio));
+        long cacheWriteAmount = price(cacheWriteTokens, tier.getSaleCacheWritePrice().multiply(ratio));
+        long inputCostAmount = price(billableInputTokens, tier.getCostInputPrice());
+        long outputCostAmount = price(completionTokens, tier.getCostOutputPrice());
+        long cacheReadCostAmount = price(cacheReadTokens, tier.getCostCacheReadPrice());
+        long cacheWriteCostAmount = price(cacheWriteTokens, tier.getCostCacheWritePrice());
+        return new BillingBreakdown(tier, inputAmount, outputAmount, cacheReadAmount, cacheWriteAmount,
+                inputCostAmount, outputCostAmount, cacheReadCostAmount, cacheWriteCostAmount);
     }
 
-    private ChatResponse.Billing billingDetails(ModelMapping mapping, int promptTokens, int cachedTokens,
+    private ChatResponse.Billing billingDetails(ModelMapping mapping, int promptTokens,
+                                                int cacheReadTokens, int cacheWriteTokens,
                                                 BigDecimal customerPriceRatio, BillingBreakdown breakdown,
                                                 String traceId) {
         BigDecimal ratio = customerPriceRatio == null ? BigDecimal.ONE : customerPriceRatio;
         boolean enabled = mapping.isBillingEnabled();
+        ModelPriceTier tier = breakdown.tier() == null ? priceTier(mapping, promptTokens) : breakdown.tier();
+        int cachedTokens = Math.addExact(cacheReadTokens, cacheWriteTokens);
         ChatResponse.Billing details = new ChatResponse.Billing();
         details.setCurrency("CNY");
         details.setAmountScale(amountScale);
@@ -536,20 +561,45 @@ public class TransitService {
         details.setBillingEnabled(enabled);
         details.setBillableInputTokens(Math.max(0, promptTokens - cachedTokens));
         details.setCachedTokens(cachedTokens);
+        details.setCacheReadTokens(cacheReadTokens);
+        details.setCacheWriteTokens(cacheWriteTokens);
+        details.setPriceTier(tier.getTierName());
+        details.setSaleGroupName(tier.getSaleGroupName());
         details.setInputPricePerMillion(enabled
-                ? coalesce(mapping.getInputPricePerMillion(), mapping.getPriceRatio(), BigDecimal.ONE).multiply(ratio)
+                ? tier.getSaleInputPrice().multiply(ratio)
                 : BigDecimal.ZERO);
         details.setOutputPricePerMillion(enabled
-                ? coalesce(mapping.getOutputPricePerMillion(), mapping.getPriceRatio(), BigDecimal.ONE).multiply(ratio)
+                ? tier.getSaleOutputPrice().multiply(ratio)
                 : BigDecimal.ZERO);
         details.setCachedPricePerMillion(enabled
-                ? coalesce(mapping.getCachedPricePerMillion(), BigDecimal.ZERO).multiply(ratio)
+                ? tier.getSaleCacheReadPrice().multiply(ratio)
                 : BigDecimal.ZERO);
+        details.setCacheReadPricePerMillion(enabled ? tier.getSaleCacheReadPrice().multiply(ratio) : BigDecimal.ZERO);
+        details.setCacheWritePricePerMillion(enabled ? tier.getSaleCacheWritePrice().multiply(ratio) : BigDecimal.ZERO);
         details.setInputAmount(breakdown.inputAmount());
         details.setOutputAmount(breakdown.outputAmount());
         details.setCachedAmount(breakdown.cachedAmount());
+        details.setCacheReadAmount(breakdown.cacheReadAmount());
+        details.setCacheWriteAmount(breakdown.cacheWriteAmount());
         details.setTotalAmount(breakdown.totalAmount());
         return details;
+    }
+
+    private ModelPriceTier priceTier(ModelMapping mapping, int contextTokens) {
+        ModelPriceTier tier = priceTierService.select(mapping, contextTokens);
+        if (tier != null) return tier;
+        return ModelPriceTier.builder()
+                .tierName("默认挡位")
+                .saleGroupName("本站售价")
+                .saleInputPrice(coalesce(mapping.getInputPricePerMillion(), mapping.getPriceRatio(), BigDecimal.ONE))
+                .saleOutputPrice(coalesce(mapping.getOutputPricePerMillion(), mapping.getPriceRatio(), BigDecimal.ONE))
+                .saleCacheReadPrice(coalesce(mapping.getCachedPricePerMillion(), BigDecimal.ZERO))
+                .saleCacheWritePrice(BigDecimal.ZERO)
+                .costInputPrice(coalesce(mapping.getInputCostPerMillion(), mapping.getCostPerMillion(), BigDecimal.ZERO))
+                .costOutputPrice(coalesce(mapping.getOutputCostPerMillion(), mapping.getCostPerMillion(), BigDecimal.ZERO))
+                .costCacheReadPrice(coalesce(mapping.getCachedCostPerMillion(), BigDecimal.ZERO))
+                .costCacheWritePrice(BigDecimal.ZERO)
+                .build();
     }
 
     private BigDecimal userPriceRatio(Long groupId) {
@@ -583,23 +633,34 @@ public class TransitService {
     }
 
     private record BillingBreakdown(
+            ModelPriceTier tier,
             long inputAmount,
             long outputAmount,
-            long cachedAmount,
+            long cacheReadAmount,
+            long cacheWriteAmount,
             long inputCostAmount,
             long outputCostAmount,
-            long cachedCostAmount
+            long cacheReadCostAmount,
+            long cacheWriteCostAmount
     ) {
         static BillingBreakdown zero() {
-            return new BillingBreakdown(0, 0, 0, 0, 0, 0);
+            return new BillingBreakdown(null, 0, 0, 0, 0, 0, 0, 0, 0);
+        }
+
+        long cachedAmount() {
+            return Math.addExact(cacheReadAmount, cacheWriteAmount);
+        }
+
+        long cachedCostAmount() {
+            return Math.addExact(cacheReadCostAmount, cacheWriteCostAmount);
         }
 
         long totalAmount() {
-            return Math.addExact(Math.addExact(inputAmount, outputAmount), cachedAmount);
+            return Math.addExact(Math.addExact(inputAmount, outputAmount), cachedAmount());
         }
 
         long totalCostAmount() {
-            return Math.addExact(Math.addExact(inputCostAmount, outputCostAmount), cachedCostAmount);
+            return Math.addExact(Math.addExact(inputCostAmount, outputCostAmount), cachedCostAmount());
         }
 
         long grossProfit() {

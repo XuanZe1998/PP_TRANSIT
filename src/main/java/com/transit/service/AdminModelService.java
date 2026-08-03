@@ -5,6 +5,7 @@ import com.transit.mapper.ModelMappingMapper;
 import com.transit.model.ModelMapping;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -21,19 +22,25 @@ public class AdminModelService {
     private final ModelMappingMapper modelMappingMapper;
     private final ChannelMapper channelMapper;
     private final ChannelSecretService channelSecretService;
+    private final ModelPriceTierService priceTierService;
 
     public List<ModelMapping> list() {
-        return modelMappingMapper.selectList(null).stream()
+        List<ModelMapping> mappings = modelMappingMapper.selectList(null);
+        priceTierService.attach(mappings);
+        return mappings.stream()
                 .map(this::decorateAvailability)
                 .toList();
     }
 
+    @Transactional
     public ModelMapping create(ModelMapping mapping) {
         normalize(mapping);
         modelMappingMapper.insert(mapping);
+        priceTierService.synchronize(mapping, mapping.getPriceTiers());
         return decorateAvailability(mapping);
     }
 
+    @Transactional
     public ModelMapping update(Long id, ModelMapping request) {
         ModelMapping mapping = modelMappingMapper.selectById(id);
         if (mapping == null) {
@@ -57,6 +64,7 @@ public class AdminModelService {
         mapping.setCapabilityTags(request.getCapabilityTags());
         normalize(mapping);
         modelMappingMapper.updateById(mapping);
+        priceTierService.synchronize(mapping, request.getPriceTiers());
         return decorateAvailability(mapping);
     }
 
@@ -76,7 +84,9 @@ public class AdminModelService {
         return decorateAvailability(mapping);
     }
 
+    @Transactional
     public void delete(Long id) {
+        priceTierService.deleteForMappings(List.of(id));
         modelMappingMapper.deleteById(id);
     }
 

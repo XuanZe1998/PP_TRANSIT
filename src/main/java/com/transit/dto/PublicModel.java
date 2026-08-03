@@ -14,6 +14,10 @@ public class PublicModel {
     private BigDecimal maxOutputPricePerMillion;
     private BigDecimal minCachedPricePerMillion;
     private BigDecimal maxCachedPricePerMillion;
+    private BigDecimal minCacheReadPricePerMillion;
+    private BigDecimal maxCacheReadPricePerMillion;
+    private BigDecimal minCacheWritePricePerMillion;
+    private BigDecimal maxCacheWritePricePerMillion;
     private long routeCount;
     private long providerCount;
     private String currency;

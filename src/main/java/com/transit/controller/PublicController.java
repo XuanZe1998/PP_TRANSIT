@@ -80,9 +80,10 @@ public class PublicController {
             item.setCurrency(billingCurrency.toUpperCase(Locale.ROOT));
             item.setAmountScale(Math.max(1, amountScale));
             item.setPriceUnit("currency_per_1m_tokens");
-            item.setPriceVariesByRoute(differs(item.getMinInputPricePerMillion(), item.getMaxInputPricePerMillion())
-                    || differs(item.getMinOutputPricePerMillion(), item.getMaxOutputPricePerMillion())
-                    || differs(item.getMinCachedPricePerMillion(), item.getMaxCachedPricePerMillion()));
+                item.setPriceVariesByRoute(differs(item.getMinInputPricePerMillion(), item.getMaxInputPricePerMillion())
+                        || differs(item.getMinOutputPricePerMillion(), item.getMaxOutputPricePerMillion())
+                        || differs(item.getMinCachedPricePerMillion(), item.getMaxCachedPricePerMillion())
+                        || differs(item.getMinCacheWritePricePerMillion(), item.getMaxCacheWritePricePerMillion()));
         }
 
         PageResponse<PublicModel> resp = new PageResponse<>();

@@ -21,12 +21,14 @@ class AdminModelServiceTests {
 
     @Mock private ModelMappingMapper modelMappingMapper;
     @Mock private ChannelMapper channelMapper;
+    @Mock private ModelPriceTierService priceTierService;
 
     private AdminModelService service;
 
     @BeforeEach
     void setUp() {
-        service = new AdminModelService(modelMappingMapper, channelMapper, new ChannelSecretService(""));
+        service = new AdminModelService(modelMappingMapper, channelMapper,
+                new ChannelSecretService(""), priceTierService);
     }
 
     @Test

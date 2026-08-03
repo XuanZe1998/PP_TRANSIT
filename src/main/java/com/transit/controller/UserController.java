@@ -174,7 +174,8 @@ public class UserController {
                 item.setPriceUnit("currency_per_1m_tokens");
                 item.setPriceVariesByRoute(differs(item.getMinInputPricePerMillion(), item.getMaxInputPricePerMillion())
                         || differs(item.getMinOutputPricePerMillion(), item.getMaxOutputPricePerMillion())
-                        || differs(item.getMinCachedPricePerMillion(), item.getMaxCachedPricePerMillion()));
+                        || differs(item.getMinCachedPricePerMillion(), item.getMaxCachedPricePerMillion())
+                        || differs(item.getMinCacheWritePricePerMillion(), item.getMaxCacheWritePricePerMillion()));
             }
             LocalDateTime todayStart = LocalDateTime.now().toLocalDate().atStartOfDay();
             LocalDateTime monthStart = LocalDateTime.now().withDayOfMonth(1).toLocalDate().atStartOfDay();
@@ -349,7 +350,9 @@ public class UserController {
         StringBuilder sql = new StringBuilder("""
                 SELECT l.id, l.trace_id, l.token_key, t.id AS token_id, t.name AS token_name,
                        l.model, l.channel_id, l.prompt_tokens, l.completion_tokens, l.cached_tokens,
-                       l.input_amount, l.output_amount, l.cached_amount, l.total_amount,
+                       l.cache_read_tokens, l.cache_write_tokens,
+                       l.input_amount, l.output_amount, l.cached_amount,
+                       l.cache_read_amount, l.cache_write_amount, l.total_amount,
                        l.latency_ms, l.status, l.error_message, l.created_at
                 FROM logs l
                  LEFT JOIN tokens t ON t.id = l.token_id OR (l.token_id IS NULL AND t.`key` = l.token_key)
@@ -370,9 +373,13 @@ public class UserController {
                        COALESCE(SUM(l.prompt_tokens), 0) AS prompt_tokens,
                        COALESCE(SUM(l.completion_tokens), 0) AS completion_tokens,
                        COALESCE(SUM(l.cached_tokens), 0) AS cached_tokens,
+                       COALESCE(SUM(l.cache_read_tokens), 0) AS cache_read_tokens,
+                       COALESCE(SUM(l.cache_write_tokens), 0) AS cache_write_tokens,
                        COALESCE(SUM(l.input_amount), 0) AS input_amount,
                        COALESCE(SUM(l.output_amount), 0) AS output_amount,
                        COALESCE(SUM(l.cached_amount), 0) AS cached_amount,
+                       COALESCE(SUM(l.cache_read_amount), 0) AS cache_read_amount,
+                       COALESCE(SUM(l.cache_write_amount), 0) AS cache_write_amount,
                        COALESCE(SUM(l.total_amount), 0) AS total_amount
                 FROM logs l
                  LEFT JOIN tokens t ON t.id = l.token_id OR (l.token_id IS NULL AND t.`key` = l.token_key)
@@ -421,6 +428,8 @@ public class UserController {
         item.put("promptTokens", log.getPromptTokens());
         item.put("completionTokens", log.getCompletionTokens());
         item.put("cachedTokens", log.getCachedTokens());
+        item.put("cacheReadTokens", log.getCacheReadTokens());
+        item.put("cacheWriteTokens", log.getCacheWriteTokens());
         item.put("totalTokens", log.getTotalTokens());
         item.put("totalAmount", log.getTotalAmount());
         item.put("status", log.getStatus());

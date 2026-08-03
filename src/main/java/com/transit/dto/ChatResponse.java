@@ -54,18 +54,19 @@ public class ChatResponse {
          * documented conservative tokenizer estimate. */
         private Boolean estimated;
 
+        public int cacheReadTokens() {
+            int openAiCached = promptTokensDetails == null || promptTokensDetails.getCachedTokens() == null
+                    ? 0 : Math.max(0, promptTokensDetails.getCachedTokens());
+            int explicitRead = cacheReadInputTokens == null ? 0 : Math.max(0, cacheReadInputTokens);
+            return Math.max(openAiCached, explicitRead);
+        }
+
+        public int cacheWriteTokens() {
+            return cacheCreationInputTokens == null ? 0 : Math.max(0, cacheCreationInputTokens);
+        }
+
         public Integer cachedTokens() {
-            int cached = 0;
-            if (promptTokensDetails != null && promptTokensDetails.getCachedTokens() != null) {
-                cached += promptTokensDetails.getCachedTokens();
-            }
-            if (cacheReadInputTokens != null) {
-                cached += cacheReadInputTokens;
-            }
-            if (cacheCreationInputTokens != null) {
-                cached += cacheCreationInputTokens;
-            }
-            return cached;
+            return Math.addExact(cacheReadTokens(), cacheWriteTokens());
         }
     }
 
@@ -80,18 +81,34 @@ public class ChatResponse {
         private Integer billableInputTokens;
         @JsonProperty("cached_tokens")
         private Integer cachedTokens;
+        @JsonProperty("cache_read_tokens")
+        private Integer cacheReadTokens;
+        @JsonProperty("cache_write_tokens")
+        private Integer cacheWriteTokens;
+        @JsonProperty("price_tier")
+        private String priceTier;
+        @JsonProperty("sale_group_name")
+        private String saleGroupName;
         @JsonProperty("input_price_per_million")
         private BigDecimal inputPricePerMillion;
         @JsonProperty("output_price_per_million")
         private BigDecimal outputPricePerMillion;
         @JsonProperty("cached_price_per_million")
         private BigDecimal cachedPricePerMillion;
+        @JsonProperty("cache_read_price_per_million")
+        private BigDecimal cacheReadPricePerMillion;
+        @JsonProperty("cache_write_price_per_million")
+        private BigDecimal cacheWritePricePerMillion;
         @JsonProperty("input_amount")
         private Long inputAmount;
         @JsonProperty("output_amount")
         private Long outputAmount;
         @JsonProperty("cached_amount")
         private Long cachedAmount;
+        @JsonProperty("cache_read_amount")
+        private Long cacheReadAmount;
+        @JsonProperty("cache_write_amount")
+        private Long cacheWriteAmount;
         @JsonProperty("total_amount")
         private Long totalAmount;
         @JsonProperty("billing_enabled")

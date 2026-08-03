@@ -31,13 +31,14 @@ class AdminChannelServiceTests {
     @Mock private ChannelUrlPolicy channelUrlPolicy;
     @Mock private ProviderGatewayFactory providerGatewayFactory;
     @Mock private ChannelSecretService channelSecretService;
+    @Mock private ModelPriceTierService priceTierService;
 
     private AdminChannelService service;
 
     @BeforeEach
     void setUp() {
         service = new AdminChannelService(channelMapper, modelMappingMapper, jdbcTemplate,
-                channelUrlPolicy, providerGatewayFactory, channelSecretService);
+                channelUrlPolicy, providerGatewayFactory, channelSecretService, priceTierService);
         org.mockito.Mockito.lenient().when(channelSecretService.isConfigured()).thenReturn(true);
         org.mockito.Mockito.lenient().when(channelSecretService.encrypt("provider-key")).thenReturn("encrypted-provider-key");
     }

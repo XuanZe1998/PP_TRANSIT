@@ -16,10 +16,12 @@ public class AdminAuditQueryService {
     public List<Map<String, Object>> requestLogs() {
         return jdbcTemplate.queryForList("""
                 SELECT l.id, l.trace_id, l.user_id, u.username, l.token_key, l.model, l.channel_id, c.name AS channel_name,
-                       l.prompt_tokens, l.completion_tokens, l.cached_tokens, l.total_tokens, l.cost,
-                       l.input_amount, l.output_amount, l.cached_amount, l.total_amount,
+                       l.prompt_tokens, l.completion_tokens, l.cached_tokens,
+                       l.cache_read_tokens, l.cache_write_tokens, l.total_tokens, l.cost,
+                       l.input_amount, l.output_amount, l.cached_amount,
+                       l.cache_read_amount, l.cache_write_amount, l.total_amount,
                        l.sale_amount, l.cost_amount, l.input_cost_amount, l.output_cost_amount,
-                       l.cached_cost_amount, l.gross_profit,
+                       l.cached_cost_amount, l.cache_read_cost_amount, l.cache_write_cost_amount, l.gross_profit,
                        l.latency_ms, l.status, l.error_message, l.created_at
                 FROM logs l
                 LEFT JOIN users u ON u.id = l.user_id

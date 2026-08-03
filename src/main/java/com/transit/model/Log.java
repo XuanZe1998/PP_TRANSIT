@@ -44,6 +44,12 @@ public class Log {
     @TableField("cached_tokens")
     private int cachedTokens;
 
+    @TableField("cache_read_tokens")
+    private int cacheReadTokens;
+
+    @TableField("cache_write_tokens")
+    private int cacheWriteTokens;
+
     @TableField("total_tokens")
     private int totalTokens;
 
@@ -77,6 +83,12 @@ public class Log {
     @TableField("cached_amount")
     private long cachedAmount;
 
+    @TableField("cache_read_amount")
+    private long cacheReadAmount;
+
+    @TableField("cache_write_amount")
+    private long cacheWriteAmount;
+
     @TableField("total_amount")
     private long totalAmount;
 
@@ -88,6 +100,12 @@ public class Log {
 
     @TableField("cached_cost_amount")
     private long cachedCostAmount;
+
+    @TableField("cache_read_cost_amount")
+    private long cacheReadCostAmount;
+
+    @TableField("cache_write_cost_amount")
+    private long cacheWriteCostAmount;
 
     @TableField("gross_profit")
     private long grossProfit;

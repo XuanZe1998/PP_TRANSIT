@@ -164,6 +164,21 @@
               <span v-else-if="column.kind === 'money'">{{ money(getValue(row, column.prop)) }}</span>
               <span v-else-if="column.kind === 'rate'">{{ rateMoney(getValue(row, column.prop)) }}</span>
               <span v-else-if="column.kind === 'profit'" :class="{ 'negative-profit': routeHasLoss(row) }">{{ routeProfitSummary(row) }}</span>
+              <div v-else-if="column.kind === 'tierRange'" class="tier-table-cell">
+                <span v-for="(line, index) in tierRangeLines(row)" :key="index">{{ line }}</span>
+              </div>
+              <div v-else-if="column.kind === 'tierOfficial'" class="tier-table-cell">
+                <span v-for="(line, index) in tierPriceLines(row, 'official')" :key="index">{{ line }}</span>
+              </div>
+              <div v-else-if="column.kind === 'tierCost'" class="tier-table-cell">
+                <span v-for="(line, index) in tierPriceLines(row, 'cost')" :key="index">{{ line }}</span>
+              </div>
+              <div v-else-if="column.kind === 'tierSale'" class="tier-table-cell">
+                <span v-for="(line, index) in tierPriceLines(row, 'sale')" :key="index">{{ line }}</span>
+              </div>
+              <div v-else-if="column.kind === 'tierProfit'" class="tier-table-cell" :class="{ 'negative-profit': routeHasTierLoss(row) }">
+                <span v-for="(line, index) in tierProfitLines(row)" :key="index">{{ line }}</span>
+              </div>
               <span v-else>{{ display(getValue(row, column.prop)) }}</span>
             </template>
           </el-table-column>
@@ -277,20 +292,74 @@
               <label>路由优先级<el-input-number v-model="pricing.priority" :min="-10000" :max="10000" :step="10" /></label>
               <label>模型流量比例 %<el-input-number v-model="pricing.trafficPercent" :min="1" :max="100" /></label>
               <label>售卖倍率<el-input-number v-model="pricing.priceRatio" :min="0" :step="0.1" /></label>
-              <label>兼容成本<el-input-number v-model="pricing.costPerMillion" :min="0" :step="0.000001" /></label>
-              <label>输入售价<el-input-number v-model="pricing.inputPricePerMillion" :min="0" :step="0.000001" /></label>
-              <label>输出售价<el-input-number v-model="pricing.outputPricePerMillion" :min="0" :step="0.000001" /></label>
-              <label>缓存售价<el-input-number v-model="pricing.cachedPricePerMillion" :min="0" :step="0.000001" /></label>
-              <label>输入成本<el-input-number v-model="pricing.inputCostPerMillion" :min="0" :step="0.000001" /></label>
-              <label>输出成本<el-input-number v-model="pricing.outputCostPerMillion" :min="0" :step="0.000001" /></label>
-              <label>缓存成本<el-input-number v-model="pricing.cachedCostPerMillion" :min="0" :step="0.000001" /></label>
             </div>
-            <div class="channel-price-actions">
-              <el-button link type="primary" @click="calculateSalePrices(pricing)">按成本 × 售卖倍率计算售价</el-button>
-              <span :class="{ loss: modelProfit(pricing).hasLoss }">
-                每百万 Token 毛利：输入 {{ decimalMoney(modelProfit(pricing).input) }} / 输出 {{ decimalMoney(modelProfit(pricing).output) }} / 缓存 {{ decimalMoney(modelProfit(pricing).cached) }}
-              </span>
+            <div class="price-tier-toolbar">
+              <div>
+                <strong>上下文价格挡位</strong>
+                <span>金额单位均为 CNY / 百万 Token；最后一挡自动覆盖超过前一阈值的上下文。</span>
+              </div>
+              <el-button type="primary" plain @click="addPriceTier(pricing)">新增挡位</el-button>
             </div>
+            <article v-for="(tier, tierIndex) in pricing.priceTiers" :key="`${pricing.channelModelName}-${tierIndex}`" class="price-tier-card">
+              <div class="price-tier-head">
+                <div class="tier-identity">
+                  <label>挡位名称<el-input v-model="tier.tierName" maxlength="120" /></label>
+                  <label v-if="tierIndex < pricing.priceTiers.length - 1">
+                    上下文上限（Token）
+                    <el-input-number v-model="tier.maxContextTokens" :min="1" :max="100000000" :step="1000" />
+                  </label>
+                  <label v-else>上下文上限<el-input model-value="不限制（最终挡位）" disabled /></label>
+                </div>
+                <div class="tier-head-actions">
+                  <el-tag>{{ tierRangeLabel(pricing, tierIndex) }}</el-tag>
+                  <el-button v-if="pricing.priceTiers.length > 1" link type="danger" @click="removePriceTier(pricing, tierIndex)">删除挡位</el-button>
+                </div>
+              </div>
+              <div class="tier-price-groups">
+                <section class="tier-price-group official-group">
+                  <div class="price-group-head">
+                    <strong>官网基准</strong>
+                    <el-input v-model="tier.officialGroupName" maxlength="120" placeholder="价格组名称" />
+                  </div>
+                  <div class="price-dimension-grid">
+                    <label>输入<el-input-number v-model="tier.officialInputPrice" :min="0" :step="0.000001" /></label>
+                    <label>输出<el-input-number v-model="tier.officialOutputPrice" :min="0" :step="0.000001" /></label>
+                    <label>缓存读取<el-input-number v-model="tier.officialCacheReadPrice" :min="0" :step="0.000001" /></label>
+                    <label>缓存写入<el-input-number v-model="tier.officialCacheWritePrice" :min="0" :step="0.000001" /></label>
+                  </div>
+                </section>
+                <section class="tier-price-group cost-group">
+                  <div class="price-group-head">
+                    <strong>采购成本</strong>
+                    <el-input v-model="tier.costGroupName" maxlength="120" placeholder="例如：供应商 A 0.5 倍 Key" />
+                  </div>
+                  <div class="price-dimension-grid">
+                    <label>输入<el-input-number v-model="tier.costInputPrice" :min="0" :step="0.000001" /></label>
+                    <label>输出<el-input-number v-model="tier.costOutputPrice" :min="0" :step="0.000001" /></label>
+                    <label>缓存读取<el-input-number v-model="tier.costCacheReadPrice" :min="0" :step="0.000001" /></label>
+                    <label>缓存写入<el-input-number v-model="tier.costCacheWritePrice" :min="0" :step="0.000001" /></label>
+                  </div>
+                </section>
+                <section class="tier-price-group sale-group">
+                  <div class="price-group-head">
+                    <strong>本站售价</strong>
+                    <el-input v-model="tier.saleGroupName" maxlength="120" placeholder="例如：标准零售价" />
+                  </div>
+                  <div class="price-dimension-grid">
+                    <label>输入<el-input-number v-model="tier.saleInputPrice" :min="0" :step="0.000001" /></label>
+                    <label>输出<el-input-number v-model="tier.saleOutputPrice" :min="0" :step="0.000001" /></label>
+                    <label>缓存读取<el-input-number v-model="tier.saleCacheReadPrice" :min="0" :step="0.000001" /></label>
+                    <label>缓存写入<el-input-number v-model="tier.saleCacheWritePrice" :min="0" :step="0.000001" /></label>
+                  </div>
+                </section>
+              </div>
+              <div class="channel-price-actions">
+                <el-button link type="primary" @click="calculateTierSalePrices(pricing, tier)">按成本 × 售卖倍率计算本挡售价</el-button>
+                <span :class="{ loss: tierProfit(tier).hasLoss }">
+                  每百万 Token 毛利：输入 {{ decimalMoney(tierProfit(tier).input) }} / 输出 {{ decimalMoney(tierProfit(tier).output) }} / 缓存读取 {{ decimalMoney(tierProfit(tier).cacheRead) }} / 缓存写入 {{ decimalMoney(tierProfit(tier).cacheWrite) }}
+                </span>
+              </div>
+            </article>
           </article>
         </section>
       </el-form>
@@ -358,7 +427,8 @@
           <div><span>耗时</span><strong>{{ testResult.latencyMs || 0 }} ms</strong></div>
           <div><span>输入 Token</span><strong>{{ testResult.usage?.promptTokens || 0 }}</strong></div>
           <div><span>输出 Token</span><strong>{{ testResult.usage?.completionTokens || 0 }}</strong></div>
-          <div><span>缓存 Token</span><strong>{{ testResult.usage?.cachedTokens || 0 }}</strong></div>
+          <div><span>缓存读取 Token</span><strong>{{ testResult.usage?.cacheReadTokens || 0 }}</strong></div>
+          <div><span>缓存写入 Token</span><strong>{{ testResult.usage?.cacheWriteTokens || 0 }}</strong></div>
           <div><span>估算成本(CNY)</span><strong>{{ money(testResult.estimatedCostAmount) }}</strong></div>
         </div>
         <el-form label-position="top" class="test-io">
@@ -448,7 +518,14 @@ import http, { getHttpErrorMessage } from '@/utils/http'
 import { formatCny, formatPerMillionCny } from '@/utils/money'
 
 type ModuleKey = 'dashboard' | 'users' | 'channels' | 'models' | 'tokens' | 'audit' | 'finance' | 'security' | 'settings'
-type Column = { prop: string; label: string; width?: number; minWidth?: number; kind?: 'status' | 'bool' | 'callable' | 'money' | 'rate' | 'profit' }
+type Column = {
+  prop: string
+  label: string
+  width?: number
+  minWidth?: number
+  kind?: 'status' | 'bool' | 'callable' | 'money' | 'rate' | 'profit'
+    | 'tierRange' | 'tierOfficial' | 'tierCost' | 'tierSale' | 'tierProfit'
+}
 type Field = { prop: string; label: string; type?: 'text' | 'password' | 'textarea' | 'number' | 'switch' | 'select'; min?: number; step?: number; options?: Array<{ label: string; value: any }> }
 type Config = {
   title: string
@@ -520,6 +597,30 @@ type ChannelModelPricing = {
   billingEnabled: boolean
   trafficPercent: number
   capabilityTags?: string
+  priceTiers: ModelPriceTier[]
+}
+
+type ModelPriceTier = {
+  id?: number
+  modelMappingId?: number
+  tierName: string
+  maxContextTokens: number | null
+  sortOrder: number
+  officialGroupName: string
+  officialInputPrice: number
+  officialOutputPrice: number
+  officialCacheReadPrice: number
+  officialCacheWritePrice: number
+  costGroupName: string
+  costInputPrice: number
+  costOutputPrice: number
+  costCacheReadPrice: number
+  costCacheWritePrice: number
+  saleGroupName: string
+  saleInputPrice: number
+  saleOutputPrice: number
+  saleCacheReadPrice: number
+  saleCacheWritePrice: number
 }
 
 const channelModelPricing = ref<ChannelModelPricing[]>([])
@@ -599,14 +700,11 @@ const configs: Record<ModuleKey, Config> = {
       { prop: 'channel.name', label: '渠道', minWidth: 150 },
       { prop: 'priority', label: '优先级', width: 90 },
       { prop: 'priceRatio', label: '倍率', width: 90 },
-      { prop: 'costPerMillion', label: '成本 CNY/百万', width: 190, kind: 'rate' },
-      { prop: 'inputPricePerMillion', label: '输入 CNY/百万', width: 190, kind: 'rate' },
-      { prop: 'outputPricePerMillion', label: '输出 CNY/百万', width: 190, kind: 'rate' },
-      { prop: 'cachedPricePerMillion', label: '缓存 CNY/百万', width: 190, kind: 'rate' },
-      { prop: 'inputCostPerMillion', label: '输入成本 CNY/百万', width: 190, kind: 'rate' },
-      { prop: 'outputCostPerMillion', label: '输出成本 CNY/百万', width: 190, kind: 'rate' },
-      { prop: 'cachedCostPerMillion', label: '缓存成本 CNY/百万', width: 190, kind: 'rate' },
-      { prop: 'grossProfitPerMillion', label: '毛利 输入/输出/缓存', minWidth: 280, kind: 'profit' },
+      { prop: 'priceTiers', label: '上下文挡位', minWidth: 220, kind: 'tierRange' },
+      { prop: 'officialPrices', label: '官网 输入/输出/读/写', minWidth: 310, kind: 'tierOfficial' },
+      { prop: 'costPrices', label: '成本 输入/输出/读/写', minWidth: 310, kind: 'tierCost' },
+      { prop: 'salePrices', label: '售价 输入/输出/读/写', minWidth: 310, kind: 'tierSale' },
+      { prop: 'tierProfit', label: '毛利 输入/输出/读/写', minWidth: 310, kind: 'tierProfit' },
       { prop: 'billingEnabled', label: '计费', width: 90, kind: 'bool' },
       { prop: 'trafficPercent', label: '灰度', width: 90 },
       { prop: 'callable', label: '前台调用', width: 110, kind: 'callable' },
@@ -946,7 +1044,16 @@ async function save() {
 function activeFormPayload() {
   const payload = Object.fromEntries(activeFields.value.map(field => [field.prop, form[field.prop]]))
   if (module.value === 'channels') {
-    payload.modelPricing = channelModelPricing.value.map(item => ({ ...item }))
+    payload.modelPricing = channelModelPricing.value.map(item => ({
+      ...item,
+      priceTiers: item.priceTiers.map((tier, index) => ({
+        ...tier,
+        sortOrder: index,
+        maxContextTokens: index === item.priceTiers.length - 1
+          ? null
+          : Math.max(1, Number(tier.maxContextTokens || 1))
+      }))
+    }))
   }
   return payload
 }
@@ -964,6 +1071,10 @@ function syncChannelPricingRows(value: unknown) {
 }
 
 function normalizePricing(model: string, source: Partial<ChannelModelPricing> = {}): ChannelModelPricing {
+  const legacy = legacyPriceTier(source)
+  const sourceTiers = Array.isArray(source.priceTiers) && source.priceTiers.length
+    ? source.priceTiers
+    : [legacy]
   return {
     publicModelName: model,
     channelModelName: model,
@@ -979,15 +1090,94 @@ function normalizePricing(model: string, source: Partial<ChannelModelPricing> = 
     cachedCostPerMillion: decimal(source.cachedCostPerMillion, 0),
     billingEnabled: source.billingEnabled ?? true,
     trafficPercent: Number(source.trafficPercent ?? 100),
-    capabilityTags: source.capabilityTags || ''
+    capabilityTags: source.capabilityTags || '',
+    priceTiers: sourceTiers.map((tier, index) => normalizePriceTier(tier, index, sourceTiers.length, legacy))
   }
 }
 
-function calculateSalePrices(pricing: ChannelModelPricing) {
+function legacyPriceTier(source: Partial<ChannelModelPricing>): ModelPriceTier {
+  return {
+    tierName: '默认挡位',
+    maxContextTokens: null,
+    sortOrder: 0,
+    officialGroupName: '官网价格（待补充）',
+    officialInputPrice: 0,
+    officialOutputPrice: 0,
+    officialCacheReadPrice: 0,
+    officialCacheWritePrice: 0,
+    costGroupName: '采购成本',
+    costInputPrice: decimal(source.inputCostPerMillion ?? source.costPerMillion, 0),
+    costOutputPrice: decimal(source.outputCostPerMillion ?? source.costPerMillion, 0),
+    costCacheReadPrice: decimal(source.cachedCostPerMillion, 0),
+    costCacheWritePrice: 0,
+    saleGroupName: '本站售价',
+    saleInputPrice: decimal(source.inputPricePerMillion, 1),
+    saleOutputPrice: decimal(source.outputPricePerMillion, 1),
+    saleCacheReadPrice: decimal(source.cachedPricePerMillion, 0),
+    saleCacheWritePrice: 0
+  }
+}
+
+function normalizePriceTier(source: Partial<ModelPriceTier>, index: number, count: number, fallback: ModelPriceTier): ModelPriceTier {
+  return {
+    id: source.id,
+    modelMappingId: source.modelMappingId,
+    tierName: String(source.tierName || (index === count - 1 ? '长上下文挡位' : `上下文挡位 ${index + 1}`)),
+    maxContextTokens: index === count - 1 ? null : Math.max(1, Number(source.maxContextTokens || 1)),
+    sortOrder: index,
+    officialGroupName: String(source.officialGroupName || fallback.officialGroupName),
+    officialInputPrice: decimal(source.officialInputPrice, fallback.officialInputPrice),
+    officialOutputPrice: decimal(source.officialOutputPrice, fallback.officialOutputPrice),
+    officialCacheReadPrice: decimal(source.officialCacheReadPrice, fallback.officialCacheReadPrice),
+    officialCacheWritePrice: decimal(source.officialCacheWritePrice, fallback.officialCacheWritePrice),
+    costGroupName: String(source.costGroupName || fallback.costGroupName),
+    costInputPrice: decimal(source.costInputPrice, fallback.costInputPrice),
+    costOutputPrice: decimal(source.costOutputPrice, fallback.costOutputPrice),
+    costCacheReadPrice: decimal(source.costCacheReadPrice, fallback.costCacheReadPrice),
+    costCacheWritePrice: decimal(source.costCacheWritePrice, fallback.costCacheWritePrice),
+    saleGroupName: String(source.saleGroupName || fallback.saleGroupName),
+    saleInputPrice: decimal(source.saleInputPrice, fallback.saleInputPrice),
+    saleOutputPrice: decimal(source.saleOutputPrice, fallback.saleOutputPrice),
+    saleCacheReadPrice: decimal(source.saleCacheReadPrice, fallback.saleCacheReadPrice),
+    saleCacheWritePrice: decimal(source.saleCacheWritePrice, fallback.saleCacheWritePrice)
+  }
+}
+
+function addPriceTier(pricing: ChannelModelPricing) {
+  const tiers = pricing.priceTiers
+  const last = tiers[tiers.length - 1]
+  const previousMax = tiers.length > 1 ? Number(tiers[tiers.length - 2].maxContextTokens || 0) : 0
+  const suggestedMax = previousMax ? Math.min(100_000_000, previousMax * 2) : 128_000
+  if (last && suggestedMax <= previousMax) {
+    ElMessage.warning('上下文挡位上限已达到 100,000,000 Token')
+    return
+  }
+  if (last) last.maxContextTokens = suggestedMax
+  const source = last || legacyPriceTier(pricing)
+  tiers.push(normalizePriceTier({
+    ...source,
+    id: undefined,
+    modelMappingId: undefined,
+    tierName: '长上下文挡位',
+    maxContextTokens: null
+  }, tiers.length, tiers.length + 1, source))
+  tiers.forEach((tier, index) => { tier.sortOrder = index })
+}
+
+function removePriceTier(pricing: ChannelModelPricing, index: number) {
+  pricing.priceTiers.splice(index, 1)
+  pricing.priceTiers.forEach((tier, tierIndex) => {
+    tier.sortOrder = tierIndex
+    if (tierIndex === pricing.priceTiers.length - 1) tier.maxContextTokens = null
+  })
+}
+
+function calculateTierSalePrices(pricing: ChannelModelPricing, tier: ModelPriceTier) {
   const ratio = Math.max(0, Number(pricing.priceRatio || 0))
-  pricing.inputPricePerMillion = roundPrice(Number(pricing.inputCostPerMillion || pricing.costPerMillion || 0) * ratio)
-  pricing.outputPricePerMillion = roundPrice(Number(pricing.outputCostPerMillion || pricing.costPerMillion || 0) * ratio)
-  pricing.cachedPricePerMillion = roundPrice(Number(pricing.cachedCostPerMillion || 0) * ratio)
+  tier.saleInputPrice = roundPrice(Number(tier.costInputPrice || 0) * ratio)
+  tier.saleOutputPrice = roundPrice(Number(tier.costOutputPrice || 0) * ratio)
+  tier.saleCacheReadPrice = roundPrice(Number(tier.costCacheReadPrice || 0) * ratio)
+  tier.saleCacheWritePrice = roundPrice(Number(tier.costCacheWritePrice || 0) * ratio)
 }
 
 function copyFirstPricingToAll() {
@@ -996,15 +1186,17 @@ function copyFirstPricingToAll() {
   channelModelPricing.value = channelModelPricing.value.map(item => normalizePricing(item.channelModelName, {
     ...first,
     publicModelName: item.channelModelName,
-    channelModelName: item.channelModelName
+    channelModelName: item.channelModelName,
+    priceTiers: first.priceTiers.map(tier => ({ ...tier, id: undefined, modelMappingId: undefined }))
   }))
 }
 
-function modelProfit(pricing: ChannelModelPricing) {
-  const input = Number(pricing.inputPricePerMillion || 0) - Number(pricing.inputCostPerMillion || pricing.costPerMillion || 0)
-  const output = Number(pricing.outputPricePerMillion || 0) - Number(pricing.outputCostPerMillion || pricing.costPerMillion || 0)
-  const cached = Number(pricing.cachedPricePerMillion || 0) - Number(pricing.cachedCostPerMillion || 0)
-  return { input, output, cached, hasLoss: input < 0 || output < 0 || cached < 0 }
+function tierProfit(tier: ModelPriceTier) {
+  const input = Number(tier.saleInputPrice || 0) - Number(tier.costInputPrice || 0)
+  const output = Number(tier.saleOutputPrice || 0) - Number(tier.costOutputPrice || 0)
+  const cacheRead = Number(tier.saleCacheReadPrice || 0) - Number(tier.costCacheReadPrice || 0)
+  const cacheWrite = Number(tier.saleCacheWritePrice || 0) - Number(tier.costCacheWritePrice || 0)
+  return { input, output, cacheRead, cacheWrite, hasLoss: input < 0 || output < 0 || cacheRead < 0 || cacheWrite < 0 }
 }
 
 function decimal(value: unknown, fallback: number): number {
@@ -1018,6 +1210,51 @@ function roundPrice(value: number): number {
 
 function decimalMoney(value: number): string {
   return `¥${roundPrice(value).toFixed(6).replace(/\.?0+$/, '') || '0'}`
+}
+
+function formatTokenLimit(value: number): string {
+  return Number(value || 0).toLocaleString('zh-CN')
+}
+
+function tierRangeLabel(pricing: ChannelModelPricing, index: number): string {
+  const tier = pricing.priceTiers[index]
+  const previous = index > 0 ? Number(pricing.priceTiers[index - 1].maxContextTokens || 0) : 0
+  if (tier.maxContextTokens == null) return previous ? `> ${formatTokenLimit(previous)} Token` : '全部上下文'
+  return `${previous ? `${formatTokenLimit(previous + 1)} – ` : '≤ '}${formatTokenLimit(tier.maxContextTokens)} Token`
+}
+
+function rowPriceTiers(row: any): ModelPriceTier[] {
+  const legacy = legacyPriceTier(row || {})
+  const tiers = Array.isArray(row?.priceTiers) && row.priceTiers.length ? row.priceTiers : [legacy]
+  return tiers.map((tier: Partial<ModelPriceTier>, index: number) => normalizePriceTier(tier, index, tiers.length, legacy))
+}
+
+function tierRangeLines(row: any): string[] {
+  const pricing = { ...row, priceTiers: rowPriceTiers(row) } as ChannelModelPricing
+  return pricing.priceTiers.map((tier, index) => `${tier.tierName}：${tierRangeLabel(pricing, index)}`)
+}
+
+function tierPriceLines(row: any, group: 'official' | 'cost' | 'sale'): string[] {
+  return rowPriceTiers(row).map(tier => {
+    const name = group === 'official' ? tier.officialGroupName : group === 'cost' ? tier.costGroupName : tier.saleGroupName
+    const prices = group === 'official'
+      ? [tier.officialInputPrice, tier.officialOutputPrice, tier.officialCacheReadPrice, tier.officialCacheWritePrice]
+      : group === 'cost'
+        ? [tier.costInputPrice, tier.costOutputPrice, tier.costCacheReadPrice, tier.costCacheWritePrice]
+        : [tier.saleInputPrice, tier.saleOutputPrice, tier.saleCacheReadPrice, tier.saleCacheWritePrice]
+    return `${tier.tierName} · ${name}：${prices.map(decimalMoney).join(' / ')}`
+  })
+}
+
+function tierProfitLines(row: any): string[] {
+  return rowPriceTiers(row).map(tier => {
+    const profit = tierProfit(tier)
+    return `${tier.tierName}：${[profit.input, profit.output, profit.cacheRead, profit.cacheWrite].map(decimalMoney).join(' / ')}`
+  })
+}
+
+function routeHasTierLoss(row: any): boolean {
+  return rowPriceTiers(row).some(tier => tierProfit(tier).hasLoss)
 }
 
 function routeProfit(row: any) {
@@ -1286,6 +1523,11 @@ try:
         message = ((data.get("choices") or [{}])[0].get("message") or {})
         content = message.get("content") or ""
     details = usage.get("prompt_tokens_details") or {}
+    cache_read_tokens = max(
+        int(details.get("cached_tokens") or 0),
+        int(usage.get("cache_read_input_tokens") or 0)
+    )
+    cache_write_tokens = int(usage.get("cache_creation_input_tokens") or 0)
     print(json.dumps({
         "status": "SUCCESS",
         "latencyMs": int((time.time() - started) * 1000),
@@ -1293,7 +1535,9 @@ try:
         "usage": {
             "promptTokens": int(usage.get("prompt_tokens") or 0),
             "completionTokens": int(usage.get("completion_tokens") or 0),
-            "cachedTokens": int(details.get("cached_tokens") or 0)
+            "cachedTokens": cache_read_tokens + cache_write_tokens,
+            "cacheReadTokens": cache_read_tokens,
+            "cacheWriteTokens": cache_write_tokens
         },
         "sampleText": str(content)[:500],
         "error": None,
@@ -1305,7 +1549,7 @@ except urllib.error.HTTPError as exc:
         "status": "AUTH_FAILED" if exc.code in (401, 403) else "FAILED",
         "latencyMs": int((time.time() - started) * 1000),
         "model": model,
-        "usage": {"promptTokens": 0, "completionTokens": 0, "cachedTokens": 0},
+        "usage": {"promptTokens": 0, "completionTokens": 0, "cachedTokens": 0, "cacheReadTokens": 0, "cacheWriteTokens": 0},
         "sampleText": "",
         "error": "HTTP " + str(exc.code) + ": " + body[:1000],
         "exitCode": exc.code
@@ -1315,7 +1559,7 @@ except Exception as exc:
         "status": "FAILED",
         "latencyMs": int((time.time() - started) * 1000),
         "model": model,
-        "usage": {"promptTokens": 0, "completionTokens": 0, "cachedTokens": 0},
+        "usage": {"promptTokens": 0, "completionTokens": 0, "cachedTokens": 0, "cacheReadTokens": 0, "cacheWriteTokens": 0},
         "sampleText": "",
         "error": str(exc),
         "exitCode": 1
@@ -1612,6 +1856,170 @@ function healthType(value: string) {
   color: #e2e8f0;
 }
 
+.channel-pricing-editor {
+  display: grid;
+  gap: 16px;
+  margin-top: 22px;
+  padding-top: 20px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.channel-pricing-head,
+.channel-model-pricing-title,
+.price-tier-toolbar,
+.price-tier-head,
+.price-group-head,
+.channel-price-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.channel-pricing-head h3,
+.channel-pricing-head p {
+  margin: 0;
+}
+
+.channel-pricing-head p,
+.price-tier-toolbar span,
+.channel-model-pricing-title span {
+  display: block;
+  margin-top: 5px;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.channel-model-pricing-card {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.channel-model-pricing-title strong {
+  display: block;
+  color: #0f172a;
+  font-size: 18px;
+}
+
+.channel-model-pricing-switches,
+.tier-head-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.channel-price-grid,
+.tier-identity {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.channel-price-grid label,
+.tier-identity label,
+.price-dimension-grid label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: #475569;
+  font-size: 12px;
+}
+
+.channel-price-grid :deep(.el-input-number),
+.tier-identity :deep(.el-input-number),
+.price-dimension-grid :deep(.el-input-number) {
+  width: 100%;
+}
+
+.price-tier-toolbar {
+  align-items: flex-end;
+  padding-top: 6px;
+}
+
+.price-tier-card {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid #dbeafe;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.price-tier-head {
+  align-items: flex-end;
+}
+
+.tier-identity {
+  flex: 1;
+  grid-template-columns: repeat(2, minmax(180px, 1fr));
+}
+
+.tier-price-groups {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.tier-price-group {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+}
+
+.official-group { background: #f8fafc; }
+.cost-group { background: #fff7ed; border-color: #fed7aa; }
+.sale-group { background: #f0fdf4; border-color: #bbf7d0; }
+
+.price-group-head {
+  align-items: center;
+}
+
+.price-group-head strong {
+  flex: 0 0 auto;
+  color: #0f172a;
+}
+
+.price-group-head :deep(.el-input) {
+  max-width: 210px;
+}
+
+.price-dimension-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.channel-price-actions {
+  align-items: flex-start;
+  color: #475569;
+  font-size: 12px;
+}
+
+.channel-price-actions .loss,
+.negative-profit {
+  color: #dc2626;
+}
+
+.tier-table-cell {
+  display: grid;
+  gap: 8px;
+  line-height: 1.45;
+  white-space: normal;
+}
+
+.tier-table-cell span + span {
+  padding-top: 8px;
+  border-top: 1px dashed #e2e8f0;
+}
+
 @media (max-width: 1100px) {
   .console-toolbar {
     align-items: stretch;
@@ -1635,6 +2043,10 @@ function healthType(value: string) {
   .discovery-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .tier-price-groups {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 @media (max-width: 680px) {
@@ -1647,6 +2059,28 @@ function healthType(value: string) {
   .report-summary,
   .issued-secret {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .channel-pricing-head,
+  .channel-model-pricing-title,
+  .price-tier-toolbar,
+  .price-tier-head,
+  .price-group-head,
+  .channel-price-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .channel-price-grid,
+  .tier-identity,
+  .price-dimension-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .channel-model-pricing-card,
+  .price-tier-card,
+  .tier-price-group {
+    padding: 12px;
   }
 }
 </style>

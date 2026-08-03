@@ -240,6 +240,8 @@
                   <span>{{ selectedModelDetail.routeCount }} 条可用路由</span>
                   <span>输入 {{ formatPerMillionCny(selectedModelDetail.minInputPricePerMillion) }}</span>
                   <span>输出 {{ formatPerMillionCny(selectedModelDetail.minOutputPricePerMillion) }}</span>
+                  <span>缓存读 {{ formatPerMillionCny(selectedModelDetail.minCacheReadPricePerMillion) }}</span>
+                  <span>缓存写 {{ formatPerMillionCny(selectedModelDetail.minCacheWritePricePerMillion) }}</span>
                 </div>
               </el-form-item>
               <el-alert
@@ -316,7 +318,15 @@
                   <strong>{{ number(playgroundUsage.completionTokens) }}</strong>
                 </article>
                 <article>
-                  <span>缓存命中 Token</span>
+                  <span>缓存读取 Token</span>
+                  <strong>{{ number(playgroundUsage.cacheReadTokens) }}</strong>
+                </article>
+                <article>
+                  <span>缓存写入 Token</span>
+                  <strong>{{ number(playgroundUsage.cacheWriteTokens) }}</strong>
+                </article>
+                <article>
+                  <span>缓存合计 Token</span>
                   <strong>{{ number(playgroundUsage.cachedTokens) }}</strong>
                 </article>
                 <article class="total-cost">
@@ -325,14 +335,18 @@
                 </article>
               </div>
               <div class="playground-rate-grid">
+                <div><span>计价挡位</span><b>{{ playgroundUsage.priceTier || '默认挡位' }}</b></div>
+                <div><span>售价组</span><b>{{ playgroundUsage.saleGroupName || '本站售价' }}</b></div>
                 <div><span>输入单价</span><b>{{ formatPerMillionCny(playgroundUsage.inputPricePerMillion) }}</b></div>
                 <div><span>输出单价</span><b>{{ formatPerMillionCny(playgroundUsage.outputPricePerMillion) }}</b></div>
-                <div><span>缓存单价</span><b>{{ formatPerMillionCny(playgroundUsage.cachedPricePerMillion) }}</b></div>
+                <div><span>缓存读取单价</span><b>{{ formatPerMillionCny(playgroundUsage.cacheReadPricePerMillion) }}</b></div>
+                <div><span>缓存写入单价</span><b>{{ formatPerMillionCny(playgroundUsage.cacheWritePricePerMillion) }}</b></div>
               </div>
               <div class="playground-cost-breakdown">
                 <span>输入费用 {{ formatCny(playgroundUsage.inputAmount) }}</span>
                 <span>输出费用 {{ formatCny(playgroundUsage.outputAmount) }}</span>
-                <span>缓存费用 {{ formatCny(playgroundUsage.cachedAmount) }}</span>
+                <span>缓存读取费用 {{ formatCny(playgroundUsage.cacheReadAmount) }}</span>
+                <span>缓存写入费用 {{ formatCny(playgroundUsage.cacheWriteAmount) }}</span>
               </div>
               <p class="playground-billing-note">
                 Token、单价和扣费均由服务端根据管理员模型配置计算并落账，浏览器不参与计费。
@@ -570,13 +584,21 @@ type PlaygroundUsage = {
   promptTokens: number
   completionTokens: number
   cachedTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
   estimated: boolean
+  priceTier: string
+  saleGroupName: string
   inputPricePerMillion: number | string
   outputPricePerMillion: number | string
   cachedPricePerMillion: number | string
+  cacheReadPricePerMillion: number | string
+  cacheWritePricePerMillion: number | string
   inputAmount: AmountUnits
   outputAmount: AmountUnits
   cachedAmount: AmountUnits
+  cacheReadAmount: AmountUnits
+  cacheWriteAmount: AmountUnits
   totalAmount: AmountUnits
 }
 const playgroundUsage = ref<PlaygroundUsage | null>(null)
@@ -833,17 +855,29 @@ function extractPlaygroundUsage(data: any): PlaygroundUsage | null {
   const cachedFromDetails = Number(usage.prompt_tokens_details?.cached_tokens || 0)
     + Number(usage.cache_read_input_tokens || 0)
     + Number(usage.cache_creation_input_tokens || 0)
+  const cacheReadTokens = Math.max(0,
+    Number(billing.cache_read_tokens ?? usage.prompt_tokens_details?.cached_tokens ?? usage.cache_read_input_tokens ?? 0))
+  const cacheWriteTokens = Math.max(0,
+    Number(billing.cache_write_tokens ?? usage.cache_creation_input_tokens ?? 0))
   return {
     promptTokens,
     completionTokens,
     cachedTokens: Math.max(0, Number(billing.cached_tokens ?? cachedFromDetails)),
+    cacheReadTokens,
+    cacheWriteTokens,
     estimated: Boolean(usage.estimated),
+    priceTier: String(billing.price_tier || '默认挡位'),
+    saleGroupName: String(billing.sale_group_name || '本站售价'),
     inputPricePerMillion: billing.input_price_per_million ?? 0,
     outputPricePerMillion: billing.output_price_per_million ?? 0,
     cachedPricePerMillion: billing.cached_price_per_million ?? 0,
+    cacheReadPricePerMillion: billing.cache_read_price_per_million ?? billing.cached_price_per_million ?? 0,
+    cacheWritePricePerMillion: billing.cache_write_price_per_million ?? 0,
     inputAmount: billing.input_amount ?? 0,
     outputAmount: billing.output_amount ?? 0,
     cachedAmount: billing.cached_amount ?? 0,
+    cacheReadAmount: billing.cache_read_amount ?? 0,
+    cacheWriteAmount: billing.cache_write_amount ?? 0,
     totalAmount: billing.total_amount ?? 0
   }
 }

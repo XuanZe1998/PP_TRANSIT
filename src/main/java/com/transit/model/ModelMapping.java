@@ -10,6 +10,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 @TableName("model_mappings")
 @Data
@@ -77,6 +78,11 @@ public class ModelMapping {
 
     @TableField("capability_tags")
     private String capabilityTags;
+
+    /** Context-sensitive official, acquisition-cost and sale-price groups. */
+    @TableField(exist = false)
+    @Builder.Default
+    private List<ModelPriceTier> priceTiers = List.of();
 
     // Use a transient field for the Channel object if needed, 
     // or handle join manually in mapper.

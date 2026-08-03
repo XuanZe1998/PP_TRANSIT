@@ -7,6 +7,7 @@ import com.transit.mapper.ChannelMapper;
 import com.transit.mapper.ModelMappingMapper;
 import com.transit.model.Channel;
 import com.transit.model.ModelMapping;
+import com.transit.model.ModelPriceTier;
 import com.transit.provider.ProviderGateway;
 import com.transit.provider.ProviderGatewayFactory;
 import lombok.RequiredArgsConstructor;
@@ -41,17 +42,19 @@ public class AdminChannelService {
     private final ChannelUrlPolicy channelUrlPolicy;
     private final ProviderGatewayFactory providerGatewayFactory;
     private final ChannelSecretService channelSecretService;
+    private final ModelPriceTierService priceTierService;
 
     @Transactional(readOnly = true)
     public List<Channel> list() {
         List<Channel> channels = channelMapper.selectList(null);
         if (channels.isEmpty()) return channels;
-        Map<Long, List<ModelMapping>> pricingByChannel = modelMappingMapper.selectList(
+        List<ModelMapping> pricing = modelMappingMapper.selectList(
                         new LambdaQueryWrapper<ModelMapping>()
                                 .in(ModelMapping::getChannelId, channels.stream().map(Channel::getId).toList())
                                 .orderByAsc(ModelMapping::getChannelId)
-                                .orderByAsc(ModelMapping::getChannelModelName))
-                .stream()
+                                .orderByAsc(ModelMapping::getChannelModelName));
+        priceTierService.attach(pricing);
+        Map<Long, List<ModelMapping>> pricingByChannel = pricing.stream()
                 .collect(Collectors.groupingBy(ModelMapping::getChannelId,
                         LinkedHashMap::new, Collectors.toList()));
         channels.forEach(channel -> {
@@ -110,6 +113,10 @@ public class AdminChannelService {
 
     @Transactional
     public void delete(Long id) {
+        List<Long> mappingIds = modelMappingMapper.selectList(new LambdaQueryWrapper<ModelMapping>()
+                        .eq(ModelMapping::getChannelId, id))
+                .stream().map(ModelMapping::getId).toList();
+        priceTierService.deleteForMappings(mappingIds);
         modelMappingMapper.delete(new LambdaQueryWrapper<ModelMapping>()
                 .eq(ModelMapping::getChannelId, id));
         channelMapper.deleteById(id);
@@ -233,6 +240,8 @@ public class AdminChannelService {
             usageResult.put("promptTokens", usage == null || usage.getPromptTokens() == null ? 0 : usage.getPromptTokens());
             usageResult.put("completionTokens", usage == null || usage.getCompletionTokens() == null ? 0 : usage.getCompletionTokens());
             usageResult.put("cachedTokens", usage == null ? 0 : usage.cachedTokens());
+            usageResult.put("cacheReadTokens", usage == null ? 0 : usage.cacheReadTokens());
+            usageResult.put("cacheWriteTokens", usage == null ? 0 : usage.cacheWriteTokens());
             String sample = "";
             if (response.getChoices() != null && !response.getChoices().isEmpty()
                     && response.getChoices().get(0).getMessage() != null) {
@@ -292,8 +301,13 @@ public class AdminChannelService {
         Map<?, ?> usage = result.get("usage") instanceof Map<?, ?> map ? map : Map.of();
         int promptTokens = intValue(usage.get("promptTokens"), 0);
         int completionTokens = intValue(usage.get("completionTokens"), 0);
-        int cachedTokens = Math.min(promptTokens, intValue(usage.get("cachedTokens"), 0));
-        int billableInputTokens = Math.max(0, promptTokens - cachedTokens);
+        int cacheReadTokens = Math.min(promptTokens, intValue(usage.get("cacheReadTokens"), 0));
+        int cacheWriteTokens = Math.min(Math.max(0, promptTokens - cacheReadTokens),
+                intValue(usage.get("cacheWriteTokens"), 0));
+        if (cacheReadTokens == 0 && cacheWriteTokens == 0) {
+            cacheReadTokens = Math.min(promptTokens, intValue(usage.get("cachedTokens"), 0));
+        }
+        int billableInputTokens = Math.max(0, promptTokens - cacheReadTokens - cacheWriteTokens);
         ModelMapping mapping = modelMappingMapper.selectList(new LambdaQueryWrapper<ModelMapping>()
                 .eq(ModelMapping::getChannelId, channelId)
                 .and(q -> q.eq(ModelMapping::getChannelModelName, model).or().eq(ModelMapping::getPublicModelName, model))
@@ -314,9 +328,17 @@ public class AdminChannelService {
         if (mapping == null) {
             return 0;
         }
-        return price(billableInputTokens, positiveCoalesce(mapping.getInputCostPerMillion(), mapping.getCostPerMillion(), mapping.getInputPricePerMillion(), mapping.getPriceRatio(), BigDecimal.ZERO))
-                + price(completionTokens, positiveCoalesce(mapping.getOutputCostPerMillion(), mapping.getCostPerMillion(), mapping.getOutputPricePerMillion(), mapping.getPriceRatio(), BigDecimal.ZERO))
-                + price(cachedTokens, positiveCoalesce(mapping.getCachedCostPerMillion(), mapping.getCachedPricePerMillion(), BigDecimal.ZERO));
+        priceTierService.attach(List.of(mapping));
+        ModelPriceTier tier = priceTierService.select(mapping, promptTokens);
+        if (tier == null) {
+            return price(billableInputTokens, positiveCoalesce(mapping.getInputCostPerMillion(), mapping.getCostPerMillion(), BigDecimal.ZERO))
+                    + price(completionTokens, positiveCoalesce(mapping.getOutputCostPerMillion(), mapping.getCostPerMillion(), BigDecimal.ZERO))
+                    + price(cacheReadTokens, positiveCoalesce(mapping.getCachedCostPerMillion(), BigDecimal.ZERO));
+        }
+        return price(billableInputTokens, tier.getCostInputPrice())
+                + price(completionTokens, tier.getCostOutputPrice())
+                + price(cacheReadTokens, tier.getCostCacheReadPrice())
+                + price(cacheWriteTokens, tier.getCostCacheWritePrice());
     }
 
     private long price(int tokens, BigDecimal amountPerMillion) {
@@ -370,7 +392,12 @@ public class AdminChannelService {
                 "status", status,
                 "latencyMs", latencyMs,
                 "model", model,
-                "usage", Map.of("promptTokens", 0, "completionTokens", 0, "cachedTokens", 0),
+                "usage", Map.of(
+                        "promptTokens", 0,
+                        "completionTokens", 0,
+                        "cachedTokens", 0,
+                        "cacheReadTokens", 0,
+                        "cacheWriteTokens", 0),
                 "sampleText", "",
                 "error", error == null ? "" : error,
                 "exitCode", exitCode
@@ -420,9 +447,11 @@ public class AdminChannelService {
 
     private Channel channelView(Channel channel) {
         if (channel == null) return null;
-        channel.setModelPricing(modelMappingMapper.selectList(new LambdaQueryWrapper<ModelMapping>()
+        List<ModelMapping> pricing = modelMappingMapper.selectList(new LambdaQueryWrapper<ModelMapping>()
                 .eq(ModelMapping::getChannelId, channel.getId())
-                .orderByAsc(ModelMapping::getChannelModelName)));
+                .orderByAsc(ModelMapping::getChannelModelName));
+        priceTierService.attach(pricing);
+        channel.setModelPricing(pricing);
         channelSecretService.redact(channel);
         return channel;
     }
@@ -483,11 +512,14 @@ public class AdminChannelService {
             } else {
                 modelMappingMapper.updateById(target);
             }
+            priceTierService.synchronize(target,
+                    requested == null ? List.of() : requested.getPriceTiers());
             retainedIds.add(target.getId());
         }
 
         for (ModelMapping mapping : existing) {
             if (!retainedIds.contains(mapping.getId())) {
+                priceTierService.deleteForMappings(List.of(mapping.getId()));
                 modelMappingMapper.deleteById(mapping.getId());
             }
         }

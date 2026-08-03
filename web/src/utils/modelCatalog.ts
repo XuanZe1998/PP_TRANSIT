@@ -7,6 +7,10 @@ export type CallableModel = {
   maxOutputPricePerMillion: number | string
   minCachedPricePerMillion: number | string
   maxCachedPricePerMillion: number | string
+  minCacheReadPricePerMillion: number | string
+  maxCacheReadPricePerMillion: number | string
+  minCacheWritePricePerMillion: number | string
+  maxCacheWritePricePerMillion: number | string
   routeCount: number
   providerCount: number
   currency?: string
@@ -81,6 +85,10 @@ function normalizeCatalogItem(value: unknown): CallableModel | null {
     maxOutputPricePerMillion: decimal(item.maxOutputPricePerMillion),
     minCachedPricePerMillion: decimal(item.minCachedPricePerMillion),
     maxCachedPricePerMillion: decimal(item.maxCachedPricePerMillion),
+    minCacheReadPricePerMillion: decimal(item.minCacheReadPricePerMillion ?? item.minCachedPricePerMillion),
+    maxCacheReadPricePerMillion: decimal(item.maxCacheReadPricePerMillion ?? item.maxCachedPricePerMillion),
+    minCacheWritePricePerMillion: decimal(item.minCacheWritePricePerMillion),
+    maxCacheWritePricePerMillion: decimal(item.maxCacheWritePricePerMillion),
     routeCount: positiveInteger(item.routeCount, 1),
     providerCount: positiveInteger(item.providerCount, 1),
     currency: typeof item.currency === 'string' ? item.currency : 'CNY',
@@ -100,6 +108,10 @@ function fallbackModel(publicName: string): CallableModel {
     maxOutputPricePerMillion: emptyPrice,
     minCachedPricePerMillion: emptyPrice,
     maxCachedPricePerMillion: emptyPrice,
+    minCacheReadPricePerMillion: emptyPrice,
+    maxCacheReadPricePerMillion: emptyPrice,
+    minCacheWritePricePerMillion: emptyPrice,
+    maxCacheWritePricePerMillion: emptyPrice,
     routeCount: 1,
     providerCount: 1,
     currency: 'CNY',

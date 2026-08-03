@@ -28,12 +28,16 @@ public interface ModelMappingMapper extends BaseMapper<ModelMapping> {
     String PUBLIC_COLUMNS = """
             mm.public_model_name AS publicName,
             CASE WHEN COUNT(DISTINCT LOWER(c.type)) > 1 THEN 'multi' ELSE MAX(LOWER(c.type)) END AS type,
-            MIN(CASE WHEN mm.billing_enabled = TRUE THEN COALESCE(mm.input_price_per_million, mm.price_ratio, 0) ELSE 0 END) AS minInputPricePerMillion,
-            MAX(CASE WHEN mm.billing_enabled = TRUE THEN COALESCE(mm.input_price_per_million, mm.price_ratio, 0) ELSE 0 END) AS maxInputPricePerMillion,
-            MIN(CASE WHEN mm.billing_enabled = TRUE THEN COALESCE(mm.output_price_per_million, mm.price_ratio, 0) ELSE 0 END) AS minOutputPricePerMillion,
-            MAX(CASE WHEN mm.billing_enabled = TRUE THEN COALESCE(mm.output_price_per_million, mm.price_ratio, 0) ELSE 0 END) AS maxOutputPricePerMillion,
-            MIN(CASE WHEN mm.billing_enabled = TRUE THEN COALESCE(mm.cached_price_per_million, 0) ELSE 0 END) AS minCachedPricePerMillion,
-            MAX(CASE WHEN mm.billing_enabled = TRUE THEN COALESCE(mm.cached_price_per_million, 0) ELSE 0 END) AS maxCachedPricePerMillion,
+            MIN(CASE WHEN mm.billing_enabled = TRUE THEN COALESCE(pt.sale_input_price, mm.input_price_per_million, mm.price_ratio, 0) ELSE 0 END) AS minInputPricePerMillion,
+            MAX(CASE WHEN mm.billing_enabled = TRUE THEN COALESCE(pt.sale_input_price, mm.input_price_per_million, mm.price_ratio, 0) ELSE 0 END) AS maxInputPricePerMillion,
+            MIN(CASE WHEN mm.billing_enabled = TRUE THEN COALESCE(pt.sale_output_price, mm.output_price_per_million, mm.price_ratio, 0) ELSE 0 END) AS minOutputPricePerMillion,
+            MAX(CASE WHEN mm.billing_enabled = TRUE THEN COALESCE(pt.sale_output_price, mm.output_price_per_million, mm.price_ratio, 0) ELSE 0 END) AS maxOutputPricePerMillion,
+            MIN(CASE WHEN mm.billing_enabled = TRUE THEN COALESCE(pt.sale_cache_read_price, mm.cached_price_per_million, 0) ELSE 0 END) AS minCachedPricePerMillion,
+            MAX(CASE WHEN mm.billing_enabled = TRUE THEN COALESCE(pt.sale_cache_read_price, mm.cached_price_per_million, 0) ELSE 0 END) AS maxCachedPricePerMillion,
+            MIN(CASE WHEN mm.billing_enabled = TRUE THEN COALESCE(pt.sale_cache_read_price, mm.cached_price_per_million, 0) ELSE 0 END) AS minCacheReadPricePerMillion,
+            MAX(CASE WHEN mm.billing_enabled = TRUE THEN COALESCE(pt.sale_cache_read_price, mm.cached_price_per_million, 0) ELSE 0 END) AS maxCacheReadPricePerMillion,
+            MIN(CASE WHEN mm.billing_enabled = TRUE THEN COALESCE(pt.sale_cache_write_price, 0) ELSE 0 END) AS minCacheWritePricePerMillion,
+            MAX(CASE WHEN mm.billing_enabled = TRUE THEN COALESCE(pt.sale_cache_write_price, 0) ELSE 0 END) AS maxCacheWritePricePerMillion,
             COUNT(DISTINCT c.id) AS routeCount,
             COUNT(DISTINCT LOWER(c.type)) AS providerCount
             """;
@@ -49,6 +53,7 @@ public interface ModelMappingMapper extends BaseMapper<ModelMapping> {
     @Select("SELECT " + PUBLIC_COLUMNS + """
             FROM model_mappings mm
             JOIN channels c ON mm.channel_id = c.id
+            LEFT JOIN model_price_tiers pt ON pt.model_mapping_id = mm.id
             WHERE
             """ + ROUTABLE + " GROUP BY mm.public_model_name ORDER BY mm.public_model_name")
     List<PublicModel> findPublicModels();
@@ -70,6 +75,7 @@ public interface ModelMappingMapper extends BaseMapper<ModelMapping> {
     @Select("SELECT " + PUBLIC_COLUMNS + """
             FROM model_mappings mm
             JOIN channels c ON mm.channel_id = c.id
+            LEFT JOIN model_price_tiers pt ON pt.model_mapping_id = mm.id
             WHERE
             """ + ROUTABLE + """
               AND (#{query} IS NULL OR LOWER(mm.public_model_name) LIKE CONCAT('%', LOWER(#{query}), '%'))
@@ -85,6 +91,7 @@ public interface ModelMappingMapper extends BaseMapper<ModelMapping> {
             , COALESCE(MAX(lg.logs_count), 0) AS hot
             FROM model_mappings mm
             JOIN channels c ON mm.channel_id = c.id
+            LEFT JOIN model_price_tiers pt ON pt.model_mapping_id = mm.id
             LEFT JOIN (
               SELECT model, COUNT(*) AS logs_count
               FROM logs WHERE status LIKE 'SUCCESS%' GROUP BY model
@@ -106,6 +113,7 @@ public interface ModelMappingMapper extends BaseMapper<ModelMapping> {
             , MAX(lg.last_used) AS lastUsed
             FROM model_mappings mm
             JOIN channels c ON mm.channel_id = c.id
+            LEFT JOIN model_price_tiers pt ON pt.model_mapping_id = mm.id
             LEFT JOIN (
               SELECT model, MAX(created_at) AS last_used
               FROM logs WHERE status LIKE 'SUCCESS%' GROUP BY model
@@ -126,6 +134,7 @@ public interface ModelMappingMapper extends BaseMapper<ModelMapping> {
     @Select("SELECT " + PUBLIC_COLUMNS + """
             FROM model_mappings mm
             JOIN channels c ON mm.channel_id = c.id
+            LEFT JOIN model_price_tiers pt ON pt.model_mapping_id = mm.id
             WHERE
             """ + ROUTABLE + """
               AND (#{type} IS NULL OR LOWER(c.type) = LOWER(#{type}))

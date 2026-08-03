@@ -59,6 +59,18 @@
               <el-tag>{{ row.type || 'unknown' }}</el-tag>
             </template>
           </el-table-column>
+          <el-table-column label="输入售价 / 百万 Token" min-width="190">
+            <template #default="{ row }">{{ priceRange(row.minInputPricePerMillion, row.maxInputPricePerMillion) }}</template>
+          </el-table-column>
+          <el-table-column label="输出售价 / 百万 Token" min-width="190">
+            <template #default="{ row }">{{ priceRange(row.minOutputPricePerMillion, row.maxOutputPricePerMillion) }}</template>
+          </el-table-column>
+          <el-table-column label="缓存读取 / 百万 Token" min-width="190">
+            <template #default="{ row }">{{ priceRange(row.minCacheReadPricePerMillion, row.maxCacheReadPricePerMillion) }}</template>
+          </el-table-column>
+          <el-table-column label="缓存写入 / 百万 Token" min-width="190">
+            <template #default="{ row }">{{ priceRange(row.minCacheWritePricePerMillion, row.maxCacheWritePricePerMillion) }}</template>
+          </el-table-column>
           <el-table-column label="建议用途" min-width="220">
             <template #default="{ row }">
               {{ modelUseHint(row.publicName, row.type) }}
@@ -83,6 +95,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import http from '@/utils/http'
+import { formatPerMillionCny } from '@/utils/money'
 
 type ProviderCatalogItem = {
   provider: string
@@ -95,7 +108,7 @@ type ProviderCatalogItem = {
 
 const loading = ref(false)
 const searchQuery = ref('')
-const items = ref<{ publicName: string; type: string }[]>([])
+const items = ref<Array<Record<string, any>>>([])
 const total = ref(0)
 const page = ref(1)
 const size = ref(12)
@@ -152,6 +165,12 @@ const modelUseHint = (model: string, type: string) => {
   if (lower.includes('flash') || lower.includes('mini') || lower.includes('nano')) return '轻量实时调用'
   if (lower.includes('opus') || lower.includes('gpt-5')) return '高质量主路径'
   return '通用对话与文本生成'
+}
+
+const priceRange = (min: unknown, max: unknown) => {
+  const low = formatPerMillionCny(min as any)
+  const high = formatPerMillionCny(max as any)
+  return low === high ? low : `${low} – ${high}`
 }
 </script>
 
