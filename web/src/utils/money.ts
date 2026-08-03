@@ -155,6 +155,10 @@ export function formatSignedCny(amountUnits: AmountUnits): string {
  * CNY values because the backend multiplies them by billing.amount-scale only
  * when producing the final immutable ledger amount.
  */
-export function formatPerMillionCny(cnyPerMillion: AmountUnits): string {
-  return `${formatDecimal(parseDecimal(cnyPerMillion), 4, 6, false, 0)} / 1M tokens`
+export function formatPerMillionCny(cnyPerMillion: AmountUnits, unit = 'M', suffix?: string): string {
+  const normalizedUnit = String(unit || 'M').toUpperCase() === 'KB' ? 'KB' : 'M'
+  const formatted = formatDecimal(parseDecimal(cnyPerMillion), 4, 6, false, 0)
+  const normalizedSuffix = String(suffix || '').trim()
+  if (!normalizedSuffix && normalizedUnit === 'M') return `${formatted} / 1M tokens`
+  return `${formatted} ${normalizedSuffix || `CNY / 1${normalizedUnit} Token`}`
 }

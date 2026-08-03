@@ -338,10 +338,10 @@
                 <div><span>计价挡位</span><b>{{ playgroundUsage.priceTier || '默认挡位' }}</b></div>
                 <div><span>售价组 / 单位</span><b>{{ playgroundUsage.saleGroupName || '本站售价' }} · {{ playgroundUsage.priceUnit || 'M' }}</b></div>
                 <div><span>价格后缀</span><b>{{ playgroundUsage.priceSuffix || 'CNY / 1M Token' }}</b></div>
-                <div><span>输入单价</span><b>{{ formatPerMillionCny(playgroundUsage.inputPricePerMillion) }}</b></div>
-                <div><span>输出单价</span><b>{{ formatPerMillionCny(playgroundUsage.outputPricePerMillion) }}</b></div>
-                <div><span>缓存读取单价</span><b>{{ formatPerMillionCny(playgroundUsage.cacheReadPricePerMillion) }}</b></div>
-                <div><span>缓存写入单价</span><b>{{ formatPerMillionCny(playgroundUsage.cacheWritePricePerMillion) }}</b></div>
+                <div><span>输入单价</span><b>{{ formatPerMillionCny(playgroundUsage.inputPricePerMillion, playgroundUsage.priceUnit, playgroundUsage.priceSuffix) }}</b></div>
+                <div><span>输出单价</span><b>{{ formatPerMillionCny(playgroundUsage.outputPricePerMillion, playgroundUsage.priceUnit, playgroundUsage.priceSuffix) }}</b></div>
+                <div><span>缓存读取单价</span><b>{{ formatPerMillionCny(playgroundUsage.cacheReadPricePerMillion, playgroundUsage.priceUnit, playgroundUsage.priceSuffix) }}</b></div>
+                <div><span>缓存写入单价</span><b>{{ formatPerMillionCny(playgroundUsage.cacheWritePricePerMillion, playgroundUsage.priceUnit, playgroundUsage.priceSuffix) }}</b></div>
               </div>
               <div class="playground-cost-breakdown">
                 <span>输入费用 {{ formatCny(playgroundUsage.inputAmount) }}</span>
