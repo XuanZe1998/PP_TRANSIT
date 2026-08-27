@@ -1,0 +1,168 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+readonly BACKEND_RELEASES=/opt/api-transit/releases
+readonly BACKEND_CURRENT=/opt/api-transit/current
+readonly FRONTEND_RELEASES=/var/www/linknux-releases
+readonly FRONTEND_CURRENT=/var/www/linknux
+readonly INCOMING_ROOT=/var/lib/api-transit-deploy/incoming
+readonly BACKUP_ROOT=/var/backups/api-transit
+readonly SERVICE=api-transit.service
+readonly KEEP_COUNT=5
+
+die() {
+  echo "release error: $*" >&2
+  exit 1
+}
+
+[[ $EUID -eq 0 ]] || die "must run as root"
+[[ $# -eq 1 ]] || die "usage: api-transit-release <release-id>"
+release_id=$1
+[[ $release_id =~ ^[0-9]{8}-[0-9]{6}-[0-9a-f]{7}$ ]] || die "invalid release id"
+
+exec 9>/run/lock/api-transit-release.lock
+flock -n 9 || die "another production release is running"
+
+incoming="$INCOMING_ROOT/$release_id"
+backend_release="$BACKEND_RELEASES/$release_id"
+frontend_release="$FRONTEND_RELEASES/$release_id"
+jar_file="$incoming/api-transit.jar"
+frontend_archive="$incoming/frontend.tar.gz"
+checksum_file="$incoming/SHA256SUMS"
+
+[[ -d $incoming ]] || die "incoming release does not exist"
+[[ $(stat -c '%U' "$incoming") == api-deploy ]] || die "incoming release has the wrong owner"
+[[ -f $jar_file && -s $jar_file ]] || die "backend artifact is missing"
+[[ -f $frontend_archive && -s $frontend_archive ]] || die "frontend artifact is missing"
+[[ -f $checksum_file && -s $checksum_file ]] || die "checksum manifest is missing"
+[[ $(stat -c '%s' "$jar_file") -le 536870912 ]] || die "backend artifact is too large"
+[[ $(stat -c '%s' "$frontend_archive") -le 536870912 ]] || die "frontend artifact is too large"
+
+expected_manifest=$'api-transit.jar\nfrontend.tar.gz'
+actual_manifest=$(awk '{print $2}' "$checksum_file" | sed 's/^\*//' | sort)
+[[ $actual_manifest == "$expected_manifest" ]] || die "checksum manifest contains unexpected files"
+(cd "$incoming" && sha256sum --check --strict SHA256SUMS) || die "artifact checksum verification failed"
+
+python3 - "$jar_file" "$frontend_archive" <<'PY' || die "artifact structure validation failed"
+import pathlib
+import sys
+import tarfile
+import zipfile
+
+jar_path, frontend_path = sys.argv[1:]
+with zipfile.ZipFile(jar_path) as archive:
+    if not any(name.startswith("BOOT-INF/") for name in archive.namelist()):
+        raise SystemExit("backend artifact is not a Spring Boot JAR")
+
+has_index = False
+with tarfile.open(frontend_path, "r:gz") as archive:
+    for member in archive.getmembers():
+        path = pathlib.PurePosixPath(member.name)
+        if path.is_absolute() or ".." in path.parts:
+            raise SystemExit("frontend archive contains an unsafe path")
+        if member.issym() or member.islnk():
+            raise SystemExit("frontend archive contains links")
+        if path.name == "index.html" and len(path.parts) <= 2:
+            has_index = True
+if not has_index:
+    raise SystemExit("frontend archive does not contain index.html")
+PY
+
+[[ ! -e $backend_release ]] || die "backend release already exists"
+[[ ! -e $frontend_release ]] || die "frontend release already exists"
+install -d -m 0755 "$BACKEND_RELEASES" "$FRONTEND_RELEASES" "$BACKUP_ROOT"
+
+previous_backend=$(readlink -f "$BACKEND_CURRENT" 2>/dev/null || true)
+previous_frontend=$(readlink -f "$FRONTEND_CURRENT" 2>/dev/null || true)
+[[ -n $previous_backend && -d $previous_backend ]] || die "current backend release is invalid"
+[[ -n $previous_frontend && -d $previous_frontend ]] || die "current frontend release is invalid"
+
+backup_file="$BACKUP_ROOT/predeploy-$release_id.sql.gz"
+mysqldump --single-transaction --quick --routines --triggers --events api_transit | gzip -9 > "$backup_file"
+chmod 0600 "$backup_file"
+[[ -s $backup_file ]] || die "database backup is empty"
+
+install -d -m 0750 -o root -g api-transit "$backend_release"
+install -m 0640 -o root -g api-transit "$jar_file" "$backend_release/api-transit.jar"
+install -d -m 0755 -o root -g root "$frontend_release"
+tar --extract --gzip --file "$frontend_archive" --directory "$frontend_release" --no-same-owner --no-same-permissions
+find "$frontend_release" -type d -exec chmod 0755 {} +
+find "$frontend_release" -type f -exec chmod 0644 {} +
+chown -R root:root "$frontend_release"
+
+atomic_link() {
+  local target=$1
+  local link=$2
+  local temporary="${link}.new-$release_id"
+  [[ $target == "$BACKEND_RELEASES/"* || $target == "$FRONTEND_RELEASES/"* ]] \
+    || die "refusing to link outside release roots"
+  ln -s "$target" "$temporary"
+  mv -Tf "$temporary" "$link"
+}
+
+wait_for_backend() {
+  local attempt
+  for attempt in $(seq 1 45); do
+    if curl --fail --silent --max-time 3 http://127.0.0.1:8089/actuator/health \
+      | grep '"status":"UP"' >/dev/null; then
+      return 0
+    fi
+    sleep 2
+  done
+  return 1
+}
+
+smoke_test() {
+  curl --fail --silent --show-error --location --max-time 10 \
+    --resolve linknux.com:443:127.0.0.1 https://linknux.com/ >/dev/null
+  curl --fail --silent --show-error --max-time 10 \
+    'http://127.0.0.1:8089/public/models?size=1' \
+    | python3 -c 'import json,sys; data=json.load(sys.stdin); assert isinstance(data.get("items"), list)'
+}
+
+rollback() {
+  echo "release failed; restoring previous backend and frontend" >&2
+  atomic_link "$previous_backend" "$BACKEND_CURRENT"
+  atomic_link "$previous_frontend" "$FRONTEND_CURRENT"
+  systemctl restart "$SERVICE" || true
+  wait_for_backend || echo "critical: previous backend did not recover" >&2
+  rm -rf -- "$backend_release" "$frontend_release"
+  exit 1
+}
+
+atomic_link "$backend_release" "$BACKEND_CURRENT"
+atomic_link "$frontend_release" "$FRONTEND_CURRENT"
+if ! systemctl restart "$SERVICE" || ! wait_for_backend || ! smoke_test; then
+  rollback
+fi
+
+prune_release_root() {
+  local root=$1
+  local current_target=$2
+  local previous_target=$3
+  local count=0
+  local path resolved
+  while IFS= read -r path; do
+    resolved=$(readlink -f "$path")
+    [[ $resolved == "$root/"* ]] || continue
+    if [[ $resolved == "$current_target" || $resolved == "$previous_target" ]]; then
+      continue
+    fi
+    count=$((count + 1))
+    if (( count > KEEP_COUNT - 2 )); then
+      rm -rf -- "$resolved"
+    fi
+  done < <(find "$root" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' \
+    | sort -nr | cut -d' ' -f2-)
+}
+
+prune_release_root "$BACKEND_RELEASES" "$backend_release" "$previous_backend"
+prune_release_root "$FRONTEND_RELEASES" "$frontend_release" "$previous_frontend"
+mapfile -t old_backups < <(find "$BACKUP_ROOT" -mindepth 1 -maxdepth 1 -type f \
+  -name 'predeploy-*.sql.gz' -printf '%T@ %p\n' | sort -nr | tail -n +$((KEEP_COUNT + 1)) | cut -d' ' -f2-)
+for backup in "${old_backups[@]}"; do
+  [[ $backup == "$BACKUP_ROOT/"predeploy-*.sql.gz ]] && rm -f -- "$backup"
+done
+
+rm -rf -- "$incoming"
+echo "release activated: $release_id"
