@@ -1,0 +1,28 @@
+verifiedAt: "2026-08-26T19:30:00+09:00"
+exchangeRate: 7.00
+currency: CNY
+sourceUrl: https://www.haoee.com/maas
+models:
+  - { name: claude-opus-4-8, officialInput: 35, officialOutput: 175, costInput: 7.2, costOutput: 36 }
+  - { name: claude-sonnet-4-6, officialInput: 21, officialOutput: 105, costInput: 14.7, costOutput: 73.5 }
+  - { name: deepseek-v4-pro, officialInput: 9, officialOutput: 27, costInput: 9, costOutput: 27 }
+  - { name: gemini-3-flash-preview, officialInput: 3.5, officialOutput: 21, costInput: 2.65, costOutput: 15.75 }
+  - { name: gemini-3.1-pro-preview, officialInput: 14, officialOutput: 84, costInput: 10.5, costOutput: 63 }
+  - { name: gemini-3.5-flash, officialInput: 10.5, officialOutput: 63, costInput: 7.5, costOutput: 45 }
+  - { name: glm-5.3, officialInput: 8, officialOutput: 28, costInput: 8, costOutput: 28 }
+  - { name: glm-5.2, officialInput: 8, officialOutput: 28, costInput: 0.8, costOutput: 2.8, sourceUrl: "https://open.bigmodel.cn/pricing" }
+  - { name: doubao-seed-2-0-lite-260215, officialInput: 0.6, officialOutput: 3.6, costInput: 0.06, costOutput: 0.36, sourceUrl: "https://www.volcengine.com/docs/84458/1585097?lang=zh&redirect=1" }
+  - { name: gpt-5.3-codex, officialInput: 12.25, officialOutput: 98, costInput: 8.58, costOutput: 68.6 }
+  - { name: gpt-5.4, officialInput: 35, officialOutput: 210, costInput: 1, costOutput: 3 }
+  - { name: gpt-5.4-pro, officialInput: 207, officialOutput: 1240, costInput: 147, costOutput: 882 }
+  - { name: gpt-5.5, officialInput: 35, officialOutput: 210, costInput: 2, costOutput: 9.75 }
+  - { name: gpt-5.6-sol, officialInput: 34, officialOutput: 204, costInput: 2, costOutput: 9.75 }
+  - { name: gpt-5.6-terra, officialInput: 17, officialOutput: 102, costInput: 0.89, costOutput: 5.33 }
+  # OpenAI publishes Luna in USD; values below are converted to CNY at the manifest exchange rate (7.00).
+  - { name: gpt-5.6-luna, officialInput: 1.4, officialOutput: 8.4, costInput: 0.14, costOutput: 0.84, sourceUrl: "https://developers.openai.com/api/docs/models/gpt-5.6-luna" }
+  - { name: kimi-k2.6, officialInput: 6.5, officialOutput: 27, costInput: 4.6, costOutput: 19 }
+  - { name: kimi-k3, officialInput: 20, officialOutput: 100, costInput: 20, costOutput: 100 }
+  - { name: Minimax-M2.5, officialInput: 2.1, officialOutput: 8.4, costInput: 1.47, costOutput: 5.88 }
+  - { name: qwen-plus, officialInput: 0.8, officialOutput: 2, costInput: 0.4, costOutput: 1 }
+  - { name: qwen3-rerank, officialInput: 0.5, officialOutput: 0, costInput: 0.4, costOutput: 0, inputOnly: true, capability: rerank, protocols: reranks }
+  - { name: text-embedding-v4, officialInput: 0.25, officialOutput: 0, costInput: 0.2, costOutput: 0, inputOnly: true, capability: embedding, protocols: embeddings }

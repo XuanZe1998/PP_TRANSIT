@@ -90,10 +90,16 @@ public class AnthropicGateway implements ProviderGateway {
 
         ChatResponse.Usage usage = new ChatResponse.Usage();
         if (response.getUsage() != null) {
-            usage.setPromptTokens(response.getUsage().getInputTokens());
-            usage.setCompletionTokens(response.getUsage().getOutputTokens());
-            usage.setTotalTokens((response.getUsage().getInputTokens() == null ? 0 : response.getUsage().getInputTokens())
-                    + (response.getUsage().getOutputTokens() == null ? 0 : response.getUsage().getOutputTokens()));
+            int uncachedInput = response.getUsage().getInputTokens() == null ? 0 : response.getUsage().getInputTokens();
+            int output = response.getUsage().getOutputTokens() == null ? 0 : response.getUsage().getOutputTokens();
+            int cacheRead = response.getUsage().getCacheReadInputTokens() == null ? 0 : response.getUsage().getCacheReadInputTokens();
+            int cacheWrite = response.getUsage().getCacheCreationInputTokens() == null ? 0 : response.getUsage().getCacheCreationInputTokens();
+            int prompt = Math.addExact(uncachedInput, Math.addExact(cacheRead, cacheWrite));
+            usage.setPromptTokens(prompt);
+            usage.setCompletionTokens(output);
+            usage.setCacheReadInputTokens(cacheRead);
+            usage.setCacheCreationInputTokens(cacheWrite);
+            usage.setTotalTokens(Math.addExact(prompt, output));
         }
         result.setUsage(usage);
         return result;
@@ -150,5 +156,9 @@ public class AnthropicGateway implements ProviderGateway {
         private Integer inputTokens;
         @JsonProperty("output_tokens")
         private Integer outputTokens;
+        @JsonProperty("cache_read_input_tokens")
+        private Integer cacheReadInputTokens;
+        @JsonProperty("cache_creation_input_tokens")
+        private Integer cacheCreationInputTokens;
     }
 }

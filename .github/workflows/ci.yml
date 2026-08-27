@@ -1,0 +1,153 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+      - name: Test and package backend
+        run: |
+          chmod +x mvnw
+          ./mvnw --batch-mode --no-transfer-progress verify
+      - name: Prepare backend deployment artifact
+        if: github.ref == 'refs/heads/master' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        run: |
+          install -d deployment/backend
+          install -m 0644 target/API_transit_station-0.0.1-SNAPSHOT.jar deployment/backend/api-transit.jar
+      - name: Upload backend deployment artifact
+        if: github.ref == 'refs/heads/master' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-backend
+          if-no-files-found: error
+          retention-days: 1
+          path: deployment/backend/
+      - name: Upload test and coverage reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-reports
+          if-no-files-found: ignore
+          retention-days: 7
+          path: |
+            target/surefire-reports/
+            target/site/jacoco/
+
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install exact dependencies
+        run: npm ci
+      - name: Run frontend tests
+        run: npm test
+      - name: Build production frontend
+        run: npm run build
+      - name: Prepare frontend deployment artifact
+        if: github.ref == 'refs/heads/master' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        run: |
+          install -d deployment/frontend
+          cp -a dist/. deployment/frontend/
+      - name: Upload frontend deployment artifact
+        if: github.ref == 'refs/heads/master' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-frontend
+          if-no-files-found: error
+          retention-days: 1
+          path: web/deployment/frontend/
+
+  deploy:
+    if: github.ref == 'refs/heads/master' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    needs: [backend, frontend]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: production
+      url: https://linknux.com
+    concurrency:
+      group: api-transit-production
+      cancel-in-progress: false
+    steps:
+      - name: Download backend artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: production-backend
+          path: artifacts/backend
+      - name: Download frontend artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: production-frontend
+          path: artifacts/frontend
+      - name: Package and checksum release
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_id="$(date -u +%Y%m%d-%H%M%S)-${GITHUB_SHA::7}"
+          install -d upload
+          install -m 0644 artifacts/backend/api-transit.jar upload/api-transit.jar
+          tar -C artifacts/frontend -czf upload/frontend.tar.gz .
+          (cd upload && sha256sum api-transit.jar frontend.tar.gz > SHA256SUMS)
+          echo "release_id=$release_id" >> "$GITHUB_OUTPUT"
+      - name: Configure production SSH identity
+        shell: bash
+        env:
+          PROD_SSH_PRIVATE_KEY: ${{ secrets.PROD_SSH_PRIVATE_KEY }}
+          PROD_KNOWN_HOSTS: ${{ secrets.PROD_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          test -n "$PROD_SSH_PRIVATE_KEY"
+          test -n "$PROD_KNOWN_HOSTS"
+          install -d -m 0700 "$HOME/.ssh"
+          printf '%s\n' "$PROD_SSH_PRIVATE_KEY" > "$HOME/.ssh/api-transit-deploy"
+          printf '%s\n' "$PROD_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 0600 "$HOME/.ssh/api-transit-deploy" "$HOME/.ssh/known_hosts"
+      - name: Upload and activate release
+        shell: bash
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_PORT: ${{ secrets.PROD_PORT }}
+          PROD_USER: ${{ secrets.PROD_USER }}
+          RELEASE_ID: ${{ steps.release.outputs.release_id }}
+        run: |
+          set -euo pipefail
+          test -n "$PROD_HOST"
+          test -n "$PROD_PORT"
+          test -n "$PROD_USER"
+          ssh_args=(-i "$HOME/.ssh/api-transit-deploy" -p "$PROD_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes)
+          ssh "${ssh_args[@]}" "$PROD_USER@$PROD_HOST" "install -d -m 0700 '/var/lib/api-transit-deploy/incoming/$RELEASE_ID'"
+          scp -i "$HOME/.ssh/api-transit-deploy" -P "$PROD_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            upload/api-transit.jar upload/frontend.tar.gz upload/SHA256SUMS \
+            "$PROD_USER@$PROD_HOST:/var/lib/api-transit-deploy/incoming/$RELEASE_ID/"
+          ssh "${ssh_args[@]}" "$PROD_USER@$PROD_HOST" "sudo /usr/local/sbin/api-transit-release '$RELEASE_ID'"
+      - name: Verify public endpoints
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location --retry 5 --retry-delay 2 https://linknux.com/ >/dev/null
+          curl --fail --silent --show-error --retry 5 --retry-delay 2 'https://api.linknux.com/public/models?size=1' \
+            | python3 -c 'import json,sys; data=json.load(sys.stdin); assert isinstance(data.get("items"), list)'

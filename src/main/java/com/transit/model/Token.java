@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.annotation.TableField;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
@@ -21,10 +22,17 @@ public class Token {
     private Long id;
 
     @TableField("`key`") // "key" is a reserved word in MySQL
+    @JsonIgnore
     private String key; // The API Key for users (e.g., sk-xxxx)
+
+    @TableField("key_prefix")
+    private String keyPrefix;
 
     @TableField("user_id")
     private Long userId;
+
+    @TableField("organization_id")
+    private Long organizationId;
 
     private String name;
 
@@ -44,4 +52,20 @@ public class Token {
 
     @TableField("expired_at")
     private LocalDateTime expiredAt;
+
+    @TableField("allowed_models")
+    private String allowedModels;
+
+    @TableField("allow_all_models")
+    private boolean allowAllModels;
+
+    /** Structured model grants used by create/update APIs; persisted in api_key_models. */
+    @TableField(exist = false)
+    @Builder.Default
+    private java.util.List<String> allowedModelIds = java.util.List.of();
+
+    @TableField("ip_whitelist")
+    private String ipWhitelist;
+
+    private String description;
 }

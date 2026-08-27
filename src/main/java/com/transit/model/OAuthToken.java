@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.annotation.TableField;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
@@ -21,9 +22,11 @@ public class OAuthToken {
     private Long id;
 
     @TableField("access_token")
+    @JsonIgnore
     private String accessToken;
 
     @TableField("refresh_token")
+    @JsonIgnore
     private String refreshToken;
 
     @TableField("token_type")
@@ -41,6 +44,9 @@ public class OAuthToken {
     @TableField("expires_at")
     private LocalDateTime expiresAt;
 
+    @TableField("access_expires_at")
+    private LocalDateTime accessExpiresAt;
+
     @TableField("revoked")
     private Boolean revoked;
 
@@ -49,4 +55,14 @@ public class OAuthToken {
 
     @TableField("created_at")
     private LocalDateTime createdAt;
+
+    @TableField("device_name")
+    private String deviceName;
+
+    @TableField("ip_digest")
+    @JsonIgnore
+    private String ipDigest;
+
+    @TableField("last_active_at")
+    private LocalDateTime lastActiveAt;
 }

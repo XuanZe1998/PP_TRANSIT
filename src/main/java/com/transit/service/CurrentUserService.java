@@ -11,6 +11,7 @@ import org.springframework.web.server.ResponseStatusException;
 public class CurrentUserService {
 
     private final OAuthService oauthService;
+    private final AdminAuthService adminAuthService;
 
     public User requireUser(String authHeader) {
         String token = extractBearerToken(authHeader);
@@ -18,7 +19,19 @@ public class CurrentUserService {
     }
 
     public User requireAdmin(String authHeader) {
-        User user = requireUser(authHeader);
+        String token = extractBearerToken(authHeader);
+        try {
+            var admin = adminAuthService.getAdminFromToken(token);
+            return User.builder()
+                    .id(admin.getId())
+                    .username(admin.getUsername())
+                    .role("ADMIN")
+                    .build();
+        } catch (ResponseStatusException ignored) {
+            // Fall back to legacy ADMIN users stored in the users table.
+        }
+
+        User user = oauthService.getUserFromToken(token);
         if (!"ADMIN".equalsIgnoreCase(user.getRole())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Admin access required");
         }

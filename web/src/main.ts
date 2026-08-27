@@ -5,7 +5,7 @@ import router from './router'
 import ElementPlus from 'element-plus'
 import 'element-plus/dist/index.css'
 import * as ElementPlusIconsVue from '@element-plus/icons-vue'
-import { initInactivityGuard, getToken, clearAuth } from './utils/auth'
+import { initInactivityGuard } from './utils/auth'
 import { ElMessage } from 'element-plus'
 
 const app = createApp(App)
@@ -18,25 +18,27 @@ app.use(router)
 app.use(ElementPlus)
 app.mount('#app')
 
-initInactivityGuard(3 * 60 * 1000, () => {
-  ElMessage.warning('长时间未操作，登录状态已自动退出')
-  router.push('/login')
+const configuredIdleTimeout = Number(import.meta.env.VITE_AUTH_IDLE_TIMEOUT_MS)
+const idleTimeoutMs = Number.isFinite(configuredIdleTimeout) && configuredIdleTimeout >= 5 * 60 * 1000
+  ? configuredIdleTimeout
+  : 7 * 24 * 60 * 60 * 1000
+
+initInactivityGuard(idleTimeoutMs, () => {
+  const currentPath = router.currentRoute.value.fullPath
+  const isAdmin = currentPath.startsWith('/admin')
+  router.push({
+    path: isAdmin ? '/admin/login' : '/',
+    query: currentPath && !currentPath.startsWith('/login') && !currentPath.startsWith('/admin/login')
+      ? (isAdmin ? { redirect: currentPath } : { auth: 'login', redirect: currentPath })
+      : (isAdmin ? {} : { auth: 'login' })
+  })
 })
 
 window.addEventListener('auth-timeout', () => {
   ElMessage.warning('登录状态已失效，请重新登录')
 })
 
-window.addEventListener('beforeunload', () => {
-  const token = getToken()
-  if (token) {
-    clearAuth()
-    fetch('http://localhost:8080/auth/logout', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      }
-    }).catch(() => {})
-  }
+window.addEventListener('user-auth-required', (event: Event) => {
+  const redirect = (event as CustomEvent<{ redirect?: string }>).detail?.redirect
+  router.push({ path: '/', query: { auth: 'login', ...(redirect ? { redirect } : {}) } })
 })

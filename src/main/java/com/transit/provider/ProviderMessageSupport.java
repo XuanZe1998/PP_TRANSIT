@@ -45,7 +45,9 @@ public final class ProviderMessageSupport {
             for (Object item : list) {
                 if (item instanceof Map<?, ?> map) {
                     Object type = map.get("type");
-                    if (Objects.equals(type, "text")) {
+                    if (Objects.equals(type, "text")
+                            || Objects.equals(type, "input_text")
+                            || Objects.equals(type, "output_text")) {
                         Object text = map.get("text");
                         if (text != null) {
                             fragments.add(String.valueOf(text));

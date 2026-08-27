@@ -1,0 +1,19 @@
+{
+  "provider_type": "epay",
+  "channel_type": "alipay",
+  "interaction_mode": "redirect",
+  "provider_config": {
+    "gateway_url": "https://pay.52td.cn",
+    "epay_version": "v2",
+    "merchant_id": "<ANYIPAY_MERCHANT_ID>",
+    "merchant_key": "",
+    "private_key": "<ANYIPAY_MERCHANT_PRIVATE_KEY>",
+    "platform_public_key": "<ANYIPAY_PLATFORM_PUBLIC_KEY>",
+    "sign_type": "RSA",
+    "api_path": "/api/pay/create",
+    "notify_url": "https://dujiao.example.com/<DUJIAO_GENERATED_EPAY_CALLBACK_PATH>",
+    "return_url": "https://dujiao.example.com/<DUJIAO_GENERATED_PAYMENT_RETURN_PATH>",
+    "method": "web",
+    "device": "pc"
+  }
+}

@@ -1,36 +1,277 @@
 #
 spring:
   application:
-    name: API_transit_station
+    name: 超级聚合
+  config:
+    # Local/private overrides live in one place. Environment variables still
+    # take precedence, so the same artifact can be deployed in production.
+    import: optional:file:./config/application-local.yaml
+  autoconfigure:
+    exclude: org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+  mvc:
+    async:
+      request-timeout: 120s
+  codec:
+    max-in-memory-size: 2MB
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 6MB
   datasource:
     url: ${DB_URL:jdbc:mysql://localhost:3306/api_transit?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC}
     username: ${DB_USERNAME:root}
-    password: ${DB_PASSWORD:123456}
+    password: ${DB_PASSWORD:}
     driver-class-name: ${DB_DRIVER:com.mysql.cj.jdbc.Driver}
+    hikari:
+      maximum-pool-size: ${DB_POOL_MAX_SIZE:20}
+      minimum-idle: ${DB_POOL_MIN_IDLE:2}
+      connection-timeout: ${DB_CONNECTION_TIMEOUT_MS:5000}
+      validation-timeout: ${DB_VALIDATION_TIMEOUT_MS:3000}
+      max-lifetime: ${DB_MAX_LIFETIME_MS:1800000}
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: ${REDIS_TIMEOUT:2s}
+  mail:
+    host: ${SMTP_HOST:}
+    port: ${SMTP_PORT:587}
+    username: ${SMTP_USERNAME:}
+    password: ${SMTP_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: ${SMTP_AUTH:true}
+          starttls:
+            enable: ${SMTP_STARTTLS_ENABLED:true}
+  flyway:
+    enabled: ${FLYWAY_ENABLED:true}
+    baseline-on-migrate: true
+    baseline-version: 1
+    validate-on-migrate: true
+    locations: classpath:db/migration
 
 mybatis-plus:
   mapper-locations: classpath*:/mapper/**/*.xml
   configuration:
-    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+    log-impl: ${MYBATIS_LOG_IMPL:org.apache.ibatis.logging.nologging.NoLoggingImpl}
     map-underscore-to-camel-case: true
 
 server:
   port: ${SERVER_PORT:8089}
+  shutdown: graceful
+  compression:
+    enabled: true
+    min-response-size: 1024
+  error:
+    include-message: never
+    include-binding-errors: never
+    include-stacktrace: never
+
+app:
+  seed-demo-catalog: ${SEED_DEMO_CATALOG:false}
+
+storage:
+  other-service-images:
+    directory: ${OTHER_SERVICE_IMAGE_DIR:data/uploads/other-services}
+    max-bytes: ${OTHER_SERVICE_IMAGE_MAX_BYTES:5242880}
+
+gateway:
+  max-request-content-bytes: ${GATEWAY_MAX_REQUEST_CONTENT_BYTES:2097152}
+  idempotency:
+    enforce: ${GATEWAY_IDEMPOTENCY_ENFORCE:true}
+    cleanup-ms: ${GATEWAY_IDEMPOTENCY_CLEANUP_MS:3600000}
+  trust-forwarded-headers: ${TRUST_FORWARDED_HEADERS:false}
+  allow-private-upstreams: ${ALLOW_PRIVATE_UPSTREAMS:false}
+  async:
+    core-pool-size: ${GATEWAY_ASYNC_CORE_POOL_SIZE:16}
+    max-pool-size: ${GATEWAY_ASYNC_MAX_POOL_SIZE:128}
+    queue-capacity: ${GATEWAY_ASYNC_QUEUE_CAPACITY:1000}
+    timeout-ms: ${GATEWAY_ASYNC_TIMEOUT_MS:300000}
+  http:
+    max-connections: ${GATEWAY_HTTP_MAX_CONNECTIONS:200}
+    pending-acquire-max-count: ${GATEWAY_HTTP_PENDING_ACQUIRE_MAX_COUNT:500}
+    pending-acquire-timeout-ms: ${GATEWAY_HTTP_PENDING_ACQUIRE_TIMEOUT_MS:10000}
+    connect-timeout-ms: ${GATEWAY_HTTP_CONNECT_TIMEOUT_MS:10000}
+    response-timeout-seconds: ${GATEWAY_HTTP_RESPONSE_TIMEOUT_SECONDS:300}
+    max-in-memory-bytes: ${GATEWAY_HTTP_MAX_IN_MEMORY_BYTES:8388608}
+  rate-limit:
+    default-token-rpm: ${GATEWAY_DEFAULT_TOKEN_RPM:120}
+    distributed-enabled: ${GATEWAY_DISTRIBUTED_RATE_LIMIT_ENABLED:true}
+
+# Preferred NVIDIA configuration. The legacy `nvida` spelling remains readable
+# for existing private local files during the compatibility window.
+nvidia:
+  key: ${NVIDIA_API_KEY:}
+  verify-on-startup: ${NVIDIA_VERIFY_ON_STARTUP:false}
+  startup-verification-limit: ${NVIDIA_STARTUP_VERIFICATION_LIMIT:10}
+  catalog-sync-cron: ${NVIDIA_CATALOG_SYNC_CRON:0 17 */6 * * *}
+
+haoee:
+  enabled: ${HAOEE_ENABLED:false}
+  base-url: ${HAOEE_BASE_URL:https://maas.haoee.com}
+  api-key: ${HAOEE_API_KEY:}
+  verify-on-startup: ${HAOEE_VERIFY_ON_STARTUP:false}
+  startup-verification-limit: ${HAOEE_STARTUP_VERIFICATION_LIMIT:10}
+
+model-catalog:
+  manual-verification-only: ${MODEL_CATALOG_MANUAL_VERIFICATION_ONLY:true}
+  verification-retry-cron: ${MODEL_CATALOG_VERIFICATION_RETRY_CRON:0 37 3 * * *}
+
+features:
+  # External purchasing is fail-closed until explicitly enabled and configured.
+  shopgpt:
+    enabled: ${SHOPGPT_ENABLED:false}
+
+shopgpt:
+  base-url: ${SHOPGPT_BASE_URL:}
+  item-id: ${SHOPGPT_ITEM_ID:0}
+  max-quantity: ${SHOPGPT_MAX_QUANTITY:10}
+  request-timeout-seconds: ${SHOPGPT_REQUEST_TIMEOUT_SECONDS:20}
+
+vmcard:
+  # Fail closed until sandbox credentials and RSA keys are configured.
+  enabled: ${VMCARD_ENABLED:false}
+  environment: ${VMCARD_ENVIRONMENT:sandbox}
+  app-id: ${VMCARD_APP_ID:}
+  app-secret: ${VMCARD_APP_SECRET:}
+  public-key: ${VMCARD_PUBLIC_KEY:}
+  private-key: ${VMCARD_PRIVATE_KEY:}
+  # Sandbox write operations are enabled for the admin API tester by default.
+  # Production still requires the independent switch below.
+  allow-mutations: ${VMCARD_ALLOW_MUTATIONS:false}
+  allow-production-mutations: ${VMCARD_ALLOW_PRODUCTION_MUTATIONS:false}
+  request-timeout-seconds: ${VMCARD_REQUEST_TIMEOUT_SECONDS:30}
+  webhook-secret: ${VMCARD_WEBHOOK_SECRET:}
+  product-code-sync:
+    enabled: ${VMCARD_PRODUCT_CODE_SYNC_ENABLED:false}
+    interval-ms: ${VMCARD_PRODUCT_CODE_SYNC_INTERVAL_MS:60000}
+    initial-delay-ms: ${VMCARD_PRODUCT_CODE_SYNC_INITIAL_DELAY_MS:5000}
+
+payment:
+  mode: ${PAYMENT_MODE:live}
+  enabled: ${PAYMENT_ENABLED:false}
+  # Refund, close-order, and transfer calls require this second explicit switch.
+  allow-money-mutations: ${ANYIPAY_ALLOW_MONEY_MUTATIONS:false}
+  base-url: ${ANYIPAY_BASE_URL:https://a.tjrl3.cn}
+  merchant-id: ${ANYIPAY_MERCHANT_ID:}
+  merchant-private-key: ${ANYIPAY_MERCHANT_PRIVATE_KEY:}
+  platform-public-key: ${ANYIPAY_PLATFORM_PUBLIC_KEY:}
+  notify-url: ${ANYIPAY_NOTIFY_URL:}
+  return-url: ${ANYIPAY_RETURN_URL:}
+  default-payment-type: ${ANYIPAY_DEFAULT_PAYMENT_TYPE:alipay}
+  # Latest available ECB reference cross-rate on 2026-07-20: CNY/EUR 7.7319 / USD/EUR 1.1426.
+  # The rate is snapshotted when the order is created; update this value when your pricing policy changes.
+  usd-cny-rate: ${ANYIPAY_USD_CNY_RATE:6.76693506}
+  request-timeout-seconds: ${ANYIPAY_REQUEST_TIMEOUT_SECONDS:15}
+  timestamp-tolerance-seconds: ${ANYIPAY_TIMESTAMP_TOLERANCE_SECONDS:300}
+  local-test-mode: ${PAYMENT_LOCAL_TEST_MODE:false}
+  documents:
+    merchant:
+      display-name: ${PAYMENT_MERCHANT_DISPLAY_NAME:}
+      legal-name: ${PAYMENT_MERCHANT_LEGAL_NAME:}
+      address-line-1: ${PAYMENT_MERCHANT_ADDRESS_LINE_1:}
+      address-line-2: ${PAYMENT_MERCHANT_ADDRESS_LINE_2:}
+      country: ${PAYMENT_MERCHANT_COUNTRY:}
+      contact-email: ${PAYMENT_MERCHANT_CONTACT_EMAIL:}
+      registration-id: ${PAYMENT_MERCHANT_REGISTRATION_ID:}
+    time-zone: ${PAYMENT_DOCUMENT_TIME_ZONE:Asia/Shanghai}
+    font-path: ${PAYMENT_DOCUMENT_FONT_PATH:}
+
+service-orders:
+  reservation-minutes: ${SERVICE_ORDER_RESERVATION_MINUTES:15}
+  expiry-scan-ms: ${SERVICE_ORDER_EXPIRY_SCAN_MS:60000}
+  # Optional comma-separated trusted HTTPS hosts. When set, redirects are restricted to this allowlist.
+  redemption-allowed-hosts: ${SERVICE_REDEMPTION_ALLOWED_HOSTS:}
+
+billing:
+  currency: ${BILLING_CURRENCY:CNY}
+  model-currency: ${MODEL_BILLING_CURRENCY:USD}
+  # Model usage uses USD at this scale; wallet and payment settlement remain CNY.
+  amount-scale: ${BILLING_AMOUNT_SCALE:10000}
+  default-max-output-tokens: ${BILLING_DEFAULT_MAX_OUTPUT_TOKENS:4096}
+  reservation-expiry-seconds: ${BILLING_RESERVATION_EXPIRY_SECONDS:600}
+  reservation-cleanup-ms: ${BILLING_RESERVATION_CLEANUP_MS:60000}
+  reservation-cleanup-initial-delay-ms: ${BILLING_RESERVATION_CLEANUP_INITIAL_DELAY_MS:60000}
+  max-admin-adjustment: ${BILLING_MAX_ADMIN_ADJUSTMENT:1000000000000}
 
 oauth:
+  state-expiry: ${OAUTH_STATE_EXPIRY:600}
   github:
     client-id: ${GITHUB_CLIENT_ID:}
     client-secret: ${GITHUB_CLIENT_SECRET:}
-    redirect-uri: ${GITHUB_REDIRECT_URI:http://localhost:5173/oauth/callback/github}
+    redirect-uri: ${GITHUB_REDIRECT_URI:https://linknux.com/oauth/callback/github}
+    authorize-uri: ${GITHUB_AUTHORIZE_URI:https://github.com/login/oauth/authorize}
+    token-uri: ${GITHUB_TOKEN_URI:https://github.com/login/oauth/access_token}
+    user-uri: ${GITHUB_USER_URI:https://api.github.com/user}
+    emails-uri: ${GITHUB_EMAILS_URI:https://api.github.com/user/emails}
   google:
     client-id: ${GOOGLE_CLIENT_ID:}
     client-secret: ${GOOGLE_CLIENT_SECRET:}
-    redirect-uri: ${GOOGLE_REDIRECT_URI:http://localhost:5173/oauth/callback/google}
+    redirect-uri: ${GOOGLE_REDIRECT_URI:https://linknux.com/oauth/callback/google}
+    authorize-uri: ${GOOGLE_AUTHORIZE_URI:https://accounts.google.com/o/oauth2/v2/auth}
+    token-uri: ${GOOGLE_TOKEN_URI:https://oauth2.googleapis.com/token}
+    user-uri: ${GOOGLE_USER_URI:https://www.googleapis.com/oauth2/v2/userinfo}
   token:
-    access-token-expiry: ${OAUTH_ACCESS_TOKEN_EXPIRY:900}
+    access-token-expiry: ${OAUTH_ACCESS_TOKEN_EXPIRY:3600}
     refresh-token-expiry: ${OAUTH_REFRESH_TOKEN_EXPIRY:604800}
 
+verification:
+  hmac-secret: ${VERIFICATION_HMAC_SECRET:${JWT_SECRET:local-development-verification-secret-change-me}}
+  debug-code-enabled: ${VERIFICATION_DEBUG_CODE_ENABLED:false}
+  email:
+    from: ${VERIFICATION_EMAIL_FROM:}
+  sms:
+    provider: ${SMS_PROVIDER:}
+    endpoint: ${SMS_PROVIDER_ENDPOINT:}
+    token: ${SMS_PROVIDER_TOKEN:}
+
+account:
+  verification-mode: ${ACCOUNT_VERIFICATION_MODE:EMAIL_AND_PHONE}
+
+platform:
+  public-base-url: ${PLATFORM_PUBLIC_BASE_URL:https://linknux.com}
+
 security:
+  # Base64-encoded 32-byte AES key. Keep this in your external local YAML or
+  # production secret manager. Generate with: openssl rand -base64 32
+  data-encryption-key: ${DATA_ENCRYPTION_KEY:}
+  admin-session-expiry: ${ADMIN_SESSION_EXPIRY:28800}
+  password:
+    bcrypt-strength: ${BCRYPT_STRENGTH:12}
+  login:
+    max-failures: ${LOGIN_MAX_FAILURES:5}
+    lock-seconds: ${LOGIN_LOCK_SECONDS:300}
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://127.0.0.1:5173,http://localhost:5173,https://linknux.com}
+  bootstrap-admin:
+    username: ${BOOTSTRAP_ADMIN_USERNAME:}
+    password: ${BOOTSTRAP_ADMIN_PASSWORD:}
   jwt:
-    secret: ${JWT_SECRET:ChangeThisJwtSecretBeforeProduction1234567890}
+    secret: ${JWT_SECRET}
     expiration-ms: ${JWT_EXPIRATION_MS:86400000}
+
+management:
+  health:
+    mail:
+      enabled: false
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: when-authorized
+      roles: ADMIN
+  metrics:
+    tags:
+      application: ${spring.application.name}

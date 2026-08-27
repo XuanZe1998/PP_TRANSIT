@@ -1,0 +1,28 @@
+[Unit]
+Description=API Transit Station backend
+After=network-online.target mysql.service redis-server.service
+Wants=network-online.target
+Requires=mysql.service redis-server.service
+
+[Service]
+Type=simple
+User=api-transit
+Group=api-transit
+WorkingDirectory=/var/lib/api-transit
+Environment="JAVA_TOOL_OPTIONS=-Xms512m -Xmx2g -Dfile.encoding=UTF-8"
+ExecStart=/usr/bin/java -jar /opt/api-transit/current/api-transit.jar --spring.config.additional-location=file:/etc/api-transit/application-local.yaml
+Restart=on-failure
+RestartSec=5s
+SuccessExitStatus=143
+TimeoutStopSec=45s
+UMask=0027
+LimitNOFILE=65535
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadOnlyPaths=/etc/api-transit
+ReadWritePaths=/var/lib/api-transit
+
+[Install]
+WantedBy=multi-user.target

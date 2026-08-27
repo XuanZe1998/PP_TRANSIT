@@ -165,20 +165,20 @@ GET /public/models?page=1&size=12&query=&type=&sort=name
 - Token 管理：维护平台级访问 Token。
 - 首页/运营概览：展示总体接入状态与运营指标。
 
-### 4.9 Plus 服务订单
+### 4.9 成品服务订单
 
 平台新增 Plus 会员服务订单模块，用于登记合规的会员服务类数字商品订单。该模块不保存、不展示、不下载第三方账号密码或登录凭证，仅生成订单凭证、订单状态和履约备注。
 
 用户侧能力：
 
-- 查看 Plus 服务商品。
-- 创建 Plus 服务订单。
+- 查看 成品服务商品。
+- 创建 成品服务订单。
 - 查看个人订单列表。
 - 下载订单凭证文本文件。
 
 管理员侧能力：
 
-- 查看全部 Plus 订单。
+- 查看全部 成品服务订单。
 - 更新订单状态：`PENDING`、`CONFIRMED`、`FULFILLED`、`CANCELLED`。
 - 填写履约备注。
 
@@ -272,8 +272,8 @@ flowchart LR
 | `oauth_codes` | OAuth 授权码。 |
 | `oauth_tokens` | 登录和 OAuth Token。 |
 | `oauth_user_bindings` | 第三方 OAuth 用户绑定。 |
-| `plus_products` | Plus 服务商品配置。 |
-| `plus_orders` | Plus 服务订单状态和履约信息。 |
+| `other_services` | 成品服务商品配置。 |
+| `service_orders` | 成品服务订单状态和履约信息。 |
 
 ## 8. 主要接口清单
 
@@ -317,15 +317,15 @@ flowchart LR
 - `GET /ops/overview`：运营总览。
 - `GET /ops/catalog`：供应商推荐目录。
 
-### 8.5 Plus 服务订单
+### 8.5 成品服务订单
 
-- `GET /plus/products`：获取 Plus 服务商品。
-- `POST /plus/orders`：创建当前用户的 Plus 服务订单。
-- `GET /plus/orders`：获取当前用户订单。
-- `GET /plus/orders/{id}`：获取当前用户指定订单。
-- `GET /plus/orders/{id}/download`：下载订单凭证。
-- `GET /plus/admin/orders`：管理员获取全部 Plus 订单。
-- `PUT /plus/admin/orders/{id}`：管理员更新订单状态和履约备注。
+- `GET /public/other-services`：获取 成品服务商品。
+- `POST /service-orders`：创建当前用户的 成品服务订单。
+- `GET /service-orders`：获取当前用户订单。
+- `GET /service-orders/{id}`：获取当前用户指定订单。
+- `GET /service-orders/{id}/download`：下载订单凭证。
+- `GET /service-orders/admin/orders`：管理员获取全部 成品服务订单。
+- `PUT /service-orders/admin/orders/{id}`：管理员更新订单状态和履约备注。
 
 ### 8.6 OAuth
 
@@ -398,7 +398,7 @@ npm run build
 - 调用日志、额度累计和运营概览。
 - 公共模型市场接口。
 - 用户控制台与管理员后台基础页面。
-- Plus 服务商品、订单和订单凭证下载。
+- 成品服务商品、订单和订单凭证下载。
 
 待完善或建议增强：
 
@@ -409,7 +409,7 @@ npm run build
 - 管理接口权限保护：多数管理接口已调用管理员校验，运营接口目前更偏公共展示，可按部署场景收紧权限。
 - 前端中文文案编码：部分 Vue 文件在当前终端环境显示异常，建议统一确认文件编码为 UTF-8。
 - 敏感配置：生产环境应通过环境变量注入供应商 Key、数据库密码和 JWT Secret，避免使用开发默认值。
-- Plus 服务履约：当前设计为人工履约备注，不提供账号密码分发能力。
+- 成品服务履约：支持自动发货与人工处理，交付内容仅对订单所有者和管理员可见。
 
 ## 11. 适用场景
 

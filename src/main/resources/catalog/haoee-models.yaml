@@ -1,0 +1,75 @@
+version: "2026-08-23"
+models:
+  - { name: claude-opus-4-7, vendor: anthropic, capability: text, protocols: "chat-completions,messages" }
+  - { name: claude-opus-4-8, vendor: anthropic, capability: text, protocols: "chat-completions,messages" }
+  - { name: claude-sonnet-4-6, vendor: anthropic, capability: text, protocols: "chat-completions,messages" }
+  - { name: deepseek-v4-pro, vendor: deepseek, capability: reasoning, protocols: chat-completions }
+  - { name: doubao-seed-2-0-lite-260215, vendor: bytedance, capability: text, protocols: "chat-completions,responses" }
+  - { name: doubao-seed-2-0-lite-260428, vendor: bytedance, capability: text, protocols: "chat-completions,responses" }
+  - { name: doubao-seedance-1-0-pro-250528, vendor: bytedance, capability: video, protocols: tasks, pricingUnit: SECOND, endpointPath: /api/v3/contents/generations/tasks, taskQueryPath: "/api/v3/contents/generations/tasks/{id}", taskQueryMethod: GET }
+  - { name: doubao-seedance-1-5-pro-251215, vendor: bytedance, capability: video, protocols: tasks, pricingUnit: SECOND, endpointPath: /api/v3/contents/generations/tasks, taskQueryPath: "/api/v3/contents/generations/tasks/{id}", taskQueryMethod: GET }
+  - { name: doubao-seedream-5-0-260128, vendor: bytedance, capability: image, protocols: images, pricingUnit: IMAGE, endpointPath: /api/v3/images/generations }
+  - { name: gemini-2.5-flash-image, vendor: google, capability: image, protocols: "chat-completions,gemini", pricingUnit: TOKEN }
+  - { name: gemini-3-flash-preview, vendor: google, capability: text, protocols: "chat-completions,gemini" }
+  - { name: gemini-3-pro-image-preview, vendor: google, capability: image, protocols: gemini, pricingUnit: TOKEN }
+  - { name: gemini-3-pro-image-preview-lite, vendor: google, capability: image, protocols: gemini, pricingUnit: TOKEN }
+  - { name: gemini-3-pro-preview, vendor: google, capability: text, protocols: "chat-completions,gemini" }
+  - { name: gemini-3.1-flash-image-preview, vendor: google, capability: image, protocols: gemini, pricingUnit: TOKEN }
+  - { name: gemini-3.1-flash-image-preview-lite, vendor: google, capability: image, protocols: gemini, pricingUnit: TOKEN }
+  - { name: gemini-3.1-pro-preview, vendor: google, capability: text, protocols: "chat-completions,gemini" }
+  - { name: gemini-3.5-flash, vendor: google, capability: text, protocols: "chat-completions,gemini" }
+  - { name: glm-4-voice, vendor: zhipu, capability: audio, protocols: chat-completions }
+  - { name: glm-5.1, vendor: zhipu, capability: reasoning, protocols: chat-completions }
+  - { name: glm-5.2, vendor: zhipu, capability: reasoning, protocols: chat-completions }
+  - { name: glm-5.3, vendor: zhipu, capability: reasoning, protocols: chat-completions }
+  - { name: glm-5v-turbo, vendor: zhipu, capability: vision, protocols: chat-completions }
+  - { name: gpt-5.2, vendor: openai, capability: text, protocols: responses }
+  - { name: gpt-5.3, vendor: openai, capability: text, protocols: responses }
+  - { name: gpt-5.3-codex, vendor: openai, capability: reasoning, protocols: responses }
+  - { name: gpt-5.4, vendor: openai, capability: reasoning, protocols: "chat-completions,responses" }
+  - { name: gpt-5.4-2026-03-05, vendor: openai, capability: reasoning, protocols: chat-completions }
+  - { name: gpt-5.4-pro, vendor: openai, capability: reasoning, protocols: responses }
+  - { name: gpt-5.5, vendor: openai, capability: reasoning, protocols: "chat-completions,responses" }
+  - { name: gpt-5.5d, vendor: openai, capability: reasoning, protocols: responses }
+  - { name: gpt-image-1.5, vendor: openai, capability: image, protocols: images, pricingUnit: IMAGE, endpointPath: /v1/images/edits }
+  - { name: gpt-image-2, vendor: openai, capability: image, protocols: images, pricingUnit: IMAGE, endpointPath: /v1/images/generations }
+  - { name: gpt-image-2-1k2k, vendor: openai, capability: image, protocols: images, pricingUnit: IMAGE, endpointPath: /v1/images/generations }
+  - { name: gpt-image-2-2k, vendor: openai, capability: image, protocols: images, pricingUnit: IMAGE, endpointPath: /v1/images/generations }
+  - { name: gpt-image-2-4k, vendor: openai, capability: image, protocols: images, pricingUnit: IMAGE, endpointPath: /v1/images/generations }
+  - { name: gpt-image-2-vip, vendor: openai, capability: image, protocols: images, pricingUnit: IMAGE, endpointPath: /v1/draw/completions }
+  - { name: grok-imagine-image, vendor: xai, capability: image, protocols: images, pricingUnit: IMAGE, endpointPath: /v1/images/generations }
+  - { name: grok-video-3, vendor: xai, capability: video, protocols: tasks, pricingUnit: SECOND, endpointPath: /v1/video/create, taskQueryPath: /v1/video/query, taskQueryMethod: GET }
+  - { name: haoeedance-2-0, vendor: haoee, capability: video, protocols: tasks, pricingUnit: SECOND, endpointPath: /api/v3/contents/generations/tasks, taskQueryPath: "/api/v3/contents/generations/tasks/{id}", taskQueryMethod: GET }
+  - { name: haoeedance-2-0-fast, vendor: haoee, capability: video, protocols: tasks, pricingUnit: SECOND, endpointPath: /api/v3/contents/generations/tasks, taskQueryPath: "/api/v3/contents/generations/tasks/{id}", taskQueryMethod: GET }
+  - { name: happyhorse-1.0-i2v, vendor: alibaba, capability: video, protocols: tasks, pricingUnit: SECOND, endpointPath: /api/v1/services/aigc/video-generation/video-synthesis, taskQueryPath: "/api/v1/tasks/{task_id}", taskQueryMethod: GET }
+  - { name: happyhorse-1.0-r2v, vendor: alibaba, capability: video, protocols: tasks, pricingUnit: SECOND, endpointPath: /api/v1/services/aigc/video-generation/video-synthesis, taskQueryPath: "/api/v1/tasks/{task_id}", taskQueryMethod: GET }
+  - { name: happyhorse-1.0-t2v, vendor: alibaba, capability: video, protocols: tasks, pricingUnit: SECOND, endpointPath: /api/v1/services/aigc/video-generation/video-synthesis, taskQueryPath: "/api/v1/tasks/{task_id}", taskQueryMethod: GET }
+  - { name: happyhorse-1.0-video-edit, vendor: alibaba, capability: video, protocols: tasks, pricingUnit: SECOND, endpointPath: /api/v1/services/aigc/video-generation/video-synthesis, taskQueryPath: "/api/v1/tasks/{task_id}", taskQueryMethod: GET }
+  - { name: kimi-k2.6, vendor: moonshot, capability: reasoning, protocols: chat-completions }
+  - { name: kimi-k3, vendor: moonshot, capability: reasoning, protocols: chat-completions }
+  - { name: kling-v3, vendor: kling, capability: video, protocols: tasks, pricingUnit: SECOND, endpointPath: /v1/videos/text2video, taskQueryPath: "/v1/videos/text2video/{task_id}", taskQueryMethod: GET }
+  - { name: kling-video-o1, vendor: kling, capability: video, protocols: tasks, pricingUnit: SECOND, endpointPath: /v1/videos/omni-video, taskQueryPath: "/v1/videos/omni-video/{task_id}", taskQueryMethod: GET }
+  - { name: MiniMax-H3, vendor: minimax, capability: video, protocols: tasks, pricingUnit: SECOND, endpointPath: /v2/video_generation/, taskQueryPath: /v1/query/video_generation, taskQueryMethod: GET }
+  - { name: MiniMax-Hailuo-02, vendor: minimax, capability: video, protocols: tasks, pricingUnit: SECOND, endpointPath: /v1/video_generation, taskQueryPath: /v1/query/video_generation, taskQueryMethod: GET }
+  - { name: MiniMax-Hailuo-2.3, vendor: minimax, capability: video, protocols: tasks, pricingUnit: SECOND, endpointPath: /v1/video_generation, taskQueryPath: /v1/query/video_generation, taskQueryMethod: GET }
+  - { name: Minimax-M2.5, vendor: minimax, capability: text, protocols: chat-completions }
+  - { name: mj_imagine, vendor: midjourney, capability: image, protocols: tasks, pricingUnit: TASK, endpointPath: /mj/submit/imagine, taskQueryPath: "/mj/task/{result}/fetch", taskQueryMethod: GET }
+  - { name: qwen-doc-turbo, vendor: alibaba, capability: text, protocols: chat-completions }
+  - { name: qwen-long, vendor: alibaba, capability: text, protocols: chat-completions }
+  - { name: qwen-plus, vendor: alibaba, capability: text, protocols: chat-completions }
+  - { name: qwen-vl-max, vendor: alibaba, capability: vision, protocols: chat-completions }
+  - { name: qwen-vl-plus, vendor: alibaba, capability: vision, protocols: chat-completions }
+  - { name: qwen3-asr-flash, vendor: alibaba, capability: transcription, protocols: chat-completions, pricingUnit: MINUTE }
+  - { name: qwen3-rerank, vendor: alibaba, capability: rerank, protocols: reranks, endpointPath: /compatible-api/v1/reranks }
+  - { name: qwen3-tts-flash, vendor: alibaba, capability: speech, protocols: audio-speech, pricingUnit: CHARACTER, endpointPath: /api/v1/services/aigc/multimodal-generation/generation }
+  - { name: qwen3.7-plus, vendor: alibaba, capability: reasoning, protocols: responses }
+  - { name: Recognize, vendor: bytedance, capability: transcription, protocols: audio-transcriptions, pricingUnit: MINUTE, endpointPath: /doubao/largemodel/recognize }
+  - { name: suno_music, vendor: suno, capability: music, protocols: tasks, pricingUnit: TASK, endpointPath: /suno/submit/music, taskQueryPath: /suno/fetch, taskQueryMethod: GET }
+  - { name: suno-v5.5, vendor: suno, capability: music, protocols: tasks, pricingUnit: TASK, endpointPath: /suno/submit/music, taskQueryPath: /suno/fetch, taskQueryMethod: GET }
+  - { name: text-embedding-v4, vendor: alibaba, capability: embedding, protocols: embeddings, endpointPath: /compatible-mode/v1/embeddings }
+  - { name: veo3.1-fast, vendor: google, capability: video, protocols: tasks, pricingUnit: SECOND, endpointPath: /v1/videos/generations, taskQueryPath: "/v1/tasks/{task_id}", taskQueryMethod: GET }
+  - { name: veo3.1-lite, vendor: google, capability: video, protocols: tasks, pricingUnit: SECOND, endpointPath: /v1/videos/generations, taskQueryPath: "/v1/tasks/{task_id}", taskQueryMethod: GET }
+  - { name: veo3.1-quality, vendor: google, capability: video, protocols: tasks, pricingUnit: SECOND, endpointPath: /v1/videos/generations, taskQueryPath: "/v1/tasks/{task_id}", taskQueryMethod: GET }
+  - { name: wan2.7-i2v, vendor: alibaba, capability: video, protocols: tasks, pricingUnit: SECOND, endpointPath: /api/v1/services/aigc/video-generation/video-synthesis, taskQueryPath: "/api/v1/tasks/{task_id}", taskQueryMethod: GET }
+  - { name: wan2.7-image-pro, vendor: alibaba, capability: image, protocols: images, pricingUnit: IMAGE, endpointPath: /api/v1/services/aigc/multimodal-generation/generation }
+  - { name: wan2.7-r2v, vendor: alibaba, capability: video, protocols: tasks, pricingUnit: SECOND, endpointPath: /api/v1/services/aigc/video-generation/video-synthesis, taskQueryPath: "/api/v1/tasks/{task_id}", taskQueryMethod: GET }
