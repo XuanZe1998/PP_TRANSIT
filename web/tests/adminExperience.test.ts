@@ -60,6 +60,15 @@ describe('admin analytics and security experience', () => {
     expect(studio).toContain('返回主界面')
     expect(studio).toContain("router.push('/')")
   })
+
+  it('loads managed service images through the API with explicit CORS mode', () => {
+    const adminServices = source('src/views/AdminOtherServices.vue')
+    const publicServices = source('src/views/OtherServices.vue')
+    expect(adminServices).toContain('resolveApiResourceUrl(row.imageUrl)')
+    expect(adminServices).toContain('crossorigin="anonymous"')
+    expect(publicServices).toContain('resolveApiResourceUrl(service.imageUrl)')
+    expect(publicServices).toContain('crossorigin="anonymous"')
+  })
 })
 
 describe('front-end modal authentication', () => {

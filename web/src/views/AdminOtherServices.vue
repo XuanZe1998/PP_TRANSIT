@@ -17,7 +17,7 @@
       <el-table-column label="图片" width="116">
         <template #default="{ row }">
           <div class="admin-service-thumb">
-            <img v-if="row.imageUrl" :src="resolveApiResourceUrl(row.imageUrl)" :alt="row.name" />
+            <img v-if="row.imageUrl" :src="resolveApiResourceUrl(row.imageUrl)" :alt="row.name" crossorigin="anonymous" />
             <span v-else>图片待上传</span>
           </div>
         </template>
@@ -79,7 +79,7 @@
         <el-form-item label="商品图片">
           <div class="service-image-editor">
             <div class="service-image-preview">
-              <img v-if="form.imageUrl" :src="resolveApiResourceUrl(form.imageUrl)" alt="商品图片预览" />
+              <img v-if="form.imageUrl" :src="resolveApiResourceUrl(form.imageUrl)" alt="商品图片预览" crossorigin="anonymous" />
               <span v-else>暂无图片</span>
             </div>
             <div class="service-image-actions">
