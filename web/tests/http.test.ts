@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
-import http, { createIdempotencyKey, getHttpErrorMessage, getHttpErrorNotice } from '../src/utils/http'
+import http, {
+  createIdempotencyKey,
+  getHttpErrorMessage,
+  getHttpErrorNotice,
+  resolveApiResourceUrl
+} from '../src/utils/http'
 
 describe('HTTP client production defaults', () => {
   it('uses a finite default timeout', () => {
@@ -44,5 +49,16 @@ describe('HTTP client production defaults', () => {
     const key = createIdempotencyKey('service-order')
     expect(key).toMatch(/^[A-Za-z0-9._:-]{8,160}$/)
     expect(createIdempotencyKey('unsafe scope')).toMatch(/^unsafe-scope-/)
+  })
+
+  it('resolves managed resources against the configured API origin', () => {
+    expect(resolveApiResourceUrl(
+      '/api/public/other-service-images/example.png',
+      'https://api.linknux.com/'
+    )).toBe('https://api.linknux.com/public/other-service-images/example.png')
+    expect(resolveApiResourceUrl('https://cdn.example.com/example.png', 'https://api.linknux.com'))
+      .toBe('https://cdn.example.com/example.png')
+    expect(resolveApiResourceUrl('/api/public/example.png', ''))
+      .toBe('/api/public/example.png')
   })
 })

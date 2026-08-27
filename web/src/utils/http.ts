@@ -7,6 +7,11 @@ const configuredApiBaseUrl = import.meta.env.VITE_API_BASE_URL || productionApiB
 const apiBaseUrl = configuredApiBaseUrl.replace(/\/$/, '')
 const http = axios.create({ baseURL: apiBaseUrl, timeout: 30_000 })
 
+export function resolveApiResourceUrl(resourceUrl?: string | null, baseUrl = apiBaseUrl) {
+  if (!resourceUrl || !baseUrl || !resourceUrl.startsWith('/api/')) return resourceUrl || ''
+  return `${baseUrl.replace(/\/$/, '')}${resourceUrl.replace(/^\/api/, '')}`
+}
+
 type ScopedConfig = InternalAxiosRequestConfig & { _authScope?: AuthScope | 'public'; _retriedAfterRefresh?: boolean }
 
 export function createIdempotencyKey(scope = 'web') {

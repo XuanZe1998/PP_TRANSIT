@@ -14,6 +14,7 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
 import { useRoute } from 'vue-router'
+import { resolveApiResourceUrl } from '@/utils/http'
 
 const route = useRoute()
 const serviceId = String(route.params.id || '')
@@ -23,7 +24,9 @@ function redirect() {
     window.location.replace('/services')
     return
   }
-  window.location.replace(`/api/public/other-services/${encodeURIComponent(serviceId)}/redeem`)
+  window.location.replace(resolveApiResourceUrl(
+    `/api/public/other-services/${encodeURIComponent(serviceId)}/redeem`
+  ))
 }
 
 onMounted(() => window.setTimeout(redirect, 500))
