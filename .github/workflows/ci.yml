@@ -13,8 +13,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
@@ -30,7 +30,7 @@ jobs:
           install -m 0644 target/API_transit_station-0.0.1-SNAPSHOT.jar deployment/backend/api-transit.jar
       - name: Upload backend deployment artifact
         if: github.ref == 'refs/heads/master' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: production-backend
           if-no-files-found: error
@@ -38,7 +38,7 @@ jobs:
           path: deployment/backend/
       - name: Upload test and coverage reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: backend-test-reports
           if-no-files-found: ignore
@@ -54,8 +54,8 @@ jobs:
       run:
         working-directory: web
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: '22'
           cache: npm
@@ -73,7 +73,7 @@ jobs:
           cp -a dist/. deployment/frontend/
       - name: Upload frontend deployment artifact
         if: github.ref == 'refs/heads/master' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: production-frontend
           if-no-files-found: error
@@ -93,12 +93,12 @@ jobs:
       cancel-in-progress: false
     steps:
       - name: Download backend artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: production-backend
           path: artifacts/backend
       - name: Download frontend artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: production-frontend
           path: artifacts/frontend
