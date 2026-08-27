@@ -17,7 +17,7 @@
       <el-table-column label="图片" width="116">
         <template #default="{ row }">
           <div class="admin-service-thumb">
-            <img v-if="row.imageUrl" :src="row.imageUrl" :alt="row.name" />
+            <img v-if="row.imageUrl" :src="resolveApiResourceUrl(row.imageUrl)" :alt="row.name" />
             <span v-else>图片待上传</span>
           </div>
         </template>
@@ -79,7 +79,7 @@
         <el-form-item label="商品图片">
           <div class="service-image-editor">
             <div class="service-image-preview">
-              <img v-if="form.imageUrl" :src="form.imageUrl" alt="商品图片预览" />
+              <img v-if="form.imageUrl" :src="resolveApiResourceUrl(form.imageUrl)" alt="商品图片预览" />
               <span v-else>暂无图片</span>
             </div>
             <div class="service-image-actions">
@@ -178,7 +178,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import http, { getHttpErrorMessage } from '@/utils/http'
+import http, { getHttpErrorMessage, resolveApiResourceUrl } from '@/utils/http'
 import AdminServiceOrders from '@/views/AdminServiceOrders.vue'
 import AdminProductCommerce from '@/views/AdminProductCommerce.vue'
 

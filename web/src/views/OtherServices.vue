@@ -20,7 +20,7 @@
         <div class="service-image">
           <img
             v-if="service.imageUrl && !failedImages.has(service.id)"
-            :src="service.imageUrl"
+            :src="resolveApiResourceUrl(service.imageUrl)"
             :alt="service.name"
             @error="markImageFailed(service.id)"
           />
@@ -223,7 +223,7 @@ import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
-import http, { createIdempotencyKey, getHttpErrorMessage } from '@/utils/http'
+import http, { createIdempotencyKey, getHttpErrorMessage, resolveApiResourceUrl } from '@/utils/http'
 import { getToken } from '@/utils/auth'
 
 type OtherService = {
