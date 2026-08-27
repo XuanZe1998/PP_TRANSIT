@@ -22,6 +22,7 @@
             v-if="service.imageUrl && !failedImages.has(service.id)"
             :src="resolveApiResourceUrl(service.imageUrl)"
             :alt="service.name"
+            crossorigin="anonymous"
             @error="markImageFailed(service.id)"
           />
           <div v-else class="service-image-placeholder" aria-label="服务图片待上传">
