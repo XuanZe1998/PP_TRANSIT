@@ -162,3 +162,16 @@ export function formatPerMillionCny(cnyPerMillion: AmountUnits, unit = 'M', suff
   if (!normalizedSuffix && normalizedUnit === 'M') return `${formatted} / 1M tokens`
   return `${formatted} ${normalizedSuffix || `CNY / 1${normalizedUnit} Token`}`
 }
+
+/** Format model-usage amount units. Model prices use USD; wallet values use CNY. */
+export function formatUsd(amountUnits: AmountUnits): string {
+  const formatted = formatDecimal(requireIntegerUnits(amountUnits), 4, 4, false)
+  return formatted.replace('¥', '$').replace('CNY', 'USD')
+}
+
+export function formatPerMillionUsd(usdPrice: AmountUnits, unit = 'M', suffix?: string): string {
+  const normalizedUnit = String(unit || 'M').toUpperCase() === 'KB' ? 'KB' : 'M'
+  const formatted = formatDecimal(parseDecimal(usdPrice), 4, 6, false, 0).replace('¥', '$').replace('CNY', 'USD')
+  const normalizedSuffix = String(suffix || '').trim()
+  return `${formatted} ${normalizedSuffix || `USD / 1${normalizedUnit} Token`}`
+}

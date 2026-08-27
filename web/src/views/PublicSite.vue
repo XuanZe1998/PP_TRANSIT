@@ -1,25 +1,20 @@
 <template>
   <div class="public-site">
     <header class="site-nav">
-      <button class="site-brand" @click="go('/')">
-        <span class="site-brand-mark">A</span>
-        <span>API Transit</span>
-      </button>
-      <nav class="site-links" aria-label="Primary navigation">
-        <button :class="{ active: section === 'home' }" @click="go('/')">首页</button>
-        <button :class="{ active: section === 'models' }" @click="go('/market')">模型广场</button>
-        <button :class="{ active: route.path === '/studio' }" @click="go('/studio')">AI创作</button>
-        <button :class="{ active: section === 'services' }" @click="go('/services')">其他服务</button>
-        <button :class="{ active: section === 'pricing' }" @click="go('/pricing')">套餐价格</button>
-        <button :class="{ active: section === 'docs' }" @click="go('/docs')">开发文档</button>
-      </nav>
-      <div v-if="!isLoggedIn" class="site-actions">
-        <el-button @click="go('/login')">登录</el-button>
-        <el-button type="primary" @click="go('/register')">免费接入</el-button>
-      </div>
-      <div v-else class="site-actions">
-        <el-button @click="go('/console')">控制台</el-button>
-        <el-button type="primary" @click="go('/pricing')">购买商品</el-button>
+      <div class="site-nav-inner">
+        <button class="site-brand" @click="go('/')">
+          <span class="site-brand-mark">A</span>
+          <span>API Transit</span>
+        </button>
+        <nav class="site-links" aria-label="Primary navigation">
+          <button :class="{ active: section === 'home' }" @click="go('/')">首页</button>
+          <button :class="{ active: section === 'models' }" @click="go('/market')">模型广场</button>
+          <button :class="{ active: route.path === '/studio' }" @click="go('/studio')">AI创作</button>
+          <button :class="{ active: section === 'services' }" @click="go('/services')">其他服务</button>
+          <button :class="{ active: section === 'pricing' }" @click="go('/pricing')">套餐价格</button>
+          <button :class="{ active: section === 'docs' }" @click="go('/docs')">开发文档</button>
+        </nav>
+        <AccountMenu @login="openAuth('login')" @register="openAuth('register')" />
       </div>
     </header>
 
@@ -33,7 +28,7 @@
             支持 Key 配额、余额计费、失败切换、用量审计和团队权限。
           </p>
           <div class="hero-actions">
-            <el-button type="primary" size="large" @click="go('/register')">立即创建账号</el-button>
+            <el-button type="primary" size="large" @click="openAuth('register')">立即创建账号</el-button>
             <el-button size="large" @click="go('/market')">查看模型广场</el-button>
           </div>
           <div class="hero-proof">
@@ -127,14 +122,14 @@
         </div>
       </section>
 
-      <section v-if="section === 'home' || section === 'pricing'" id="pricing" class="site-section">
+      <section v-if="section === 'pricing'" id="pricing" class="site-section">
         <div class="section-head">
           <p class="eyebrow">套餐价格</p>
           <h2>充值方案从后端配置读取，未配置前不展示虚假价格。</h2>
           <el-button @click="go('/pricing')">查看计费说明</el-button>
         </div>
         <p class="pricing-disclosure">
-          统一账本单位：10,000 amount units = ¥1.00 CNY。模型输入、输出与缓存价格均按每百万 Token 独立配置；
+          模型输入、输出、缓存命中与写入价格统一以 USD 展示；钱包充值和实际扣款以 CNY 结算。
           下单前请以登录后钱包中的实时方案和模型账单为准。
         </p>
         <div class="pricing-grid">
@@ -156,14 +151,7 @@
         </div>
       </section>
 
-      <section v-if="section === 'home' || section === 'docs'" id="docs" class="site-section docs-band">
-        <div>
-          <p class="eyebrow">开发文档</p>
-          <h2>把 Base URL 指向 API Transit 即可开始。</h2>
-          <p>继续使用 OpenAI SDK 的调用方式，平台负责模型映射、渠道切换和账单统计。</p>
-        </div>
-        <pre>{{ sdkExample }}</pre>
-      </section>
+      <DeveloperDocs v-if="section === 'docs'" class="site-section" />
     </main>
   </div>
 </template>
@@ -171,14 +159,44 @@
 <script setup lang="ts">
 import { computed, defineComponent, h, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElButton, ElEmpty, ElInput, ElMessage, ElOption, ElSelect, ElSkeleton } from 'element-plus'
+import { ElButton, ElEmpty, ElInput, ElMessage, ElOption, ElPagination, ElSelect, ElSkeleton } from 'element-plus'
 import http from '@/utils/http'
 import { getToken } from '@/utils/auth'
 import OtherServices from '@/views/OtherServices.vue'
+import ModelSalePricing from '@/components/ModelSalePricing.vue'
+import DeveloperDocs from '@/components/DeveloperDocs.vue'
+import AccountMenu from '@/components/AccountMenu.vue'
 
 type PublicModel = {
   publicName: string
   type?: string
+  source?: string
+  sourceName?: string
+  sources?: string
+  vendor?: string
+  capability?: string
+  available?: boolean
+  billingConfigured?: boolean
+  verificationStatus?: string
+  verificationMessage?: string
+  verifiedAt?: string
+  lastSeenAt?: string
+  minInputPricePerMillion?: number
+  maxInputPricePerMillion?: number
+  minOutputPricePerMillion?: number
+  maxOutputPricePerMillion?: number
+  minCacheReadPricePerMillion?: number
+  maxCacheReadPricePerMillion?: number
+  minCacheWritePricePerMillion?: number
+  maxCacheWritePricePerMillion?: number
+  pricingUnit?: string
+  billingMode?: string
+  pricingStatus?: string
+  pricingMessage?: string
+  saleUnitPrice?: number
+  pricing?: { billingMode?: string; status?: string; message?: string; unit?: string; unitLabel?: string; saleUnitPrice?: number }
+  upstreams?: Array<{ code: string; name: string; badgeText?: string; badgeColor?: string }>
+  contextPricing?: { enabled?: boolean; thresholdTokens?: number; multiplier?: number; baseInputPrice?: number; baseOutputPrice?: number; longInputPrice?: number; longOutputPrice?: number; message?: string }
 }
 
 type PageResponse<T> = {
@@ -199,12 +217,19 @@ type CatalogModel = {
   tone: string
   popularity: number
   addedRank: number
+  pricingLines?: string[]
+  pricingModel?: PublicModel
 }
 
 type EnrichedModel = CatalogModel & {
   provider: string
+  upstreams: string[]
+  upstreamLabels: Record<string, string>
   status: string
+  verificationStatus: string
+  verificationMessage: string
   connected: boolean
+  pricingLines: string[]
 }
 
 const router = useRouter()
@@ -236,6 +261,7 @@ const section = computed(() => {
 })
 
 const go = (path: string) => router.push(path)
+const openAuth = (mode: 'login' | 'register') => router.replace({ path: route.path, query: { ...route.query, auth: mode } })
 const selectPlan = () => {
   // Let the route guard preserve /console/wallet as the post-login deep link.
   router.push('/console/wallet')
@@ -324,7 +350,7 @@ async function fetchFeaturedModels() {
 const ModelMarket = defineComponent({
   name: 'ModelMarket',
   setup() {
-    const filters = reactive({ query: '', type: '', tag: '', sort: 'name' })
+    const filters = reactive({ query: '', source: '', availability: '', type: '', tag: '', sort: 'name' })
     const filtersOpen = ref(false)
     const page = ref(1)
     const size = 10
@@ -332,6 +358,7 @@ const ModelMarket = defineComponent({
     const loading = ref(false)
     const error = ref('')
     const allModels = ref<EnrichedModel[]>([])
+    const resultsElement = ref<HTMLElement | null>(null)
     let searchTimer: number | undefined
 
     const filteredModels = computed(() => {
@@ -343,15 +370,21 @@ const ModelMarket = defineComponent({
           || getPublisher(model).label.toLowerCase().includes(keyword)
           || model.tags.some(tag => tag.toLowerCase().includes(keyword))
         const matchesPublisher = !type || getPublisher(model).value === type
+        const matchesUpstream = !filters.source || model.upstreams.includes(filters.source)
+        const matchesAvailability = !filters.availability
+          || (filters.availability === 'available' ? model.connected : !model.connected)
         const matchesTag = !filters.tag || model.tags.some(tag => tag.toLowerCase() === filters.tag.toLowerCase())
-        return matchesKeyword && matchesPublisher && matchesTag
+        return matchesKeyword && matchesUpstream && matchesAvailability && matchesPublisher && matchesTag
       })
       if (filters.sort === 'provider') return [...rows].sort((a, b) => getPublisher(a).label.localeCompare(getPublisher(b).label) || a.publicName.localeCompare(b.publicName))
       if (filters.sort === 'popular') return [...rows].sort((a, b) => b.popularity - a.popularity || a.publicName.localeCompare(b.publicName))
       return [...rows].sort((a, b) => a.publicName.localeCompare(b.publicName))
     })
 
-    const displayModels = computed(() => filteredModels.value.slice(0, page.value * size))
+    const displayModels = computed(() => {
+      const start = (page.value - 1) * size
+      return filteredModels.value.slice(start, start + size)
+    })
     const connectedCount = computed(() => allModels.value.filter(model => model.connected).length)
     const publisherOptions = computed(() => {
       const counts = new Map<string, number>()
@@ -364,6 +397,11 @@ const ModelMarket = defineComponent({
         .filter(publisher => publisher.count > 0)
     })
     const providerCount = computed(() => publisherOptions.value.length)
+    const upstreamOptions = computed(() => {
+      const rows=new Map<string,{label:string;value:string;count:number}>()
+      allModels.value.forEach(model=>model.upstreams.forEach(code=>{const item=rows.get(code)||{label:model.upstreamLabels[code]||'平台智能路由',value:code,count:0};item.count+=1;rows.set(code,item)}))
+      return [...rows.values()].sort((a,b)=>a.label.localeCompare(b.label))
+    })
     const tagOptions = computed(() => {
       const counts = new Map<string, number>()
       allModels.value.forEach(model => model.tags.forEach(tag => {
@@ -375,19 +413,24 @@ const ModelMarket = defineComponent({
         .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))
         .slice(0, 8)
     })
-    const canLoadMore = computed(() => displayModels.value.length < filteredModels.value.length && !loading.value)
-
     const fetchModels = async () => {
       loading.value = true
       error.value = ''
       try {
-        const res = await http.get<PageResponse<PublicModel>>('/api/public/models', {
-          // PublicController caps page size at 100. Requesting 200 makes the
-          // model market fail closed with HTTP 400 while the home page works.
-          params: { page: 1, size: 100, sort: 'name' }
-        })
-        allModels.value = mergeCatalog(res.data.items || [])
+        const catalog: PublicModel[] = []
+        let catalogPage = 1
+        let expectedTotal = 0
+        do {
+          const res = await http.get<PageResponse<PublicModel>>('/api/public/models', {
+            params: { page: catalogPage, size: 100, sort: 'name', availability: 'available' }
+          })
+          catalog.push(...(res.data.items || []))
+          expectedTotal = Number(res.data.total || catalog.length)
+          catalogPage += 1
+        } while (catalog.length < expectedTotal && catalogPage <= 20)
+        allModels.value = mergeCatalog(catalog)
         total.value = allModels.value.length
+        page.value = Math.min(page.value, Math.max(1, Math.ceil(filteredModels.value.length / size)))
       } catch {
         error.value = '后端模型目录暂时不可用。为避免误导，不展示未验证的模型、状态或价格。'
         allModels.value = []
@@ -399,6 +442,8 @@ const ModelMarket = defineComponent({
 
     const clearFilters = () => {
       filters.query = ''
+      filters.source = ''
+      filters.availability = ''
       filters.type = ''
       filters.tag = ''
       filters.sort = 'name'
@@ -410,6 +455,16 @@ const ModelMarket = defineComponent({
       page.value = 1
     }
 
+    const chooseUpstream = (value: string) => {
+      filters.source = filters.source === value ? '' : value
+      page.value = 1
+    }
+
+    const chooseAvailability = (value: string) => {
+      filters.availability = filters.availability === value ? '' : value
+      page.value = 1
+    }
+
     const chooseTag = (value: string) => {
       filters.tag = filters.tag === value ? '' : value
       page.value = 1
@@ -417,8 +472,7 @@ const ModelMarket = defineComponent({
 
     const callModel = (model: EnrichedModel) => {
       if (!model.connected) {
-        ElMessage.warning('该模型还没有绑定渠道，请先在后台新增渠道和模型映射')
-        router.push('/admin/models')
+        ElMessage.warning(model.verificationMessage || '该模型尚未验证通过，暂不能调用')
         return
       }
       router.push({ path: '/console/playground', query: { model: model.publicName } })
@@ -433,7 +487,13 @@ const ModelMarket = defineComponent({
       }
     }
 
-    watch(() => [filters.query, filters.type, filters.tag, filters.sort], () => {
+    const changePage = (nextPage: number) => {
+      page.value = nextPage
+      const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+      resultsElement.value?.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'start' })
+    }
+
+    watch(() => [filters.query, filters.source, filters.availability, filters.type, filters.tag, filters.sort], () => {
       window.clearTimeout(searchTimer)
       searchTimer = window.setTimeout(() => {
         page.value = 1
@@ -453,11 +513,11 @@ const ModelMarket = defineComponent({
       h('div', { class: 'market-hero' }, [
         h('div', { class: 'market-hero-copy' }, [
           h('div', { class: 'market-hero-label' }, [
-            h('img', { src: '/model-icons/nvidia.svg', alt: 'NVIDIA' }),
+            h('img', { src: '/model-icons/model-gateway.png', alt: '统一模型网关' }),
             h('span', '统一模型目录')
           ]),
           h('h1', '发现并调用适合你的 AI 模型'),
-          h('p', '参考 NVIDIA Build 的目录体验，按发布方与能力快速筛选。这里仅展示后台已启用、可通过统一 API Key 调用的真实模型。')
+          h('p', '展示上游完整模型目录，并按上游、功能、厂家和验证状态筛选。只有验证成功的模型才能通过统一 API Key 调用。')
         ]),
         h('div', { class: 'market-stats' }, [
           h('article', null, [h('span', '目录模型'), h('strong', String(total.value))]),
@@ -472,14 +532,24 @@ const ModelMarket = defineComponent({
         h('aside', { class: ['market-filter-panel', filtersOpen.value ? 'is-open' : ''] }, [
           h('header', null, [
             h('div', null, [h('span', { class: 'market-filter-icon' }, '≡'), h('h2', '筛选')]),
-            h('button', { type: 'button', onClick: clearFilters, disabled: !filters.type && !filters.tag }, '重置')
+            h('button', { type: 'button', onClick: clearFilters, disabled: !filters.source && !filters.availability && !filters.type && !filters.tag }, '重置')
+          ]),
+          h('div', { class: 'market-filter-group' }, [
+            h('h3', '模型上游'),
+            h('div', { class: 'market-filter-options text-only' }, upstreamOptions.value.map(upstream =>
+              h('button', {
+                type: 'button',
+                class: { active: filters.source === upstream.value },
+                'aria-pressed': filters.source === upstream.value,
+                onClick: () => chooseUpstream(upstream.value)
+              }, [h('span', null, [h('em', upstream.label)]), h('b', String(upstream.count))])
+            ))
           ]),
           h('div', { class: 'market-filter-group' }, [
             h('h3', '可用状态'),
-            h('div', { class: 'market-availability-row' }, [
-              h('span', { class: 'market-status-dot' }),
-              h('span', '公开可调用'),
-              h('b', String(connectedCount.value))
+            h('div', { class: 'market-filter-options text-only' }, [
+              h('button', { type: 'button', class: { active: filters.availability === 'available' }, onClick: () => chooseAvailability('available') },
+                [h('span', null, [h('em', '已验证可调用')]), h('b', String(connectedCount.value))])
             ])
           ]),
           h('div', { class: 'market-filter-group' }, [
@@ -514,7 +584,7 @@ const ModelMarket = defineComponent({
           ]) : null
         ]),
 
-        h('div', { class: 'market-results' }, [
+        h('div', { class: 'market-results', ref: resultsElement }, [
           h('div', { class: 'market-toolbar' }, [
             h('div', { class: 'market-result-count' }, [
               h('strong', String(filteredModels.value.length)),
@@ -556,22 +626,26 @@ const ModelMarket = defineComponent({
                         h('span', null, [h('strong', publisher.label), h('small', model.provider === 'nvidia' ? 'NVIDIA API' : '统一网关')])
                       ]),
                       h('div', { class: 'market-card-badges' }, [
-                        model.provider === 'nvidia' ? h('span', { class: 'market-badge nvidia' }, 'NVIDIA 接入') : null,
+                        ...model.upstreams.map(upstream => h('span', {
+                          class: ['market-badge', upstream === 'nvidia' ? 'nvidia' : ''],
+                          key: upstream
+                        }, model.upstreamLabels[upstream] || '平台智能路由')),
                         h('span', { class: 'market-badge available' }, model.status)
                       ])
                     ]),
                     h('h3', model.publicName),
                     h('p', { class: 'market-card-desc' }, model.description),
+                    !model.connected && model.verificationMessage
+                      ? h('p', { class: 'market-card-desc' }, `验证状态：${model.verificationMessage}`)
+                      : null,
                     h('div', { class: 'market-tags' }, model.tags.filter(tag => tag !== '已接入' && tag !== publisher.label).slice(0, 4).map(tag => h('span', { key: tag }, tag)))
                   ]),
                   h('footer', null, [
-                    h('dl', { class: 'market-meta' }, [
-                      h('div', null, [h('dt', '上下文 / 能力'), h('dd', model.context)]),
-                      h('div', null, [h('dt', '计费'), h('dd', model.rate)])
-                    ]),
+                    h('dl', { class: 'market-meta' }, [h('div', null, [h('dt', '上下文 / 能力'), h('dd', model.context)])]),
+                    model.pricingModel ? h(ModelSalePricing, { model: model.pricingModel, compact: true, class: 'market-sale-pricing' }) : null,
                     h('div', { class: 'market-card-actions' }, [
                       h(ElButton, { onClick: () => copyModel(model) }, () => '复制模型名'),
-                      h(ElButton, { type: 'primary', onClick: () => callModel(model) }, () => model.connected ? '立即调用 →' : '去接入 →')
+                      h(ElButton, { type: 'primary', disabled: !model.connected, onClick: () => callModel(model) }, () => model.connected ? '立即调用 →' : '尚不可调用')
                     ])
                   ])
                 ])
@@ -580,11 +654,19 @@ const ModelMarket = defineComponent({
                 h(ElEmpty, { description: '没有找到匹配模型' }, () => h(ElButton, { onClick: clearFilters }, () => '清空筛选'))
               ]),
 
-          h('div', { class: 'market-load' }, [
-            canLoadMore.value
-              ? h(ElButton, { onClick: () => { page.value += 1 } }, () => `加载更多（已显示 ${displayModels.value.length} / ${filteredModels.value.length}）`)
-              : filteredModels.value.length ? h('span', '已显示全部模型') : null
-          ])
+          filteredModels.value.length
+            ? h('div', { class: 'market-pagination' }, [
+              h(ElPagination, {
+                currentPage: page.value,
+                pageSize: size,
+                total: filteredModels.value.length,
+                layout: 'total, prev, pager, next',
+                background: true,
+                'aria-label': '模型列表分页',
+                'onUpdate:currentPage': changePage
+              })
+            ])
+            : null
         ])
       ]),
 
@@ -592,7 +674,7 @@ const ModelMarket = defineComponent({
         h('div', null, [
           h('p', { class: 'eyebrow' }, '快速接入'),
           h('h2', '后台配置渠道和映射后，模型即可从统一 Base URL 调用。'),
-          h('p', '模型广场负责展示目录、倍率和接入状态；真实调用仍使用平台 API Key 和 OpenAI SDK 兼容接口。'),
+          h('p', '模型广场负责展示目录、本站销售价格和接入状态；真实调用仍使用平台 API Key 和 OpenAI SDK 兼容接口。'),
           h('div', { class: 'hero-actions' }, [
             h(ElButton, { type: 'primary', onClick: () => router.push('/docs') }, () => '查看接入文档'),
             h(ElButton, { onClick: () => router.push('/console/playground') }, () => '在线调试')
@@ -622,10 +704,17 @@ const publisherCatalog = [
   { label: '其他', value: 'custom', icon: '' }
 ]
 
+function modelUpstreams(model: PublicModel) {
+  const structured=(model.upstreams||[]).filter(item=>item?.code&&item?.name)
+  if(structured.length)return {codes:[...new Set(structured.map(item=>item.code))],labels:Object.fromEntries(structured.map(item=>[item.code,item.name]))}
+  return {codes:['platform-route'],labels:{'platform-route':'平台智能路由'}}
+}
+
 function getPublisher(model: EnrichedModel) {
   const name = model.publicName.toLowerCase()
   let key = model.provider
-  if (name.includes('deepseek')) key = 'deepseek'
+  if (name.includes('claude')) key = 'anthropic'
+  else if (name.includes('deepseek')) key = 'deepseek'
   else if (name.startsWith('meta/') || name.includes('llama')) key = 'meta'
   else if (name.startsWith('google/') || name.includes('gemma') || name.includes('gemini')) key = 'google'
   else if (name.includes('mistral')) key = 'mistral'
@@ -665,27 +754,90 @@ function mergeCatalog(connectedModels: PublicModel[]) {
     known.add(name.toLowerCase())
     const catalogMatch = curatedModels.find(item => item.publicName.toLowerCase() === name.toLowerCase())
     const inferred = catalogMatch || inferFamily(model)
+    const upstream=modelUpstreams(model)
     rows.push(enrichModel({
       ...inferred,
       publicName: name,
-      type: normalizeProvider(model.type || inferred.type, name.toLowerCase()),
+      type: normalizeProvider(model.vendor || model.type || inferred.type, name.toLowerCase()),
       description: inferred.description,
-      tags: inferCapabilityTags(name, inferred.tags),
+      tags: [...new Set([...inferCapabilityTags(name, inferred.tags), capabilityLabel(model.capability)])],
       context: inferred.context || '以渠道配置为准',
-      rate: '登录后查看账单'
-    }, true))
+      rate: publicPriceSummary(model),
+      pricingLines: publicPriceLines(model),
+      pricingModel: model
+    }, model.available === true || model.verificationStatus === 'AVAILABLE', upstream.codes,
+      model.verificationStatus, model.verificationMessage, upstream.labels))
   }
   return rows
 }
 
-function enrichModel(model: CatalogModel, connected: boolean): EnrichedModel {
+function enrichModel(model: CatalogModel, connected: boolean, upstreams: string[] = ['other'],
+  verificationStatus?: string, verificationMessage?: string, upstreamLabels: Record<string,string> = {'platform-route':'平台智能路由'}): EnrichedModel {
   return {
     ...model,
     provider: model.type,
-    status: connected ? '已接入' : '待接入',
-    rate: connected ? '登录后查看账单' : '未配置',
+    upstreams,
+    upstreamLabels,
+    status: connected ? '已验证' : verificationStatusLabel(verificationStatus),
+    verificationStatus: verificationStatus || (connected ? 'AVAILABLE' : 'DISCOVERED'),
+    verificationMessage: verificationMessage || (connected ? '验证成功，可调用' : '等待管理员验证'),
+    rate: connected ? model.rate : '未配置',
+    pricingLines: connected ? model.pricingLines || [] : [],
+    pricingModel: connected ? model.pricingModel : undefined,
     connected
   }
+}
+
+function publicPriceLines(model: PublicModel) {
+  const unit = String(model.pricing?.unit || model.pricingUnit || 'TOKEN').toUpperCase()
+  if (model.pricing?.billingMode === 'FREE_PREVIEW' || model.billingMode === 'FREE_PREVIEW') return ['免费开发预览 · 非生产服务']
+  if (unit !== 'TOKEN') {
+    const sale = Number(model.pricing?.saleUnitPrice ?? model.saleUnitPrice ?? 0)
+    return sale > 0 ? [`本站售价 ${usdUnitSale(sale, unit)}`] : [model.pricing?.message || model.pricingMessage || `尚未设置${unitLabel(unit)}售价`]
+  }
+  if (!hasSalePrice(model)) return ['销售价格待配置']
+  return [
+    `输入/未命中 ${usdSale(model.maxInputPricePerMillion ?? model.minInputPricePerMillion)}`,
+    `输出 ${usdSale(model.maxOutputPricePerMillion ?? model.minOutputPricePerMillion)}`,
+    `缓存命中 ${usdSale(model.maxCacheReadPricePerMillion ?? model.minCacheReadPricePerMillion)}`,
+    `缓存写入 ${usdSale(model.maxCacheWritePricePerMillion ?? model.minCacheWritePricePerMillion)}`
+  ]
+}
+
+function publicPriceSummary(model: PublicModel) {
+  const unit = String(model.pricing?.unit || model.pricingUnit || 'TOKEN').toUpperCase()
+  if (model.pricing?.billingMode === 'FREE_PREVIEW' || model.billingMode === 'FREE_PREVIEW') return '免费开发预览'
+  if (unit !== 'TOKEN') {
+    const sale = Number(model.pricing?.saleUnitPrice ?? model.saleUnitPrice ?? 0)
+    return sale > 0 ? usdUnitSale(sale, unit) : (model.pricing?.message || model.pricingMessage || '价格待配置')
+  }
+  if (!hasSalePrice(model)) return '销售价格待配置'
+  return `输入 ${usdSale(model.maxInputPricePerMillion ?? model.minInputPricePerMillion)} / 输出 ${usdSale(model.maxOutputPricePerMillion ?? model.minOutputPricePerMillion)}`
+}
+
+function hasSalePrice(model: PublicModel) {
+  if (model.pricing?.billingMode === 'FREE_PREVIEW' || model.billingMode === 'FREE_PREVIEW') return true
+  const unit = String(model.pricing?.unit || model.pricingUnit || 'TOKEN').toUpperCase()
+  if (unit !== 'TOKEN') return Number(model.pricing?.saleUnitPrice ?? model.saleUnitPrice ?? 0) > 0
+  return model.billingConfigured !== false
+    && Number(model.maxInputPricePerMillion ?? model.minInputPricePerMillion ?? 0) > 0
+}
+
+function unitLabel(unit: string) { return ({ SECOND: '按秒', IMAGE: '按张', MINUTE: '按分钟', CHARACTER: '按千字符', TASK: '按次' } as Record<string, string>)[unit] || '单位' }
+function usdUnitSale(value: number, unit: string) { return `$${value.toLocaleString('en-US', { maximumFractionDigits: 6 })} / ${({ SECOND: '秒', IMAGE: '张', MINUTE: '分钟', CHARACTER: '千字符', TASK: '次' } as Record<string, string>)[unit] || '单位'}` }
+
+function usdSale(value?: number) {
+  const price = Number(value || 0)
+  const format = (value: number) => `$${value.toLocaleString('en-US', { maximumFractionDigits: 6 })} / 1M`
+  return price > 0 ? format(price) : '不计费'
+}
+
+function verificationStatusLabel(status?: string) {
+  return ({ DISCOVERED: '待验证', VERIFYING: '验证中', FAILED: '验证失败', UNSUPPORTED: '协议待接入', RETIRED: '已下架' } as Record<string, string>)[status || ''] || '待验证'
+}
+
+function capabilityLabel(capability?: string) {
+  return ({ text: '文本', reasoning: '推理', vision: '视觉', image: '图像', video: '视频', music: '音乐', embedding: 'Embedding', rerank: 'Rerank', speech: '语音合成', transcription: '语音识别' } as Record<string, string>)[capability || ''] || '文本'
 }
 
 function inferFamily(model: PublicModel): CatalogModel {
@@ -754,7 +906,6 @@ function inferCapabilityTags(publicName: string, sourceTags: string[]) {
 }
 
 function normalizeProvider(type: string | undefined, lowerName: string) {
-  if (type) return type.toLowerCase()
   if (lowerName.includes('claude')) return 'anthropic'
   if (lowerName.includes('gemini')) return 'google'
   if (lowerName.includes('grok')) return 'xai'
@@ -766,6 +917,8 @@ function normalizeProvider(type: string | undefined, lowerName: string) {
   if (lowerName.includes('llama')) return 'meta'
   if (lowerName.includes('deepseek')) return 'deepseek'
   if (lowerName.includes('gpt') || lowerName.includes('o1') || lowerName.includes('o3') || lowerName.includes('o4')) return 'openai'
+  const normalized = String(type || '').toLowerCase()
+  if (normalized && !['unknown', 'other', 'haoee', 'nvidia', 'multi'].includes(normalized)) return normalized
   return 'custom'
 }
 </script>

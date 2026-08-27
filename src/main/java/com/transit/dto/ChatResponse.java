@@ -115,6 +115,12 @@ public class ChatResponse {
         private Long cacheWriteAmount;
         @JsonProperty("total_amount")
         private Long totalAmount;
+        @JsonProperty("settlement_amount")
+        private Long settlementAmount;
+        @JsonProperty("settlement_currency")
+        private String settlementCurrency;
+        @JsonProperty("exchange_rate")
+        private BigDecimal exchangeRate;
         @JsonProperty("billing_enabled")
         private Boolean billingEnabled;
     }

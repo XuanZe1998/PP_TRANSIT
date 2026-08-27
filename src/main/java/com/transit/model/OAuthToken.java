@@ -55,4 +55,14 @@ public class OAuthToken {
 
     @TableField("created_at")
     private LocalDateTime createdAt;
+
+    @TableField("device_name")
+    private String deviceName;
+
+    @TableField("ip_digest")
+    @JsonIgnore
+    private String ipDigest;
+
+    @TableField("last_active_at")
+    private LocalDateTime lastActiveAt;
 }

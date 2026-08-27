@@ -29,6 +29,8 @@ public class AuthService {
     private final BCryptPasswordEncoder passwordEncoder;
     private final AuthenticationThrottle authenticationThrottle;
     private final TransactionTemplate transactionTemplate;
+    private final VerificationCodeService verificationCodeService;
+    private final AccountVerificationPolicy verificationPolicy;
     private static final Pattern EMAIL_PATTERN = Pattern.compile("^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$");
     private static final Pattern PHONE_PATTERN = Pattern.compile("^(1[3-9]\\d{9}|\\+[1-9]\\d{7,14})$");
     private static final Pattern PASSWORD_PATTERN = Pattern.compile("^(?=.*[A-Za-z])(?=.*\\d).{10,}$");
@@ -70,6 +72,41 @@ public class AuthService {
         })).subscribeOn(Schedulers.boundedElastic());
     }
 
+    public Mono<Map<String, Object>> register(String email, String emailCode, String phone, String phoneCode,
+                                               String password, String displayName) {
+        return Mono.fromCallable(() -> transactionTemplate.execute(status -> {
+            String normalizedEmail = normalizeIdentifier(email);
+            String normalizedPhone = verificationPolicy.requiresPhone()
+                    ? VerificationCodeService.normalizePhone(phone) : null;
+            if (!isEmail(normalizedEmail) || (verificationPolicy.requiresPhone() && !isPhone(normalizedPhone))) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        verificationPolicy.requiresPhone() ? "请填写有效的邮箱和手机号" : "请填写有效的邮箱");
+            }
+            validatePassword(password);
+            if (findUserByIdentifier(normalizedEmail) != null
+                    || (verificationPolicy.requiresPhone() && findUserByIdentifier(normalizedPhone) != null)) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "邮箱或手机号已注册");
+            }
+            verificationCodeService.consume("EMAIL", normalizedEmail, "REGISTER", emailCode);
+            if (verificationPolicy.requiresPhone()) {
+                verificationCodeService.consume("PHONE", normalizedPhone, "REGISTER", phoneCode);
+            }
+            LocalDateTime now = LocalDateTime.now();
+            String name = displayName == null ? "" : displayName.trim();
+            if (name.length() > 80) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "显示名称不能超过 80 个字符");
+            User user = User.builder().username(normalizedEmail)
+                    .displayName(name.isBlank() ? normalizedEmail.substring(0, normalizedEmail.indexOf('@')) : name)
+                    .password(passwordEncoder.encode(password)).email(normalizedEmail).phone(normalizedPhone)
+                    .emailVerifiedAt(now).phoneVerifiedAt(verificationPolicy.requiresPhone() ? now : null)
+                    .locale("zh-CN").timezone("Asia/Shanghai")
+                    .authProvider("local").role("USER").status("ACTIVE").balance(0)
+                    .createdAt(now).lastLoginAt(now).build();
+            try { userMapper.insert(user); }
+            catch (DuplicateKeyException exception) { throw new ResponseStatusException(HttpStatus.CONFLICT, "邮箱或手机号已注册"); }
+            return oauthService.issueUserSession(user, "local");
+        })).subscribeOn(Schedulers.boundedElastic());
+    }
+
     public Mono<Map<String, Object>> login(String username, String password) {
         return Mono.fromCallable(() -> {
             String identifier = normalizeIdentifier(username);
@@ -88,6 +125,8 @@ public class AuthService {
                 throw new ResponseStatusException(HttpStatus.FORBIDDEN, "User account is not active");
             }
             authenticationThrottle.success(identifier);
+            user.setLastLoginAt(LocalDateTime.now());
+            userMapper.updateById(user);
             return oauthService.issueUserSession(user, "local");
         }).subscribeOn(Schedulers.boundedElastic());
     }
@@ -99,6 +138,13 @@ public class AuthService {
             result.put("message", "Logged out successfully");
             return result;
         }).subscribeOn(Schedulers.boundedElastic());
+    }
+
+    public Map<String, Object> refresh(String refreshToken) {
+        if (refreshToken == null || refreshToken.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Missing refresh token");
+        }
+        return oauthService.refreshFirstPartySession(refreshToken.trim());
     }
 
     public Map<String, Object> validateIdentifier(String identifier) {
@@ -128,6 +174,14 @@ public class AuthService {
 
     private boolean isPhone(String identifier) {
         return PHONE_PATTERN.matcher(identifier).matches();
+    }
+
+    public void validatePassword(String password) {
+        if (password == null || password.getBytes(StandardCharsets.UTF_8).length > 72
+                || !PASSWORD_PATTERN.matcher(password).matches()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Password must be 10 to 72 bytes and contain letters and numbers");
+        }
     }
 
     private User findUserByIdentifier(String identifier) {

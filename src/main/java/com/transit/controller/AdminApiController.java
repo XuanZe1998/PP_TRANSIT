@@ -3,8 +3,8 @@ package com.transit.controller;
 import com.transit.model.Channel;
 import com.transit.model.ModelMapping;
 import com.transit.model.OtherService;
-import com.transit.model.PlusOrder;
-import com.transit.model.PlusProduct;
+import com.transit.model.ServiceInventoryItem;
+import com.transit.model.ServiceOrder;
 import com.transit.model.Token;
 import com.transit.model.User;
 import com.transit.service.AdminAuditQueryService;
@@ -15,6 +15,10 @@ import com.transit.service.AdminDashboardService;
 import com.transit.service.AdminModelService;
 import com.transit.service.NvidiaCatalogService;
 import com.transit.service.ModelDiscoveryService;
+import com.transit.service.ProviderModelCatalogService;
+import com.transit.service.ProviderModelVerificationService;
+import com.transit.service.PublicPricingReconciliationService;
+import com.transit.service.IdempotencyService;
 import com.transit.service.OtherServiceImageStorageService;
 import com.transit.service.AdminReportService;
 import com.transit.service.AdminSecurityService;
@@ -22,7 +26,10 @@ import com.transit.service.AdminTokenService;
 import com.transit.service.AdminUserService;
 import com.transit.service.CurrentUserService;
 import com.transit.service.OtherServiceCatalogService;
-import com.transit.service.PlusOrderService;
+import com.transit.service.ServiceOrderService;
+import com.transit.service.ServiceCommerceService;
+import com.transit.service.UsageAnalyticsService;
+import com.transit.service.SensitiveWordService;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
@@ -58,19 +65,41 @@ public class AdminApiController {
     private final AdminModelService modelService;
     private final NvidiaCatalogService nvidiaCatalogService;
     private final ModelDiscoveryService modelDiscoveryService;
+    private final ProviderModelCatalogService providerModelCatalogService;
+    private final ProviderModelVerificationService providerModelVerificationService;
+    private final PublicPricingReconciliationService publicPricingReconciliationService;
+    private final IdempotencyService idempotencyService;
     private final AdminTokenService tokenService;
     private final AdminBillingService billingService;
     private final AdminAuditQueryService auditQueryService;
     private final AdminSecurityService securityService;
     private final AdminReportService reportService;
-    private final PlusOrderService plusOrderService;
     private final OtherServiceCatalogService otherServiceCatalogService;
     private final OtherServiceImageStorageService otherServiceImageStorageService;
+    private final ServiceCommerceService serviceCommerceService;
+    private final UsageAnalyticsService usageAnalyticsService;
+    private final SensitiveWordService sensitiveWordService;
 
     @GetMapping("/dashboard")
     public Mono<Map<String, Object>> dashboard(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
         requireAdmin(authHeader);
         return Mono.fromCallable(dashboardService::overview);
+    }
+
+    @GetMapping("/usage/analytics")
+    public Mono<Map<String, Object>> usageAnalytics(
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+            @RequestParam(value = "userId", required = false) Long userId,
+            @RequestParam(value = "from", required = false) String from,
+            @RequestParam(value = "to", required = false) String to,
+            @RequestParam(value = "model", required = false) String model,
+            @RequestParam(value = "tokenId", required = false) Long tokenId,
+            @RequestParam(value = "status", required = false) String status,
+            @RequestParam(value = "audienceType", required = false) String audienceType,
+            @RequestParam(value = "organizationId", required = false) Long organizationId) {
+        requireAdmin(authHeader);
+        return Mono.fromCallable(() -> usageAnalyticsService.analytics(
+                null, userId, from, to, model, tokenId, status, audienceType, organizationId));
     }
 
     @GetMapping("/users")
@@ -129,6 +158,27 @@ public class AdminApiController {
         return Flux.fromIterable(channelService.list());
     }
 
+    @GetMapping("/pricing/reconciliation")
+    public Mono<PublicPricingReconciliationService.ReconciliationReport> previewPublicPricing(
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+        requireAdmin(authHeader);
+        return Mono.fromCallable(publicPricingReconciliationService::preview);
+    }
+
+    @PostMapping("/pricing/reconciliation/apply")
+    public Mono<PublicPricingReconciliationService.ReconciliationReport> applyPublicPricing(
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+            HttpServletRequest servletRequest) {
+        User admin = requireAdmin(authHeader);
+        return Mono.fromCallable(() -> {
+            PublicPricingReconciliationService.ReconciliationReport report = publicPricingReconciliationService.apply();
+            audit(admin, "RECONCILE_PUBLIC_PRICING", "MODEL_MAPPING", "PUBLIC",
+                    null, Map.of("updatedRoutes", report.updatedRouteCount(),
+                            "pausedRoutes", report.pausedRouteCount(), "verifiedAt", report.verifiedAt()), servletRequest);
+            return report;
+        });
+    }
+
     @GetMapping("/channels/providers")
     public Flux<Map<String, Object>> channelProviders(
             @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
@@ -158,6 +208,34 @@ public class AdminApiController {
             Channel updated = channelService.update(id, channel);
             audit(admin, "UPDATE_CHANNEL", "CHANNEL", id, null, updated, servletRequest);
             return updated;
+        });
+    }
+
+    @PutMapping("/channels/{id}/model-pricing")
+    public Mono<ModelMapping> saveChannelModelPricing(
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+            @PathVariable Long id,
+            @RequestBody ModelMapping mapping,
+            HttpServletRequest servletRequest) {
+        User admin = requireAdmin(authHeader);
+        return Mono.fromCallable(() -> {
+            ModelMapping updated = channelService.saveModelPricing(id, mapping);
+            audit(admin, "SAVE_CHANNEL_MODEL_PRICING", "MODEL_MAPPING", updated.getId(), null, updated, servletRequest);
+            return updated;
+        });
+    }
+
+    @DeleteMapping("/channels/{id}/model-pricing/{mappingId}")
+    public Mono<Void> deleteChannelModelPricing(
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+            @PathVariable Long id,
+            @PathVariable Long mappingId,
+            HttpServletRequest servletRequest) {
+        User admin = requireAdmin(authHeader);
+        return Mono.fromRunnable(() -> {
+            channelService.deleteModelPricing(id, mappingId);
+            audit(admin, "DELETE_CHANNEL_MODEL_PRICING", "MODEL_MAPPING", mappingId, null,
+                    Map.of("channelId", id), servletRequest);
         });
     }
 
@@ -256,6 +334,147 @@ public class AdminApiController {
         return Flux.fromIterable(modelService.list());
     }
 
+    @GetMapping("/model-catalog")
+    public Flux<com.transit.model.ProviderModel> providerModelCatalog(
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+            @RequestParam(value = "source", required = false) String source,
+            @RequestParam(value = "status", required = false) String status) {
+        requireAdmin(authHeader);
+        return Flux.fromIterable(providerModelCatalogService.list(source, status));
+    }
+
+    @GetMapping("/model-catalog/verifications")
+    public Flux<Map<String, Object>> providerModelVerificationHistory(
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+            @RequestParam(value = "modelId", required = false) Long modelId,
+            @RequestParam(value = "source", required = false) String source,
+            @RequestParam(value = "limit", defaultValue = "100") int limit) {
+        requireAdmin(authHeader);
+        return Flux.fromIterable(providerModelCatalogService.verificationHistory(modelId, source, limit));
+    }
+
+    @GetMapping("/model-catalog/exclusions")
+    public Flux<Map<String, Object>> providerModelExclusions(
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+            @RequestParam(value = "source", required = false) String source) {
+        requireAdmin(authHeader);
+        return Flux.fromIterable(providerModelCatalogService.exclusions(source));
+    }
+
+    @PostMapping("/model-catalog/purge-failed")
+    public Mono<Object> purgeFailedProviderModels(
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+            @RequestBody(required = false) Map<String, Object> request,
+            HttpServletRequest servletRequest) {
+        User admin = requireAdmin(authHeader);
+        Map<String, Object> body = request == null ? Map.of() : request;
+        String source = String.valueOf(body.getOrDefault("source", "")).trim().toLowerCase(java.util.Locale.ROOT);
+        if (!source.isBlank() && !List.of("nvidia", "haoee").contains(source)) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.BAD_REQUEST, "source must be nvidia or haoee");
+        }
+        IdempotencyService.Claim claim = idempotencyService.claim("ADMIN", admin.getId(),
+                "provider-catalog:purge-failed:" + (source.isBlank() ? "all" : source),
+                idempotencyKey, body, true);
+        if (claim.replay()) return Mono.just(claim.response());
+        return Mono.fromCallable(() -> {
+            try {
+                int removed = providerModelCatalogService.purgeFailed(source.isBlank() ? null : source, admin.getId());
+                Map<String, Object> result = Map.of("removed", removed, "source", source.isBlank() ? "all" : source);
+                idempotencyService.complete(claim, 200, result, "PROVIDER_MODEL_EXCLUSION", source);
+                audit(admin, "PURGE_FAILED_PROVIDER_MODELS", "PROVIDER_CATALOG", source, body, result, servletRequest);
+                return (Object) result;
+            } catch (RuntimeException error) {
+                idempotencyService.fail(claim, error);
+                throw error;
+            }
+        });
+    }
+
+    @DeleteMapping("/model-catalog/exclusions/{id}")
+    public Mono<Map<String, Object>> restoreProviderModelExclusion(
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+            @PathVariable Long id,
+            HttpServletRequest servletRequest) {
+        User admin = requireAdmin(authHeader);
+        return Mono.fromCallable(() -> {
+            Map<String, Object> restored = providerModelCatalogService.restoreExclusion(id);
+            audit(admin, "RESTORE_PROVIDER_MODEL_EXCLUSION", "PROVIDER_MODEL_EXCLUSION", id,
+                    restored, Map.of("restored", true), servletRequest);
+            return restored;
+        });
+    }
+
+    @PostMapping("/model-catalog/sync")
+    public Mono<Object> synchronizeProviderCatalog(
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+            @RequestBody Map<String, Object> request,
+            HttpServletRequest servletRequest) {
+        User admin = requireAdmin(authHeader);
+        String source = String.valueOf(request.getOrDefault("source", "")).trim().toLowerCase(java.util.Locale.ROOT);
+        if (!List.of("nvidia", "haoee").contains(source)) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.BAD_REQUEST, "source must be nvidia or haoee");
+        }
+        IdempotencyService.Claim claim = idempotencyService.claim("ADMIN", admin.getId(),
+                "provider-catalog:sync:" + source, idempotencyKey, request, true);
+        if (claim.replay()) return Mono.just(claim.response());
+        return Mono.fromCallable(() -> {
+            try {
+                int total;
+                if ("nvidia".equals(source)) {
+                    nvidiaCatalogService.syncCatalog();
+                    total = providerModelCatalogService.listBySource(source).size();
+                } else {
+                    total = providerModelCatalogService.synchronizeConfiguredHaoee();
+                }
+                Map<String, Object> result = Map.of("source", source, "total", total,
+                        "statusCounts", providerModelCatalogService.statusCounts(source));
+                idempotencyService.complete(claim, 200, result, "PROVIDER_CATALOG", source);
+                audit(admin, "SYNC_PROVIDER_CATALOG", "PROVIDER_CATALOG", source, request, result, servletRequest);
+                return (Object) result;
+            } catch (RuntimeException error) {
+                idempotencyService.fail(claim, error);
+                throw error;
+            }
+        });
+    }
+
+    @PostMapping("/model-catalog/verify")
+    public Mono<Object> verifyProviderCatalog(
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+            @RequestBody Map<String, Object> request,
+            HttpServletRequest servletRequest) {
+        User admin = requireAdmin(authHeader);
+        IdempotencyService.Claim claim = idempotencyService.claim("ADMIN", admin.getId(),
+                "provider-catalog:verify", idempotencyKey, request, true);
+        if (claim.replay()) return Mono.just(claim.response());
+        return Mono.fromCallable(() -> {
+            try {
+                boolean allowPaid = Boolean.TRUE.equals(request.get("allowPaid"));
+                List<Long> ids;
+                if (request.get("id") instanceof Number id) {
+                    ids = providerModelVerificationService.queueOne(id.longValue(), allowPaid);
+                } else {
+                    String source = String.valueOf(request.getOrDefault("source", "")).trim().toLowerCase(java.util.Locale.ROOT);
+                    int limit = request.get("limit") instanceof Number number ? number.intValue() : 20;
+                    ids = providerModelVerificationService.queue(source, limit, allowPaid);
+                }
+                providerModelVerificationService.verifyQueuedAsync(ids, allowPaid);
+                Map<String, Object> result = Map.of("status", "QUEUED", "modelIds", ids, "count", ids.size());
+                idempotencyService.complete(claim, 202, result, "MODEL_VERIFICATION_BATCH", ids.hashCode());
+                audit(admin, "VERIFY_PROVIDER_CATALOG", "PROVIDER_CATALOG", ids.hashCode(), request, result, servletRequest);
+                return (Object) result;
+            } catch (RuntimeException error) {
+                idempotencyService.fail(claim, error);
+                throw error;
+            }
+        });
+    }
+
     @PostMapping("/models")
     public Mono<ModelMapping> createModel(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
                                           @RequestBody ModelMapping mapping,
@@ -335,9 +554,30 @@ public class AdminApiController {
     }
 
     @GetMapping("/audit/request-logs")
-    public Flux<Map<String, Object>> requestLogs(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+    public Mono<Map<String, Object>> requestLogs(
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+            @RequestParam(value = "audienceType", required = false) String audienceType,
+            @RequestParam(value = "organizationId", required = false) Long organizationId,
+            @RequestParam(value = "userId", required = false) Long userId,
+            @RequestParam(value = "model", required = false) String model,
+            @RequestParam(value = "from", required = false) String from,
+            @RequestParam(value = "to", required = false) String to,
+            @RequestParam(value = "query", required = false) String query,
+            @RequestParam(value = "page", defaultValue = "1") int page,
+            @RequestParam(value = "pageSize", defaultValue = "50") int pageSize) {
         requireAdmin(authHeader);
-        return Flux.fromIterable(auditQueryService.requestLogs());
+        return Mono.fromCallable(() -> auditQueryService.requestLogs(
+                audienceType, organizationId, userId, model, from, to, query, page, pageSize));
+    }
+
+    @GetMapping("/audit/filter-options")
+    public Mono<Map<String, Object>> auditFilterOptions(
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+            @RequestParam(value = "audienceType", required = false) String audienceType,
+            @RequestParam(value = "organizationId", required = false) Long organizationId,
+            @RequestParam(value = "query", required = false) String query) {
+        requireAdmin(authHeader);
+        return Mono.fromCallable(() -> auditQueryService.filterOptions(audienceType, organizationId, query));
     }
 
     @GetMapping("/audit/admin-logs")
@@ -379,10 +619,46 @@ public class AdminApiController {
         });
     }
 
-    @GetMapping("/plus/products")
-    public Flux<PlusProduct> plusProducts(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+    @GetMapping("/finance/recharge-plans")
+    public Flux<Map<String, Object>> rechargePlans(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
         requireAdmin(authHeader);
-        return Flux.fromIterable(plusOrderService.listAllProducts());
+        return Flux.fromIterable(billingService.rechargePlans());
+    }
+
+    @PostMapping("/finance/recharge-plans")
+    public Mono<Map<String, Object>> createRechargePlan(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+                                                        @RequestBody Map<String, Object> request,
+                                                        HttpServletRequest servletRequest) {
+        User admin = requireAdmin(authHeader);
+        return Mono.fromCallable(() -> {
+            Map<String, Object> result = billingService.createRechargePlan(request);
+            audit(admin, "CREATE_RECHARGE_PLAN", "RECHARGE_PLAN", result.get("id"), null, result, servletRequest);
+            return result;
+        });
+    }
+
+    @PutMapping("/finance/recharge-plans/{id}")
+    public Mono<Map<String, Object>> updateRechargePlan(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+                                                        @PathVariable Long id,
+                                                        @RequestBody Map<String, Object> request,
+                                                        HttpServletRequest servletRequest) {
+        User admin = requireAdmin(authHeader);
+        return Mono.fromCallable(() -> {
+            Map<String, Object> result = billingService.updateRechargePlan(id, request);
+            audit(admin, "UPDATE_RECHARGE_PLAN", "RECHARGE_PLAN", id, null, result, servletRequest);
+            return result;
+        });
+    }
+
+    @DeleteMapping("/finance/recharge-plans/{id}")
+    public Mono<Void> deleteRechargePlan(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+                                         @PathVariable Long id,
+                                         HttpServletRequest servletRequest) {
+        User admin = requireAdmin(authHeader);
+        return Mono.fromRunnable(() -> {
+            billingService.deleteRechargePlan(id);
+            audit(admin, "DELETE_RECHARGE_PLAN", "RECHARGE_PLAN", id, null, null, servletRequest);
+        });
     }
 
     @GetMapping("/other-services")
@@ -441,58 +717,49 @@ public class AdminApiController {
         });
     }
 
-    @PostMapping("/plus/products")
-    public Mono<PlusProduct> createPlusProduct(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
-                                               @RequestBody PlusProduct request,
-                                               HttpServletRequest servletRequest) {
+    @PostMapping("/other-services/{id}/inventory/import")
+    public Mono<Map<String, Integer>> importOtherServiceInventory(
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+            @PathVariable Long id,
+            @RequestBody InventoryImportRequest request,
+            HttpServletRequest servletRequest) {
         User admin = requireAdmin(authHeader);
         return Mono.fromCallable(() -> {
-            PlusProduct product = plusOrderService.createProduct(request);
-            audit(admin, "CREATE_PLUS_PRODUCT", "PLUS_PRODUCT", product.getId(), null, product, servletRequest);
-            return product;
+            int imported = serviceCommerceService.importInventory(id, request == null ? null : request.getContent());
+            Map<String, Integer> result = Map.of("imported", imported);
+            audit(admin, "IMPORT_SERVICE_INVENTORY", "OTHER_SERVICE", id, null, result, servletRequest);
+            return result;
         });
     }
 
-    @PutMapping("/plus/products/{id}")
-    public Mono<PlusProduct> updatePlusProduct(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
-                                               @PathVariable Long id,
-                                               @RequestBody PlusProduct request,
-                                               HttpServletRequest servletRequest) {
-        User admin = requireAdmin(authHeader);
-        return Mono.fromCallable(() -> {
-            PlusProduct product = plusOrderService.updateProduct(id, request);
-            audit(admin, "UPDATE_PLUS_PRODUCT", "PLUS_PRODUCT", id, null, product, servletRequest);
-            return product;
-        });
+    @GetMapping("/other-services/{id}/inventory")
+    public Flux<ServiceInventoryItem> otherServiceInventory(
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+            @PathVariable Long id,
+            @RequestParam(required = false) String status) {
+        requireAdmin(authHeader);
+        return Flux.fromIterable(serviceCommerceService.listInventory(id, status));
     }
 
-    @DeleteMapping("/plus/products/{id}")
-    public Mono<Void> deletePlusProduct(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
-                                        @PathVariable Long id,
-                                        HttpServletRequest servletRequest) {
+    @GetMapping("/other-services/{id}/inventory/stats")
+    public Mono<Map<String, Long>> otherServiceInventoryStats(
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+            @PathVariable Long id) {
+        requireAdmin(authHeader);
+        return Mono.fromCallable(() -> serviceCommerceService.inventoryStats(id));
+    }
+
+    @DeleteMapping("/other-services/{id}/inventory/{inventoryId}")
+    public Mono<Void> deleteOtherServiceInventory(
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+            @PathVariable Long id,
+            @PathVariable Long inventoryId,
+            HttpServletRequest servletRequest) {
         User admin = requireAdmin(authHeader);
         return Mono.fromRunnable(() -> {
-            plusOrderService.deleteProduct(id);
-            audit(admin, "DELETE_PLUS_PRODUCT", "PLUS_PRODUCT", id, null, null, servletRequest);
-        });
-    }
-
-    @GetMapping("/plus/orders")
-    public Flux<PlusOrder> plusOrders(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
-        requireAdmin(authHeader);
-        return Flux.fromIterable(plusOrderService.listAllOrders());
-    }
-
-    @PutMapping("/plus/orders/{id}")
-    public Mono<PlusOrder> updatePlusOrder(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
-                                           @PathVariable Long id,
-                                           @RequestBody PlusOrderUpdateRequest request,
-                                           HttpServletRequest servletRequest) {
-        User admin = requireAdmin(authHeader);
-        return Mono.fromCallable(() -> {
-            PlusOrder order = plusOrderService.fulfillOrder(id, request.getStatus(), request.getFulfillmentNote());
-            audit(admin, "UPDATE_PLUS_ORDER", "PLUS_ORDER", id, null, order, servletRequest);
-            return order;
+            serviceCommerceService.deleteAvailableInventory(id, inventoryId);
+            audit(admin, "DELETE_SERVICE_INVENTORY", "SERVICE_INVENTORY", inventoryId,
+                    null, Map.of("serviceId", id), servletRequest);
         });
     }
 
@@ -512,6 +779,62 @@ public class AdminApiController {
             audit(admin, "SAVE_SECURITY_POLICY", "SECURITY_POLICY", result.getOrDefault("id", result.get("name")), null, result, servletRequest);
             return result;
         });
+    }
+
+    @GetMapping("/security/sensitive-words")
+    public Flux<Map<String, Object>> sensitiveWords(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+        requireAdmin(authHeader);
+        return Flux.fromIterable(sensitiveWordService.list());
+    }
+
+    @PostMapping("/security/sensitive-words")
+    public Mono<Map<String, Object>> saveSensitiveWord(
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+            @RequestBody Map<String, Object> request, HttpServletRequest servletRequest) {
+        User admin = requireAdmin(authHeader);
+        return Mono.fromCallable(() -> {
+            Map<String, Object> result = sensitiveWordService.save(request);
+            audit(admin, "SAVE_SENSITIVE_WORD", "SENSITIVE_WORD", result.get("id"), null, result, servletRequest);
+            return result;
+        });
+    }
+
+    @PostMapping("/security/sensitive-words/bulk")
+    public Mono<Map<String, Object>> bulkSensitiveWords(
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+            @RequestBody Map<String, Object> request, HttpServletRequest servletRequest) {
+        User admin = requireAdmin(authHeader);
+        return Mono.fromCallable(() -> {
+            Map<String, Object> result = sensitiveWordService.bulk(request);
+            audit(admin, "BULK_IMPORT_SENSITIVE_WORDS", "SENSITIVE_WORD", result.get("created"), null, result, servletRequest);
+            return result;
+        });
+    }
+
+    @PostMapping("/security/sensitive-words/test")
+    public Flux<Map<String, Object>> testSensitiveWords(
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+            @RequestBody Map<String, Object> request) {
+        requireAdmin(authHeader);
+        return Flux.fromIterable(sensitiveWordService.preview(request));
+    }
+
+    @DeleteMapping("/security/sensitive-words/{id}")
+    public Mono<Void> deleteSensitiveWord(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+                                          @PathVariable Long id, HttpServletRequest servletRequest) {
+        User admin = requireAdmin(authHeader);
+        return Mono.fromRunnable(() -> {
+            sensitiveWordService.delete(id);
+            audit(admin, "DELETE_SENSITIVE_WORD", "SENSITIVE_WORD", id, null, null, servletRequest);
+        });
+    }
+
+    @GetMapping("/security/events")
+    public Flux<Map<String, Object>> securityEvents(
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+            @RequestParam(value = "limit", defaultValue = "200") int limit) {
+        requireAdmin(authHeader);
+        return Flux.fromIterable(sensitiveWordService.events(limit));
     }
 
     @GetMapping("/settings")
@@ -557,8 +880,13 @@ public class AdminApiController {
     }
 
     @Data
-    public static class PlusOrderUpdateRequest {
+    public static class ServiceOrderUpdateRequest {
         private String status;
         private String fulfillmentNote;
+    }
+
+    @Data
+    public static class InventoryImportRequest {
+        private String content;
     }
 }

@@ -21,19 +21,24 @@ app.mount('#app')
 const configuredIdleTimeout = Number(import.meta.env.VITE_AUTH_IDLE_TIMEOUT_MS)
 const idleTimeoutMs = Number.isFinite(configuredIdleTimeout) && configuredIdleTimeout >= 5 * 60 * 1000
   ? configuredIdleTimeout
-  : 30 * 60 * 1000
+  : 7 * 24 * 60 * 60 * 1000
 
 initInactivityGuard(idleTimeoutMs, () => {
   const currentPath = router.currentRoute.value.fullPath
   const isAdmin = currentPath.startsWith('/admin')
   router.push({
-    path: isAdmin ? '/admin/login' : '/login',
+    path: isAdmin ? '/admin/login' : '/',
     query: currentPath && !currentPath.startsWith('/login') && !currentPath.startsWith('/admin/login')
-      ? { redirect: currentPath }
-      : {}
+      ? (isAdmin ? { redirect: currentPath } : { auth: 'login', redirect: currentPath })
+      : (isAdmin ? {} : { auth: 'login' })
   })
 })
 
 window.addEventListener('auth-timeout', () => {
   ElMessage.warning('登录状态已失效，请重新登录')
+})
+
+window.addEventListener('user-auth-required', (event: Event) => {
+  const redirect = (event as CustomEvent<{ redirect?: string }>).detail?.redirect
+  router.push({ path: '/', query: { auth: 'login', ...(redirect ? { redirect } : {}) } })
 })

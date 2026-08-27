@@ -10,6 +10,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 
 @TableName("model_price_tiers")
@@ -83,4 +84,27 @@ public class ModelPriceTier {
     private LocalDateTime createdAt;
     @TableField("updated_at")
     private LocalDateTime updatedAt;
+
+    public BigDecimal getInputCostMultiplier() {
+        return multiplier(costInputPrice, costPriceUnit, officialInputPrice, officialPriceUnit);
+    }
+
+    public BigDecimal getOutputCostMultiplier() {
+        return multiplier(costOutputPrice, costPriceUnit, officialOutputPrice, officialPriceUnit);
+    }
+
+    public BigDecimal getCacheReadCostMultiplier() {
+        return multiplier(costCacheReadPrice, costPriceUnit, officialCacheReadPrice, officialPriceUnit);
+    }
+
+    public BigDecimal getCacheWriteCostMultiplier() {
+        return multiplier(costCacheWritePrice, costPriceUnit, officialCacheWritePrice, officialPriceUnit);
+    }
+
+    private BigDecimal multiplier(BigDecimal cost, String costUnit, BigDecimal official, String officialUnit) {
+        if (cost == null || official == null || official.signum() <= 0) return null;
+        BigDecimal normalizedCost = "KB".equalsIgnoreCase(costUnit) ? cost.multiply(BigDecimal.valueOf(1_000)) : cost;
+        BigDecimal normalizedOfficial = "KB".equalsIgnoreCase(officialUnit) ? official.multiply(BigDecimal.valueOf(1_000)) : official;
+        return normalizedCost.divide(normalizedOfficial, 6, RoundingMode.HALF_UP).stripTrailingZeros();
+    }
 }

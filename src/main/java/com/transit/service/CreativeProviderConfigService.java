@@ -13,8 +13,11 @@ import com.transit.service.creative.CreativeProviderAccess;
 import com.transit.service.creative.CreativeVideoProvider;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Service;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.util.StringUtils;
+import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.net.URI;
@@ -34,6 +37,8 @@ public class CreativeProviderConfigService {
     private static final int MAX_CONNECTIONS_PER_USER = 20;
     private static final int MAX_MODELS_PER_CONNECTION = 30;
     private static final String SEEDANCE = "seedance";
+    private static final String OPENAI_CHAT = "openai-chat";
+    private static final String OPENAI_IMAGE = "openai-image";
     private static final List<String> TERMINAL_STATUSES = List.of("SUCCEEDED", "FAILED", "CANCELLED");
 
     private final CreativeProviderConfigMapper configMapper;
@@ -42,6 +47,8 @@ public class CreativeProviderConfigService {
     private final ChannelUrlPolicy channelUrlPolicy;
     private final ObjectMapper objectMapper;
     private final Collection<CreativeVideoProvider> providers;
+    private final WebClient webClient;
+    private final JdbcTemplate jdbcTemplate;
 
     public List<Map<String, Object>> list(User user) {
         return configMapper.selectList(new LambdaQueryWrapper<CreativeProviderConfig>()
@@ -122,12 +129,31 @@ public class CreativeProviderConfigService {
         if (activeTasks > 0) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "该连接仍有生成中的任务，任务结束后才能删除");
         }
+        Integer activeProjects = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM creative_projects
+                WHERE user_id=? AND (text_connection_id=? OR image_connection_id=? OR video_connection_id=?)
+                AND status IN ('SCRIPT_GENERATING','VISUALS_GENERATING','VIDEO_GENERATING','COMPOSING')
+                """, Integer.class, user.getId(), id, id, id);
+        if (activeProjects != null && activeProjects > 0) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "该连接仍有自动成片项目在运行，任务结束后才能删除");
+        }
         configMapper.deleteById(config.getId());
     }
 
     public Map<String, Object> test(User user, Long id) {
         CreativeProviderAccess access = access(user, id, false);
-        return provider(access.providerKey()).testConnection(access);
+        if (SEEDANCE.equals(access.providerKey())) return provider(access.providerKey()).testConnection(access);
+        long started = System.nanoTime();
+        String endpoint = access.baseUrl().replaceAll("/+$", "");
+        if (!endpoint.endsWith("/v1")) endpoint += "/v1";
+        try {
+            webClient.get().uri(endpoint + "/models").header(HttpHeaders.AUTHORIZATION, "Bearer " + access.apiKey())
+                    .retrieve().toBodilessEntity().block();
+        } catch (RuntimeException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "OpenAI 兼容连接测试失败", exception);
+        }
+        return Map.of("ok", true, "provider", access.providerKey(),
+                "latencyMs", java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started), "message", "连接成功");
     }
 
     public CreativeProviderAccess access(User user, Long id, boolean requireEnabled) {
@@ -177,6 +203,11 @@ public class CreativeProviderConfigService {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("id", config.getId());
         result.put("provider", config.getProviderKey());
+        result.put("capability", switch (config.getProviderKey()) {
+            case OPENAI_CHAT -> "TEXT";
+            case OPENAI_IMAGE -> "IMAGE";
+            default -> "VIDEO";
+        });
         result.put("displayName", config.getDisplayName());
         result.put("baseUrl", config.getBaseUrl());
         result.put("models", readModels(config.getModelIdsJson()));
@@ -221,8 +252,8 @@ public class CreativeProviderConfigService {
         String key = text(raw);
         if (!StringUtils.hasText(key)) key = SEEDANCE;
         key = key.toLowerCase(Locale.ROOT);
-        if (!SEEDANCE.equals(key)) {
-            throw badRequest("当前用户自定义连接仅支持 Seedance/火山方舟兼容协议");
+        if (!List.of(SEEDANCE, OPENAI_CHAT, OPENAI_IMAGE).contains(key)) {
+            throw badRequest("协议仅支持 seedance、openai-chat 或 openai-image");
         }
         return key;
     }

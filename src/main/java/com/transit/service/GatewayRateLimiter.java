@@ -4,6 +4,7 @@ import com.transit.model.Channel;
 import com.transit.model.Token;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ResponseStatusException;
@@ -11,6 +12,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.time.Clock;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.time.Duration;
 
 @Component
 public class GatewayRateLimiter {
@@ -18,6 +20,12 @@ public class GatewayRateLimiter {
     private final ConcurrentHashMap<String, Window> windows = new ConcurrentHashMap<>();
     private final int defaultTokenRpm;
     private final Clock clock;
+
+    @Autowired(required = false)
+    private StringRedisTemplate redis;
+
+    @Value("${gateway.rate-limit.distributed-enabled:true}")
+    private boolean distributedEnabled;
 
     @Autowired
     public GatewayRateLimiter(@Value("${gateway.rate-limit.default-token-rpm:120}") int defaultTokenRpm) {
@@ -43,6 +51,22 @@ public class GatewayRateLimiter {
 
     private void acquire(String key, int limit, String message) {
         long minute = clock.instant().getEpochSecond() / 60;
+        if (distributedEnabled && redis != null) {
+            try {
+                String redisKey = "gateway:rate:" + key + ":" + minute;
+                Long count = redis.opsForValue().increment(redisKey);
+                if (count != null && count == 1) redis.expire(redisKey, Duration.ofMinutes(2));
+                if (count != null && count > limit) {
+                    throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS, message);
+                }
+                return;
+            } catch (ResponseStatusException limited) {
+                throw limited;
+            } catch (RuntimeException unavailable) {
+                // Correctness-critical balance enforcement remains in MySQL;
+                // rate limiting degrades to the bounded local limiter.
+            }
+        }
         Window window = windows.compute(key, (ignored, current) -> {
             if (current == null || current.minute != minute) {
                 return new Window(minute);

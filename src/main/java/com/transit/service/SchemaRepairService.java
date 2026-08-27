@@ -34,12 +34,168 @@ public class SchemaRepairService {
             ensureOAuthTables();
             ensurePlatformTables();
             ensureAdminOperationsTables();
+            ensureAccountPresentationTables();
+            removeLegacyPlusAndService07();
             ensureColumns();
+            normalizeAndValidateContacts();
             ensureIndexes();
+            purgeExistingFailedProviderModels();
             seedDefaults();
+            backfillPaymentIntents();
             backfillChannelModelMappings();
             backfillModelPriceTiers();
         };
+    }
+
+    private void removeLegacyPlusAndService07() {
+        Integer migrated = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM system_settings WHERE setting_key = 'legacy_plus_service07_removed_v1'",
+                Integer.class);
+        if (migrated != null && migrated > 0) return;
+
+        log.warn("Removing legacy commercial order and Service 07 data");
+        if (tableExists("payment_intents")) {
+            jdbcTemplate.update("DELETE FROM payment_intents WHERE business_type = 'SERVICE_ORDER'");
+        }
+        if (tableExists("service_orders")) jdbcTemplate.update("DELETE FROM service_orders");
+        if (tableExists("service_inventory_items")) {
+            jdbcTemplate.update("""
+                    UPDATE service_inventory_items
+                       SET status='AVAILABLE', reserved_order_id=NULL, reserved_until=NULL
+                     WHERE status='RESERVED'
+                    """);
+            jdbcTemplate.update("DELETE FROM service_inventory_items WHERE status='DELIVERED'");
+            jdbcTemplate.update("DELETE FROM service_inventory_items WHERE service_id=7");
+        }
+        if (tableExists("service_coupons") && columnExists("service_coupons", "reserved_uses")) {
+            jdbcTemplate.update("""
+                    UPDATE service_coupons
+                       SET remaining_uses = CASE WHEN remaining_uses IS NULL THEN NULL
+                                                ELSE remaining_uses + COALESCE(reserved_uses, 0) END,
+                           reserved_uses = 0
+                    """);
+        }
+        if (tableExists("other_services") && columnExists("other_services", "manual_reserved")) {
+            jdbcTemplate.update("UPDATE other_services SET manual_reserved=0");
+        }
+        if (tableExists("service_coupon_services")) {
+            jdbcTemplate.update("DELETE FROM service_coupon_services WHERE service_id=7");
+        }
+        if (tableExists("other_services")) {
+            jdbcTemplate.update("DELETE FROM other_services WHERE id=7 AND name='Chat GPT Plus'");
+        }
+
+        executeIgnoring("DROP TABLE IF EXISTS service07_fulfillments");
+        executeIgnoring("DROP TABLE IF EXISTS plus_orders");
+        executeIgnoring("DROP TABLE IF EXISTS plus_products");
+        executeIgnoring("DROP INDEX uq_other_services_plus_product ON other_services");
+        executeIgnoring("DROP INDEX uq_other_services_plus_product");
+        if (columnExists("other_services", "linked_product_id")) {
+            executeIgnoring("ALTER TABLE other_services DROP COLUMN linked_product_id");
+        }
+        if (columnExists("other_services", "service_type")) {
+            executeIgnoring("ALTER TABLE other_services DROP COLUMN service_type");
+        }
+        jdbcTemplate.update("""
+                INSERT INTO system_settings(setting_key, setting_value, description, updated_at)
+                VALUES ('legacy_plus_service07_removed_v1', 'true',
+                        'Legacy commercial order and Service 07 data removed', CURRENT_TIMESTAMP)
+                """);
+    }
+
+    private void purgeExistingFailedProviderModels() {
+        Integer completed = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM system_settings WHERE setting_key='provider_models.failed_purge_v1'", Integer.class);
+        if (completed != null && completed > 0) return;
+        List<Map<String, Object>> failed = jdbcTemplate.queryForList("""
+                SELECT id,source_code,upstream_model_name,public_model_name,verification_message
+                FROM provider_models WHERE verification_status='FAILED'
+                """);
+        for (Map<String, Object> model : failed) {
+            long modelId = ((Number) model.get("id")).longValue();
+            String source = String.valueOf(model.get("source_code"));
+            String upstream = String.valueOf(model.get("upstream_model_name"));
+            jdbcTemplate.update("""
+                    INSERT INTO provider_model_exclusions
+                    (source_code,upstream_model_name,public_model_name,reason,excluded_at)
+                    SELECT ?,?,?,?,CURRENT_TIMESTAMP WHERE NOT EXISTS (
+                      SELECT 1 FROM provider_model_exclusions WHERE source_code=? AND upstream_model_name=?
+                    )
+                    """, source, upstream, String.valueOf(model.get("public_model_name")),
+                    model.get("verification_message"), source, upstream);
+            List<Long> mappingIds = jdbcTemplate.queryForList("""
+                    SELECT mm.id FROM model_mappings mm JOIN channels c ON c.id=mm.channel_id
+                    WHERE LOWER(COALESCE(c.source_code,c.type))=LOWER(?) AND mm.channel_model_name=?
+                    """, Long.class, source, upstream);
+            for (Long mappingId : mappingIds) {
+                jdbcTemplate.update("DELETE FROM model_price_tiers WHERE model_mapping_id=?", mappingId);
+                jdbcTemplate.update("DELETE FROM model_mappings WHERE id=?", mappingId);
+            }
+            jdbcTemplate.update("DELETE FROM provider_model_verifications WHERE provider_model_id=?", modelId);
+            jdbcTemplate.update("DELETE FROM provider_models WHERE id=?", modelId);
+        }
+        jdbcTemplate.update("""
+                INSERT INTO system_settings(setting_key,setting_value,description,updated_at)
+                VALUES ('provider_models.failed_purge_v1',?,'已将历史验证失败模型迁移到永久排除清单',CURRENT_TIMESTAMP)
+                """, String.valueOf(failed.size()));
+        if (!failed.isEmpty()) log.warn("Permanently excluded {} previously failed provider models", failed.size());
+    }
+
+    private void executeIgnoring(String sql) {
+        try {
+            jdbcTemplate.execute(sql);
+        } catch (RuntimeException ignored) {
+            log.debug("Optional legacy cleanup statement was not applicable: {}", sql);
+        }
+    }
+
+    private boolean tableExists(String tableName) {
+        Integer count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE UPPER(TABLE_NAME)=UPPER(?)",
+                Integer.class, tableName);
+        return count != null && count > 0;
+    }
+
+    private boolean columnExists(String tableName, String columnName) {
+        Integer count = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+                 WHERE UPPER(TABLE_NAME)=UPPER(?) AND UPPER(COLUMN_NAME)=UPPER(?)
+                """, Integer.class, tableName, columnName);
+        return count != null && count > 0;
+    }
+
+    int backfillPaymentIntents() {
+        int created = jdbcTemplate.update("""
+                INSERT INTO payment_intents(
+                    order_no, user_id, business_type, business_id, description,
+                    source_amount, source_currency, source_scale,
+                    settlement_amount_cents, settlement_currency, exchange_rate,
+                    payment_method, status, payment_provider, provider_trade_no,
+                    payment_type, payment_url, paid_at, created_at, updated_at
+                )
+                SELECT o.order_no, o.user_id, 'SERVICE_ORDER', o.id,
+                       COALESCE(o.product_name, 'Service order'),
+                       o.amount_cents, COALESCE(o.currency, 'CNY'), 100,
+                       COALESCE(o.payment_amount_cents, o.amount_cents),
+                       COALESCE(o.payment_currency, 'CNY'), COALESCE(o.exchange_rate, 1),
+                       COALESCE(o.payment_method, 'alipay'),
+                       CASE WHEN o.status IN ('PAID', 'FULFILLED') THEN 'PAID'
+                            WHEN o.status = 'EXPIRED' THEN 'PENDING'
+                            WHEN o.status IN ('FAILED', 'CANCELLED') THEN 'FAILED'
+                            ELSE 'PENDING' END,
+                       o.payment_provider, o.provider_trade_no, o.payment_type,
+                       o.payment_url, o.paid_at, o.created_at, o.updated_at
+                  FROM service_orders o
+                 WHERE o.order_no IS NOT NULL AND o.user_id IS NOT NULL
+                   AND NOT EXISTS (
+                       SELECT 1 FROM payment_intents p
+                        WHERE p.business_type = 'SERVICE_ORDER' AND p.business_id = o.id
+                   )
+                """);
+        if (created > 0) log.info("Backfilled {} service payment intent(s)", created);
+        jdbcTemplate.update("UPDATE payment_intents SET refund_status='NONE' WHERE refund_status IS NULL");
+        jdbcTemplate.update("UPDATE payment_intents SET status='PENDING' WHERE business_type='SERVICE_ORDER' AND status='EXPIRED'");
+        return created;
     }
 
     /**
@@ -218,21 +374,21 @@ public class SchemaRepairService {
                     official_cache_read_price DECIMAL(18,6) NOT NULL DEFAULT 0,
                     official_cache_write_price DECIMAL(18,6) NOT NULL DEFAULT 0,
                     official_price_unit VARCHAR(8) NOT NULL DEFAULT 'M',
-                    official_price_suffix VARCHAR(120) NOT NULL DEFAULT 'CNY / 1M Token',
+                    official_price_suffix VARCHAR(120) NOT NULL DEFAULT 'USD / 1M Token',
                     cost_group_name VARCHAR(120) NOT NULL DEFAULT '采购成本',
                     cost_input_price DECIMAL(18,6) NOT NULL DEFAULT 0,
                     cost_output_price DECIMAL(18,6) NOT NULL DEFAULT 0,
                     cost_cache_read_price DECIMAL(18,6) NOT NULL DEFAULT 0,
                     cost_cache_write_price DECIMAL(18,6) NOT NULL DEFAULT 0,
                     cost_price_unit VARCHAR(8) NOT NULL DEFAULT 'M',
-                    cost_price_suffix VARCHAR(120) NOT NULL DEFAULT 'CNY / 1M Token',
+                    cost_price_suffix VARCHAR(120) NOT NULL DEFAULT 'USD / 1M Token',
                     sale_group_name VARCHAR(120) NOT NULL DEFAULT '本站售价',
                     sale_input_price DECIMAL(18,6) NOT NULL DEFAULT 0,
                     sale_output_price DECIMAL(18,6) NOT NULL DEFAULT 0,
                     sale_cache_read_price DECIMAL(18,6) NOT NULL DEFAULT 0,
                     sale_cache_write_price DECIMAL(18,6) NOT NULL DEFAULT 0,
                     sale_price_unit VARCHAR(8) NOT NULL DEFAULT 'M',
-                    sale_price_suffix VARCHAR(120) NOT NULL DEFAULT 'CNY / 1M Token',
+                    sale_price_suffix VARCHAR(120) NOT NULL DEFAULT 'USD / 1M Token',
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
@@ -287,31 +443,32 @@ public class SchemaRepairService {
                     cache_read_cost_amount BIGINT NOT NULL DEFAULT 0,
                     cache_write_cost_amount BIGINT NOT NULL DEFAULT 0,
                     gross_profit BIGINT NOT NULL DEFAULT 0,
+                    model_currency VARCHAR(3) NOT NULL DEFAULT 'USD',
+                    model_amount_scale BIGINT NOT NULL DEFAULT 10000,
+                    settlement_amount BIGINT NOT NULL DEFAULT 0,
+                    settlement_currency VARCHAR(3) NOT NULL DEFAULT 'CNY',
+                    exchange_rate DECIMAL(18,8) NOT NULL DEFAULT 1,
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
                 """);
         jdbcTemplate.execute("""
-                CREATE TABLE IF NOT EXISTS plus_products (
-                    id BIGINT PRIMARY KEY AUTO_INCREMENT,
-                    name VARCHAR(160) NOT NULL,
-                    description VARCHAR(1000) NULL,
-                    image_url VARCHAR(1000) NULL,
-                    price_cents BIGINT NOT NULL DEFAULT 0,
-                    service_fee_cents BIGINT NOT NULL DEFAULT 0,
-                    currency VARCHAR(3) NOT NULL DEFAULT 'USD',
-                    enabled BOOLEAN NOT NULL DEFAULT TRUE,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-                )
-                """);
-        jdbcTemplate.execute("""
-                CREATE TABLE IF NOT EXISTS plus_orders (
+                CREATE TABLE IF NOT EXISTS service_orders (
                     id BIGINT PRIMARY KEY AUTO_INCREMENT,
                     order_no VARCHAR(80) NULL,
                     user_id BIGINT NULL,
-                    product_id BIGINT NULL,
+                    service_id BIGINT NULL,
                     product_name VARCHAR(160) NULL,
                     quantity INT NOT NULL DEFAULT 1,
+                    fulfillment_mode VARCHAR(32) NULL,
                     unit_price_cents BIGINT NULL,
+                    effective_unit_price_cents BIGINT NULL,
+                    merchandise_subtotal_cents BIGINT NULL,
+                    wholesale_discount_cents BIGINT NOT NULL DEFAULT 0,
+                    coupon_id BIGINT NULL,
+                    coupon_code VARCHAR(80) NULL,
+                    coupon_discount_cents BIGINT NOT NULL DEFAULT 0,
+                    coupon_reservation_active BOOLEAN NOT NULL DEFAULT FALSE,
+                    refund_resources_released BOOLEAN NOT NULL DEFAULT FALSE,
                     service_fee_cents BIGINT NULL,
                     amount_cents BIGINT NOT NULL DEFAULT 0,
                     currency VARCHAR(3) NOT NULL DEFAULT 'USD',
@@ -321,6 +478,22 @@ public class SchemaRepairService {
                     status VARCHAR(40) NOT NULL DEFAULT 'PENDING',
                     contact_email VARCHAR(255) NULL,
                     contact_note VARCHAR(1000) NULL,
+                    invoice_number VARCHAR(80) NULL,
+                    receipt_number VARCHAR(14) NULL,
+                    billing_name VARCHAR(160) NULL,
+                    billing_address_line_1 VARCHAR(255) NULL,
+                    billing_district VARCHAR(120) NULL,
+                    billing_city VARCHAR(120) NULL,
+                    billing_province VARCHAR(120) NULL,
+                    billing_postal_code VARCHAR(20) NULL,
+                    billing_country VARCHAR(120) NULL,
+                    payment_method VARCHAR(20) NULL,
+                    custom_input_json TEXT NULL,
+                    purchase_prompt VARCHAR(1000) NULL,
+                    supplier_quote_json TEXT NULL,
+                    reservation_expires_at DATETIME NULL,
+                    fulfillment_status VARCHAR(32) NULL,
+                    delivery_content_encrypted TEXT NULL,
                     fulfillment_note VARCHAR(1000) NULL,
                     payment_reference VARCHAR(255) NULL,
                     payment_provider VARCHAR(40) NULL,
@@ -343,15 +516,116 @@ public class SchemaRepairService {
                     image_url VARCHAR(1000) NULL,
                     sort_order INT NOT NULL DEFAULT 0,
                     enabled BOOLEAN NOT NULL DEFAULT TRUE,
-                    service_type VARCHAR(24) NOT NULL DEFAULT 'DISPLAY',
-                    linked_product_id BIGINT NULL,
                     action_label VARCHAR(40) NULL,
                     price_cents BIGINT NOT NULL DEFAULT 0,
                     service_fee_cents BIGINT NOT NULL DEFAULT 0,
                     currency VARCHAR(3) NOT NULL DEFAULT 'CNY',
                     purchase_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+                    product_type VARCHAR(32) NOT NULL DEFAULT 'STANDARD',
+                    fulfillment_mode VARCHAR(32) NOT NULL DEFAULT 'MANUAL_PROCESSING',
+                    purchase_prompt VARCHAR(1000) NULL,
+                    max_purchase_quantity INT NOT NULL DEFAULT 1,
+                    manual_stock INT NULL,
+                    manual_reserved INT NOT NULL DEFAULT 0,
+                    wholesale_tiers_json TEXT NULL,
+                    input_schema_json TEXT NULL,
+                    redemption_url VARCHAR(2000) NULL,
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     updated_at DATETIME NULL
+                )
+                """);
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS payment_intents (
+                    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+                    order_no VARCHAR(80) NOT NULL,
+                    user_id BIGINT NOT NULL,
+                    business_type VARCHAR(40) NOT NULL,
+                    business_id BIGINT NOT NULL,
+                    description VARCHAR(255) NOT NULL,
+                    source_amount BIGINT NOT NULL,
+                    source_currency VARCHAR(3) NOT NULL,
+                    source_scale BIGINT NOT NULL,
+                    settlement_amount_cents BIGINT NOT NULL,
+                    settlement_currency VARCHAR(3) NOT NULL DEFAULT 'CNY',
+                    exchange_rate DECIMAL(18,8) NOT NULL,
+                    payment_method VARCHAR(20) NOT NULL,
+                    status VARCHAR(32) NOT NULL DEFAULT 'PENDING',
+                    payment_provider VARCHAR(40) NULL,
+                    provider_trade_no VARCHAR(120) NULL,
+                    payment_type VARCHAR(40) NULL,
+                    payment_url VARCHAR(2000) NULL,
+                    expires_at DATETIME NULL,
+                    paid_at DATETIME NULL,
+                    refund_status VARCHAR(32) NULL,
+                    refund_no VARCHAR(80) NULL,
+                    provider_refund_no VARCHAR(120) NULL,
+                    refund_reason VARCHAR(500) NULL,
+                    refunded_at DATETIME NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME NULL
+                )
+                """);
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS wallet_recharge_orders (
+                    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+                    order_no VARCHAR(80) NOT NULL,
+                    user_id BIGINT NOT NULL,
+                    plan_id BIGINT NOT NULL,
+                    plan_name VARCHAR(120) NOT NULL,
+                    payment_amount_units BIGINT NOT NULL,
+                    base_credit_units BIGINT NOT NULL,
+                    bonus_percent INT NOT NULL,
+                    bonus_credit_units BIGINT NOT NULL,
+                    total_credit_units BIGINT NOT NULL,
+                    status VARCHAR(32) NOT NULL DEFAULT 'PENDING',
+                    payment_method VARCHAR(20) NOT NULL,
+                    invoice_number VARCHAR(80) NOT NULL,
+                    invoice_requested BOOLEAN NOT NULL DEFAULT FALSE,
+                    receipt_number VARCHAR(14) NOT NULL,
+                    contact_email VARCHAR(255) NOT NULL,
+                    billing_name VARCHAR(160) NOT NULL,
+                    billing_address_line_1 VARCHAR(255) NOT NULL,
+                    billing_district VARCHAR(120) NOT NULL,
+                    billing_city VARCHAR(120) NOT NULL,
+                    billing_province VARCHAR(120) NOT NULL,
+                    billing_postal_code VARCHAR(20) NOT NULL,
+                    billing_country VARCHAR(120) NOT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME NULL,
+                    paid_at DATETIME NULL,
+                    refunded_at DATETIME NULL
+                )
+                """);
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS service_inventory_items (
+                    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+                    service_id BIGINT NOT NULL,
+                    content_encrypted TEXT NOT NULL,
+                    content_fingerprint VARCHAR(64) NOT NULL,
+                    status VARCHAR(24) NOT NULL DEFAULT 'AVAILABLE',
+                    reserved_order_id BIGINT NULL,
+                    reserved_until DATETIME NULL,
+                    delivered_at DATETIME NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+                """);
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS service_coupons (
+                    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+                    code VARCHAR(80) NOT NULL,
+                    discount_cents BIGINT NOT NULL,
+                    remaining_uses INT NOT NULL,
+                    reserved_uses INT NOT NULL DEFAULT 0,
+                    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME NULL
+                )
+                """);
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS service_coupon_services (
+                    coupon_id BIGINT NOT NULL,
+                    service_id BIGINT NOT NULL,
+                    PRIMARY KEY (coupon_id, service_id)
                 )
                 """);
         jdbcTemplate.execute("""
@@ -394,20 +668,6 @@ public class SchemaRepairService {
                     updated_at DATETIME NULL
                 )
                 """);
-        jdbcTemplate.execute("""
-                CREATE TABLE IF NOT EXISTS service07_fulfillments (
-                    id BIGINT PRIMARY KEY AUTO_INCREMENT,
-                    order_id BIGINT NOT NULL,
-                    user_id BIGINT NOT NULL,
-                    status VARCHAR(40) NOT NULL DEFAULT 'PENDING',
-                    vmcard_card_id VARCHAR(128) NULL,
-                    attempt_count INT NOT NULL DEFAULT 0,
-                    error_message VARCHAR(500) NULL,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    updated_at DATETIME NULL,
-                    completed_at DATETIME NULL
-                )
-                """);
     }
 
     private void ensurePlatformTables() {
@@ -425,6 +685,83 @@ public class SchemaRepairService {
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     updated_at DATETIME NULL
                 )
+                """);
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS creative_platform_connections (
+                    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+                    capability VARCHAR(20) NOT NULL,
+                    provider_key VARCHAR(80) NOT NULL,
+                    display_name VARCHAR(160) NOT NULL,
+                    base_url VARCHAR(1000) NOT NULL,
+                    api_key MEDIUMTEXT NULL,
+                    model_ids_json TEXT NOT NULL,
+                    default_model VARCHAR(160) NOT NULL,
+                    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+                    is_default BOOLEAN NOT NULL DEFAULT FALSE,
+                    default_slot VARCHAR(20) NULL,
+                    version INT NOT NULL DEFAULT 1,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME NULL
+                )
+                """);
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS creative_runtime_settings (
+                    id BIGINT PRIMARY KEY,
+                    auto_movie_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+                    script_price BIGINT NOT NULL DEFAULT 10000,
+                    image_price BIGINT NOT NULL DEFAULT 5000,
+                    video_second_price BIGINT NOT NULL DEFAULT 2000,
+                    worker_concurrency INT NOT NULL DEFAULT 2,
+                    video_concurrency INT NOT NULL DEFAULT 3,
+                    max_retries INT NOT NULL DEFAULT 3,
+                    poll_interval_ms INT NOT NULL DEFAULT 5000,
+                    max_source_bytes BIGINT NOT NULL DEFAULT 1048576,
+                    max_source_characters INT NOT NULL DEFAULT 200000,
+                    max_image_bytes BIGINT NOT NULL DEFAULT 10485760,
+                    max_characters INT NOT NULL DEFAULT 8,
+                    max_scenes INT NOT NULL DEFAULT 8,
+                    max_shots INT NOT NULL DEFAULT 12,
+                    min_duration INT NOT NULL DEFAULT 30,
+                    max_duration INT NOT NULL DEFAULT 90,
+                    version INT NOT NULL DEFAULT 1,
+                    updated_at DATETIME NULL
+                )
+                """);
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS creative_storage_configs (
+                    id BIGINT PRIMARY KEY,
+                    storage_type VARCHAR(20) NOT NULL DEFAULT 'S3',
+                    endpoint VARCHAR(1000) NULL,
+                    region_name VARCHAR(120) NULL,
+                    bucket_name VARCHAR(255) NULL,
+                    public_base_url VARCHAR(1000) NULL,
+                    access_key MEDIUMTEXT NULL,
+                    secret_key MEDIUMTEXT NULL,
+                    path_style BOOLEAN NOT NULL DEFAULT FALSE,
+                    signed_url_seconds INT NOT NULL DEFAULT 3600,
+                    enabled BOOLEAN NOT NULL DEFAULT FALSE,
+                    version INT NOT NULL DEFAULT 1,
+                    updated_at DATETIME NULL
+                )
+                """);
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS creative_config_audit (
+                    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+                    admin_user_id BIGINT NULL,
+                    action_name VARCHAR(80) NOT NULL,
+                    target_type VARCHAR(80) NOT NULL,
+                    target_id VARCHAR(120) NULL,
+                    changed_fields_json TEXT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+                """);
+        jdbcTemplate.update("""
+                INSERT INTO creative_runtime_settings(id)
+                SELECT 1 WHERE NOT EXISTS (SELECT 1 FROM creative_runtime_settings WHERE id=1)
+                """);
+        jdbcTemplate.update("""
+                INSERT INTO creative_storage_configs(id)
+                SELECT 1 WHERE NOT EXISTS (SELECT 1 FROM creative_storage_configs WHERE id=1)
                 """);
         jdbcTemplate.execute("""
                 CREATE TABLE IF NOT EXISTS creative_tasks (
@@ -449,6 +786,118 @@ public class SchemaRepairService {
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     updated_at DATETIME NULL,
                     completed_at DATETIME NULL
+                )
+                """);
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS creative_projects (
+                    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+                    user_id BIGINT NOT NULL,
+                    title VARCHAR(160) NOT NULL,
+                    source_text LONGTEXT NOT NULL,
+                    target_duration INT NOT NULL DEFAULT 60,
+                    ratio VARCHAR(20) NOT NULL DEFAULT '16:9',
+                    resolution VARCHAR(20) NOT NULL DEFAULT '720p',
+                    style VARCHAR(160) NULL,
+                    language VARCHAR(40) NOT NULL DEFAULT 'zh-CN',
+                    generate_audio BOOLEAN NOT NULL DEFAULT TRUE,
+                    text_connection_id BIGINT NULL,
+                    image_connection_id BIGINT NULL,
+                    video_connection_id BIGINT NULL,
+                    text_model VARCHAR(160) NULL,
+                    image_model VARCHAR(160) NULL,
+                    video_model VARCHAR(160) NULL,
+                    stage VARCHAR(40) NOT NULL DEFAULT 'SOURCE',
+                    status VARCHAR(40) NOT NULL DEFAULT 'DRAFT',
+                    version INT NOT NULL DEFAULT 1,
+                    final_video_url TEXT NULL,
+                    cover_url TEXT NULL,
+                    error_message TEXT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME NULL,
+                    completed_at DATETIME NULL
+                )
+                """);
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS creative_scripts (
+                    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+                    project_id BIGINT NOT NULL,
+                    version INT NOT NULL,
+                    summary TEXT NULL,
+                    script_json LONGTEXT NOT NULL,
+                    approved BOOLEAN NOT NULL DEFAULT FALSE,
+                    model_key VARCHAR(160) NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME NULL
+                )
+                """);
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS creative_assets (
+                    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+                    project_id BIGINT NOT NULL,
+                    script_version INT NOT NULL,
+                    asset_type VARCHAR(20) NOT NULL,
+                    temp_ref VARCHAR(80) NOT NULL,
+                    name VARCHAR(160) NOT NULL,
+                    description TEXT NULL,
+                    prompt TEXT NULL,
+                    image_url TEXT NULL,
+                    source VARCHAR(20) NOT NULL DEFAULT 'GENERATED',
+                    status VARCHAR(40) NOT NULL DEFAULT 'PENDING',
+                    error_message TEXT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME NULL
+                )
+                """);
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS creative_shots (
+                    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+                    project_id BIGINT NOT NULL,
+                    script_version INT NOT NULL,
+                    shot_order INT NOT NULL,
+                    duration INT NOT NULL,
+                    dialogue TEXT NULL,
+                    narration TEXT NULL,
+                    video_prompt TEXT NOT NULL,
+                    character_refs_json TEXT NULL,
+                    scene_ref VARCHAR(80) NULL,
+                    reference_urls_json TEXT NULL,
+                    creative_task_id BIGINT NULL,
+                    status VARCHAR(40) NOT NULL DEFAULT 'PENDING',
+                    video_url TEXT NULL,
+                    thumbnail_url TEXT NULL,
+                    error_message TEXT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME NULL
+                )
+                """);
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS creative_jobs (
+                    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+                    project_id BIGINT NOT NULL,
+                    job_type VARCHAR(40) NOT NULL,
+                    payload_json TEXT NULL,
+                    status VARCHAR(40) NOT NULL DEFAULT 'QUEUED',
+                    attempts INT NOT NULL DEFAULT 0,
+                    next_run_at DATETIME NULL,
+                    lease_owner VARCHAR(120) NULL,
+                    lease_expires_at DATETIME NULL,
+                    error_message TEXT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME NULL
+                )
+                """);
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS creative_billing_reservations (
+                    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+                    project_id BIGINT NOT NULL,
+                    user_id BIGINT NOT NULL,
+                    stage VARCHAR(40) NOT NULL,
+                    estimated_amount BIGINT NOT NULL DEFAULT 0,
+                    reserved_amount BIGINT NOT NULL DEFAULT 0,
+                    actual_amount BIGINT NOT NULL DEFAULT 0,
+                    status VARCHAR(40) NOT NULL DEFAULT 'RESERVED',
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    settled_at DATETIME NULL
                 )
                 """);
         jdbcTemplate.execute("""
@@ -595,6 +1044,18 @@ public class SchemaRepairService {
 
     private void ensureAdminOperationsTables() {
         jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS provider_model_exclusions (
+                    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+                    source_code VARCHAR(80) NOT NULL,
+                    upstream_model_name VARCHAR(160) NOT NULL,
+                    public_model_name VARCHAR(160) NOT NULL,
+                    reason VARCHAR(500) NULL,
+                    excluded_by BIGINT NULL,
+                    excluded_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(source_code, upstream_model_name)
+                )
+                """);
+        jdbcTemplate.execute("""
                 CREATE TABLE IF NOT EXISTS admin_audit_logs (
                     id BIGINT PRIMARY KEY AUTO_INCREMENT,
                     admin_id BIGINT NULL,
@@ -659,6 +1120,11 @@ public class SchemaRepairService {
                     reserved_amount BIGINT NOT NULL,
                     actual_tokens INT NULL,
                     actual_amount BIGINT NULL,
+                    source_amount BIGINT NOT NULL DEFAULT 0,
+                    source_currency VARCHAR(3) NOT NULL DEFAULT 'USD',
+                    source_scale BIGINT NOT NULL DEFAULT 10000,
+                    settlement_currency VARCHAR(3) NOT NULL DEFAULT 'CNY',
+                    exchange_rate DECIMAL(18,8) NOT NULL DEFAULT 1,
                     status VARCHAR(40) NOT NULL,
                     failure_reason VARCHAR(500) NULL,
                     expires_at DATETIME NOT NULL,
@@ -668,12 +1134,62 @@ public class SchemaRepairService {
                 """);
     }
 
+    private void ensureAccountPresentationTables() {
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS user_verification_codes (
+                  id BIGINT PRIMARY KEY AUTO_INCREMENT, recipient VARCHAR(255) NOT NULL,
+                  channel VARCHAR(20) NOT NULL, purpose VARCHAR(40) NOT NULL, code_hash VARCHAR(128) NOT NULL,
+                  status VARCHAR(24) NOT NULL DEFAULT 'PENDING', attempts INT NOT NULL DEFAULT 0,
+                  expires_at DATETIME NOT NULL, consumed_at DATETIME NULL, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+                """);
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS upstream_display_mappings (
+                  id BIGINT PRIMARY KEY AUTO_INCREMENT, channel_id BIGINT NOT NULL, public_code VARCHAR(80) NOT NULL,
+                  public_name VARCHAR(120) NOT NULL, badge_text VARCHAR(40) NULL, badge_color VARCHAR(16) NULL,
+                  sort_order INT NOT NULL DEFAULT 100, enabled BOOLEAN NOT NULL DEFAULT TRUE,
+                  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+                """);
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS model_context_pricing_policies (
+                  id BIGINT PRIMARY KEY AUTO_INCREMENT, public_model_name VARCHAR(160) NOT NULL,
+                  enabled BOOLEAN NOT NULL DEFAULT FALSE, threshold_tokens INT NOT NULL,
+                  multiplier DECIMAL(10,6) NOT NULL DEFAULT 2.000000, verification_note VARCHAR(500) NULL,
+                  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+                """);
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS payment_refund_jobs (
+                  id BIGINT PRIMARY KEY AUTO_INCREMENT, payment_intent_id BIGINT NOT NULL, service_order_id BIGINT NOT NULL,
+                  reason VARCHAR(500) NOT NULL, status VARCHAR(32) NOT NULL DEFAULT 'PENDING', attempts INT NOT NULL DEFAULT 0,
+                  next_attempt_at DATETIME NOT NULL, last_error VARCHAR(1000) NULL,
+                  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+                """);
+    }
+
     private void ensureColumns() {
+        ensureColumn("oauth_login_states", "target_user_id", "ALTER TABLE oauth_login_states ADD COLUMN target_user_id BIGINT NULL");
+        ensureColumn("oauth_login_states", "flow_type", "ALTER TABLE oauth_login_states ADD COLUMN flow_type VARCHAR(16) NOT NULL DEFAULT 'LOGIN'");
+        ensureColumn("creative_platform_connections", "default_slot",
+                "ALTER TABLE creative_platform_connections ADD COLUMN default_slot VARCHAR(20) NULL");
+        jdbcTemplate.update("UPDATE creative_platform_connections SET default_slot=capability WHERE is_default=TRUE AND default_slot IS NULL");
         ensureColumn("users", "phone", "ALTER TABLE users ADD COLUMN phone VARCHAR(40) NULL");
         ensureColumn("users", "auth_provider", "ALTER TABLE users ADD COLUMN auth_provider VARCHAR(40) NOT NULL DEFAULT 'local'");
         ensureColumn("users", "status", "ALTER TABLE users ADD COLUMN status VARCHAR(40) NOT NULL DEFAULT 'ACTIVE'");
         ensureColumn("users", "group_id", "ALTER TABLE users ADD COLUMN group_id BIGINT NULL");
+        ensureColumn("users", "display_name", "ALTER TABLE users ADD COLUMN display_name VARCHAR(120) NULL");
+        ensureColumn("users", "avatar_path", "ALTER TABLE users ADD COLUMN avatar_path VARCHAR(500) NULL");
+        ensureColumn("users", "email_verified_at", "ALTER TABLE users ADD COLUMN email_verified_at DATETIME NULL");
+        ensureColumn("users", "phone_verified_at", "ALTER TABLE users ADD COLUMN phone_verified_at DATETIME NULL");
+        ensureColumn("users", "locale", "ALTER TABLE users ADD COLUMN locale VARCHAR(20) NOT NULL DEFAULT 'zh-CN'");
+        ensureColumn("users", "timezone", "ALTER TABLE users ADD COLUMN timezone VARCHAR(80) NOT NULL DEFAULT 'Asia/Shanghai'");
+        ensureColumn("users", "last_login_at", "ALTER TABLE users ADD COLUMN last_login_at DATETIME NULL");
         ensureColumn("oauth_tokens", "access_expires_at", "ALTER TABLE oauth_tokens ADD COLUMN access_expires_at DATETIME NULL");
+        ensureColumn("oauth_tokens", "device_name", "ALTER TABLE oauth_tokens ADD COLUMN device_name VARCHAR(160) NULL");
+        ensureColumn("oauth_tokens", "ip_digest", "ALTER TABLE oauth_tokens ADD COLUMN ip_digest VARCHAR(128) NULL");
+        ensureColumn("oauth_tokens", "last_active_at", "ALTER TABLE oauth_tokens ADD COLUMN last_active_at DATETIME NULL");
         jdbcTemplate.update("""
                 UPDATE oauth_tokens
                 SET access_expires_at = COALESCE(created_at, CURRENT_TIMESTAMP)
@@ -715,12 +1231,20 @@ public class SchemaRepairService {
         ensureColumn("model_mappings", "traffic_percent", "ALTER TABLE model_mappings ADD COLUMN traffic_percent INT NOT NULL DEFAULT 100");
         ensureColumn("model_mappings", "capability_tags", "ALTER TABLE model_mappings ADD COLUMN capability_tags VARCHAR(1000) NULL");
         ensureColumn("model_mappings", "created_at", "ALTER TABLE model_mappings ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP");
+        ensureColumn("model_mappings", "billing_mode", "ALTER TABLE model_mappings ADD COLUMN billing_mode VARCHAR(24) NOT NULL DEFAULT 'PAID'");
+        ensureColumn("model_mappings", "pricing_status", "ALTER TABLE model_mappings ADD COLUMN pricing_status VARCHAR(24) NOT NULL DEFAULT 'PENDING'");
+        ensureColumn("model_mappings", "pricing_message", "ALTER TABLE model_mappings ADD COLUMN pricing_message VARCHAR(500) NULL");
+        ensureColumn("model_mappings", "pricing_source_url", "ALTER TABLE model_mappings ADD COLUMN pricing_source_url VARCHAR(1000) NULL");
+        ensureColumn("model_mappings", "pricing_verified_at", "ALTER TABLE model_mappings ADD COLUMN pricing_verified_at DATETIME NULL");
+        ensureColumn("model_mappings", "official_unit_price", "ALTER TABLE model_mappings ADD COLUMN official_unit_price DECIMAL(18,6) NOT NULL DEFAULT 0");
+        ensureColumn("model_mappings", "cost_unit_price", "ALTER TABLE model_mappings ADD COLUMN cost_unit_price DECIMAL(18,6) NOT NULL DEFAULT 0");
+        ensureColumn("model_mappings", "sale_unit_price", "ALTER TABLE model_mappings ADD COLUMN sale_unit_price DECIMAL(18,6) NOT NULL DEFAULT 0");
         ensureColumn("model_price_tiers", "official_price_unit", "ALTER TABLE model_price_tiers ADD COLUMN official_price_unit VARCHAR(8) NOT NULL DEFAULT 'M'");
-        ensureColumn("model_price_tiers", "official_price_suffix", "ALTER TABLE model_price_tiers ADD COLUMN official_price_suffix VARCHAR(120) NOT NULL DEFAULT 'CNY / 1M Token'");
+        ensureColumn("model_price_tiers", "official_price_suffix", "ALTER TABLE model_price_tiers ADD COLUMN official_price_suffix VARCHAR(120) NOT NULL DEFAULT 'USD / 1M Token'");
         ensureColumn("model_price_tiers", "cost_price_unit", "ALTER TABLE model_price_tiers ADD COLUMN cost_price_unit VARCHAR(8) NOT NULL DEFAULT 'M'");
-        ensureColumn("model_price_tiers", "cost_price_suffix", "ALTER TABLE model_price_tiers ADD COLUMN cost_price_suffix VARCHAR(120) NOT NULL DEFAULT 'CNY / 1M Token'");
+        ensureColumn("model_price_tiers", "cost_price_suffix", "ALTER TABLE model_price_tiers ADD COLUMN cost_price_suffix VARCHAR(120) NOT NULL DEFAULT 'USD / 1M Token'");
         ensureColumn("model_price_tiers", "sale_price_unit", "ALTER TABLE model_price_tiers ADD COLUMN sale_price_unit VARCHAR(8) NOT NULL DEFAULT 'M'");
-        ensureColumn("model_price_tiers", "sale_price_suffix", "ALTER TABLE model_price_tiers ADD COLUMN sale_price_suffix VARCHAR(120) NOT NULL DEFAULT 'CNY / 1M Token'");
+        ensureColumn("model_price_tiers", "sale_price_suffix", "ALTER TABLE model_price_tiers ADD COLUMN sale_price_suffix VARCHAR(120) NOT NULL DEFAULT 'USD / 1M Token'");
         ensureColumn("logs", "channel_id", "ALTER TABLE logs ADD COLUMN channel_id BIGINT NULL");
         ensureColumn("logs", "token_id", "ALTER TABLE logs ADD COLUMN token_id BIGINT NULL");
         ensureColumn("logs", "latency_ms", "ALTER TABLE logs ADD COLUMN latency_ms BIGINT NOT NULL DEFAULT 0");
@@ -743,42 +1267,128 @@ public class SchemaRepairService {
         ensureColumn("logs", "cache_read_cost_amount", "ALTER TABLE logs ADD COLUMN cache_read_cost_amount BIGINT NOT NULL DEFAULT 0");
         ensureColumn("logs", "cache_write_cost_amount", "ALTER TABLE logs ADD COLUMN cache_write_cost_amount BIGINT NOT NULL DEFAULT 0");
         ensureColumn("logs", "gross_profit", "ALTER TABLE logs ADD COLUMN gross_profit BIGINT NOT NULL DEFAULT 0");
+        ensureColumn("logs", "model_currency", "ALTER TABLE logs ADD COLUMN model_currency VARCHAR(3) NOT NULL DEFAULT 'USD'");
+        ensureColumn("logs", "model_amount_scale", "ALTER TABLE logs ADD COLUMN model_amount_scale BIGINT NOT NULL DEFAULT 10000");
+        ensureColumn("logs", "settlement_amount", "ALTER TABLE logs ADD COLUMN settlement_amount BIGINT NOT NULL DEFAULT 0");
+        ensureColumn("logs", "settlement_currency", "ALTER TABLE logs ADD COLUMN settlement_currency VARCHAR(3) NOT NULL DEFAULT 'CNY'");
+        ensureColumn("logs", "exchange_rate", "ALTER TABLE logs ADD COLUMN exchange_rate DECIMAL(18,8) NOT NULL DEFAULT 1");
+        ensureColumn("logs", "billing_unit", "ALTER TABLE logs ADD COLUMN billing_unit VARCHAR(40) NOT NULL DEFAULT 'TOKEN'");
+        ensureColumn("logs", "billable_quantity", "ALTER TABLE logs ADD COLUMN billable_quantity DECIMAL(24,6) NOT NULL DEFAULT 0");
+        ensureColumn("logs", "unit_sale_price", "ALTER TABLE logs ADD COLUMN unit_sale_price DECIMAL(18,6) NOT NULL DEFAULT 0");
+        ensureColumn("logs", "unit_cost_price", "ALTER TABLE logs ADD COLUMN unit_cost_price DECIMAL(18,6) NOT NULL DEFAULT 0");
+        ensureColumn("logs", "pricing_tier", "ALTER TABLE logs ADD COLUMN pricing_tier VARCHAR(80) NULL");
+        ensureColumn("logs", "context_threshold_tokens", "ALTER TABLE logs ADD COLUMN context_threshold_tokens INT NULL");
+        ensureColumn("logs", "input_unit_sale_price", "ALTER TABLE logs ADD COLUMN input_unit_sale_price DECIMAL(18,6) NULL");
+        ensureColumn("logs", "output_unit_sale_price", "ALTER TABLE logs ADD COLUMN output_unit_sale_price DECIMAL(18,6) NULL");
+        ensureColumn("gateway_reservations", "source_amount", "ALTER TABLE gateway_reservations ADD COLUMN source_amount BIGINT NOT NULL DEFAULT 0");
+        ensureColumn("gateway_reservations", "source_currency", "ALTER TABLE gateway_reservations ADD COLUMN source_currency VARCHAR(3) NOT NULL DEFAULT 'USD'");
+        ensureColumn("gateway_reservations", "source_scale", "ALTER TABLE gateway_reservations ADD COLUMN source_scale BIGINT NOT NULL DEFAULT 10000");
+        ensureColumn("gateway_reservations", "settlement_currency", "ALTER TABLE gateway_reservations ADD COLUMN settlement_currency VARCHAR(3) NOT NULL DEFAULT 'CNY'");
+        ensureColumn("gateway_reservations", "exchange_rate", "ALTER TABLE gateway_reservations ADD COLUMN exchange_rate DECIMAL(18,8) NOT NULL DEFAULT 1");
         ensureColumn("channel_test_logs", "estimated_cost_amount", "ALTER TABLE channel_test_logs ADD COLUMN estimated_cost_amount BIGINT NOT NULL DEFAULT 0");
         ensureColumn("creative_tasks", "provider_config_id", "ALTER TABLE creative_tasks ADD COLUMN provider_config_id BIGINT NULL");
-        ensureColumn("plus_products", "image_url", "ALTER TABLE plus_products ADD COLUMN image_url VARCHAR(1000) NULL");
-        ensureColumn("plus_products", "service_fee_cents", "ALTER TABLE plus_products ADD COLUMN service_fee_cents BIGINT NOT NULL DEFAULT 0");
-        ensureColumn("plus_products", "enabled", "ALTER TABLE plus_products ADD COLUMN enabled BOOLEAN NOT NULL DEFAULT TRUE");
-        ensureColumn("plus_products", "currency", "ALTER TABLE plus_products ADD COLUMN currency VARCHAR(3) NOT NULL DEFAULT 'USD'");
-        ensureColumn("plus_orders", "order_no", "ALTER TABLE plus_orders ADD COLUMN order_no VARCHAR(80) NULL");
-        ensureColumn("plus_orders", "unit_price_cents", "ALTER TABLE plus_orders ADD COLUMN unit_price_cents BIGINT NULL");
-        ensureColumn("plus_orders", "service_fee_cents", "ALTER TABLE plus_orders ADD COLUMN service_fee_cents BIGINT NULL");
-        ensureColumn("plus_orders", "contact_email", "ALTER TABLE plus_orders ADD COLUMN contact_email VARCHAR(255) NULL");
-        ensureColumn("plus_orders", "contact_note", "ALTER TABLE plus_orders ADD COLUMN contact_note VARCHAR(1000) NULL");
-        ensureColumn("plus_orders", "updated_at", "ALTER TABLE plus_orders ADD COLUMN updated_at DATETIME NULL");
-        ensureColumn("plus_orders", "downloaded_at", "ALTER TABLE plus_orders ADD COLUMN downloaded_at DATETIME NULL");
-        ensureColumn("plus_orders", "payment_reference", "ALTER TABLE plus_orders ADD COLUMN payment_reference VARCHAR(255) NULL");
-        ensureColumn("plus_orders", "payment_provider", "ALTER TABLE plus_orders ADD COLUMN payment_provider VARCHAR(40) NULL");
-        ensureColumn("plus_orders", "provider_trade_no", "ALTER TABLE plus_orders ADD COLUMN provider_trade_no VARCHAR(120) NULL");
-        ensureColumn("plus_orders", "payment_type", "ALTER TABLE plus_orders ADD COLUMN payment_type VARCHAR(40) NULL");
-        ensureColumn("plus_orders", "payment_url", "ALTER TABLE plus_orders ADD COLUMN payment_url VARCHAR(2000) NULL");
-        ensureColumn("plus_orders", "fulfillment_reference", "ALTER TABLE plus_orders ADD COLUMN fulfillment_reference VARCHAR(255) NULL");
-        ensureColumn("plus_orders", "paid_at", "ALTER TABLE plus_orders ADD COLUMN paid_at DATETIME NULL");
-        ensureColumn("plus_orders", "fulfilled_at", "ALTER TABLE plus_orders ADD COLUMN fulfilled_at DATETIME NULL");
-        ensureColumn("plus_orders", "currency", "ALTER TABLE plus_orders ADD COLUMN currency VARCHAR(3) NOT NULL DEFAULT 'USD'");
-        ensureColumn("plus_orders", "payment_amount_cents", "ALTER TABLE plus_orders ADD COLUMN payment_amount_cents BIGINT NULL");
-        ensureColumn("plus_orders", "payment_currency", "ALTER TABLE plus_orders ADD COLUMN payment_currency VARCHAR(3) NULL");
-        ensureColumn("plus_orders", "exchange_rate", "ALTER TABLE plus_orders ADD COLUMN exchange_rate DECIMAL(18,8) NULL");
-        ensureColumn("other_services", "service_type", "ALTER TABLE other_services ADD COLUMN service_type VARCHAR(24) NOT NULL DEFAULT 'DISPLAY'");
-        ensureColumn("other_services", "linked_product_id", "ALTER TABLE other_services ADD COLUMN linked_product_id BIGINT NULL");
+        ensureColumn("creative_tasks", "project_id", "ALTER TABLE creative_tasks ADD COLUMN project_id BIGINT NULL");
+        ensureColumn("creative_tasks", "shot_id", "ALTER TABLE creative_tasks ADD COLUMN shot_id BIGINT NULL");
+        ensureColumn("creative_tasks", "stage", "ALTER TABLE creative_tasks ADD COLUMN stage VARCHAR(40) NULL");
+        ensureColumn("creative_tasks", "billing_unit", "ALTER TABLE creative_tasks ADD COLUMN billing_unit VARCHAR(40) NULL");
+        ensureColumn("creative_tasks", "billable_quantity", "ALTER TABLE creative_tasks ADD COLUMN billable_quantity DECIMAL(24,6) NULL");
+        ensureColumn("creative_tasks", "unit_sale_price", "ALTER TABLE creative_tasks ADD COLUMN unit_sale_price DECIMAL(18,6) NULL");
+        ensureColumn("creative_tasks", "unit_cost_price", "ALTER TABLE creative_tasks ADD COLUMN unit_cost_price DECIMAL(18,6) NULL");
+        ensureColumn("service_orders", "order_no", "ALTER TABLE service_orders ADD COLUMN order_no VARCHAR(80) NULL");
+        ensureColumn("service_orders", "service_id", "ALTER TABLE service_orders ADD COLUMN service_id BIGINT NULL");
+        ensureColumn("service_orders", "quantity", "ALTER TABLE service_orders ADD COLUMN quantity INT NOT NULL DEFAULT 1");
+        ensureColumn("service_orders", "fulfillment_mode", "ALTER TABLE service_orders ADD COLUMN fulfillment_mode VARCHAR(32) NULL");
+        ensureColumn("service_orders", "unit_price_cents", "ALTER TABLE service_orders ADD COLUMN unit_price_cents BIGINT NULL");
+        ensureColumn("service_orders", "effective_unit_price_cents", "ALTER TABLE service_orders ADD COLUMN effective_unit_price_cents BIGINT NULL");
+        ensureColumn("service_orders", "merchandise_subtotal_cents", "ALTER TABLE service_orders ADD COLUMN merchandise_subtotal_cents BIGINT NULL");
+        ensureColumn("service_orders", "wholesale_discount_cents", "ALTER TABLE service_orders ADD COLUMN wholesale_discount_cents BIGINT NOT NULL DEFAULT 0");
+        ensureColumn("service_orders", "coupon_id", "ALTER TABLE service_orders ADD COLUMN coupon_id BIGINT NULL");
+        ensureColumn("service_orders", "coupon_code", "ALTER TABLE service_orders ADD COLUMN coupon_code VARCHAR(80) NULL");
+        ensureColumn("service_orders", "coupon_discount_cents", "ALTER TABLE service_orders ADD COLUMN coupon_discount_cents BIGINT NOT NULL DEFAULT 0");
+        ensureColumn("service_orders", "coupon_reservation_active", "ALTER TABLE service_orders ADD COLUMN coupon_reservation_active BOOLEAN NOT NULL DEFAULT FALSE");
+        ensureColumn("service_orders", "refund_resources_released", "ALTER TABLE service_orders ADD COLUMN refund_resources_released BOOLEAN NOT NULL DEFAULT FALSE");
+        ensureColumn("service_orders", "supplier_quote_json", "ALTER TABLE service_orders ADD COLUMN supplier_quote_json TEXT NULL");
+        ensureColumn("service_orders", "service_fee_cents", "ALTER TABLE service_orders ADD COLUMN service_fee_cents BIGINT NULL");
+        ensureColumn("service_orders", "contact_email", "ALTER TABLE service_orders ADD COLUMN contact_email VARCHAR(255) NULL");
+        ensureColumn("service_orders", "contact_note", "ALTER TABLE service_orders ADD COLUMN contact_note VARCHAR(1000) NULL");
+        ensureColumn("service_orders", "invoice_number", "ALTER TABLE service_orders ADD COLUMN invoice_number VARCHAR(80) NULL");
+        ensureColumn("service_orders", "receipt_number", "ALTER TABLE service_orders ADD COLUMN receipt_number VARCHAR(14) NULL");
+        ensureColumn("service_orders", "billing_name", "ALTER TABLE service_orders ADD COLUMN billing_name VARCHAR(160) NULL");
+        ensureColumn("service_orders", "billing_address_line_1", "ALTER TABLE service_orders ADD COLUMN billing_address_line_1 VARCHAR(255) NULL");
+        ensureColumn("service_orders", "billing_district", "ALTER TABLE service_orders ADD COLUMN billing_district VARCHAR(120) NULL");
+        ensureColumn("service_orders", "billing_city", "ALTER TABLE service_orders ADD COLUMN billing_city VARCHAR(120) NULL");
+        ensureColumn("service_orders", "billing_province", "ALTER TABLE service_orders ADD COLUMN billing_province VARCHAR(120) NULL");
+        ensureColumn("service_orders", "billing_postal_code", "ALTER TABLE service_orders ADD COLUMN billing_postal_code VARCHAR(20) NULL");
+        ensureColumn("service_orders", "billing_country", "ALTER TABLE service_orders ADD COLUMN billing_country VARCHAR(120) NULL");
+        ensureColumn("service_orders", "payment_method", "ALTER TABLE service_orders ADD COLUMN payment_method VARCHAR(20) NULL");
+        ensureColumn("service_orders", "custom_input_json", "ALTER TABLE service_orders ADD COLUMN custom_input_json TEXT NULL");
+        ensureColumn("service_orders", "purchase_prompt", "ALTER TABLE service_orders ADD COLUMN purchase_prompt VARCHAR(1000) NULL");
+        ensureColumn("service_orders", "reservation_expires_at", "ALTER TABLE service_orders ADD COLUMN reservation_expires_at DATETIME NULL");
+        ensureColumn("service_orders", "fulfillment_status", "ALTER TABLE service_orders ADD COLUMN fulfillment_status VARCHAR(32) NULL");
+        ensureColumn("service_orders", "delivery_content_encrypted", "ALTER TABLE service_orders ADD COLUMN delivery_content_encrypted TEXT NULL");
+        ensureColumn("service_orders", "updated_at", "ALTER TABLE service_orders ADD COLUMN updated_at DATETIME NULL");
+        ensureColumn("service_orders", "downloaded_at", "ALTER TABLE service_orders ADD COLUMN downloaded_at DATETIME NULL");
+        ensureColumn("service_orders", "payment_reference", "ALTER TABLE service_orders ADD COLUMN payment_reference VARCHAR(255) NULL");
+        ensureColumn("service_orders", "payment_provider", "ALTER TABLE service_orders ADD COLUMN payment_provider VARCHAR(40) NULL");
+        ensureColumn("service_orders", "provider_trade_no", "ALTER TABLE service_orders ADD COLUMN provider_trade_no VARCHAR(120) NULL");
+        ensureColumn("service_orders", "payment_type", "ALTER TABLE service_orders ADD COLUMN payment_type VARCHAR(40) NULL");
+        ensureColumn("service_orders", "payment_url", "ALTER TABLE service_orders ADD COLUMN payment_url VARCHAR(2000) NULL");
+        ensureColumn("service_orders", "fulfillment_reference", "ALTER TABLE service_orders ADD COLUMN fulfillment_reference VARCHAR(255) NULL");
+        ensureColumn("service_orders", "paid_at", "ALTER TABLE service_orders ADD COLUMN paid_at DATETIME NULL");
+        ensureColumn("service_orders", "fulfilled_at", "ALTER TABLE service_orders ADD COLUMN fulfilled_at DATETIME NULL");
+        ensureColumn("service_orders", "currency", "ALTER TABLE service_orders ADD COLUMN currency VARCHAR(3) NOT NULL DEFAULT 'USD'");
+        ensureColumn("wallet_recharge_orders", "invoice_requested", "ALTER TABLE wallet_recharge_orders ADD COLUMN invoice_requested BOOLEAN NOT NULL DEFAULT FALSE");
+        ensureColumn("service_orders", "payment_amount_cents", "ALTER TABLE service_orders ADD COLUMN payment_amount_cents BIGINT NULL");
+        ensureColumn("service_orders", "payment_currency", "ALTER TABLE service_orders ADD COLUMN payment_currency VARCHAR(3) NULL");
+        ensureColumn("service_orders", "exchange_rate", "ALTER TABLE service_orders ADD COLUMN exchange_rate DECIMAL(18,8) NULL");
         ensureColumn("other_services", "action_label", "ALTER TABLE other_services ADD COLUMN action_label VARCHAR(40) NULL");
         ensureColumn("other_services", "price_cents", "ALTER TABLE other_services ADD COLUMN price_cents BIGINT NOT NULL DEFAULT 0");
         ensureColumn("other_services", "service_fee_cents", "ALTER TABLE other_services ADD COLUMN service_fee_cents BIGINT NOT NULL DEFAULT 0");
         ensureColumn("other_services", "currency", "ALTER TABLE other_services ADD COLUMN currency VARCHAR(3) NOT NULL DEFAULT 'CNY'");
         ensureColumn("other_services", "purchase_enabled", "ALTER TABLE other_services ADD COLUMN purchase_enabled BOOLEAN NOT NULL DEFAULT FALSE");
+        ensureColumn("other_services", "product_type", "ALTER TABLE other_services ADD COLUMN product_type VARCHAR(32) NOT NULL DEFAULT 'STANDARD'");
+        ensureColumn("other_services", "fulfillment_mode", "ALTER TABLE other_services ADD COLUMN fulfillment_mode VARCHAR(32) NOT NULL DEFAULT 'MANUAL_PROCESSING'");
+        ensureColumn("other_services", "purchase_prompt", "ALTER TABLE other_services ADD COLUMN purchase_prompt VARCHAR(1000) NULL");
+        ensureColumn("other_services", "max_purchase_quantity", "ALTER TABLE other_services ADD COLUMN max_purchase_quantity INT NOT NULL DEFAULT 1");
+        ensureColumn("other_services", "manual_stock", "ALTER TABLE other_services ADD COLUMN manual_stock INT NULL");
+        ensureColumn("other_services", "manual_reserved", "ALTER TABLE other_services ADD COLUMN manual_reserved INT NOT NULL DEFAULT 0");
+        ensureColumn("other_services", "wholesale_tiers_json", "ALTER TABLE other_services ADD COLUMN wholesale_tiers_json TEXT NULL");
+        ensureColumn("other_services", "input_schema_json", "ALTER TABLE other_services ADD COLUMN input_schema_json TEXT NULL");
+        ensureColumn("other_services", "redemption_url", "ALTER TABLE other_services ADD COLUMN redemption_url VARCHAR(2000) NULL");
         ensureColumn("redeem_codes", "code_prefix", "ALTER TABLE redeem_codes ADD COLUMN code_prefix VARCHAR(24) NULL");
+        ensureColumn("wallet_transactions", "reference_type", "ALTER TABLE wallet_transactions ADD COLUMN reference_type VARCHAR(40) NULL");
+        ensureColumn("wallet_transactions", "reference_id", "ALTER TABLE wallet_transactions ADD COLUMN reference_id BIGINT NULL");
+    }
+
+    private void normalizeAndValidateContacts() {
+        jdbcTemplate.update("UPDATE users SET email=LOWER(TRIM(email)) WHERE email IS NOT NULL");
+        jdbcTemplate.update("UPDATE users SET phone=CONCAT('+86', TRIM(phone)) WHERE phone IS NOT NULL AND TRIM(phone) REGEXP '^1[3-9][0-9]{9}$'");
+        for (String field : List.of("email", "phone")) {
+            List<String> duplicates = jdbcTemplate.queryForList(
+                    "SELECT " + field + " FROM users WHERE " + field + " IS NOT NULL AND TRIM(" + field + ")<>'' GROUP BY " + field + " HAVING COUNT(*)>1",
+                    String.class);
+            if (!duplicates.isEmpty()) {
+                List<Long> ids = jdbcTemplate.queryForList("SELECT id FROM users WHERE " + field + "=? ORDER BY id", Long.class, duplicates.get(0));
+                throw new IllegalStateException("Duplicate user " + field + " prevents safe migration; conflicting user IDs: " + ids);
+            }
+        }
     }
 
     private void ensureIndexes() {
+        ensureIndex("users", "uk_users_email", "CREATE UNIQUE INDEX uk_users_email ON users(email)");
+        ensureIndex("users", "uk_users_phone", "CREATE UNIQUE INDEX uk_users_phone ON users(phone)");
+        ensureIndex("user_verification_codes", "idx_verification_recipient_purpose", "CREATE INDEX idx_verification_recipient_purpose ON user_verification_codes(recipient,purpose,status,created_at)");
+        ensureIndex("user_verification_codes", "idx_verification_expiry", "CREATE INDEX idx_verification_expiry ON user_verification_codes(expires_at,status)");
+        ensureIndex("oauth_login_states", "idx_oauth_login_state_target", "CREATE INDEX idx_oauth_login_state_target ON oauth_login_states(target_user_id,flow_type,expires_at)");
+        ensureIndex("upstream_display_mappings", "uk_upstream_display_channel", "CREATE UNIQUE INDEX uk_upstream_display_channel ON upstream_display_mappings(channel_id)");
+        ensureIndex("upstream_display_mappings", "idx_upstream_display_public", "CREATE INDEX idx_upstream_display_public ON upstream_display_mappings(public_code,enabled,sort_order)");
+        ensureIndex("model_context_pricing_policies", "uk_context_pricing_model", "CREATE UNIQUE INDEX uk_context_pricing_model ON model_context_pricing_policies(public_model_name)");
+        ensureIndex("payment_refund_jobs", "uk_refund_job_intent", "CREATE UNIQUE INDEX uk_refund_job_intent ON payment_refund_jobs(payment_intent_id)");
+        ensureIndex("payment_refund_jobs", "idx_refund_job_due", "CREATE INDEX idx_refund_job_due ON payment_refund_jobs(status,next_attempt_at)");
+        ensureIndex("creative_platform_connections", "idx_creative_platform_capability",
+                "CREATE INDEX idx_creative_platform_capability ON creative_platform_connections(capability, enabled, is_default)");
+        ensureIndex("creative_platform_connections", "uq_creative_platform_default",
+                "CREATE UNIQUE INDEX uq_creative_platform_default ON creative_platform_connections(default_slot)");
         ensureIndex("creative_provider_configs", "idx_creative_provider_config_user",
                 "CREATE INDEX idx_creative_provider_config_user ON creative_provider_configs(user_id, enabled)");
         ensureIndex("creative_tasks", "idx_creative_task_user_created",
@@ -787,10 +1397,48 @@ public class SchemaRepairService {
                 "CREATE INDEX idx_creative_task_provider_config ON creative_tasks(provider_config_id, status)");
         ensureIndex("creative_tasks", "idx_creative_task_provider_status",
                 "CREATE INDEX idx_creative_task_provider_status ON creative_tasks(provider_key, status)");
-        ensureIndex("plus_orders", "uq_plus_orders_order_no",
-                "CREATE UNIQUE INDEX uq_plus_orders_order_no ON plus_orders(order_no)");
-        ensureIndex("plus_orders", "idx_plus_orders_provider_trade_no",
-                "CREATE INDEX idx_plus_orders_provider_trade_no ON plus_orders(provider_trade_no)");
+        ensureIndex("creative_projects", "idx_creative_project_user_updated",
+                "CREATE INDEX idx_creative_project_user_updated ON creative_projects(user_id, updated_at)");
+        ensureIndex("creative_scripts", "uq_creative_script_project_version",
+                "CREATE UNIQUE INDEX uq_creative_script_project_version ON creative_scripts(project_id, version)");
+        ensureIndex("creative_assets", "idx_creative_asset_project",
+                "CREATE INDEX idx_creative_asset_project ON creative_assets(project_id, status)");
+        ensureIndex("creative_shots", "uq_creative_shot_order",
+                "CREATE UNIQUE INDEX uq_creative_shot_order ON creative_shots(project_id, script_version, shot_order)");
+        ensureIndex("creative_jobs", "idx_creative_job_claim",
+                "CREATE INDEX idx_creative_job_claim ON creative_jobs(status, next_run_at, lease_expires_at)");
+        ensureIndex("service_orders", "uq_service_orders_order_no",
+                "CREATE UNIQUE INDEX uq_service_orders_order_no ON service_orders(order_no)");
+        ensureIndex("service_orders", "uq_service_orders_receipt_number",
+                "CREATE UNIQUE INDEX uq_service_orders_receipt_number ON service_orders(receipt_number)");
+        ensureIndex("service_orders", "idx_service_orders_provider_trade_no",
+                "CREATE INDEX idx_service_orders_provider_trade_no ON service_orders(provider_trade_no)");
+        ensureIndex("service_orders", "idx_service_orders_reservation_expiry",
+                "CREATE INDEX idx_service_orders_reservation_expiry ON service_orders(status, reservation_expires_at)");
+        ensureIndex("service_inventory_items", "uq_service_inventory_fingerprint",
+                "CREATE UNIQUE INDEX uq_service_inventory_fingerprint ON service_inventory_items(service_id, content_fingerprint)");
+        ensureIndex("service_inventory_items", "idx_service_inventory_claim",
+                "CREATE INDEX idx_service_inventory_claim ON service_inventory_items(service_id, status, id)");
+        ensureIndex("service_inventory_items", "uq_service_inventory_order_item",
+                "CREATE UNIQUE INDEX uq_service_inventory_order_item ON service_inventory_items(reserved_order_id, id)");
+        ensureIndex("service_coupons", "uq_service_coupon_code",
+                "CREATE UNIQUE INDEX uq_service_coupon_code ON service_coupons(code)");
+        ensureIndex("payment_intents", "uq_payment_intent_order_no",
+                "CREATE UNIQUE INDEX uq_payment_intent_order_no ON payment_intents(order_no)");
+        ensureIndex("payment_intents", "uq_payment_intent_business",
+                "CREATE UNIQUE INDEX uq_payment_intent_business ON payment_intents(business_type, business_id)");
+        ensureIndex("payment_intents", "uq_payment_intent_provider_trade",
+                "CREATE UNIQUE INDEX uq_payment_intent_provider_trade ON payment_intents(provider_trade_no)");
+        ensureIndex("payment_intents", "uq_payment_intent_refund_no",
+                "CREATE UNIQUE INDEX uq_payment_intent_refund_no ON payment_intents(refund_no)");
+        ensureIndex("wallet_recharge_orders", "uq_wallet_recharge_order_no",
+                "CREATE UNIQUE INDEX uq_wallet_recharge_order_no ON wallet_recharge_orders(order_no)");
+        ensureIndex("wallet_recharge_orders", "uq_wallet_recharge_receipt",
+                "CREATE UNIQUE INDEX uq_wallet_recharge_receipt ON wallet_recharge_orders(receipt_number)");
+        ensureIndex("wallet_recharge_orders", "idx_wallet_recharge_user_created",
+                "CREATE INDEX idx_wallet_recharge_user_created ON wallet_recharge_orders(user_id, created_at)");
+        ensureIndex("wallet_transactions", "uq_wallet_transaction_reference",
+                "CREATE UNIQUE INDEX uq_wallet_transaction_reference ON wallet_transactions(reference_type, reference_id)");
         ensureIndex("logs", "idx_logs_user_created",
                 "CREATE INDEX idx_logs_user_created ON logs(user_id, created_at)");
         ensureIndex("logs", "idx_logs_token_created",
@@ -819,13 +1467,18 @@ public class SchemaRepairService {
                 "CREATE UNIQUE INDEX uq_vmcard_product_code ON vmcard_product_codes(environment, product_code)");
         ensureIndex("vmcard_product_codes", "idx_vmcard_product_code_selection",
                 "CREATE INDEX idx_vmcard_product_code_selection ON vmcard_product_codes(environment, available, remaining_open_card_num)");
-        ensureIndex("other_services", "uq_other_services_plus_product",
-                "CREATE UNIQUE INDEX uq_other_services_plus_product ON other_services(service_type, linked_product_id)");
-        ensureIndex("service07_fulfillments", "uq_service07_fulfillment_order",
-                "CREATE UNIQUE INDEX uq_service07_fulfillment_order ON service07_fulfillments(order_id)");
     }
 
     private void seedDefaults() {
+        // Earlier development builds generated route-{channelId} aliases. Those
+        // identifiers reveal internal topology and are not administrator-owned
+        // mappings, so remove them and let the public layer use one fixed fallback.
+        jdbcTemplate.update("""
+                DELETE FROM upstream_display_mappings
+                WHERE public_name='平台智能路由'
+                  AND public_code=CONCAT('route-',channel_id)
+                  AND COALESCE(badge_text,'智能路由')='智能路由'
+                """);
         insertIfMissing("user_groups", "name", "default",
                 "INSERT INTO user_groups(name, display_name, price_ratio, monthly_quota, description) VALUES ('default', 'Default users', 1, 0, 'Standard billing group')");
         insertIfMissing("user_groups", "name", "premium",
@@ -834,6 +1487,8 @@ public class SchemaRepairService {
                 "INSERT INTO system_settings(setting_key, setting_value, description) VALUES ('site.name', 'API Transit Station', 'Site name')");
         insertIfMissing("system_settings", "setting_key", "register.mode",
                 "INSERT INTO system_settings(setting_key, setting_value, description) VALUES ('register.mode', 'invite_or_open', 'Registration policy')");
+        insertIfMissing("system_settings", "setting_key", "billing.usd_cny_rate",
+                "INSERT INTO system_settings(setting_key, setting_value, description) VALUES ('billing.usd_cny_rate', '6.76693506', '模型美元费用结算到人民币钱包时使用的固定汇率')");
         insertIfMissing("security_policies", "name", "RPM limit",
                 "INSERT INTO security_policies(name, scope, action, threshold_value, enabled) VALUES ('RPM limit', 'default group', 'RATE_LIMIT', '500/min', TRUE)");
         insertIfMissing("security_policies", "name", "Sensitive prompt",
@@ -845,8 +1500,6 @@ public class SchemaRepairService {
         insertIfMissing("recharge_plans", "name", "team",
                 "INSERT INTO recharge_plans(name, amount, bonus_percent, sort_order) VALUES ('team', 5000000, 8, 30)");
         seedOtherServices();
-        linkPlusProductsIntoOtherServices();
-        migrateLegacyPlusCatalogSettings();
         if (seedDemoCatalog) {
             seedMarketplaceModels();
         }
@@ -875,65 +1528,13 @@ public class SchemaRepairService {
                 """);
     }
 
-    private void linkPlusProductsIntoOtherServices() {
-        jdbcTemplate.update("""
-                INSERT INTO other_services(
-                    name, description, image_url, sort_order, enabled,
-                    service_type, linked_product_id, action_label,
-                    price_cents, service_fee_cents, currency, purchase_enabled,
-                    created_at, updated_at
-                )
-                SELECT p.name, p.description, p.image_url,
-                       COALESCE((SELECT MAX(s.sort_order) FROM other_services s), 0) + p.id,
-                       p.enabled, 'PLUS', p.id, '立即购买',
-                       p.price_cents, p.service_fee_cents, p.currency, p.enabled,
-                       CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-                  FROM plus_products p
-                 WHERE NOT EXISTS (
-                       SELECT 1 FROM other_services existing
-                        WHERE existing.linked_product_id = p.id
-                 )
-                """);
-    }
-
-    private void migrateLegacyPlusCatalogSettings() {
-        jdbcTemplate.update("""
-                UPDATE other_services
-                   SET price_cents = COALESCE((
-                           SELECT p.price_cents FROM plus_products p
-                            WHERE p.id = other_services.linked_product_id
-                       ), price_cents),
-                       service_fee_cents = COALESCE((
-                           SELECT p.service_fee_cents FROM plus_products p
-                            WHERE p.id = other_services.linked_product_id
-                       ), service_fee_cents),
-                       currency = COALESCE((
-                           SELECT p.currency FROM plus_products p
-                            WHERE p.id = other_services.linked_product_id
-                       ), currency),
-                       purchase_enabled = COALESCE((
-                           SELECT p.enabled FROM plus_products p
-                            WHERE p.id = other_services.linked_product_id
-                       ), purchase_enabled),
-                       service_type = 'SERVICE'
-                 WHERE linked_product_id IS NOT NULL
-                   AND (service_type = 'PLUS'
-                        OR (price_cents = 0 AND service_fee_cents = 0 AND purchase_enabled = FALSE))
-                """);
-    }
-
     private void seedMarketplaceModels() {
         Long openai = seedChannel("OpenAI Catalog", "openai", "https://api.openai.com", "gpt-5.5,gpt-5.4-mini,gpt-5.4-nano,gpt-5-codex-mini,o4-mini", 100);
         Long anthropic = seedChannel("Anthropic Catalog", "anthropic", "https://api.anthropic.com", "claude-sonnet-5,claude-opus-4-8,claude-haiku-4-5", 95);
         Long google = seedChannel("Google Gemini Catalog", "google", "https://generativelanguage.googleapis.com", "gemini-3.5-flash,gemini-3.1-pro-preview,gemini-2.5-flash", 90);
-        Long deepseek = seedChannel("DeepSeek Catalog", "deepseek", "https://api.deepseek.com", "deepseek-v4-pro,deepseek-v4-flash,deepseek-reasoner", 90);
         Long xai = seedChannel("xAI Grok Catalog", "xai", "https://api.x.ai", "grok-4.3,grok-build", 80);
-        Long qwen = seedChannel("Qwen Catalog", "qwen", "https://dashscope.aliyuncs.com/compatible-mode", "qwen3.7-max,qwen3.7-plus,qwen3.6-flash,qwen3-coder-plus", 85);
         Long kimi = seedChannel("Moonshot Kimi Catalog", "kimi", "https://api.moonshot.cn", "kimi-k2-thinking", 75);
         Long glm = seedChannel("Zhipu GLM Catalog", "glm", "https://open.bigmodel.cn/api/paas", "glm-5.1", 75);
-        Long mistral = seedChannel("Mistral Catalog", "mistral", "https://api.mistral.ai", "mistral-large-latest,mistral-small-latest", 70);
-        Long meta = seedChannel("Meta Llama Catalog", "meta", "https://openrouter.ai/api", "llama-4-scout,llama-4-maverick", 70);
-        Long nvidia = seedChannel("NVIDIA Catalog", "nvidia", "https://integrate.api.nvidia.com/v1", "z-ai/glm-5.2,google/gemma-4-31b-it", 78);
 
         seedMapping("gpt-5.5", openai, 100, "8.0", "reasoning,coding,agent", "1M");
         seedMapping("gpt-5.4-mini", openai, 98, "2.0", "chat,low-latency,tools", "1M");
@@ -949,26 +1550,11 @@ public class SchemaRepairService {
         seedMapping("gemini-3.1-pro-preview", google, 96, "5.0", "reasoning,coding,multimodal", "1M");
         seedMapping("gemini-2.5-flash", google, 92, "1.5", "chat,structured-output,search", "1M");
 
-        seedMapping("deepseek-v4-pro", deepseek, 100, "1.2", "chat,chinese,reasoning,coding", "128K");
-        seedMapping("deepseek-v4-flash", deepseek, 98, "0.5", "chat,chinese,low-cost", "128K");
-        seedMapping("deepseek-reasoner", deepseek, 96, "1.0", "reasoning,math,coding", "128K");
-
         seedMapping("grok-4.3", xai, 90, "3.0", "chat,reasoning,realtime", "1M");
         seedMapping("grok-build", xai, 88, "4.0", "coding,agent,developer", "1M");
 
-        seedMapping("qwen3.7-max", qwen, 94, "2.0", "chat,chinese,reasoning", "1M");
-        seedMapping("qwen3.7-plus", qwen, 92, "1.0", "chat,rag,structured-output", "1M");
-        seedMapping("qwen3.6-flash", qwen, 90, "0.4", "chat,low-latency,low-cost", "1M");
-        seedMapping("qwen3-coder-plus", qwen, 88, "1.5", "coding,completion,engineering", "256K");
-
         seedMapping("kimi-k2-thinking", kimi, 86, "1.5", "reasoning,long-context,chinese", "256K");
         seedMapping("glm-5.1", glm, 84, "1.2", "chat,chinese,tools", "128K");
-        seedMapping("z-ai/glm-5.2", nvidia, 85, "1.8", "chat,reasoning,chinese,nvidia", "128K");
-        seedMapping("google/gemma-4-31b-it", nvidia, 83, "1.4", "chat,open-weights,reasoning,nvidia", "128K");
-        seedMapping("mistral-large-latest", mistral, 82, "2.0", "chat,function-calling,enterprise", "128K");
-        seedMapping("mistral-small-latest", mistral, 80, "0.8", "chat,low-cost,summary", "128K");
-        seedMapping("llama-4-scout", meta, 78, "0.8", "open-source,chat,self-hosting", "10M");
-        seedMapping("llama-4-maverick", meta, 76, "1.2", "open-source,rag,multilingual", "1M");
     }
 
     private Long seedChannel(String name, String type, String baseUrl, String models, int weight) {

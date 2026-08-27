@@ -43,14 +43,14 @@ anyipay:
 
 管理员接口：
 
-- `GET /plus/admin/anyipay/merchant`：商户信息。
-- `GET /plus/admin/anyipay/orders?offset=0&limit=50&status=1`：商户订单列表。
-- `POST /plus/admin/anyipay/refund`：订单退款。
-- `POST /plus/admin/anyipay/refund/query`：退款查询。
-- `POST /plus/admin/anyipay/close`：关闭订单。
-- `POST /plus/admin/anyipay/transfer`：发起代付。
-- `POST /plus/admin/anyipay/transfer/query`：代付查询。
-- `GET /plus/admin/anyipay/transfer/balance`：代付可用余额。
+- `GET /admin/payment/anyipay/merchant`：商户信息。
+- `GET /admin/payment/anyipay/orders?offset=0&limit=50&status=1`：商户订单列表。
+- `POST /admin/payment/anyipay/refund`：订单退款。
+- `POST /admin/payment/anyipay/refund/query`：退款查询。
+- `POST /admin/payment/anyipay/close`：关闭订单。
+- `POST /admin/payment/anyipay/transfer`：发起代付。
+- `POST /admin/payment/anyipay/transfer/query`：代付查询。
+- `GET /admin/payment/anyipay/transfer/balance`：代付可用余额。
 
 退款、关单和代付等资金操作均需要管理员身份，并且还需要将
 `allow-money-mutations` 显式设为 `true`，再在安易付商户后台开启对应 API 开关。

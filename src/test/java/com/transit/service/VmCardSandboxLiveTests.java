@@ -32,7 +32,7 @@ class VmCardSandboxLiveTests {
     @BeforeEach
     void setUp() throws Exception {
         PropertySource<?> local = new YamlPropertySourceLoader()
-                .load("vmcard-live", new FileSystemResource("config/application-local.yaml"))
+                .load("vmcard-live", new FileSystemResource("config/application-local-1.yaml"))
                 .get(0);
         objectMapper = new ObjectMapper();
         VmCardProductCodeService productCodeService = mock(VmCardProductCodeService.class);

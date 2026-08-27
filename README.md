@@ -10,32 +10,28 @@
 - 智能路由：严格优先级分层，同级按 `渠道权重 × 模型流量比例` 加权选择；可重试错误自动切换备用渠道。
 - 稳定性：连续失败计数、自动冷却、成功恢复、平均延迟、错误摘要及 Prometheus 指标。
 - 商业闭环：API Key 权限、用户钱包、请求预授权、实际用量结算、成本/毛利和审计日志。
-- API 兼容：`GET /v1/models`、`POST /v1/chat/completions`，包含 `stream=true` SSE 兼容输出。
+- API 兼容：Chat Completions、Responses、Embedding、Rerank、图片、语音和统一异步任务接口；好易智算 Chat 支持真实 SSE 直通。
+- 企业账户：Owner/管理员/财务/成员角色、24 小时一次性邀请、主钱包额度划拨、成员独立钱包和精细用量报表。
+- 多 Key 凭证池：一个渠道可配置多个加密上游 Key，按健康、容量和实时并发选择，Redis 提供多实例 RPM 与负载共享。
 - 管理后台：用户、渠道、模型、Token、调用审计、财务、安全策略、系统配置和报表。
 
 ## 本地启动
 
-环境要求：JDK 17、MySQL 5.7+、Node.js 20+。
+环境要求：JDK 17、MySQL 8、Redis 6+、Node.js 20+。
 
 1. 复制本地配置模板：
 
    ```powershell
    Copy-Item config/application-local.example.yaml config/application-local.yaml
+   Copy-Item config/.env.example config/.env.local
    ```
 
-2. 设置必要环境变量。`JWT_SECRET` 至少 32 个字符；`DATA_ENCRYPTION_KEY` 必须是 Base64 编码的 32 字节随机值。
-
-   ```powershell
-   $env:JWT_SECRET = '<replace-with-a-random-secret-at-least-32-characters>'
-   $env:DATA_ENCRYPTION_KEY = '<replace-with-base64-encoded-32-byte-key>'
-   $env:BOOTSTRAP_ADMIN_USERNAME = 'admin'
-   $env:BOOTSTRAP_ADMIN_PASSWORD = '<replace-with-a-strong-password>'
-   ```
+2. 编辑 `config/application-local.yaml` 和 `config/.env.local`。`security.jwt.secret` 至少 32 个字符；`security.data-encryption-key` 必须是 Base64 编码的 32 字节随机值。好易智算 Key 配置在 `haoee.api-key`，不要求使用环境变量。完整说明见 [统一配置目录](config/README.md)。
 
 3. 启动后端：
 
    ```powershell
-   .\mvnw.cmd spring-boot:run -Dspring-boot.run.profiles=local
+   .\mvnw.cmd spring-boot:run
    ```
 
 4. 启动前端：
@@ -46,7 +42,7 @@
    npm run dev
    ```
 
-默认后端端口为 `8089`，前端开发服务器由 Vite 启动。管理员首次启动由 `BOOTSTRAP_ADMIN_USERNAME` / `BOOTSTRAP_ADMIN_PASSWORD` 创建；创建成功后应从运行环境移除这两个变量。
+默认后端端口为 `8089`，前端开发服务器由 Vite 启动。管理员首次启动由 `security.bootstrap-admin.username` / `security.bootstrap-admin.password` 创建；创建成功后应从私有配置中移除这两项。生产环境仍可使用对应环境变量覆盖本地 YAML。
 
 ## 接入一个模型供应商
 
@@ -56,7 +52,7 @@
 4. 保存渠道时会在同一个事务中自动新增、更新或删除该渠道的模型映射，“模型与定价”只负责展示自动生成的路由、成本、售价与毛利。
 5. 点击“测试”，默认 Prompt 为“你是什么模型”，也可以输入任意 Prompt；测试成功后模型即可按发布状态进入前台目录。
 
-同一供应商有多个 API Key 时，为每个 Key 新建一条渠道，使用相同的渠道分组、Base URL 和模型名称，并分别填写该 Key 对应的采购成本。相同公开模型会自动形成多条货源路由：高优先级先使用，同优先级按 `渠道权重 × 模型流量比例` 分流；每次调用按实际命中的渠道成本结算，再按本站售价向用户计费，从而准确记录转售差价与毛利。
+同一供应商有多个 API Key 时，在渠道的“凭证池”中添加多个 Key；凭证独立限流、健康和冷却，调用时优先选择并发最低且仍有容量的凭证。不同供应商或不同采购成本仍建立独立渠道路由。
 
 同一个公开模型可以配置多条映射。高优先级映射始终先于低优先级；同优先级映射才按权重分流。渠道到达连续失败阈值后进入 `COOLDOWN`，冷却到期允许探测性请求，成功后恢复为 `HEALTHY`。
 
@@ -86,12 +82,22 @@ curl -N http://127.0.0.1:8089/v1/chat/completions \
   -d '{"model":"your-public-model","stream":true,"messages":[{"role":"user","content":"hello"}]}'
 ```
 
-当前 SSE 会在上游完整响应完成、结算成功后按 OpenAI chunk 格式输出，因此兼容流式客户端，但不是上游 token 级直通流。这样可以确保故障切换、额度结算和审计不会被半途输出绕过。
+好易智算路由的 SSE 为上游 token 级直通，支持背压和客户端断开；结束时从最终 usage 事件结算。未确认上游是否接受的超时会标记为 `UNKNOWN`，不会盲目切换渠道或释放预占资金。
+
+好易智算的部署、灰度和接口清单见 [企业网关说明](docs/HAOEE_ENTERPRISE_GATEWAY.md)。
+
+## 卡密自动发货
+
+1. 建议在生产私有配置中设置 `service-orders.redemption-allowed-hosts`，只填写可信的兑换站域名（逗号分隔）；配置后将强制白名单校验。
+2. 后台进入“服务与订单”，新增服务时选择“卡密自动发货”，填写白名单内的 HTTPS 兑换地址。
+3. 在同一个新增服务弹窗内粘贴初始卡密库存；后续也可在“服务订单 → 商品与履约配置”中继续补库。英文逗号、中文逗号、顿号、换行、制表符和空格都可作为分隔符。
+
+卡密库存使用 `DATA_ENCRYPTION_KEY` 加密，并用指纹防止重复导入；下单时事务预留，仅在服务端确认付款成功后交付。管理库存列表不返回明文。兑换入口是项目内的 `/services/:id/redeem`，它不传递卡密、不使用 iframe，只经后端白名单复核后返回一次性 HTTPS 跳转。
 
 ## 安全要求
 
 - 仓库不提供任何可用的支付、虚拟卡、JWT、OAuth 或上游模型凭据默认值。
-- `config/application-local.yaml`、`.env`、上传文件、日志和构建产物已忽略；不要把真实凭据提交到 Git。
+- `config/application-local.yaml`、`config/.env.local`、上传文件、日志和构建产物已忽略；不要把真实凭据提交到 Git。
 - 渠道 API Key 使用 `DATA_ENCRYPTION_KEY` 加密，管理 API 只返回脱敏预览。
 - 上游 Base URL 默认禁止私网、回环和其他 SSRF 高风险地址；仅在受控开发环境设置 `ALLOW_PRIVATE_UPSTREAMS=true`。
 - AnyiPay、VMCard、ShopGPT 和创作供应商均应保持默认关闭，配置完成并完成合规审查后再分别启用。

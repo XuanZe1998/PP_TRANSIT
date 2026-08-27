@@ -22,6 +22,9 @@ public class ChatRequest {
     private Double frequencyPenalty;
     @JsonProperty("logit_bias")
     private Map<String, Double> logitBias;
+    @JsonProperty("chat_template_kwargs")
+    private Map<String, Object> chatTemplateKwargs;
+    private Integer seed;
     private String user;
 
     @Data

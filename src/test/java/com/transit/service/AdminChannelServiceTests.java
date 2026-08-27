@@ -20,6 +20,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -71,6 +72,25 @@ class AdminChannelServiceTests {
                 .isEqualByComparingTo("1");
         assertThat(mappings.getAllValues().get(0).getPriceRatio())
                 .isEqualByComparingTo("2.5");
+    }
+
+    @Test
+    void creatingAHaoeeChannelAssignsTheHaoeeCatalogSourceAutomatically() {
+        Channel request = channel("model-a");
+        request.setType("haoee");
+        request.setBaseUrl("https://maas.haoee.com/v1");
+        doAnswer(invocation -> {
+            Channel saved = invocation.getArgument(0);
+            saved.setId(43L);
+            return 1;
+        }).when(channelMapper).insert(any(Channel.class));
+        when(channelMapper.selectById(43L)).thenAnswer(invocation -> request);
+        when(modelMappingMapper.selectList(any())).thenReturn(List.of(), List.of());
+
+        Channel created = service.create(request);
+
+        assertThat(created.getSourceCode()).isEqualTo("haoee");
+        assertThat(created.getSourceName()).isEqualTo("好易智算");
     }
 
     @Test
@@ -141,6 +161,73 @@ class AdminChannelServiceTests {
 
         verify(modelMappingMapper).delete(any());
         verify(channelMapper).deleteById(19L);
+    }
+
+    @Test
+    void savingOneModelPricingDoesNotTouchOtherMappings() {
+        Channel channel = channel("model-a\nmodel-b");
+        channel.setId(25L);
+        ModelMapping modelA = pricing("model-a", "2", "1", "2", "4");
+        modelA.setId(31L);
+        modelA.setChannelId(25L);
+        modelA.setVendor("openai");
+        modelA.setCapability("reasoning");
+        ModelMapping modelB = pricing("model-b", "3", "2", "6", "9");
+        modelB.setId(32L);
+        modelB.setChannelId(25L);
+        ModelMapping request = pricing("model-a", "4", "2", "8", "12");
+        when(channelMapper.selectById(25L)).thenReturn(channel);
+        when(modelMappingMapper.selectList(any())).thenReturn(List.of(modelA));
+
+        ModelMapping updated = service.saveModelPricing(25L, request);
+
+        assertThat(updated.getId()).isEqualTo(31L);
+        assertThat(updated.getInputPricePerMillion()).isEqualByComparingTo("8");
+        assertThat(updated.getVendor()).isEqualTo("openai");
+        assertThat(updated.getCapability()).isEqualTo("reasoning");
+        verify(modelMappingMapper).updateById(modelA);
+        verify(modelMappingMapper, never()).updateById(modelB);
+        verify(modelMappingMapper, never()).deleteById(32L);
+        verify(priceTierService).synchronize(modelA, request.getPriceTiers());
+    }
+
+    @Test
+    void savingNewSlashModelAppendsItWithoutReplacingExistingModels() {
+        Channel channel = channel("model-a");
+        channel.setId(26L);
+        ModelMapping request = pricing("vendor/model-new", "2", "1", "2", "4");
+        when(channelMapper.selectById(26L)).thenReturn(channel);
+        when(modelMappingMapper.selectList(any())).thenReturn(List.of());
+        doAnswer(invocation -> {
+            ModelMapping inserted = invocation.getArgument(0);
+            inserted.setId(41L);
+            return 1;
+        }).when(modelMappingMapper).insert(any(ModelMapping.class));
+
+        ModelMapping created = service.saveModelPricing(26L, request);
+
+        assertThat(created.getId()).isEqualTo(41L);
+        assertThat(channel.getModels()).isEqualTo("model-a\nvendor/model-new");
+        verify(channelMapper).updateById(channel);
+        verify(priceTierService).synchronize(created, request.getPriceTiers());
+    }
+
+    @Test
+    void deletingOneChannelModelRemovesItsTiersAndListEntry() {
+        Channel channel = channel("model-a\nmodel-b");
+        channel.setId(27L);
+        ModelMapping modelA = pricing("model-a", "2", "1", "2", "4");
+        modelA.setId(51L);
+        modelA.setChannelId(27L);
+        when(channelMapper.selectById(27L)).thenReturn(channel);
+        when(modelMappingMapper.selectById(51L)).thenReturn(modelA);
+
+        service.deleteModelPricing(27L, 51L);
+
+        verify(priceTierService).deleteForMappings(List.of(51L));
+        verify(modelMappingMapper).deleteById(51L);
+        assertThat(channel.getModels()).isEqualTo("model-b");
+        verify(channelMapper).updateById(channel);
     }
 
     private Channel channel(String models) {

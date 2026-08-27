@@ -26,6 +26,18 @@ public class Channel {
 
     private String type; // e.g., "openai", "anthropic", "gemini", "deepseek"
 
+    @TableField("source_code")
+    @Builder.Default
+    private String sourceCode = "other";
+
+    @TableField("source_name")
+    @Builder.Default
+    private String sourceName = "其他第三方中转站";
+
+    @TableField("protocol_type")
+    @Builder.Default
+    private String protocolType = "openai-chat";
+
     @TableField("base_url")
     private String baseUrl;
 
@@ -38,6 +50,9 @@ public class Channel {
 
     @TableField(exist = false)
     private String apiKeyPreview;
+
+    @TableField(exist = false)
+    private Long selectedCredentialId;
 
     private String models; // Comma separated list of models supported by this channel
 

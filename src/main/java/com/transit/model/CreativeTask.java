@@ -10,6 +10,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
+import java.math.BigDecimal;
 
 @TableName("creative_tasks")
 @Data
@@ -28,6 +29,14 @@ public class CreativeTask {
 
     @TableField("provider_config_id")
     private Long providerConfigId;
+
+    @TableField("project_id")
+    private Long projectId;
+
+    @TableField("shot_id")
+    private Long shotId;
+
+    private String stage;
 
     @TableField("model_key")
     private String modelKey;
@@ -76,4 +85,16 @@ public class CreativeTask {
 
     @TableField("completed_at")
     private LocalDateTime completedAt;
+
+    @TableField("billing_unit")
+    private String billingUnit;
+
+    @TableField("billable_quantity")
+    private BigDecimal billableQuantity;
+
+    @TableField("unit_sale_price")
+    private BigDecimal unitSalePrice;
+
+    @TableField("unit_cost_price")
+    private BigDecimal unitCostPrice;
 }

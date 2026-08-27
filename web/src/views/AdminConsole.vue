@@ -6,7 +6,7 @@
         <p>{{ config.description }}</p>
       </div>
       <div class="toolbar-actions">
-        <el-input v-model="query" clearable placeholder="搜索当前列表" :prefix-icon="Search" />
+        <el-input v-model="query" clearable :placeholder="module === 'audit' ? '搜索 Trace、用户或模型' : '搜索当前列表'" :prefix-icon="Search" @keyup.enter="module === 'audit' ? loadAuditLogs() : undefined" />
         <el-button :icon="Refresh" @click="load">刷新</el-button>
         <el-button v-if="config.createLabel" type="primary" :icon="Plus" @click="openCreate">
           {{ config.createLabel }}
@@ -56,14 +56,29 @@
           </div>
         </article>
       </section>
+      <section class="panel dashboard-usage-panel">
+        <div v-if="dashboardUsageError" class="module-error-state">
+          <span>{{ dashboardUsageError }}</span>
+          <el-button link type="primary" @click="loadDashboardUsage">重试用量图表</el-button>
+        </div>
+        <AdminUsageCharts :data="dashboardUsage" :kpi-totals="dashboardTodayUsage.totals" :pie-rows="dashboardTodayUsage.dailyByModel" title="近 7 日模型 Token、成本与收益（上方及饼图为今日）" />
+      </section>
     </template>
 
     <template v-else-if="module === 'finance'">
+      <div v-if="financeErrors.summary" class="module-error-state">
+        <span>{{ financeErrors.summary }}</span>
+        <el-button link type="primary" @click="loadFinanceSection('summary')">重试财务汇总</el-button>
+      </div>
       <section class="admin-grid">
         <article class="panel wide-panel">
           <div class="panel-head">
             <h3>钱包流水</h3>
             <el-button type="primary" :icon="Plus" @click="openCreate">生成兑换码</el-button>
+          </div>
+          <div v-if="financeErrors.transactions" class="module-error-state">
+            <span>{{ financeErrors.transactions }}</span>
+            <el-button link type="primary" @click="loadFinanceSection('transactions')">重试</el-button>
           </div>
           <el-table :data="filteredRows" v-loading="loading">
             <el-table-column prop="username" label="用户" min-width="120" />
@@ -83,6 +98,10 @@
           <div class="panel-head">
             <h3>兑换码</h3>
           </div>
+          <div v-if="financeErrors.codes" class="module-error-state">
+            <span>{{ financeErrors.codes }}</span>
+            <el-button link type="primary" @click="loadFinanceSection('codes')">重试</el-button>
+          </div>
           <el-table :data="secondaryRows" size="small">
             <el-table-column prop="code" label="兑换码" min-width="150" />
             <el-table-column label="额度(CNY)" width="140">
@@ -92,7 +111,38 @@
             <el-table-column prop="max_uses" label="上限" width="90" />
           </el-table>
         </article>
+        <article class="panel wide-panel">
+          <div class="panel-head">
+            <div><h3>充值套餐</h3><small>金额和赠送比例将作为订单快照保存</small></div>
+            <el-button type="primary" @click="openRechargePlan()">新增套餐</el-button>
+          </div>
+          <div v-if="financeErrors.plans" class="module-error-state">
+            <span>{{ financeErrors.plans }}</span>
+            <el-button link type="primary" @click="loadFinanceSection('plans')">重试</el-button>
+          </div>
+          <el-table :data="rechargePlans" size="small">
+            <el-table-column prop="name" label="套餐" min-width="150" />
+            <el-table-column label="售价(CNY)" width="150"><template #default="{ row }">{{ money(row.amount) }}</template></el-table-column>
+            <el-table-column prop="bonus_percent" label="赠送比例" width="120"><template #default="{ row }">{{ row.bonus_percent }}%</template></el-table-column>
+            <el-table-column prop="sort_order" label="排序" width="90" />
+            <el-table-column label="启用" width="90"><template #default="{ row }"><el-tag :type="row.enabled ? 'success' : 'info'">{{ row.enabled ? '是' : '否' }}</el-tag></template></el-table-column>
+            <el-table-column label="操作" width="140"><template #default="{ row }">
+              <el-button link type="primary" @click="openRechargePlan(row)">编辑</el-button>
+              <el-button link type="danger" @click="removeRechargePlan(row)">删除</el-button>
+            </template></el-table-column>
+          </el-table>
+        </article>
       </section>
+      <el-dialog v-model="rechargePlanVisible" :title="rechargePlanForm.id ? '编辑充值套餐' : '新增充值套餐'" width="480px">
+        <el-form label-position="top">
+          <el-form-item label="套餐名称"><el-input v-model="rechargePlanForm.name" maxlength="120" /></el-form-item>
+          <el-form-item label="售价（内部单位，10,000 = ¥1）"><el-input-number v-model="rechargePlanForm.amount" :min="1" :step="10000" style="width:100%" /></el-form-item>
+          <el-form-item label="赠送比例 %"><el-input-number v-model="rechargePlanForm.bonusPercent" :min="0" :max="1000" style="width:100%" /></el-form-item>
+          <el-form-item label="排序"><el-input-number v-model="rechargePlanForm.sortOrder" :min="0" style="width:100%" /></el-form-item>
+          <el-form-item label="启用"><el-switch v-model="rechargePlanForm.enabled" /></el-form-item>
+        </el-form>
+        <template #footer><el-button @click="rechargePlanVisible=false">取消</el-button><el-button type="primary" :loading="rechargePlanSaving" @click="saveRechargePlan">保存</el-button></template>
+      </el-dialog>
     </template>
 
     <template v-else-if="module === 'settings'">
@@ -119,8 +169,8 @@
             <el-tag>实时聚合</el-tag>
           </div>
           <div class="report-summary">
-            <div><span>收入</span><strong>{{ money(report.revenue) }}</strong></div>
-            <div><span>成本</span><strong>{{ money(report.cost) }}</strong></div>
+            <div><span>模型收入</span><strong>{{ formatUsd(report.revenue) }}</strong></div>
+            <div><span>模型成本</span><strong>{{ formatUsd(report.cost) }}</strong></div>
             <div><span>毛利率</span><strong>{{ percent(report.grossMargin) }}</strong></div>
             <div><span>P95 延迟</span><strong>{{ report.p95LatencyMs || 0 }} ms</strong></div>
           </div>
@@ -128,8 +178,8 @@
             <el-table-column prop="model" label="模型" min-width="160" />
             <el-table-column prop="requests" label="请求" width="100" />
             <el-table-column prop="tokens" label="Token" width="120" />
-            <el-table-column label="收入(CNY)" width="150">
-              <template #default="{ row }">{{ money(row.revenue) }}</template>
+            <el-table-column label="模型收入(USD)" width="150">
+              <template #default="{ row }">{{ formatUsd(row.revenue) }}</template>
             </el-table-column>
           </el-table>
         </article>
@@ -138,6 +188,87 @@
 
     <template v-else>
       <section class="panel">
+        <div v-if="module === 'audit'" class="admin-usage-analytics">
+          <el-alert title="请先选择个人用户或企业用户；企业审计需要继续选择企业后才能搜索成员和模型。" type="info" :closable="false" show-icon />
+          <div class="usage-filter-row">
+            <el-select v-model="adminUsageFilters.audienceType" placeholder="第一步：选择用户类型" @change="handleAudienceChange">
+              <el-option label="个人用户" value="PERSONAL" /><el-option label="企业用户" value="COMPANY" />
+            </el-select>
+            <el-select v-if="adminUsageFilters.audienceType === 'COMPANY'" v-model="adminUsageFilters.organizationId" clearable filterable remote :remote-method="loadAuditOptions" placeholder="选择或搜索企业" @change="handleOrganizationChange">
+              <el-option v-for="item in auditOptions.organizations" :key="item.id" :label="item.name" :value="item.id" />
+            </el-select>
+            <el-select v-model="adminUsageFilters.userId" clearable filterable remote :remote-method="loadAuditOptions" :disabled="!auditFilterReady" placeholder="选择或搜索用户">
+              <el-option v-for="item in auditOptions.users" :key="item.id" :label="`${item.username}${item.email ? ` · ${item.email}` : ''}`" :value="item.id" />
+            </el-select>
+            <el-select v-model="adminUsageFilters.model" clearable filterable remote :remote-method="loadAuditOptions" :disabled="!auditFilterReady" placeholder="选择或搜索模型">
+              <el-option v-for="item in auditOptions.models" :key="item.model" :label="item.model" :value="item.model" />
+            </el-select>
+            <el-date-picker v-model="adminUsageFilters.range" type="daterange" value-format="YYYY-MM-DD" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" />
+            <el-button type="primary" :disabled="!auditFilterReady" @click="applyAuditFilters">查询审计</el-button>
+          </div>
+          <div v-if="adminUsageError" class="module-error-state"><span>{{ adminUsageError }}</span><el-button link type="primary" @click="loadAdminUsage">重试统计</el-button></div>
+          <AdminUsageCharts :data="adminUsage" title="筛选范围内的模型用量与收益" show-table />
+          <div v-if="auditLogsError" class="module-error-state"><span>{{ auditLogsError }}</span><el-button link type="primary" @click="loadAuditLogs">重试日志</el-button></div>
+        </div>
+        <div v-if="module === 'security'" class="security-workspace">
+          <el-tabs v-model="securityTab">
+            <el-tab-pane label="通用策略" name="policies">
+              <el-alert title="通用策略用于限流、告警和人工审核；敏感词请在独立词库中配置。" type="info" :closable="false" show-icon />
+              <el-table :data="rows" size="small" max-height="540" style="margin-top:14px">
+                <el-table-column prop="name" label="策略" min-width="160" />
+                <el-table-column prop="scope" label="范围" min-width="140" />
+                <el-table-column prop="action" label="动作" width="130" />
+                <el-table-column prop="threshold_value" label="阈值" min-width="160" />
+                <el-table-column label="状态" width="90"><template #default="{ row }"><el-tag :type="valueOf(row, 'enabled') ? 'success' : 'info'">{{ valueOf(row, 'enabled') ? '启用' : '停用' }}</el-tag></template></el-table-column>
+                <el-table-column label="操作" width="100"><template #default="{ row }"><el-button link type="primary" @click="openEdit(row)">编辑</el-button></template></el-table-column>
+              </el-table>
+            </el-tab-pane>
+            <el-tab-pane label="敏感词库" name="words">
+              <el-alert
+                title="敏感词不是系统自动认定的固定名单：只有管理员保存并启用的词条才会生效，内置示例均保持停用。"
+                type="warning"
+                :closable="false"
+                show-icon
+              />
+              <div class="sensitive-guide-grid">
+                <article><strong>怎么匹配</strong><span>“包含”匹配文本中的任意位置；“完整”只匹配整个文本。匹配前会统一大小写和全角字符。</span></article>
+                <article><strong>命中后做什么</strong><span>阻断会拒绝请求；告警和审核会放行请求并记录安全事件。</span></article>
+                <article><strong>在哪里生效</strong><span>可配置为全局、指定企业、指定用户或指定 API Key，范围越具体影响越小。</span></article>
+                <article><strong>建议分类</strong><span>违法交易、凭证泄露、隐私信息、暴力威胁、色情及未成年人、业务自定义。</span></article>
+              </div>
+              <div class="security-toolbar">
+                <div><strong>实际生效的敏感词</strong><span>模板默认停用；只检测文本，不保存原始 Prompt。</span></div>
+                <div><el-button @click="bulkVisible = true">批量导入</el-button><el-button type="primary" @click="openSensitiveWord()">新增词条</el-button></div>
+              </div>
+              <el-table :data="sensitiveWords" size="small" max-height="520">
+                <el-table-column prop="term" label="词条" min-width="170" />
+                <el-table-column prop="category" label="分类" min-width="130" />
+                <el-table-column label="匹配" width="100"><template #default="{ row }">{{ valueOf(row, 'match_mode') === 'EXACT' ? '完整' : '包含' }}</template></el-table-column>
+                <el-table-column prop="action" label="动作" width="100" />
+                <el-table-column label="范围" min-width="140"><template #default="{ row }">{{ sensitiveScopeLabel(row) }}</template></el-table-column>
+                <el-table-column label="状态" width="90"><template #default="{ row }"><el-tag :type="valueOf(row, 'enabled') ? 'success' : 'info'">{{ valueOf(row, 'enabled') ? '启用' : '停用' }}</el-tag></template></el-table-column>
+                <el-table-column label="操作" width="130"><template #default="{ row }"><el-button link type="primary" @click="openSensitiveWord(row)">编辑</el-button><el-button link type="danger" @click="removeSensitiveWord(row)">删除</el-button></template></el-table-column>
+              </el-table>
+              <div class="sensitive-test-box">
+                <div><strong>匹配测试</strong><span>测试不会写入安全事件。</span></div>
+                <el-input v-model="sensitiveTestText" type="textarea" :rows="3" placeholder="输入一段文本验证当前已启用词条" />
+                <el-button :disabled="!sensitiveTestText.trim()" @click="testSensitiveText">开始测试</el-button>
+                <div v-if="sensitiveTestMatches.length" class="tag-row"><el-tag v-for="item in sensitiveTestMatches" :key="item.id" type="warning">{{ item.term }} · {{ item.action }}</el-tag></div>
+              </div>
+            </el-tab-pane>
+            <el-tab-pane label="安全事件" name="events">
+              <el-table :data="securityEvents" size="small" max-height="580">
+                <el-table-column prop="created_at" label="时间" min-width="170" />
+                <el-table-column prop="trace_id" label="Trace ID" min-width="150" />
+                <el-table-column prop="username" label="用户" min-width="120" />
+                <el-table-column prop="model" label="模型" min-width="160" />
+                <el-table-column prop="category" label="分类" min-width="130" />
+                <el-table-column prop="matched_term" label="命中词条" min-width="160" />
+                <el-table-column prop="action" label="动作" width="100" />
+              </el-table>
+            </el-tab-pane>
+          </el-tabs>
+        </div>
         <div v-if="module === 'models'" class="model-filter-bar">
           <el-select v-model="modelProviderFilter" clearable placeholder="按模型厂商筛选" style="width: 220px">
             <el-option v-for="provider in modelProviderOptions" :key="provider" :label="provider" :value="provider" />
@@ -153,8 +284,9 @@
           show-icon
           class="model-availability-alert"
         />
-        <el-table :data="displayRows" v-loading="loading" row-key="id">
-          <el-table-column v-for="column in config.columns" :key="column.prop" :prop="column.prop" :label="column.label" :min-width="column.minWidth" :width="column.width">
+        <div v-if="module !== 'security'" class="admin-table-shell" :class="`admin-table-${module}`">
+        <el-table :data="displayRows" v-loading="loading" row-key="id" scrollbar-always-on :max-height="gatewayTableMaxHeight">
+          <el-table-column v-for="column in config.columns" :key="column.prop" :prop="column.prop" :label="column.label" :min-width="column.minWidth" :width="column.width" :fixed="gatewayModules.includes(module) && column === config.columns[0] ? 'left' : undefined">
             <template #default="{ row }">
               <el-tag v-if="column.kind === 'status'" :type="statusType(getValue(row, column.prop))">{{ getValue(row, column.prop) }}</el-tag>
               <el-tag v-else-if="column.kind === 'bool'" :type="getValue(row, column.prop) ? 'success' : 'info'">{{ getValue(row, column.prop) ? '启用' : '停用' }}</el-tag>
@@ -162,6 +294,7 @@
                 {{ getValue(row, column.prop) ? '可调用' : '不可调用' }}
               </el-tag>
               <span v-else-if="column.kind === 'money'">{{ money(getValue(row, column.prop)) }}</span>
+              <span v-else-if="column.kind === 'modelMoney'">{{ formatUsd(getValue(row, column.prop)) }}</span>
               <span v-else-if="column.kind === 'rate'">{{ rateMoney(getValue(row, column.prop)) }}</span>
               <span v-else-if="column.kind === 'profit'" :class="{ 'negative-profit': routeHasLoss(row) }">{{ routeProfitSummary(row) }}</span>
               <div v-else-if="column.kind === 'tierRange'" class="tier-table-cell">
@@ -192,6 +325,7 @@
             </template>
           </el-table-column>
         </el-table>
+        </div>
         <el-pagination
           v-if="module === 'models'"
           v-model:current-page="modelPage"
@@ -201,6 +335,7 @@
           :page-sizes="[10, 20, 50, 100]"
           :total="filteredRows.length"
         />
+        <el-pagination v-if="module === 'audit'" v-model:current-page="auditPage" v-model:page-size="auditPageSize" class="admin-pagination" layout="total, sizes, prev, pager, next" :page-sizes="[20, 50, 100, 200]" :total="auditTotal" @change="loadAuditLogs" />
         <el-collapse
           v-if="module === 'channels'"
           v-model="channelLedgerSections"
@@ -224,8 +359,8 @@
               <el-table-column prop="prompt_tokens" label="输入 Token" width="120" />
               <el-table-column prop="completion_tokens" label="输出 Token" width="120" />
               <el-table-column prop="cached_tokens" label="缓存 Token" width="120" />
-              <el-table-column label="估算成本(CNY)" width="150">
-                <template #default="{ row }">{{ money(row.estimated_cost_amount) }}</template>
+              <el-table-column label="估算成本(USD)" width="150">
+                <template #default="{ row }">{{ formatUsd(row.estimated_cost_amount) }}</template>
               </el-table-column>
               <el-table-column prop="latency_ms" label="耗时(ms)" width="110" />
               <el-table-column prop="error_message" label="错误" min-width="260" />
@@ -235,7 +370,7 @@
       </section>
     </template>
 
-    <el-drawer v-model="drawerVisible" :title="drawerTitle" :size="module === 'channels' ? 'min(1180px, 96vw)' : '520px'">
+    <el-drawer v-model="drawerVisible" :title="drawerTitle" :size="module === 'channels' ? 'min(1320px, 96vw)' : '520px'">
       <el-alert
         v-if="module === 'users'"
         title="用户余额不能在基本资料中修改；请关闭后使用列表中的“调账”操作，以便留下原因和财务流水。"
@@ -254,7 +389,36 @@
       />
       <el-form :model="form" label-position="top">
         <el-form-item v-for="field in activeFields" :key="field.prop" :label="field.label">
-          <el-switch v-if="field.type === 'switch'" v-model="form[field.prop]" />
+          <div v-if="module === 'channels' && field.prop === 'models'" class="channel-model-manager">
+            <el-select
+              v-model="activePricingModel"
+              filterable
+              allow-create
+              default-first-option
+              placeholder="选择要配置的模型，或输入名称后按回车添加"
+              class="channel-model-select"
+              @change="selectOrCreatePricingModel"
+            >
+              <el-option v-for="model in selectedChannelModels" :key="model" :label="model" :value="model">
+                <div class="model-option-row"><span>{{ model }}</span><el-tag v-if="isPricingDirty(model)" size="small" type="warning">未保存</el-tag></div>
+              </el-option>
+            </el-select>
+            <div class="channel-model-manager-actions">
+              <el-button
+                type="primary"
+                plain
+                :loading="editorDiscoveryLoading"
+                :disabled="!editingId"
+                @click="discoverChannelModelsForEditor(editingId, selectedChannelModels.length === 0, true)"
+              >自动识别上游模型</el-button>
+              <el-button :disabled="channelModelOptions.length === 0" @click="addAllDiscoveredModels">加入全部识别结果</el-button>
+              <el-button type="danger" plain :disabled="!activePricingModel" @click="removeActivePricingModel">删除当前模型</el-button>
+            </div>
+            <p v-if="!editingId" class="form-hint">新渠道保存后会自动识别模型；也可以先手工输入模型名称。</p>
+            <p v-else-if="editorDiscoveryError" class="form-hint model-discovery-error">{{ editorDiscoveryError }}，仍可手工增加或删除。</p>
+            <p v-else class="form-hint">清单内共 {{ selectedChannelModels.length }} 个模型；下方只显示当前模型配置，切换不会丢失未保存内容。</p>
+          </div>
+          <el-switch v-else-if="field.type === 'switch'" v-model="form[field.prop]" />
           <el-input-number v-else-if="field.type === 'number'" v-model="form[field.prop]" :min="field.min ?? 0" :step="field.step ?? 1" />
           <el-select v-else-if="field.type === 'select'" v-model="form[field.prop]" filterable>
             <el-option v-for="option in field.options || []" :key="option.value" :label="option.label" :value="option.value" />
@@ -266,41 +430,63 @@
           <div class="channel-pricing-head">
             <div>
               <h3>逐模型采购成本与销售定价</h3>
-              <p>已根据模型清单生成 {{ channelModelPricing.length }} 条路由；保存渠道时会自动同步到“模型与定价”。</p>
+              <p>已根据模型清单生成 {{ channelModelPricing.length }} 条路由；每个模型单独保存，切换模型不会丢失草稿。</p>
             </div>
             <el-button v-if="channelModelPricing.length > 1" @click="copyFirstPricingToAll">复制第一行定价到全部</el-button>
           </div>
           <el-alert
-            title="同一供应商有多个 API Key 时，请分别新建渠道并填写相同渠道分组和模型。系统会把它们作为同模型的多条货源路由，按优先级、渠道权重和灰度比例分流，并按实际命中的 Key 计算成本与毛利。"
+            title="同一供应商的多个 API Key 请统一添加到当前渠道的凭证池。系统会按优先级、健康状态和并发情况自动选择凭证，无需创建重复渠道。"
             type="info"
             :closable="false"
             show-icon
           />
+          <section v-if="editingId" class="credential-pool-card">
+            <div class="credential-pool-head">
+              <div><strong>渠道凭证池</strong><span>集中维护同一供应商的多个 API Key</span></div>
+              <el-button type="primary" plain @click="openCredential()">添加凭证</el-button>
+            </div>
+            <el-table :data="channelCredentials" size="small" empty-text="暂无独立凭证，将回退到渠道基础 API Key">
+              <el-table-column prop="name" label="名称" min-width="150" />
+              <el-table-column prop="secretPreview" label="API Key" min-width="130" />
+              <el-table-column prop="priority" label="优先级" width="90" />
+              <el-table-column prop="healthStatus" label="健康" width="110" />
+              <el-table-column label="状态" width="85"><template #default="{ row }"><el-tag :type="row.enabled ? 'success' : 'info'">{{ row.enabled ? '启用' : '停用' }}</el-tag></template></el-table-column>
+              <el-table-column label="操作" width="180" fixed="right"><template #default="{ row }">
+                <el-button link type="success" :loading="credentialTestingId === row.id" @click="testCredential(row)">测试</el-button>
+                <el-button link type="primary" @click="openCredential(row)">编辑</el-button>
+                <el-button link type="danger" @click="removeCredential(row)">删除</el-button>
+              </template></el-table-column>
+            </el-table>
+          </section>
           <el-empty v-if="channelModelPricing.length === 0" description="请先在上方模型清单中填写模型名称，可用逗号、顿号或换行分隔" :image-size="72" />
-          <article v-for="pricing in channelModelPricing" :key="pricing.channelModelName" class="channel-model-pricing-card">
+          <article v-for="pricing in activePricingRows" :key="pricing.channelModelName" class="channel-model-pricing-card">
             <div class="channel-model-pricing-title">
               <div>
                 <strong>{{ pricing.channelModelName }}</strong>
                 <span>自动公开为同名模型</span>
               </div>
               <div class="channel-model-pricing-switches">
+                <el-tag :type="isPricingDirty(pricing.channelModelName) ? 'warning' : 'success'">{{ isPricingDirty(pricing.channelModelName) ? '未保存' : '已保存' }}</el-tag>
                 <el-switch v-model="pricing.billingEnabled" active-text="计费" />
                 <el-switch v-model="pricing.enabled" active-text="发布" />
+                <el-button type="primary" :loading="modelPricingSaving" :disabled="!editingId" @click="saveCurrentModelPricing">保存当前模型</el-button>
               </div>
             </div>
             <div class="channel-price-grid">
               <label>路由优先级<el-input-number v-model="pricing.priority" :min="-10000" :max="10000" :step="10" /></label>
               <label>模型流量比例 %<el-input-number v-model="pricing.trafficPercent" :min="1" :max="100" /></label>
-              <label>售卖倍率<el-input-number v-model="pricing.priceRatio" :min="0" :step="0.1" /></label>
+              <label>计费单位<el-select v-model="pricing.pricingUnit"><el-option v-for="unit in pricingUnitOptions" :key="unit.value" :label="unit.label" :value="unit.value" /></el-select></label>
+              <label>计费模式<el-select v-model="pricing.billingMode"><el-option label="付费" value="PAID" /><el-option label="免费开发预览" value="FREE_PREVIEW" /><el-option label="停用" value="DISABLED" /></el-select></label>
+              <label>价格状态<el-select v-model="pricing.pricingStatus"><el-option label="已核验" value="VERIFIED" /><el-option label="人工估算" value="ESTIMATED" /><el-option label="免费预览" value="FREE_PREVIEW" /><el-option label="待配置" value="PENDING" /></el-select></label>
             </div>
-            <div class="price-tier-toolbar">
+            <div v-if="pricing.pricingUnit === 'TOKEN'" class="price-tier-toolbar">
               <div>
                 <strong>上下文价格挡位</strong>
-                <span>金额单位均为 CNY / 百万 Token；最后一挡自动覆盖超过前一阈值的上下文。</span>
+                <span>模型价格统一使用 USD；最后一挡自动覆盖超过前一阈值的上下文。</span>
               </div>
               <el-button type="primary" plain @click="addPriceTier(pricing)">新增挡位</el-button>
             </div>
-            <article v-for="(tier, tierIndex) in pricing.priceTiers" :key="`${pricing.channelModelName}-${tierIndex}`" class="price-tier-card">
+            <article v-for="(tier, tierIndex) in pricing.pricingUnit === 'TOKEN' ? pricing.priceTiers : []" :key="`${pricing.channelModelName}-${tierIndex}`" class="price-tier-card">
               <div class="price-tier-head">
                 <div class="tier-identity">
                   <label>挡位名称<el-input v-model="tier.tierName" maxlength="120" /></label>
@@ -325,7 +511,7 @@
                         <el-option label="M" value="M" />
                         <el-option label="KB" value="KB" />
                       </el-select>
-                      <el-input v-model="tier.officialPriceSuffix" maxlength="120" placeholder="价格后缀，如 CNY / 1M Token" />
+                      <el-input v-model="tier.officialPriceSuffix" maxlength="120" placeholder="价格后缀，如 USD / 1M Token" />
                     </div>
                   </div>
                   <div class="price-dimension-grid">
@@ -344,14 +530,14 @@
                         <el-option label="M" value="M" />
                         <el-option label="KB" value="KB" />
                       </el-select>
-                      <el-input v-model="tier.costPriceSuffix" maxlength="120" placeholder="价格后缀，如 CNY / 1M Token" />
+                      <el-input v-model="tier.costPriceSuffix" maxlength="120" placeholder="价格后缀，如 USD / 1M Token" />
                     </div>
                   </div>
                   <div class="price-dimension-grid">
-                    <label>输入<el-input-number v-model="tier.costInputPrice" :min="0" :step="0.000001" /></label>
-                    <label>输出<el-input-number v-model="tier.costOutputPrice" :min="0" :step="0.000001" /></label>
-                    <label>缓存读取<el-input-number v-model="tier.costCacheReadPrice" :min="0" :step="0.000001" /></label>
-                    <label>缓存写入<el-input-number v-model="tier.costCacheWritePrice" :min="0" :step="0.000001" /></label>
+                    <label>输入（{{ tierCostMultiplier(tier, 'input') }}）<el-input-number v-model="tier.costInputPrice" :min="0" :step="0.000001" /></label>
+                    <label>输出（{{ tierCostMultiplier(tier, 'output') }}）<el-input-number v-model="tier.costOutputPrice" :min="0" :step="0.000001" /></label>
+                    <label>缓存读取（{{ tierCostMultiplier(tier, 'cacheRead') }}）<el-input-number v-model="tier.costCacheReadPrice" :min="0" :step="0.000001" /></label>
+                    <label>缓存写入（{{ tierCostMultiplier(tier, 'cacheWrite') }}）<el-input-number v-model="tier.costCacheWritePrice" :min="0" :step="0.000001" /></label>
                   </div>
                 </section>
                 <section class="tier-price-group sale-group">
@@ -363,7 +549,7 @@
                         <el-option label="M" value="M" />
                         <el-option label="KB" value="KB" />
                       </el-select>
-                      <el-input v-model="tier.salePriceSuffix" maxlength="120" placeholder="价格后缀，如 CNY / 1M Token" />
+                      <el-input v-model="tier.salePriceSuffix" maxlength="120" placeholder="价格后缀，如 USD / 1M Token" />
                     </div>
                   </div>
                   <div class="price-dimension-grid">
@@ -375,20 +561,55 @@
                 </section>
               </div>
               <div class="channel-price-actions">
-                <el-button link type="primary" @click="calculateTierSalePrices(pricing, tier)">按成本 × 售卖倍率计算本挡售价</el-button>
+                <span>销售价格独立配置；用户侧展示销售价与成本/官方倍率。</span>
                 <span :class="{ loss: tierProfit(tier).hasLoss }">
                   每百万 Token 毛利：输入 {{ decimalMoney(tierProfit(tier).input) }} / 输出 {{ decimalMoney(tierProfit(tier).output) }} / 缓存读取 {{ decimalMoney(tierProfit(tier).cacheRead) }} / 缓存写入 {{ decimalMoney(tierProfit(tier).cacheWrite) }}
                 </span>
               </div>
             </article>
+            <article v-if="pricing.pricingUnit !== 'TOKEN'" class="unit-price-card">
+              <div class="unit-price-head"><strong>{{ pricingUnitLabel(pricing.pricingUnit) }}计费</strong><span>非 Token 模型只维护单一单位价格</span></div>
+              <div class="unit-price-grid">
+                <label>官网基准（{{ pricingUnitSuffix(pricing.pricingUnit) }}）<el-input-number v-model="pricing.officialUnitPrice" :min="0" :step="0.000001" /></label>
+                <label>采购成本（{{ pricingUnitSuffix(pricing.pricingUnit) }}）<el-input-number v-model="pricing.costUnitPrice" :min="0" :step="0.000001" /></label>
+                <label>本站售价（{{ pricingUnitSuffix(pricing.pricingUnit) }}）<el-input-number v-model="pricing.saleUnitPrice" :min="0" :step="0.000001" /></label>
+              </div>
+              <div class="unit-price-grid metadata">
+                <label>价格说明<el-input v-model="pricing.pricingMessage" maxlength="500" placeholder="例如：尚未设置按秒售价" /></label>
+                <label>价格来源<el-input v-model="pricing.pricingSourceUrl" maxlength="1000" placeholder="https://..." /></label>
+              </div>
+              <el-alert v-if="pricing.billingMode === 'FREE_PREVIEW'" title="免费开发预览不会扣除余额，但仍执行 API Key 配额、限流与安全策略。" type="warning" :closable="false" />
+            </article>
           </article>
         </section>
       </el-form>
       <template #footer>
-        <el-button @click="drawerVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="save">保存</el-button>
+        <template v-if="module === 'channels'">
+          <el-button @click="returnFromChannelEditor">返回列表</el-button>
+          <el-button type="primary" :loading="saving" @click="saveChannelBase">保存渠道基础信息</el-button>
+        </template>
+        <template v-else>
+          <el-button @click="drawerVisible = false">取消</el-button>
+          <el-button type="primary" :loading="saving" @click="save">保存</el-button>
+        </template>
       </template>
     </el-drawer>
+
+    <el-dialog v-model="credentialVisible" :title="credentialForm.id ? '编辑渠道凭证' : '添加渠道凭证'" width="560px">
+      <el-form label-position="top">
+        <el-form-item label="凭证名称" required><el-input v-model="credentialForm.name" maxlength="160" /></el-form-item>
+        <el-form-item :label="credentialForm.id ? '替换 API Key（留空保持不变）' : 'API Key'" required><el-input v-model="credentialForm.secret" type="password" show-password /></el-form-item>
+        <div class="credential-form-grid">
+          <el-form-item label="优先级"><el-input-number v-model="credentialForm.priority" :min="-10000" :max="10000" /></el-form-item>
+          <el-form-item label="权重"><el-input-number v-model="credentialForm.weight" :min="1" :max="10000" /></el-form-item>
+          <el-form-item label="RPM 限制"><el-input-number v-model="credentialForm.rpmLimit" :min="0" /></el-form-item>
+          <el-form-item label="TPM 限制"><el-input-number v-model="credentialForm.tpmLimit" :min="0" /></el-form-item>
+          <el-form-item label="并发限制"><el-input-number v-model="credentialForm.concurrencyLimit" :min="0" /></el-form-item>
+          <el-form-item label="启用"><el-switch v-model="credentialForm.enabled" /></el-form-item>
+        </div>
+      </el-form>
+      <template #footer><el-button @click="credentialVisible=false">取消</el-button><el-button type="primary" :loading="credentialSaving" @click="saveCredential">保存凭证</el-button></template>
+    </el-dialog>
 
     <el-dialog v-model="adjustVisible" title="用户手工调账" width="420px">
       <el-form label-position="top">
@@ -450,7 +671,7 @@
           <div><span>输出 Token</span><strong>{{ testResult.usage?.completionTokens || 0 }}</strong></div>
           <div><span>缓存读取 Token</span><strong>{{ testResult.usage?.cacheReadTokens || 0 }}</strong></div>
           <div><span>缓存写入 Token</span><strong>{{ testResult.usage?.cacheWriteTokens || 0 }}</strong></div>
-          <div><span>估算成本(CNY)</span><strong>{{ money(testResult.estimatedCostAmount) }}</strong></div>
+          <div><span>估算成本(USD)</span><strong>{{ formatUsd(testResult.estimatedCostAmount) }}</strong></div>
         </div>
         <el-form label-position="top" class="test-io">
           <el-form-item label="输入">
@@ -507,6 +728,32 @@
     </el-dialog>
 
     <el-dialog
+      v-model="sensitiveVisible"
+      :title="sensitiveEditingId ? '编辑敏感词' : '新增敏感词'"
+      width="560px"
+    >
+      <el-form :model="sensitiveForm" label-position="top" @submit.prevent="saveSensitiveWord">
+        <el-form-item label="词条" required><el-input v-model="sensitiveForm.term" maxlength="255" /></el-form-item>
+        <el-form-item label="分类" required><el-select v-model="sensitiveForm.category" filterable allow-create style="width:100%"><el-option v-for="category in sensitiveCategories" :key="category" :label="category" :value="category" /></el-select></el-form-item>
+        <div class="sensitive-form-grid">
+          <el-form-item label="匹配方式"><el-select v-model="sensitiveForm.matchMode"><el-option label="包含匹配" value="CONTAINS" /><el-option label="完整匹配" value="EXACT" /></el-select></el-form-item>
+          <el-form-item label="命中动作"><el-select v-model="sensitiveForm.action"><el-option label="阻断" value="BLOCK" /><el-option label="告警并放行" value="WARN" /><el-option label="审核并放行" value="REVIEW" /></el-select></el-form-item>
+          <el-form-item label="作用范围"><el-select v-model="sensitiveForm.scopeType" @change="sensitiveForm.scopeId = ''"><el-option label="全站" value="GLOBAL" /><el-option label="企业" value="ORGANIZATION" /><el-option label="用户" value="USER" /><el-option label="API Token" value="TOKEN" /></el-select></el-form-item>
+          <el-form-item v-if="sensitiveForm.scopeType !== 'GLOBAL'" label="作用目标" required><el-select v-model="sensitiveForm.scopeId" filterable style="width:100%"><el-option v-for="item in sensitiveTargetOptions" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item>
+        </div>
+        <el-form-item label="备注"><el-input v-model="sensitiveForm.note" type="textarea" maxlength="500" show-word-limit /></el-form-item>
+        <el-form-item label="启用"><el-switch v-model="sensitiveForm.enabled" /></el-form-item>
+      </el-form>
+      <template #footer><el-button @click="sensitiveVisible=false">取消</el-button><el-button type="primary" :loading="sensitiveSaving" @click="saveSensitiveWord">保存</el-button></template>
+    </el-dialog>
+
+    <el-dialog v-model="bulkVisible" title="批量导入敏感词" width="520px">
+      <el-alert title="一行一个词条，最多 200 条；批量导入默认归入“业务自定义”，并保持停用。" type="info" :closable="false" />
+      <el-input v-model="bulkTerms" type="textarea" :rows="12" placeholder="词条一&#10;词条二" />
+      <template #footer><el-button @click="bulkVisible=false">取消</el-button><el-button type="primary" @click="bulkSensitiveWords">确认导入</el-button></template>
+    </el-dialog>
+
+    <el-dialog
       v-model="issuedSecretVisible"
       title="API Key 已生成（仅显示一次）"
       width="560px"
@@ -532,11 +779,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Refresh, Search } from '@element-plus/icons-vue'
-import http, { getHttpErrorMessage } from '@/utils/http'
-import { formatCny, formatPerMillionCny } from '@/utils/money'
+import http, { getHttpErrorMessage, getHttpErrorNotice } from '@/utils/http'
+import { formatCny, formatPerMillionUsd, formatUsd } from '@/utils/money'
+const AdminUsageCharts = defineAsyncComponent(() => import('@/components/AdminUsageCharts.vue'))
 
 type ModuleKey = 'dashboard' | 'users' | 'channels' | 'models' | 'tokens' | 'audit' | 'finance' | 'security' | 'settings'
 type Column = {
@@ -544,7 +792,7 @@ type Column = {
   label: string
   width?: number
   minWidth?: number
-  kind?: 'status' | 'bool' | 'callable' | 'money' | 'rate' | 'profit'
+  kind?: 'status' | 'bool' | 'callable' | 'money' | 'modelMoney' | 'rate' | 'profit'
     | 'tierRange' | 'tierOfficial' | 'tierCost' | 'tierSale' | 'tierProfit'
 }
 type Field = { prop: string; label: string; type?: 'text' | 'password' | 'textarea' | 'number' | 'switch' | 'select'; min?: number; step?: number; options?: Array<{ label: string; value: any }> }
@@ -562,11 +810,35 @@ type Config = {
 const props = defineProps<{ module: ModuleKey }>()
 
 const module = computed(() => props.module)
+const gatewayModules: ModuleKey[] = ['channels', 'models']
+const gatewayTableMaxHeight = computed(() => gatewayModules.includes(module.value) ? 'calc(100vh - 310px)' : undefined)
 const loading = ref(false)
 const saving = ref(false)
 const query = ref('')
 const rows = ref<any[]>([])
 const secondaryRows = ref<any[]>([])
+const rechargePlans = ref<any[]>([])
+type FinanceSection = 'summary' | 'transactions' | 'codes' | 'plans'
+const financeErrors = reactive<Record<FinanceSection, string>>({ summary: '', transactions: '', codes: '', plans: '' })
+const rechargePlanVisible = ref(false)
+const rechargePlanSaving = ref(false)
+const rechargePlanForm = reactive({ id: null as number | null, name: '', amount: 500000, bonusPercent: 0, sortOrder: 100, enabled: true })
+const adminToday = new Date()
+const adminMonthAgo = new Date(adminToday); adminMonthAgo.setDate(adminToday.getDate() - 29)
+const adminUsageFilters = reactive({
+  range: [adminMonthAgo.toISOString().slice(0, 10), adminToday.toISOString().slice(0, 10)] as string[],
+  audienceType: '', organizationId: '' as string | number, userId: '' as string | number, model: ''
+})
+const adminUsage = ref<any>({ daily: [], dailyByModel: [], totals: {}, tokenComposition: [] })
+const dashboardUsage = ref<any>({ daily: [], dailyByModel: [], totals: {} })
+const dashboardTodayUsage = ref<any>({ totals: {} })
+const dashboardUsageError = ref('')
+const adminUsageError = ref('')
+const auditLogsError = ref('')
+const auditOptions = reactive<{ organizations: any[]; users: any[]; models: any[] }>({ organizations: [], users: [], models: [] })
+const auditPage = ref(1)
+const auditPageSize = ref(50)
+const auditTotal = ref(0)
 const testRows = ref<any[]>([])
 const channelLedgerSections = ref<string[]>([])
 const dashboard = ref<Record<string, any>>({})
@@ -595,14 +867,30 @@ const syncRunning = ref(false)
 const discoveryTarget = ref<any | null>(null)
 const discoveryResult = ref<any | null>(null)
 const activateDiscoveredModels = ref(false)
+const channelModelOptions = ref<string[]>([])
+const editorDiscoveryLoading = ref(false)
+const editorDiscoveryError = ref('')
 const providerCatalog = ref<any[]>([])
 const modelProviderFilter = ref('')
 const modelPage = ref(1)
 const modelPageSize = ref(20)
 const issuedSecretVisible = ref(false)
 const issuedSecret = ref('')
+const securityTab = ref('policies')
+const sensitiveWords = ref<any[]>([])
+const securityEvents = ref<any[]>([])
+const sensitiveVisible = ref(false)
+const sensitiveSaving = ref(false)
+const sensitiveEditingId = ref<number | null>(null)
+const sensitiveForm = reactive({ term: '', category: '业务自定义', matchMode: 'CONTAINS', action: 'BLOCK', scopeType: 'GLOBAL', scopeId: '' as string | number, note: '', enabled: false })
+const bulkVisible = ref(false)
+const bulkTerms = ref('')
+const sensitiveTestText = ref('')
+const sensitiveTestMatches = ref<any[]>([])
+const securityTargets = reactive<{ organizations: any[]; users: any[]; tokens: any[] }>({ organizations: [], users: [], tokens: [] })
 
 type ChannelModelPricing = {
+  id?: number
   publicModelName: string
   channelModelName: string
   priority: number
@@ -618,6 +906,14 @@ type ChannelModelPricing = {
   billingEnabled: boolean
   trafficPercent: number
   capabilityTags?: string
+  pricingUnit: 'TOKEN' | 'SECOND' | 'IMAGE' | 'MINUTE' | 'CHARACTER' | 'TASK'
+  billingMode: 'PAID' | 'FREE_PREVIEW' | 'DISABLED'
+  pricingStatus: 'VERIFIED' | 'ESTIMATED' | 'FREE_PREVIEW' | 'PENDING'
+  pricingMessage: string
+  pricingSourceUrl: string
+  officialUnitPrice: number
+  costUnitPrice: number
+  saleUnitPrice: number
   priceTiers: ModelPriceTier[]
 }
 
@@ -651,6 +947,23 @@ type ModelPriceTier = {
 }
 
 const channelModelPricing = ref<ChannelModelPricing[]>([])
+const pricingUnitOptions = [
+  { value: 'TOKEN', label: 'Token' }, { value: 'SECOND', label: '视频 / 秒' },
+  { value: 'IMAGE', label: '图片 / 张' }, { value: 'MINUTE', label: '音频 / 分钟' },
+  { value: 'CHARACTER', label: '语音 / 千字符' }, { value: 'TASK', label: '任务 / 次' }
+] as const
+const channelCredentials = ref<any[]>([])
+const credentialVisible = ref(false)
+const credentialSaving = ref(false)
+const credentialTestingId = ref<number | null>(null)
+const credentialForm = reactive({ id: null as number | null, name: '', secret: '', priority: 0, weight: 100, rpmLimit: 0, tpmLimit: 0, concurrencyLimit: 0, enabled: true })
+const activePricingModel = ref('')
+const modelPricingSaving = ref(false)
+const savedPricingSnapshots = reactive<Record<string, string>>({})
+const activePricingRows = computed(() => channelModelPricing.value.filter(item => item.channelModelName === activePricingModel.value).slice(0, 1))
+const auditFilterReady = computed(() => Boolean(adminUsageFilters.audienceType)
+  && (adminUsageFilters.audienceType !== 'COMPANY' || Boolean(adminUsageFilters.organizationId)))
+const dirtyPricingCount = computed(() => channelModelPricing.value.filter(item => isPricingDirty(item.channelModelName)).length)
 
 const configs: Record<ModuleKey, Config> = {
   dashboard: {
@@ -701,7 +1014,7 @@ const configs: Record<ModuleKey, Config> = {
     ],
     fields: [
       { prop: 'name', label: '渠道名称' },
-      { prop: 'type', label: '协议类型', type: 'select', options: ['openai', 'deepseek', 'anthropic', 'gemini', 'xai', 'openrouter', 'qwen', 'kimi', 'glm', 'mistral', 'meta', 'nvidia'].map(value => ({ label: value, value })) },
+      { prop: 'type', label: '协议类型', type: 'select', options: ['openai', 'haoee', 'deepseek', 'anthropic', 'gemini', 'xai', 'openrouter', 'qwen', 'kimi', 'glm', 'mistral', 'meta', 'nvidia'].map(value => ({ label: value, value })) },
       { prop: 'baseUrl', label: 'Base URL' },
       { prop: 'apiKey', label: 'API Key', type: 'password' },
       { prop: 'models', label: '模型清单', type: 'textarea' },
@@ -777,7 +1090,7 @@ const configs: Record<ModuleKey, Config> = {
       { prop: 'model', label: '模型', minWidth: 160 },
       { prop: 'channel_name', label: '渠道', minWidth: 140 },
       { prop: 'total_tokens', label: 'Token', width: 110 },
-      { prop: 'sale_amount', label: '售价(CNY)', width: 130, kind: 'money' },
+      { prop: 'sale_amount', label: '模型售价(USD)', width: 140, kind: 'modelMoney' },
       { prop: 'latency_ms', label: '延迟', width: 100 },
       { prop: 'status', label: '状态', width: 110, kind: 'status' },
       { prop: 'error_message', label: '错误', minWidth: 220 }
@@ -835,6 +1148,7 @@ const configs: Record<ModuleKey, Config> = {
 const config = computed(() => configs[module.value])
 const activeFields = computed(() => config.value.fields)
 const drawerTitle = computed(() => editingId.value ? `编辑${config.value.title}` : config.value.createLabel || config.value.title)
+const selectedChannelModels = computed(() => splitChannelModels(form.models))
 
 const filteredRows = computed(() => {
   const needle = query.value.trim().toLowerCase()
@@ -923,6 +1237,33 @@ watch([() => testForm.prompt, () => testForm.timeoutSeconds], () => {
 
 onMounted(load)
 
+async function loadFinanceSection(section: FinanceSection) {
+  financeErrors[section] = ''
+  const endpoints: Record<FinanceSection, string> = {
+    summary: '/api/admin/api/finance/summary',
+    transactions: '/api/admin/api/finance/transactions',
+    codes: '/api/admin/api/finance/redeem-codes',
+    plans: '/api/admin/api/finance/recharge-plans'
+  }
+  const labels: Record<FinanceSection, string> = {
+    summary: '财务汇总', transactions: '钱包流水', codes: '兑换码', plans: '充值套餐'
+  }
+  try {
+    const response = await http.get(endpoints[section])
+    if (section === 'summary') dashboard.value.finance = response.data || {}
+    else if (section === 'transactions') rows.value = response.data || []
+    else if (section === 'codes') secondaryRows.value = response.data || []
+    else rechargePlans.value = response.data || []
+  } catch (error: unknown) {
+    financeErrors[section] = getHttpErrorNotice(error, `${labels[section]}加载失败`)
+  }
+}
+
+async function loadFinance() {
+  await Promise.all((['summary', 'transactions', 'codes', 'plans'] as FinanceSection[])
+    .map(section => loadFinanceSection(section)))
+}
+
 async function load() {
   loading.value = true
   try {
@@ -930,18 +1271,15 @@ async function load() {
     secondaryRows.value = []
     testRows.value = []
     if (module.value === 'dashboard') {
-      const res = await http.get('/api/admin/api/dashboard')
-      dashboard.value = res.data
-      rows.value = res.data.channelHealth || []
-    } else if (module.value === 'finance') {
-      const [summary, transactions, codes] = await Promise.all([
-        http.get('/api/admin/api/finance/summary'),
-        http.get('/api/admin/api/finance/transactions'),
-        http.get('/api/admin/api/finance/redeem-codes')
+      const [dashboardResult] = await Promise.allSettled([
+        http.get('/api/admin/api/dashboard'),
+        loadDashboardUsage()
       ])
-      dashboard.value.finance = summary.data
-      rows.value = transactions.data
-      secondaryRows.value = codes.data
+      if (dashboardResult.status === 'rejected') throw dashboardResult.reason
+      dashboard.value = dashboardResult.value.data
+      rows.value = dashboardResult.value.data.channelHealth || []
+    } else if (module.value === 'finance') {
+      await loadFinance()
     } else if (module.value === 'settings') {
       const [settings, reports] = await Promise.all([
         http.get('/api/admin/api/settings'),
@@ -962,6 +1300,27 @@ async function load() {
           value: channel.id
         }))
       }
+    } else if (module.value === 'audit') {
+      await loadAuditOptions()
+      if (auditFilterReady.value) await Promise.allSettled([loadAdminUsage(), loadAuditLogs()])
+      else {
+        rows.value = []
+        adminUsage.value = { daily: [], dailyByModel: [], totals: {}, tokenComposition: [] }
+      }
+    } else if (module.value === 'security') {
+      const [policyRes, wordsRes, eventsRes, targetRes, tokenRes] = await Promise.all([
+        http.get('/api/admin/api/security/policies'),
+        http.get('/api/admin/api/security/sensitive-words'),
+        http.get('/api/admin/api/security/events'),
+        http.get('/api/admin/api/audit/filter-options'),
+        http.get('/api/admin/api/tokens')
+      ])
+      rows.value = policyRes.data || []
+      sensitiveWords.value = wordsRes.data || []
+      securityEvents.value = eventsRes.data || []
+      securityTargets.organizations = targetRes.data?.organizations || []
+      securityTargets.users = targetRes.data?.users || []
+      securityTargets.tokens = tokenRes.data || []
     } else if (config.value.endpoint) {
       const res = await http.get(`/api${config.value.endpoint}`)
       rows.value = res.data
@@ -982,11 +1341,229 @@ async function load() {
       }
     }
   } catch (error: any) {
-    const requestId = error?.response?.data?.requestId
-    const message = getHttpErrorMessage(error, '加载后台数据失败')
-    ElMessage.error(requestId ? `${message}（请求 ID：${requestId}）` : message)
+    ElMessage.error(getHttpErrorNotice(error, '加载后台数据失败'))
   } finally {
     loading.value = false
+  }
+}
+
+async function loadDashboardUsage() {
+  dashboardUsageError.value = ''
+  const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 6)
+  const today = localDate(new Date())
+  const [rangeResult, todayResult] = await Promise.allSettled([
+    http.get('/api/admin/api/usage/analytics', { params: { from: localDate(weekAgo), to: today } }),
+    http.get('/api/admin/api/usage/analytics', { params: { from: today, to: today } })
+  ])
+  const errors: string[] = []
+  if (rangeResult.status === 'fulfilled') dashboardUsage.value = rangeResult.value.data || { daily: [], dailyByModel: [], totals: {} }
+  else errors.push(getHttpErrorNotice(rangeResult.reason, '近 7 日趋势加载失败'))
+  if (todayResult.status === 'fulfilled') dashboardTodayUsage.value = todayResult.value.data || { totals: {}, dailyByModel: [] }
+  else errors.push(getHttpErrorNotice(todayResult.reason, '今日收益加载失败'))
+  dashboardUsageError.value = errors.join('；')
+}
+
+async function loadAdminUsage() {
+  if (!auditFilterReady.value) return
+  adminUsageError.value = ''
+  try {
+    const response = await http.get('/api/admin/api/usage/analytics', { params: {
+      from: adminUsageFilters.range?.[0], to: adminUsageFilters.range?.[1],
+      audienceType: adminUsageFilters.audienceType,
+      organizationId: adminUsageFilters.organizationId || undefined,
+      userId: adminUsageFilters.userId || undefined, model: adminUsageFilters.model || undefined
+    } })
+    adminUsage.value = response.data || { daily: [], dailyByModel: [], totals: {}, tokenComposition: [] }
+  } catch (error: unknown) {
+    adminUsageError.value = getHttpErrorNotice(error, '用量统计加载失败')
+  }
+}
+
+async function loadAuditLogs() {
+  if (!auditFilterReady.value) return
+  auditLogsError.value = ''
+  try {
+    const response = await http.get('/api/admin/api/audit/request-logs', { params: {
+      from: adminUsageFilters.range?.[0], to: adminUsageFilters.range?.[1],
+      audienceType: adminUsageFilters.audienceType,
+      organizationId: adminUsageFilters.organizationId || undefined,
+      userId: adminUsageFilters.userId || undefined, model: adminUsageFilters.model || undefined,
+      query: query.value || undefined, page: auditPage.value, pageSize: auditPageSize.value
+    } })
+    rows.value = response.data?.items || []
+    auditTotal.value = Number(response.data?.total || 0)
+  } catch (error: unknown) {
+    auditLogsError.value = getHttpErrorNotice(error, '调用日志加载失败')
+  }
+}
+
+async function loadAuditOptions(search = '') {
+  const response = await http.get('/api/admin/api/audit/filter-options', { params: {
+    audienceType: adminUsageFilters.audienceType || undefined,
+    organizationId: adminUsageFilters.organizationId || undefined,
+    query: search || undefined
+  } })
+  auditOptions.organizations = response.data?.organizations || []
+  auditOptions.users = response.data?.users || []
+  auditOptions.models = response.data?.models || []
+}
+
+async function handleAudienceChange() {
+  adminUsageFilters.organizationId = ''
+  adminUsageFilters.userId = ''
+  adminUsageFilters.model = ''
+  rows.value = []
+  auditTotal.value = 0
+  adminUsage.value = { daily: [], dailyByModel: [], totals: {}, tokenComposition: [] }
+  adminUsageError.value = ''
+  auditLogsError.value = ''
+  await loadAuditOptions()
+}
+
+async function handleOrganizationChange() {
+  adminUsageFilters.userId = ''
+  adminUsageFilters.model = ''
+  rows.value = []
+  auditTotal.value = 0
+  adminUsage.value = { daily: [], dailyByModel: [], totals: {}, tokenComposition: [] }
+  await loadAuditOptions()
+}
+
+async function applyAuditFilters() {
+  if (!auditFilterReady.value) {
+    ElMessage.warning(adminUsageFilters.audienceType === 'COMPANY' ? '请先选择企业' : '请先选择个人用户或企业用户')
+    return
+  }
+  auditPage.value = 1
+  await Promise.allSettled([loadAdminUsage(), loadAuditLogs()])
+}
+
+function localDate(date: Date) {
+  const year = date.getFullYear(), month = String(date.getMonth() + 1).padStart(2, '0'), day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+const sensitiveCategories = ['违法交易', '凭证泄露', '隐私与个人信息', '暴力与威胁', '色情及未成年人', '业务自定义']
+const sensitiveTargetOptions = computed(() => {
+  if (sensitiveForm.scopeType === 'ORGANIZATION') return securityTargets.organizations.map(item => ({ label: item.name, value: item.id }))
+  if (sensitiveForm.scopeType === 'USER') return securityTargets.users.map(item => ({ label: `${item.username}${item.email ? ` · ${item.email}` : ''}`, value: item.id }))
+  if (sensitiveForm.scopeType === 'TOKEN') return securityTargets.tokens.map(item => ({ label: `${item.name || `Token #${item.id}`} · ${item.keyPreview || ''}`, value: item.id }))
+  return []
+})
+
+function valueOf(row: any, key: string) { return row?.[key] ?? row?.[key.toUpperCase()] }
+function sensitiveScopeLabel(row: any) {
+  const scope = String(valueOf(row, 'scope_type') || 'GLOBAL')
+  const labels: Record<string, string> = { GLOBAL: '全站', ORGANIZATION: '企业', USER: '用户', TOKEN: 'API Token' }
+  const id = valueOf(row, 'scope_id')
+  return `${labels[scope] || scope}${id ? ` #${id}` : ''}`
+}
+
+function openSensitiveWord(row?: any) {
+  sensitiveEditingId.value = row ? Number(valueOf(row, 'id')) : null
+  Object.assign(sensitiveForm, row ? {
+    term: valueOf(row, 'term') || '', category: valueOf(row, 'category') || '业务自定义',
+    matchMode: valueOf(row, 'match_mode') || 'CONTAINS', action: valueOf(row, 'action') || 'BLOCK',
+    scopeType: valueOf(row, 'scope_type') || 'GLOBAL', scopeId: valueOf(row, 'scope_id') || '',
+    note: valueOf(row, 'note') || '', enabled: Boolean(valueOf(row, 'enabled'))
+  } : { term: '', category: '业务自定义', matchMode: 'CONTAINS', action: 'BLOCK', scopeType: 'GLOBAL', scopeId: '', note: '', enabled: false })
+  sensitiveVisible.value = true
+}
+
+async function saveSensitiveWord() {
+  if (!sensitiveForm.term.trim() || !sensitiveForm.category.trim()) return ElMessage.warning('请填写词条和分类')
+  if (sensitiveForm.scopeType !== 'GLOBAL' && !sensitiveForm.scopeId) return ElMessage.warning('请选择作用目标')
+  sensitiveSaving.value = true
+  try {
+    await http.post('/api/admin/api/security/sensitive-words', sensitiveEditingId.value ? { ...sensitiveForm, id: sensitiveEditingId.value } : sensitiveForm)
+    sensitiveVisible.value = false
+    ElMessage.success('敏感词已保存')
+    await load()
+    securityTab.value = 'words'
+  } catch (error: unknown) { ElMessage.error(getHttpErrorMessage(error, '敏感词保存失败')) }
+  finally { sensitiveSaving.value = false }
+}
+
+async function removeSensitiveWord(row: any) {
+  try { await ElMessageBox.confirm(`确认删除敏感词“${valueOf(row, 'term')}”？`, '删除敏感词', { type: 'warning' }) }
+  catch { return }
+  await http.delete(`/api/admin/api/security/sensitive-words/${valueOf(row, 'id')}`)
+  ElMessage.success('敏感词已删除')
+  await load(); securityTab.value = 'words'
+}
+
+async function bulkSensitiveWords() {
+  if (!bulkTerms.value.trim()) return ElMessage.warning('请输入需要导入的词条')
+  try {
+    const response = await http.post('/api/admin/api/security/sensitive-words/bulk', { terms: bulkTerms.value, category: '业务自定义', matchMode: 'CONTAINS', action: 'BLOCK', scopeType: 'GLOBAL', enabled: false })
+    ElMessage.success(`已导入 ${response.data?.created || 0} 条停用词条`)
+    bulkTerms.value = ''; bulkVisible.value = false; await load(); securityTab.value = 'words'
+  } catch (error: unknown) { ElMessage.error(getHttpErrorMessage(error, '批量导入失败')) }
+}
+
+async function testSensitiveText() {
+  try {
+    const response = await http.post('/api/admin/api/security/sensitive-words/test', { text: sensitiveTestText.value })
+    sensitiveTestMatches.value = response.data || []
+    if (!sensitiveTestMatches.value.length) ElMessage.success('未命中当前已启用词条')
+  } catch (error: unknown) { ElMessage.error(getHttpErrorMessage(error, '匹配测试失败')) }
+}
+
+function adminUsageMetric(row: any, key: string) { return Number(row?.[key] ?? row?.[key.toUpperCase()] ?? 0) }
+const adminUsageDays = computed(() => {
+  const daily = adminUsage.value.daily || []
+  const max = Math.max(1, ...daily.map((row: any) => adminUsageMetric(row, 'total_tokens')))
+  return daily.map((row: any) => {
+    const total = adminUsageMetric(row, 'total_tokens')
+    return { date: String(row.usage_day ?? row.USAGE_DAY ?? ''), total, height: Math.max(total ? 8 : 0, total / max * 100), parts: [
+      { name: '输入未命中', className: 'miss', value: adminUsageMetric(row, 'cache_miss_tokens') },
+      { name: '缓存命中', className: 'hit', value: adminUsageMetric(row, 'cache_read_tokens') },
+      { name: '缓存写入', className: 'write', value: adminUsageMetric(row, 'cache_write_tokens') },
+      { name: '输出', className: 'output', value: adminUsageMetric(row, 'completion_tokens') }
+    ] }
+  })
+})
+const adminUsageComposition = computed(() => (adminUsage.value.tokenComposition || []).map((slice: any, index: number) => ({
+  name: slice.name, value: Number(slice.value || 0), color: ['#78ad30', '#35a7a0', '#e6a23c', '#6b7fd7'][index % 4]
+})))
+const adminUsageTotal = computed(() => adminUsageComposition.value.reduce((sum: number, slice: any) => sum + slice.value, 0))
+const adminUsagePieStyle = computed(() => {
+  const total = Math.max(1, adminUsageTotal.value); let cursor = 0
+  const stops = adminUsageComposition.value.map((slice: any) => { const start = cursor; cursor += slice.value / total * 100; return `${slice.color} ${start}% ${cursor}%` })
+  return { background: `conic-gradient(${stops.length ? stops.join(',') : '#e9eeeb 0 100%'})` }
+})
+function compact(value: number) { return Intl.NumberFormat('zh-CN', { notation: 'compact', maximumFractionDigits: 1 }).format(value || 0) }
+
+function openRechargePlan(row?: any) {
+  Object.assign(rechargePlanForm, row ? {
+    id: row.id, name: row.name, amount: Number(row.amount), bonusPercent: Number(row.bonus_percent),
+    sortOrder: Number(row.sort_order), enabled: Boolean(row.enabled)
+  } : { id: null, name: '', amount: 500000, bonusPercent: 0, sortOrder: 100, enabled: true })
+  rechargePlanVisible.value = true
+}
+
+async function saveRechargePlan() {
+  if (!rechargePlanForm.name.trim()) return ElMessage.warning('请输入套餐名称')
+  rechargePlanSaving.value = true
+  try {
+    const payload = { ...rechargePlanForm, id: undefined }
+    if (rechargePlanForm.id) await http.put(`/api/admin/api/finance/recharge-plans/${rechargePlanForm.id}`, payload)
+    else await http.post('/api/admin/api/finance/recharge-plans', payload)
+    rechargePlanVisible.value = false
+    ElMessage.success('充值套餐已保存')
+    await load()
+  } catch (error: unknown) { ElMessage.error(getHttpErrorMessage(error, '充值套餐保存失败')) }
+  finally { rechargePlanSaving.value = false }
+}
+
+async function removeRechargePlan(row: any) {
+  try {
+    await ElMessageBox.confirm(`确认删除充值套餐“${row.name}”？历史订单不会受影响。`, '删除套餐', { type: 'warning' })
+    await http.delete(`/api/admin/api/finance/recharge-plans/${row.id}`)
+    ElMessage.success('充值套餐已删除')
+    await load()
+  } catch (error: any) {
+    if (error !== 'cancel' && error !== 'close') ElMessage.error(getHttpErrorMessage(error, '充值套餐删除失败'))
   }
 }
 
@@ -998,6 +1575,11 @@ function openCreate() {
   }
   if (module.value === 'channels') {
     channelModelPricing.value = []
+    channelCredentials.value = []
+    activePricingModel.value = ''
+    clearPricingSnapshots()
+    channelModelOptions.value = []
+    editorDiscoveryError.value = ''
     Object.assign(form, {
       type: 'openai-compatible',
       groupName: 'default',
@@ -1015,6 +1597,7 @@ function openCreate() {
 
 function openEdit(row: any) {
   editingId.value = row.id
+  let selectDiscoveredWhenEmpty = false
   Object.keys(form).forEach(key => delete form[key])
   for (const field of activeFields.value) {
     const sourceKey = field.prop === 'key' ? 'setting_key' : field.prop === 'value' ? 'setting_value' : field.prop
@@ -1023,18 +1606,26 @@ function openEdit(row: any) {
   if (module.value === 'users') form.groupId = row.group_id ?? row.groupId ?? null
   if (module.value === 'channels') {
     channelModelPricing.value = (row.modelPricing || []).map((item: any) => normalizePricing(item.channelModelName, item))
+    const mappedModels = channelModelPricing.value.map(item => item.channelModelName)
+    const localModels = uniqueStrings([...splitChannelModels(form.models), ...mappedModels])
+    selectDiscoveredWhenEmpty = localModels.length === 0
+    form.models = localModels.join('\n')
+    channelModelOptions.value = localModels
+    editorDiscoveryError.value = ''
     syncChannelPricingRows(form.models)
+    activePricingModel.value = channelModelPricing.value[0]?.channelModelName || ''
+    markAllPricingSaved()
+    void loadCredentials(row.id)
   }
   drawerVisible.value = true
+  if (module.value === 'channels') void discoverChannelModelsForEditor(row.id, selectDiscoveredWhenEmpty, false)
 }
 
 async function save() {
   saving.value = true
   try {
     const payload = activeFormPayload()
-    if (module.value === 'channels') {
-      await write(`/api/admin/api/channels${editingId.value ? `/${editingId.value}` : ''}`, payload)
-    } else if (module.value === 'models') {
+    if (module.value === 'models') {
       await write(`/api/admin/api/models${editingId.value ? `/${editingId.value}` : ''}`, payload)
     } else if (module.value === 'tokens') {
       const response = await write(`/api/admin/api/tokens${editingId.value ? `/${editingId.value}` : ''}`, payload)
@@ -1062,9 +1653,7 @@ async function save() {
     drawerVisible.value = false
     await load()
   } catch (error: any) {
-    const requestId = error?.response?.data?.requestId
-    const message = getHttpErrorMessage(error, '保存失败')
-    ElMessage.error(requestId ? `${message}（请求 ID：${requestId}）` : message)
+    ElMessage.error(getHttpErrorNotice(error, '保存失败'))
   } finally {
     saving.value = false
   }
@@ -1073,24 +1662,194 @@ async function save() {
 function activeFormPayload() {
   const payload = Object.fromEntries(activeFields.value.map(field => [field.prop, form[field.prop]]))
   if (module.value === 'channels') {
-    payload.modelPricing = channelModelPricing.value.map(item => ({
-      ...item,
-      priceTiers: item.priceTiers.map((tier, index) => ({
-        ...tier,
-        sortOrder: index,
-        officialPriceUnit: normalizePriceUnit(tier.officialPriceUnit, 'M'),
-        costPriceUnit: normalizePriceUnit(tier.costPriceUnit, 'M'),
-        salePriceUnit: normalizePriceUnit(tier.salePriceUnit, 'M'),
-        officialPriceSuffix: String(tier.officialPriceSuffix || 'CNY / 1M Token').trim(),
-        costPriceSuffix: String(tier.costPriceSuffix || 'CNY / 1M Token').trim(),
-        salePriceSuffix: String(tier.salePriceSuffix || 'CNY / 1M Token').trim(),
-        maxContextTokens: index === item.priceTiers.length - 1
-          ? null
-          : Math.max(1, Number(tier.maxContextTokens || 1))
-      }))
-    }))
+    payload.modelPricing = channelModelPricing.value.map(pricingPayload)
   }
   return payload
+}
+
+function pricingPayload(item: ChannelModelPricing) {
+  return {
+    ...item,
+    billingEnabled: item.billingMode !== 'DISABLED',
+    priceTiers: item.pricingUnit === 'TOKEN' ? item.priceTiers.map((tier, index) => ({
+      ...tier,
+      sortOrder: index,
+      officialPriceUnit: normalizePriceUnit(tier.officialPriceUnit, 'M'),
+      costPriceUnit: normalizePriceUnit(tier.costPriceUnit, 'M'),
+      salePriceUnit: normalizePriceUnit(tier.salePriceUnit, 'M'),
+      officialPriceSuffix: String(tier.officialPriceSuffix || 'USD / 1M Token').trim(),
+      costPriceSuffix: String(tier.costPriceSuffix || 'USD / 1M Token').trim(),
+      salePriceSuffix: String(tier.salePriceSuffix || 'USD / 1M Token').trim(),
+      maxContextTokens: index === item.priceTiers.length - 1
+        ? null
+        : Math.max(1, Number(tier.maxContextTokens || 1))
+    })) : []
+  }
+}
+
+function pricingSnapshot(item: ChannelModelPricing) {
+  return JSON.stringify(pricingPayload(item))
+}
+
+function clearPricingSnapshots() {
+  Object.keys(savedPricingSnapshots).forEach(key => delete savedPricingSnapshots[key])
+}
+
+function markPricingSaved(item: ChannelModelPricing) {
+  savedPricingSnapshots[item.channelModelName] = pricingSnapshot(item)
+}
+
+function markAllPricingSaved() {
+  clearPricingSnapshots()
+  channelModelPricing.value.forEach(markPricingSaved)
+}
+
+function isPricingDirty(model: string) {
+  const item = channelModelPricing.value.find(row => row.channelModelName === model)
+  if (!item) return false
+  return savedPricingSnapshots[model] !== pricingSnapshot(item)
+}
+
+async function saveChannelBase() {
+  saving.value = true
+  try {
+    const creating = !editingId.value
+    const payload = Object.fromEntries(activeFields.value.map(field => [field.prop, form[field.prop]]))
+    const shouldAutoDiscover = creating && splitChannelModels(payload.models).length === 0
+    const response = creating
+      ? await http.post('/api/admin/api/channels', payload)
+      : await http.put(`/api/admin/api/channels/${editingId.value}`, payload)
+    const channelId = Number(response.data?.id || editingId.value || 0)
+    if (!channelId) throw new Error('服务端未返回渠道 ID')
+    editingId.value = channelId
+    let discoveryMessage = ''
+    if (shouldAutoDiscover) {
+      try {
+        const syncResponse = await http.post(`/api/admin/api/channels/${channelId}/sync-models`, { activateNew: false }, { timeout: 45_000 })
+        discoveryMessage = `，已自动识别 ${Number(syncResponse.data?.models?.length || 0)} 个模型`
+      } catch (error: unknown) {
+        ElMessage.warning(getHttpErrorMessage(error, '渠道基础信息已保存，但自动识别模型失败，可手工添加'))
+      }
+    }
+    await refreshChannelEditor(channelId)
+    ElMessage.success(`渠道基础信息已保存${discoveryMessage}`)
+  } catch (error: unknown) {
+    ElMessage.error(getHttpErrorNotice(error, '渠道基础信息保存失败'))
+  } finally {
+    saving.value = false
+  }
+}
+
+async function refreshChannelEditor(channelId: number) {
+  const response = await http.get('/api/admin/api/channels')
+  rows.value = response.data || []
+  const latest = rows.value.find(row => Number(row.id) === channelId)
+  if (!latest) return
+  const dirtyModels = new Set(channelModelPricing.value
+    .filter(item => isPricingDirty(item.channelModelName))
+    .map(item => item.channelModelName))
+  const drafts = new Map(channelModelPricing.value.map(item => [item.channelModelName, item]))
+  const serverPricing = (latest.modelPricing || []).map((item: any) => normalizePricing(item.channelModelName, item))
+  channelModelPricing.value = serverPricing.map((serverItem: ChannelModelPricing) => {
+    const draft = drafts.get(serverItem.channelModelName)
+    if (!draft || !dirtyModels.has(serverItem.channelModelName)) {
+      markPricingSaved(serverItem)
+      return serverItem
+    }
+    return { ...draft, id: serverItem.id }
+  })
+  form.models = String(latest.models || serverPricing.map((item: ChannelModelPricing) => item.channelModelName).join('\n'))
+  channelModelOptions.value = uniqueStrings([...channelModelOptions.value, ...splitChannelModels(form.models)])
+  if (!channelModelPricing.value.some(item => item.channelModelName === activePricingModel.value)) {
+    activePricingModel.value = channelModelPricing.value[0]?.channelModelName || ''
+  }
+  await loadCredentials(channelId)
+}
+
+async function loadCredentials(channelId: number) {
+  try { channelCredentials.value = (await http.get(`/admin/api/channels/${channelId}/credentials`)).data || [] }
+  catch (error: unknown) { channelCredentials.value = []; ElMessage.error(getHttpErrorMessage(error, '凭证池加载失败')) }
+}
+
+function openCredential(row?: any) {
+  Object.assign(credentialForm, row ? {
+    id: row.id, name: row.name, secret: '', priority: Number(row.priority || 0), weight: Number(row.weight || 100),
+    rpmLimit: Number(row.rpmLimit || 0), tpmLimit: Number(row.tpmLimit || 0),
+    concurrencyLimit: Number(row.concurrencyLimit || 0), enabled: Boolean(row.enabled)
+  } : { id: null, name: '', secret: '', priority: 0, weight: 100, rpmLimit: 0, tpmLimit: 0, concurrencyLimit: 0, enabled: true })
+  credentialVisible.value = true
+}
+
+async function saveCredential() {
+  if (!editingId.value || !credentialForm.name.trim()) return ElMessage.warning('请填写凭证名称')
+  if (!credentialForm.id && !credentialForm.secret.trim()) return ElMessage.warning('请填写 API Key')
+  credentialSaving.value = true
+  try {
+    const payload = { ...credentialForm, id: undefined }
+    if (credentialForm.id) await http.put(`/admin/api/channels/${editingId.value}/credentials/${credentialForm.id}`, payload)
+    else await http.post(`/admin/api/channels/${editingId.value}/credentials`, payload)
+    credentialVisible.value = false
+    await loadCredentials(editingId.value)
+    ElMessage.success('渠道凭证已保存')
+  } catch (error: unknown) { ElMessage.error(getHttpErrorMessage(error, '凭证保存失败')) }
+  finally { credentialSaving.value = false }
+}
+
+async function testCredential(row: any) {
+  if (!editingId.value) return
+  credentialTestingId.value = row.id
+  try {
+    const { data } = await http.post(`/admin/api/channels/${editingId.value}/credentials/${row.id}/test`)
+    ElMessage.success(`凭证测试成功（${Number(data?.latencyMs || 0)} ms）`)
+    await loadCredentials(editingId.value)
+  } catch (error: unknown) { ElMessage.error(getHttpErrorMessage(error, '凭证测试失败')) }
+  finally { credentialTestingId.value = null }
+}
+
+async function removeCredential(row: any) {
+  if (!editingId.value) return
+  try {
+    await ElMessageBox.confirm(`确认删除凭证“${row.name}”？`, '删除凭证', { type: 'warning' })
+    await http.delete(`/admin/api/channels/${editingId.value}/credentials/${row.id}`)
+    await loadCredentials(editingId.value)
+    ElMessage.success('渠道凭证已删除')
+  } catch (error: any) { if (error !== 'cancel' && error !== 'close') ElMessage.error(getHttpErrorMessage(error, '凭证删除失败')) }
+}
+
+async function saveCurrentModelPricing() {
+  const pricing = activePricingRows.value[0]
+  if (!editingId.value) {
+    ElMessage.warning('请先保存渠道基础信息，再保存当前模型价格')
+    return
+  }
+  if (!pricing) return
+  modelPricingSaving.value = true
+  try {
+    const response = await http.put(`/api/admin/api/channels/${editingId.value}/model-pricing`, pricingPayload(pricing))
+    const updated = normalizePricing(response.data?.channelModelName || pricing.channelModelName, response.data || pricing)
+    const index = channelModelPricing.value.findIndex(item => item.channelModelName === pricing.channelModelName)
+    if (index >= 0) channelModelPricing.value.splice(index, 1, updated)
+    form.models = uniqueStrings([...selectedChannelModels.value, updated.channelModelName]).join('\n')
+    markPricingSaved(updated)
+    activePricingModel.value = updated.channelModelName
+    ElMessage.success(`${updated.channelModelName} 已保存，您可以继续编辑或手动返回`)
+  } catch (error: unknown) {
+    ElMessage.error(getHttpErrorNotice(error, '当前模型保存失败'))
+  } finally {
+    modelPricingSaving.value = false
+  }
+}
+
+async function returnFromChannelEditor() {
+  if (dirtyPricingCount.value > 0) {
+    try {
+      await ElMessageBox.confirm(`还有 ${dirtyPricingCount.value} 个模型价格未保存，确认返回列表？`, '存在未保存价格', {
+        type: 'warning', confirmButtonText: '仍然返回', cancelButtonText: '继续编辑'
+      })
+    } catch { return }
+  }
+  drawerVisible.value = false
+  await load()
 }
 
 function splitChannelModels(value: unknown): string[] {
@@ -1103,6 +1862,44 @@ function splitChannelModels(value: unknown): string[] {
 function syncChannelPricingRows(value: unknown) {
   const existing = new Map(channelModelPricing.value.map(item => [item.channelModelName, item]))
   channelModelPricing.value = splitChannelModels(value).map(model => existing.get(model) || normalizePricing(model))
+  if (!channelModelPricing.value.some(item => item.channelModelName === activePricingModel.value)) {
+    activePricingModel.value = channelModelPricing.value[0]?.channelModelName || ''
+  }
+}
+
+function selectOrCreatePricingModel(model: string) {
+  const normalized = String(model || '').trim()
+  if (!normalized) return
+  if (!selectedChannelModels.value.includes(normalized)) {
+    form.models = uniqueStrings([...selectedChannelModels.value, normalized]).join('\n')
+    channelModelOptions.value = uniqueStrings([...channelModelOptions.value, normalized])
+  }
+  activePricingModel.value = normalized
+}
+
+async function removeActivePricingModel() {
+  if (!activePricingModel.value) return
+  const removed = activePricingModel.value
+  const pricing = channelModelPricing.value.find(item => item.channelModelName === removed)
+  try {
+    await ElMessageBox.confirm(`确认从当前渠道删除模型“${removed}”？已保存的价格挡位也会删除。`, '删除渠道模型', {
+      type: 'warning', confirmButtonText: '确认删除'
+    })
+  } catch { return }
+  if (editingId.value && pricing?.id) {
+    try {
+      await http.delete(`/api/admin/api/channels/${editingId.value}/model-pricing/${pricing.id}`)
+    } catch (error: unknown) {
+      ElMessage.error(getHttpErrorNotice(error, '模型删除失败'))
+      return
+    }
+  }
+  const remaining = selectedChannelModels.value.filter(model => model !== removed)
+  form.models = remaining.join('\n')
+  channelModelOptions.value = channelModelOptions.value.filter(model => model !== removed)
+  delete savedPricingSnapshots[removed]
+  activePricingModel.value = remaining[0] || ''
+  ElMessage.success(`${removed} 已删除`)
 }
 
 function normalizePricing(model: string, source: Partial<ChannelModelPricing> = {}): ChannelModelPricing {
@@ -1111,23 +1908,40 @@ function normalizePricing(model: string, source: Partial<ChannelModelPricing> = 
     ? source.priceTiers
     : [legacy]
   return {
+    id: source.id,
     publicModelName: model,
     channelModelName: model,
     priority: Number(source.priority ?? 10),
-    enabled: source.enabled ?? true,
+    enabled: source.enabled ?? false,
     priceRatio: decimal(source.priceRatio, 1),
     costPerMillion: decimal(source.costPerMillion, 0),
-    inputPricePerMillion: decimal(source.inputPricePerMillion, 1),
-    outputPricePerMillion: decimal(source.outputPricePerMillion, 1),
+    inputPricePerMillion: decimal(source.inputPricePerMillion, 0),
+    outputPricePerMillion: decimal(source.outputPricePerMillion, 0),
     cachedPricePerMillion: decimal(source.cachedPricePerMillion, 0),
     inputCostPerMillion: decimal(source.inputCostPerMillion, 0),
     outputCostPerMillion: decimal(source.outputCostPerMillion, 0),
     cachedCostPerMillion: decimal(source.cachedCostPerMillion, 0),
-    billingEnabled: source.billingEnabled ?? true,
+    billingEnabled: source.billingEnabled ?? false,
     trafficPercent: Number(source.trafficPercent ?? 100),
     capabilityTags: source.capabilityTags || '',
+    pricingUnit: String(source.pricingUnit || 'TOKEN').toUpperCase() as ChannelModelPricing['pricingUnit'],
+    billingMode: String(source.billingMode || (source.billingEnabled ? 'PAID' : 'DISABLED')).toUpperCase() as ChannelModelPricing['billingMode'],
+    pricingStatus: String(source.pricingStatus || 'PENDING').toUpperCase() as ChannelModelPricing['pricingStatus'],
+    pricingMessage: String(source.pricingMessage || ''),
+    pricingSourceUrl: String(source.pricingSourceUrl || ''),
+    officialUnitPrice: decimal(source.officialUnitPrice, 0),
+    costUnitPrice: decimal(source.costUnitPrice, 0),
+    saleUnitPrice: decimal(source.saleUnitPrice, 0),
     priceTiers: sourceTiers.map((tier, index) => normalizePriceTier(tier, index, sourceTiers.length, legacy))
   }
+}
+
+function pricingUnitLabel(unit: string) {
+  return pricingUnitOptions.find(item => item.value === unit)?.label || unit
+}
+
+function pricingUnitSuffix(unit: string) {
+  return ({ SECOND: 'USD / 秒', IMAGE: 'USD / 张', MINUTE: 'USD / 分钟', CHARACTER: 'USD / 千字符', TASK: 'USD / 次' } as Record<string, string>)[unit] || 'USD / 单位'
 }
 
 function legacyPriceTier(source: Partial<ChannelModelPricing>): ModelPriceTier {
@@ -1141,21 +1955,21 @@ function legacyPriceTier(source: Partial<ChannelModelPricing>): ModelPriceTier {
     officialCacheReadPrice: 0,
     officialCacheWritePrice: 0,
     officialPriceUnit: 'M',
-    officialPriceSuffix: 'CNY / 1M Token',
+    officialPriceSuffix: 'USD / 1M Token',
     costGroupName: '采购成本',
     costInputPrice: decimal(source.inputCostPerMillion ?? source.costPerMillion, 0),
     costOutputPrice: decimal(source.outputCostPerMillion ?? source.costPerMillion, 0),
     costCacheReadPrice: decimal(source.cachedCostPerMillion, 0),
     costCacheWritePrice: 0,
     costPriceUnit: 'M',
-    costPriceSuffix: 'CNY / 1M Token',
+    costPriceSuffix: 'USD / 1M Token',
     saleGroupName: '本站售价',
-    saleInputPrice: decimal(source.inputPricePerMillion, 1),
-    saleOutputPrice: decimal(source.outputPricePerMillion, 1),
+    saleInputPrice: decimal(source.inputPricePerMillion, 0),
+    saleOutputPrice: decimal(source.outputPricePerMillion, 0),
     saleCacheReadPrice: decimal(source.cachedPricePerMillion, 0),
     saleCacheWritePrice: 0,
     salePriceUnit: 'M',
-    salePriceSuffix: 'CNY / 1M Token'
+    salePriceSuffix: 'USD / 1M Token'
   }
 }
 
@@ -1223,12 +2037,16 @@ function removePriceTier(pricing: ChannelModelPricing, index: number) {
   })
 }
 
-function calculateTierSalePrices(pricing: ChannelModelPricing, tier: ModelPriceTier) {
-  const ratio = Math.max(0, Number(pricing.priceRatio || 0))
-  tier.saleInputPrice = roundPrice(Number(tier.costInputPrice || 0) * ratio)
-  tier.saleOutputPrice = roundPrice(Number(tier.costOutputPrice || 0) * ratio)
-  tier.saleCacheReadPrice = roundPrice(Number(tier.costCacheReadPrice || 0) * ratio)
-  tier.saleCacheWritePrice = roundPrice(Number(tier.costCacheWritePrice || 0) * ratio)
+function tierCostMultiplier(tier: ModelPriceTier, dimension: 'input' | 'output' | 'cacheRead' | 'cacheWrite') {
+  const official = Number(dimension === 'input' ? tier.officialInputPrice
+    : dimension === 'output' ? tier.officialOutputPrice
+      : dimension === 'cacheRead' ? tier.officialCacheReadPrice : tier.officialCacheWritePrice)
+  const cost = Number(dimension === 'input' ? tier.costInputPrice
+    : dimension === 'output' ? tier.costOutputPrice
+      : dimension === 'cacheRead' ? tier.costCacheReadPrice : tier.costCacheWritePrice)
+  if (official <= 0) return '未设置官方价'
+  const unitFactor = (unit: string) => unit === 'KB' ? 1000 : 1
+  return `${roundPrice(cost * unitFactor(tier.costPriceUnit) / (official * unitFactor(tier.officialPriceUnit)))}×`
 }
 
 function copyFirstPricingToAll() {
@@ -1384,6 +2202,33 @@ async function openModelDiscovery(row: any) {
   } finally {
     discoveryLoading.value = false
   }
+}
+
+async function discoverChannelModelsForEditor(channelId: number | null, selectWhenEmpty = false, announce = false) {
+  if (!channelId || editorDiscoveryLoading.value) return
+  editorDiscoveryLoading.value = true
+  editorDiscoveryError.value = ''
+  try {
+    const response = await http.post(`/api/admin/api/channels/${channelId}/discover-models`, {}, { timeout: 40_000 })
+    const discovered = uniqueStrings(Array.isArray(response.data?.models) ? response.data.models : [])
+    channelModelOptions.value = uniqueStrings([...selectedChannelModels.value, ...discovered])
+    if (selectWhenEmpty && selectedChannelModels.value.length === 0) {
+      form.models = discovered.join('\n')
+      activePricingModel.value = discovered[0] || ''
+    }
+    if (announce) ElMessage.success(`已识别 ${discovered.length} 个上游模型`)
+  } catch (error: unknown) {
+    editorDiscoveryError.value = getHttpErrorMessage(error, '自动识别失败')
+    if (announce) ElMessage.error(editorDiscoveryError.value)
+  } finally {
+    editorDiscoveryLoading.value = false
+  }
+}
+
+function addAllDiscoveredModels() {
+  const models = uniqueStrings([...selectedChannelModels.value, ...channelModelOptions.value])
+  form.models = models.join('\n')
+  if (!activePricingModel.value) activePricingModel.value = models[0] || ''
 }
 
 async function syncDiscoveredModels() {
@@ -1682,7 +2527,7 @@ function money(value: any) {
 }
 
 function rateMoney(value: any) {
-  return formatPerMillionCny(typeof value === 'string' || typeof value === 'number' || typeof value === 'bigint' ? value : 0)
+  return formatPerMillionUsd(typeof value === 'string' || typeof value === 'number' || typeof value === 'bigint' ? value : 0)
 }
 
 function percent(value: any) {
@@ -1759,6 +2604,71 @@ function healthType(value: string) {
 
 .panel :deep(.el-table) {
   width: 100%;
+}
+
+.dashboard-usage-panel,
+.admin-usage-analytics {
+  display: grid;
+  gap: 16px;
+}
+
+.usage-filter-row {
+  display: grid;
+  grid-template-columns: minmax(250px, 1.3fr) repeat(4, minmax(150px, .8fr)) auto;
+  gap: 9px;
+  align-items: center;
+}
+
+.usage-filter-row :deep(.el-date-editor),
+.usage-filter-row :deep(.el-select) {
+  width: 100%;
+}
+
+.security-workspace { min-width: 0; }
+.security-toolbar,
+.sensitive-test-box > div:first-child {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.security-toolbar { margin: 14px 0; }
+.security-toolbar span,
+.sensitive-test-box span { display: block; margin-top: 4px; color: #71829b; font-size: 12px; }
+.security-toolbar > div:last-child { display: flex; gap: 8px; }
+.sensitive-test-box { display: grid; gap: 10px; margin-top: 18px; padding: 16px; border: 1px solid #d8e5f7; border-radius: 12px; background: #f7fbff; }
+.sensitive-form-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 0 12px; }
+.sensitive-form-grid :deep(.el-select) { width: 100%; }
+
+.admin-table-shell {
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.admin-table-shell :deep(.el-table__inner-wrapper),
+.admin-table-shell :deep(.el-table__body-wrapper),
+.admin-table-shell :deep(.el-scrollbar) {
+  min-width: 0;
+}
+
+.admin-table-shell :deep(.el-scrollbar__bar.is-horizontal) {
+  height: 10px;
+  opacity: 1;
+}
+
+.admin-table-shell :deep(.el-scrollbar__thumb) {
+  background-color: #64748b;
+}
+
+.admin-table-channels :deep(.el-table__body),
+.admin-table-channels :deep(.el-table__header) {
+  min-width: 1400px;
+}
+
+.admin-table-models :deep(.el-table__body),
+.admin-table-models :deep(.el-table__header) {
+  min-width: 2600px;
 }
 
 .admin-grid {
@@ -1893,6 +2803,49 @@ function healthType(value: string) {
   margin-top: 18px;
 }
 
+.channel-model-manager {
+  display: grid;
+  width: 100%;
+  gap: 10px;
+}
+
+.channel-model-select {
+  width: 100%;
+}
+
+.model-option-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.model-option-row span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.channel-model-manager-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.channel-model-manager-actions .el-button + .el-button {
+  margin-left: 0;
+}
+
+.channel-model-manager .form-hint {
+  margin: 0;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.channel-model-manager .model-discovery-error {
+  color: #b45309;
+}
+
 .issued-secret {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -1951,6 +2904,29 @@ function healthType(value: string) {
   border-radius: 12px;
   background: #f8fafc;
 }
+
+.credential-pool-card {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #cfe0f6;
+  border-radius: 12px;
+  background: #f7fbff;
+}
+
+.credential-pool-head { display:flex;align-items:center;justify-content:space-between;gap:12px; }
+.credential-pool-head div { display:grid;gap:3px; }
+.credential-pool-head strong { color:#17345f;font-size:14px; }
+.credential-pool-head span { color:#64748b;font-size:11px; }
+.credential-form-grid { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 14px; }
+.unit-price-card { display:grid;gap:14px;padding:16px;border:1px solid #b9d8f5;border-radius:12px;background:#fff; }
+.unit-price-head { display:flex;align-items:center;justify-content:space-between;gap:12px; }
+.unit-price-head strong { color:#17345f; }
+.unit-price-head span { color:#64748b;font-size:12px; }
+.unit-price-grid { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px; }
+.unit-price-grid.metadata { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.unit-price-grid label { display:grid;gap:6px;min-width:0;color:#475569;font-size:12px; }
+.unit-price-grid :deep(.el-input-number) { width:100%; }
 
 .channel-model-pricing-title strong {
   display: block;
@@ -2022,7 +2998,8 @@ function healthType(value: string) {
   display: grid;
   align-content: start;
   gap: 12px;
-  padding: 14px;
+  min-width: 0;
+  padding: 12px;
   border: 1px solid #e2e8f0;
   border-radius: 10px;
 }
@@ -2035,21 +3012,35 @@ function healthType(value: string) {
   align-items: center;
 }
 
+.tier-price-group .price-group-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+  gap: 8px;
+}
+
 .price-group-head strong {
   flex: 0 0 auto;
   color: #0f172a;
+  font-size: 12px;
 }
 
 .price-group-meta {
   display: grid;
-  grid-template-columns: minmax(100px, 1fr) 72px minmax(120px, 1.15fr);
+  grid-template-columns: minmax(0, .8fr) 54px minmax(0, 1.2fr);
   flex: 1;
-  gap: 6px;
+  gap: 5px;
   min-width: 0;
+  width: 100%;
 }
 
+.price-group-meta > * { min-width: 0; }
+.price-group-meta :deep(.el-input__wrapper),
+.price-group-meta :deep(.el-select__wrapper) { min-width: 0; padding-left: 6px; padding-right: 6px; }
+.price-group-meta :deep(.el-input__inner) { font-size: 11px; }
+
 .price-unit-select {
-  width: 72px;
+  width: 54px;
 }
 
 .price-dimension-grid {
@@ -2069,6 +3060,29 @@ function healthType(value: string) {
   color: #dc2626;
 }
 
+.sensitive-guide-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: 14px 0 18px;
+}
+
+.sensitive-guide-grid article {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #dbe7f8;
+  border-radius: 10px;
+  background: #f8fbff;
+}
+
+.sensitive-guide-grid strong,
+.sensitive-guide-grid span {
+  display: block;
+}
+
+.sensitive-guide-grid strong { color: #17345f; font-size: 13px; }
+.sensitive-guide-grid span { margin-top: 5px; color: #64748b; font-size: 12px; line-height: 1.55; }
+
 .tier-table-cell {
   display: grid;
   gap: 8px;
@@ -2081,7 +3095,7 @@ function healthType(value: string) {
   border-top: 1px dashed #e2e8f0;
 }
 
-@media (max-width: 1100px) {
+@media (max-width: 1200px) {
   .console-toolbar {
     align-items: stretch;
     flex-direction: column;
@@ -2108,6 +3122,10 @@ function healthType(value: string) {
   .tier-price-groups {
     grid-template-columns: minmax(0, 1fr);
   }
+
+  .usage-filter-row { grid-template-columns: repeat(2,minmax(0,1fr)); }
+
+  .sensitive-guide-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 680px) {
@@ -2134,7 +3152,10 @@ function healthType(value: string) {
 
   .channel-price-grid,
   .tier-identity,
-  .price-dimension-grid {
+  .price-dimension-grid,
+  .credential-form-grid,
+  .unit-price-grid,
+  .unit-price-grid.metadata {
     grid-template-columns: minmax(0, 1fr);
   }
 
@@ -2146,6 +3167,10 @@ function healthType(value: string) {
   .price-unit-select {
     width: 100%;
   }
+
+  .usage-filter-row,
+  .sensitive-form-grid,
+  .sensitive-guide-grid { grid-template-columns: minmax(0,1fr); }
 
   .channel-model-pricing-card,
   .price-tier-card,

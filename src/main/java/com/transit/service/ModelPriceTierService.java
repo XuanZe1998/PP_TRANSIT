@@ -211,6 +211,8 @@ public class ModelPriceTierService {
         mapping.setInputCostPerMillion(toPerMillion(tier.getCostInputPrice(), tier.getCostPriceUnit()));
         mapping.setOutputCostPerMillion(toPerMillion(tier.getCostOutputPrice(), tier.getCostPriceUnit()));
         mapping.setCachedCostPerMillion(toPerMillion(tier.getCostCacheReadPrice(), tier.getCostPriceUnit()));
+        mapping.setPriceRatio(tier.getInputCostMultiplier() == null
+                ? BigDecimal.ZERO : tier.getInputCostMultiplier());
     }
 
     private BigDecimal toPerMillion(BigDecimal amount, String unit) {
@@ -248,7 +250,7 @@ public class ModelPriceTierService {
     }
 
     private String defaultSuffix(String unit) {
-        return "CNY / 1" + ("KB".equalsIgnoreCase(unit) ? "KB" : "M") + " Token";
+        return "USD / 1" + ("KB".equalsIgnoreCase(unit) ? "KB" : "M") + " Token";
     }
 
     private void validateName(String value, String field) {

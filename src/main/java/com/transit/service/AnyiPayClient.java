@@ -60,17 +60,17 @@ public class AnyiPayClient {
 
     public AnyiPayClient(WebClient webClient,
                          ObjectMapper objectMapper,
-                         @Value("${anyipay.enabled:false}") boolean enabled,
-                         @Value("${anyipay.allow-money-mutations:false}") boolean allowMoneyMutations,
-                         @Value("${anyipay.base-url:https://a.tjrl3.cn}") String baseUrl,
-                         @Value("${anyipay.merchant-id:}") String merchantId,
-                         @Value("${anyipay.merchant-private-key:}") String merchantPrivateKey,
-                         @Value("${anyipay.platform-public-key:}") String platformPublicKey,
-                         @Value("${anyipay.notify-url:}") String notifyUrl,
-                         @Value("${anyipay.return-url:}") String returnUrl,
-                         @Value("${anyipay.default-payment-type:alipay}") String defaultPaymentType,
-                         @Value("${anyipay.request-timeout-seconds:15}") long requestTimeoutSeconds,
-                         @Value("${anyipay.timestamp-tolerance-seconds:300}") long timestampToleranceSeconds) {
+                         @Value("${payment.enabled:false}") boolean enabled,
+                         @Value("${payment.allow-money-mutations:false}") boolean allowMoneyMutations,
+                         @Value("${payment.base-url:https://a.tjrl3.cn}") String baseUrl,
+                         @Value("${payment.merchant-id:}") String merchantId,
+                         @Value("${payment.merchant-private-key:}") String merchantPrivateKey,
+                         @Value("${payment.platform-public-key:}") String platformPublicKey,
+                         @Value("${payment.notify-url:}") String notifyUrl,
+                         @Value("${payment.return-url:}") String returnUrl,
+                         @Value("${payment.default-payment-type:alipay}") String defaultPaymentType,
+                         @Value("${payment.request-timeout-seconds:15}") long requestTimeoutSeconds,
+                         @Value("${payment.timestamp-tolerance-seconds:300}") long timestampToleranceSeconds) {
         this.webClient = webClient;
         this.objectMapper = objectMapper;
         this.enabled = enabled;
@@ -92,6 +92,10 @@ public class AnyiPayClient {
         return enabled;
     }
 
+    public boolean isMoneyMutationsEnabled() {
+        return enabled && allowMoneyMutations;
+    }
+
     public String merchantId() {
         requireConfigured();
         return merchantId;
@@ -101,8 +105,16 @@ public class AnyiPayClient {
                                        String name,
                                        String money,
                                        String businessParam) {
+        return createPagePaymentUrl(outTradeNo, name, money, businessParam, defaultPaymentType);
+    }
+
+    public String createPagePaymentUrl(String outTradeNo,
+                                       String name,
+                                       String money,
+                                       String businessParam,
+                                       String paymentType) {
         Map<String, String> params = new LinkedHashMap<>();
-        params.put("type", defaultPaymentType);
+        params.put("type", validatePaymentType(paymentType));
         params.put("out_trade_no", required(outTradeNo, "out_trade_no", 80));
         params.put("notify_url", required(notifyUrl, "notify_url", 2000));
         params.put("return_url", required(returnUrl, "return_url", 2000));

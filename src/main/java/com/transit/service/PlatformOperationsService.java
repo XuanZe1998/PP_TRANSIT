@@ -7,10 +7,14 @@ import com.transit.model.Channel;
 import com.transit.model.Log;
 import com.transit.model.ModelMapping;
 import com.transit.model.User;
+import com.transit.dto.MoneyAmount;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.http.HttpStatus;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDateTime;
 import java.util.HashMap;
@@ -22,6 +26,9 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class PlatformOperationsService {
 
+    @Value("${platform.public-base-url:https://linknux.com}")
+    private String publicBaseUrl;
+
     private final JdbcTemplate jdbcTemplate;
     private final LogMapper logMapper;
     private final ChannelMapper channelMapper;
@@ -32,16 +39,35 @@ public class PlatformOperationsService {
                 "SELECT id, type, amount, balance_after, channel, remark, created_at FROM wallet_transactions WHERE user_id = ? ORDER BY created_at DESC LIMIT 50",
                 user.getId()
         );
+        for (Map<String,Object> transaction : transactions) {
+            transaction.put("amountMoney",new MoneyAmount(((Number)transaction.get("amount")).longValue(),"CNY",10000));
+            transaction.put("balanceAfterMoney",new MoneyAmount(((Number)transaction.get("balance_after")).longValue(),"CNY",10000));
+        }
         Map<String, Object> payload = new HashMap<>();
         payload.put("balance", user.getBalance());
+        payload.put("balanceMoney", new MoneyAmount(user.getBalance(), "CNY", 10000));
         payload.put("monthSpend", sumUserCost(user.getId()));
         payload.put("giftBalance", sumWalletType(user.getId(), "GIFT"));
         payload.put("invoiceableAmount", Math.max(0, sumWalletType(user.getId(), "RECHARGE") - sumUserCost(user.getId())));
+        payload.put("monthSpendMoney",new MoneyAmount(((Number)payload.get("monthSpend")).longValue(),"CNY",10000));
+        payload.put("giftBalanceMoney",new MoneyAmount(((Number)payload.get("giftBalance")).longValue(),"CNY",10000));
+        payload.put("invoiceableMoney",new MoneyAmount(((Number)payload.get("invoiceableAmount")).longValue(),"CNY",10000));
         payload.put("transactions", transactions);
-        payload.put("plans", jdbcTemplate.queryForList("""
+        List<Map<String,Object>> plans = jdbcTemplate.queryForList("""
                 SELECT id, name, amount, bonus_percent AS bonus
                 FROM recharge_plans WHERE enabled = TRUE ORDER BY sort_order, id
-                """));
+                """);
+        for (Map<String,Object> plan : plans) {
+            long base=((Number)plan.get("amount")).longValue();
+            int percent=((Number)plan.get("bonus")).intValue();
+            long bonus=java.math.BigDecimal.valueOf(base).multiply(java.math.BigDecimal.valueOf(percent))
+                    .divide(java.math.BigDecimal.valueOf(100),0,java.math.RoundingMode.HALF_UP).longValue();
+            plan.put("paymentMoney",new MoneyAmount(base,"CNY",10000));
+            plan.put("baseCreditMoney",new MoneyAmount(base,"CNY",10000));
+            plan.put("bonusCreditMoney",new MoneyAmount(bonus,"CNY",10000));
+            plan.put("totalCreditMoney",new MoneyAmount(Math.addExact(base,bonus),"CNY",10000));
+        }
+        payload.put("plans", plans);
         return payload;
     }
 
@@ -76,20 +102,42 @@ public class PlatformOperationsService {
     }
 
     public Map<String, Object> docsMetadata() {
+        String baseUrl = publicBaseUrl.replaceAll("/+$", "") + "/v1";
         return Map.of(
-                "baseUrl", "/api/v1",
-                "endpoints", List.of(
-                        Map.of("method", "POST", "path", "/v1/chat/completions", "description", "OpenAI-compatible chat endpoint"),
-                        Map.of("method", "GET", "path", "/public/models", "description", "Public model catalog"),
-                        Map.of("method", "GET", "path", "/user/tokens/{id}/examples", "description", "Generate cURL, JavaScript and Python examples")
-                ),
-                "sdks", List.of("OpenAI SDK", "LangChain", "Vercel AI SDK", "Cherry Studio", "Claude Code Router"),
+                "baseUrl", baseUrl,
+                "endpoints", Map.of(
+                        "models", baseUrl + "/models",
+                        "chatCompletions", baseUrl + "/chat/completions",
+                        "responses", baseUrl + "/responses",
+                        "embeddings", baseUrl + "/embeddings"),
+                "keyPolicy", Map.of(
+                        "allowAllModels", true,
+                        "modelSelectionField", "model",
+                        "description", "一个授权全部模型的 Key 可调用账户可见的所有模型，每次请求用 model 字段选择。"),
+                "clients", List.of(
+                        docsClient("curl", "curl / HTTP", "OPENAI", "使用完整 /v1/chat/completions 端点。"),
+                        docsClient("python", "Python OpenAI SDK", "OPENAI", "base_url 填写以 /v1 结尾的地址。"),
+                        docsClient("javascript", "JavaScript OpenAI SDK", "OPENAI", "baseURL 填写以 /v1 结尾的地址。"),
+                        docsClient("workbuddy", "WorkBuddy", "OPENAI", "选择 OpenAI 兼容服务，填写 Base URL、Key 和模型 ID。"),
+                        docsClient("teleagent", "TeleAgent", "OPENAI", "配置自定义 OpenAI 兼容模型服务。"),
+                        docsClient("qclaw", "QClaw 小龙虾", "OPENAI", "Provider 选择 OpenAI 兼容，并填写平台模型 ID。"),
+                        docsClient("openclaw", "OpenClaw", "OPENAI", "Provider 选择 OpenAI 兼容。"),
+                        docsClient("ccswitch", "CC Switch", "OPENAI_OR_ANTHROPIC", "按目标客户端协议配置统一网关。"),
+                        docsClient("trae", "TRAE", "OPENAI", "添加自定义 OpenAI 兼容模型。"),
+                        docsClient("opencode", "OpenCode", "OPENAI", "provider.baseURL 填写以 /v1 结尾的地址。"),
+                        docsClient("cherry-studio", "Cherry Studio", "OPENAI", "API 主机地址填写以 /v1 结尾的地址。"),
+                        docsClient("claude-code", "Claude Code", "ANTHROPIC", "仅在所选模型开放 Anthropic 兼容协议时使用。"),
+                        docsClient("codex", "Codex", "OPENAI", "配置 OpenAI 兼容 Base URL、API Key 和模型 ID。")),
                 "errors", List.of(
                         Map.of("code", "TOKEN_DISABLED", "message", "Token has been disabled"),
                         Map.of("code", "QUOTA_EXCEEDED", "message", "Token quota exceeded"),
                         Map.of("code", "MODEL_NOT_MAPPED", "message", "No enabled channel for requested public model")
                 )
         );
+    }
+
+    private Map<String, String> docsClient(String id, String name, String protocol, String note) {
+        return Map.of("id", id, "name", name, "protocol", protocol, "note", note);
     }
 
     public Map<String, Object> adminDashboard() {
@@ -205,11 +253,20 @@ public class PlatformOperationsService {
     }
 
     public List<Map<String, Object>> settings() {
-        return jdbcTemplate.queryForList("SELECT setting_key, setting_value, description, updated_at FROM system_settings ORDER BY setting_key");
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList("SELECT setting_key, setting_value, description, updated_at FROM system_settings ORDER BY setting_key");
+        rows.forEach(row -> {
+            String key = String.valueOf(row.get("setting_key")).toLowerCase();
+            if (key.contains("key") || key.contains("secret") || key.contains("password") || key.contains("token")) row.put("setting_value", "****");
+        });
+        return rows;
     }
 
     public Map<String, Object> updateSetting(Map<String, Object> request) {
         String key = stringValue(request, "key", "custom.setting");
+        String normalizedKey = key.toLowerCase();
+        if (normalizedKey.startsWith("creative.") || normalizedKey.contains("api-key") || normalizedKey.contains("secret") || normalizedKey.contains("access-key")) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "敏感配置不能写入明文 system_settings，请使用对应的专用配置页面");
+        }
         String value = stringValue(request, "value", "");
         String description = stringValue(request, "description", "");
         Integer count = jdbcTemplate.queryForObject(

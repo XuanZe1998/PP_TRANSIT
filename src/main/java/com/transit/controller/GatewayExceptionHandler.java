@@ -32,6 +32,7 @@ public class GatewayExceptionHandler {
                                                      HttpServletRequest request) {
         String message = exception.getReason() == null ? "Request failed" : exception.getReason();
         return ResponseEntity.status(exception.getStatusCode())
+                .headers(exception.getHeaders())
                 .body(error(message, String.valueOf(exception.getStatusCode().value()),
                         "request_error", request));
     }

@@ -37,7 +37,7 @@ class AnyiPayClientTests {
         publicKey = Base64.getEncoder().encodeToString(pair.getPublic().getEncoded());
         client = new AnyiPayClient(WebClient.builder().build(), new ObjectMapper(), true, false,
                 "https://a.tjrl3.cn", "1001", privateKey, publicKey,
-                "https://merchant.example/webhooks/anyipay", "https://merchant.example/plus",
+                "https://merchant.example/webhooks/anyipay", "https://merchant.example/services",
                 "alipay", 10, 300);
     }
 
@@ -67,7 +67,7 @@ class AnyiPayClientTests {
                 .containsEntry("type", "alipay")
                 .containsEntry("out_trade_no", "PLUS-1")
                 .containsEntry("notify_url", "https://merchant.example/webhooks/anyipay")
-                .containsEntry("return_url", "https://merchant.example/plus")
+                .containsEntry("return_url", "https://merchant.example/services")
                 .containsEntry("name", "Test product")
                 .containsEntry("money", "1.00")
                 .containsEntry("param", "plus-order:1")
@@ -76,6 +76,14 @@ class AnyiPayClientTests {
                 .containsKey("sign");
         assertThat(AnyiPayClient.verify(
                 AnyiPayClient.canonicalize(parameters), parameters.get("sign"), publicKey)).isTrue();
+    }
+
+    @Test
+    void pagePaymentUrlHonorsSelectedWechatMethod() {
+        String url = client.createPagePaymentUrl(
+                "PLUS-2", "Test product", "2.00", "plus-order:2", "wxpay");
+
+        assertThat(parseQuery(URI.create(url).getRawQuery())).containsEntry("type", "wxpay");
     }
 
     @Test

@@ -1,6 +1,16 @@
 export type CallableModel = {
   publicName: string
   type: string
+  source: string
+  sourceName: string
+  vendor: string
+  capability: string
+  inputModalities: string
+  outputModalities: string
+  protocols: string
+  pricingUnit: string
+  available: boolean
+  billingConfigured: boolean
   minInputPricePerMillion: number | string
   maxInputPricePerMillion: number | string
   minOutputPricePerMillion: number | string
@@ -11,12 +21,22 @@ export type CallableModel = {
   maxCacheReadPricePerMillion: number | string
   minCacheWritePricePerMillion: number | string
   maxCacheWritePricePerMillion: number | string
+  minInputCostMultiplier?: number | string
+  maxInputCostMultiplier?: number | string
+  minOutputCostMultiplier?: number | string
+  maxOutputCostMultiplier?: number | string
+  minCacheReadCostMultiplier?: number | string
+  maxCacheReadCostMultiplier?: number | string
+  minCacheWriteCostMultiplier?: number | string
+  maxCacheWriteCostMultiplier?: number | string
   routeCount: number
   providerCount: number
   currency?: string
   amountScale?: number
   priceUnit?: string
   priceVariesByRoute?: boolean
+  upstreams?: Array<{ code: string; name: string; badgeText?: string; badgeColor?: string }>
+  contextPricing?: Record<string, unknown>
 }
 
 export type TokenModelScope = {
@@ -76,9 +96,21 @@ function normalizeCatalogItem(value: unknown): CallableModel | null {
   const item = value as Record<string, unknown>
   const publicName = typeof item.publicName === 'string' ? item.publicName.trim() : ''
   if (!publicName) return null
+  const upstreams=Array.isArray(item.upstreams)?item.upstreams.filter((entry):entry is Record<string,unknown>=>Boolean(entry&&typeof entry==='object')).map(entry=>({code:typeof entry.code==='string'&&entry.code?entry.code:'platform-route',name:typeof entry.name==='string'&&entry.name?entry.name:'平台智能路由',badgeText:typeof entry.badgeText==='string'?entry.badgeText:undefined,badgeColor:typeof entry.badgeColor==='string'?entry.badgeColor:undefined})):[]
+  const primary=upstreams[0]||{code:'platform-route',name:'平台智能路由'}
   return {
     publicName,
-    type: typeof item.type === 'string' && item.type.trim() ? item.type.trim() : 'unknown',
+    type: primary.code,
+    source: primary.code,
+    sourceName: primary.name,
+    vendor: typeof item.vendor === 'string' && item.vendor.trim() ? item.vendor.trim() : 'unknown',
+    capability: typeof item.capability === 'string' && item.capability.trim() ? item.capability.trim() : 'text',
+    inputModalities: typeof item.inputModalities === 'string' ? item.inputModalities : 'text',
+    outputModalities: typeof item.outputModalities === 'string' ? item.outputModalities : 'text',
+    protocols: typeof item.protocols === 'string' ? item.protocols : 'chat-completions',
+    pricingUnit: typeof item.pricingUnit === 'string' ? item.pricingUnit : 'TOKEN',
+    available: item.available !== false,
+    billingConfigured: item.billingConfigured === true,
     minInputPricePerMillion: decimal(item.minInputPricePerMillion),
     maxInputPricePerMillion: decimal(item.maxInputPricePerMillion),
     minOutputPricePerMillion: decimal(item.minOutputPricePerMillion),
@@ -89,19 +121,39 @@ function normalizeCatalogItem(value: unknown): CallableModel | null {
     maxCacheReadPricePerMillion: decimal(item.maxCacheReadPricePerMillion ?? item.maxCachedPricePerMillion),
     minCacheWritePricePerMillion: decimal(item.minCacheWritePricePerMillion),
     maxCacheWritePricePerMillion: decimal(item.maxCacheWritePricePerMillion),
+    minInputCostMultiplier: optionalDecimal(item.minInputCostMultiplier),
+    maxInputCostMultiplier: optionalDecimal(item.maxInputCostMultiplier),
+    minOutputCostMultiplier: optionalDecimal(item.minOutputCostMultiplier),
+    maxOutputCostMultiplier: optionalDecimal(item.maxOutputCostMultiplier),
+    minCacheReadCostMultiplier: optionalDecimal(item.minCacheReadCostMultiplier),
+    maxCacheReadCostMultiplier: optionalDecimal(item.maxCacheReadCostMultiplier),
+    minCacheWriteCostMultiplier: optionalDecimal(item.minCacheWriteCostMultiplier),
+    maxCacheWriteCostMultiplier: optionalDecimal(item.maxCacheWriteCostMultiplier),
     routeCount: positiveInteger(item.routeCount, 1),
     providerCount: positiveInteger(item.providerCount, 1),
-    currency: typeof item.currency === 'string' ? item.currency : 'CNY',
+    currency: typeof item.currency === 'string' ? item.currency : 'USD',
     amountScale: positiveInteger(item.amountScale, 10_000),
     priceUnit: typeof item.priceUnit === 'string' ? item.priceUnit : 'currency_per_1m_tokens',
     priceVariesByRoute: item.priceVariesByRoute === true,
+    upstreams:upstreams.length?upstreams:[primary],
+    contextPricing:item.contextPricing&&typeof item.contextPricing==='object'?item.contextPricing as Record<string,unknown>:undefined,
   }
 }
 
 function fallbackModel(publicName: string): CallableModel {
   return {
     publicName,
-    type: 'unknown',
+    type: 'platform-route',
+    source: 'platform-route',
+    sourceName: '平台智能路由',
+    vendor: 'unknown',
+    capability: 'text',
+    inputModalities: 'text',
+    outputModalities: 'text',
+    protocols: 'chat-completions',
+    pricingUnit: 'TOKEN',
+    available: true,
+    billingConfigured: false,
     minInputPricePerMillion: emptyPrice,
     maxInputPricePerMillion: emptyPrice,
     minOutputPricePerMillion: emptyPrice,
@@ -114,10 +166,11 @@ function fallbackModel(publicName: string): CallableModel {
     maxCacheWritePricePerMillion: emptyPrice,
     routeCount: 1,
     providerCount: 1,
-    currency: 'CNY',
+    currency: 'USD',
     amountScale: 10_000,
     priceUnit: 'currency_per_1m_tokens',
     priceVariesByRoute: false,
+    upstreams: [{code:'platform-route',name:'平台智能路由'}],
   }
 }
 
@@ -125,6 +178,11 @@ function decimal(value: unknown): number | string {
   if (typeof value === 'number' && Number.isFinite(value)) return value
   if (typeof value === 'string' && /^-?\d+(?:\.\d+)?$/.test(value.trim())) return value.trim()
   return emptyPrice
+}
+
+function optionalDecimal(value: unknown): number | string | undefined {
+  if (value == null) return undefined
+  return decimal(value)
 }
 
 function positiveInteger(value: unknown, fallback: number): number {

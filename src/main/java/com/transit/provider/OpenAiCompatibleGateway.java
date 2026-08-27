@@ -37,6 +37,14 @@ public class OpenAiCompatibleGateway implements ProviderGateway {
             "meta",
             "nvidia"
     );
+    private static final Set<String> NVIDIA_NON_STREAMING_MODELS = Set.of(
+            "deepseek-ai/deepseek-v4-flash-0731",
+            "google/diffusiongemma-26b-a4b-it",
+            "google/gemma-4-31b-it",
+            "minimaxai/minimax-m3",
+            "mistralai/mistral-nemotron",
+            "stepfun-ai/step-3.7-flash"
+    );
 
     private final WebClient webClient;
     private final ObjectMapper objectMapper;
@@ -58,6 +66,9 @@ public class OpenAiCompatibleGateway implements ProviderGateway {
     public Mono<ChatResponse> chatCompletions(Channel channel, ChatRequest request, String publicModel, String providerModel) {
         request.setModel(providerModel);
         if ("nvidia".equalsIgnoreCase(channel.getType())) {
+            if (NVIDIA_NON_STREAMING_MODELS.contains(providerModel)) {
+                return nvidiaNonStreamingCompletion(channel, request, providerModel);
+            }
             return nvidiaStreamingCompletion(channel, request, providerModel);
         }
         return webClient.post()
@@ -65,6 +76,21 @@ public class OpenAiCompatibleGateway implements ProviderGateway {
                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + channel.getApiKey())
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(request)
+                .retrieve()
+                .bodyToMono(ChatResponse.class);
+    }
+
+    private Mono<ChatResponse> nvidiaNonStreamingCompletion(Channel channel, ChatRequest request,
+                                                             String providerModel) {
+        ObjectNode payload = objectMapper.valueToTree(request);
+        removeNullFields(payload);
+        payload.put("stream", false);
+        return webClient.post()
+                .uri(chatCompletionsUrl(channel))
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + channel.getApiKey())
+                .contentType(MediaType.APPLICATION_JSON)
+                .accept(MediaType.APPLICATION_JSON)
+                .bodyValue(payload)
                 .retrieve()
                 .bodyToMono(ChatResponse.class);
     }

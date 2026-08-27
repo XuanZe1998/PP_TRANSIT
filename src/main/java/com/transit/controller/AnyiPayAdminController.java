@@ -17,7 +17,7 @@ import reactor.core.publisher.Mono;
 
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/plus/admin/anyipay")
+@RequestMapping("/admin/payment/anyipay")
 public class AnyiPayAdminController {
 
     private final AnyiPayClient anyiPayClient;

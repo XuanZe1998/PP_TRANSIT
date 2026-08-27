@@ -3,6 +3,7 @@ package com.transit.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.transit.dto.ChatRequest;
 import com.transit.dto.ChatResponse;
+import com.transit.dto.PublicUpstream;
 import com.transit.mapper.ChannelMapper;
 import com.transit.mapper.ModelMappingMapper;
 import com.transit.mapper.LogMapper;
@@ -15,13 +16,16 @@ import com.transit.model.Log;
 import com.transit.model.User;
 import com.transit.provider.ProviderGateway;
 import com.transit.provider.ProviderGatewayFactory;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
+import org.springframework.web.reactive.function.client.WebClientRequestException;
 import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Flux;
@@ -32,9 +36,12 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.Map;
+import java.util.LinkedHashMap;
 
 @Service
 @Slf4j
@@ -56,6 +63,20 @@ public class TransitService {
     private final OpenAiStreamAdapter streamAdapter;
     private final JdbcTemplate jdbcTemplate;
     private final ModelPriceTierService priceTierService;
+    @Autowired(required = false)
+    private ModelContextPricingService modelContextPricingService;
+    @Autowired(required = false)
+    private MoneyService moneyService;
+    @Autowired(required = false)
+    private ProviderCredentialService providerCredentialService;
+    @Autowired(required = false)
+    private IdempotencyService idempotencyService;
+    @Autowired(required = false)
+    private ObjectMapper objectMapper;
+    @Autowired(required = false)
+    private SensitiveWordService sensitiveWordService;
+    @Autowired(required = false)
+    private PublicUpstreamMappingService publicUpstreamMappingService;
 
     @Value("${billing.amount-scale:10000}")
     private long amountScale;
@@ -75,9 +96,11 @@ public class TransitService {
         Token token = validateToken(tokenKey, "*", clientIp, false);
         return modelMappingMapper.selectList(new LambdaQueryWrapper<ModelMapping>()
                         .eq(ModelMapping::isEnabled, true)
+                        .eq(ModelMapping::isBillingEnabled, true)
                         .orderByAsc(ModelMapping::getPublicModelName))
                 .stream()
-                .filter(mapping -> modelAllowed(token.getAllowedModels(), mapping.getPublicModelName()))
+                .filter(PublicPricingPolicy::hasRequiredSale)
+                .filter(mapping -> apiKeyService.modelAllowed(token, mapping.getPublicModelName()))
                 .filter(mapping -> isRoutable(channelMapper.selectById(mapping.getChannelId())))
                 .map(ModelMapping::getPublicModelName)
                 .filter(Objects::nonNull)
@@ -85,11 +108,80 @@ public class TransitService {
                 .toList();
     }
 
+    public List<Map<String, Object>> availableModelCatalog(String authorization, String clientIp) {
+        String tokenKey = extractToken(authorization);
+        Token token = validateToken(tokenKey, "*", clientIp, false);
+        Map<String, Map<String, Object>> result = new LinkedHashMap<>();
+        List<ModelMapping> mappings = modelMappingMapper.selectList(new LambdaQueryWrapper<ModelMapping>()
+                        .eq(ModelMapping::isEnabled, true)
+                        .eq(ModelMapping::isBillingEnabled, true)
+                        .orderByAsc(ModelMapping::getPublicModelName)
+                        .orderByDesc(ModelMapping::getPriority));
+        Map<Long, PublicUpstream> aliases = publicUpstreamMappingService == null ? Map.of()
+                : publicUpstreamMappingService.forChannels(mappings.stream().map(ModelMapping::getChannelId).toList());
+        mappings.stream()
+                .filter(PublicPricingPolicy::hasRequiredSale)
+                .filter(mapping -> apiKeyService.modelAllowed(token, mapping.getPublicModelName()))
+                .forEach(mapping -> {
+                    Channel channel = channelMapper.selectById(mapping.getChannelId());
+                    if (!isRoutable(channel) || result.containsKey(mapping.getPublicModelName())) return;
+                    Map<String, Object> item = new LinkedHashMap<>();
+                    item.put("id", mapping.getPublicModelName());
+                    item.put("object", "model");
+                    item.put("created", Instant.now().getEpochSecond());
+                    item.put("owned_by", Objects.toString(mapping.getVendor(), "third-party"));
+                    // OpenAI-compatible catalog is user-visible. Never expose the
+                    // internal provider/channel identity from this compatibility API.
+                    PublicUpstream alias = aliases.get(mapping.getChannelId());
+                    item.put("source", alias == null ? PublicUpstreamMappingService.FALLBACK_CODE : alias.getCode());
+                    item.put("sourceName", alias == null ? PublicUpstreamMappingService.FALLBACK_NAME : alias.getName());
+                    item.put("vendor", Objects.toString(mapping.getVendor(), "Other"));
+                    item.put("capability", Objects.toString(mapping.getCapability(), "TEXT"));
+                    item.put("inputModalities", csv(mapping.getInputModalities()));
+                    item.put("outputModalities", csv(mapping.getOutputModalities()));
+                    item.put("protocols", csv(mapping.getProtocols()));
+                    item.put("pricingUnit", Objects.toString(mapping.getPricingUnit(), "TOKEN"));
+                    item.put("available", true);
+                    result.put(mapping.getPublicModelName(), item);
+                });
+        return List.copyOf(result.values());
+    }
+
+    private List<String> csv(String value) {
+        if (value == null || value.isBlank()) return List.of();
+        return java.util.Arrays.stream(value.split(",")).map(String::trim).filter(v -> !v.isBlank()).toList();
+    }
+
     public Mono<ChatResponse> chatCompletions(String authorization, ChatRequest request, String clientIp) {
         validateRequest(request);
         String rawToken = extractToken(authorization);
         Token callerToken = validateToken(rawToken, request.getModel(), clientIp);
         return executeChat(callerToken, request, clientIp);
+    }
+
+    public Mono<ChatResponse> chatCompletions(String authorization, ChatRequest request, String clientIp,
+                                               String idempotencyKey) {
+        if (idempotencyKey == null || idempotencyKey.isBlank() || idempotencyService == null || objectMapper == null) {
+            return chatCompletions(authorization, request, clientIp);
+        }
+        validateRequest(request);
+        String rawToken = extractToken(authorization);
+        Token callerToken = validateToken(rawToken, request.getModel(), clientIp);
+        IdempotencyService.Claim claim = idempotencyService.claim("API_KEY", callerToken.getId(),
+                "model.invoke:chat-completions", idempotencyKey, request, false);
+        if (claim.replay()) {
+            try { return Mono.just(objectMapper.treeToValue(claim.response(), ChatResponse.class)); }
+            catch (com.fasterxml.jackson.core.JsonProcessingException error) {
+                return Mono.error(new IllegalStateException("Stored idempotent response is invalid", error));
+            }
+        }
+        return executeChat(callerToken, request, clientIp)
+                .doOnNext(response -> idempotencyService.complete(claim, 200, response, "MODEL_RESPONSE",
+                        response.getBilling() == null ? null : response.getBilling().getTraceId()))
+                .doOnError(error -> {
+                    if (isAmbiguousTimeout(error)) idempotencyService.unknown(claim, error, "MODEL_RESPONSE", null);
+                    else idempotencyService.fail(claim, error);
+                });
     }
 
     public Flux<ServerSentEvent<String>> chatCompletionsStream(String authorization, ChatRequest request,
@@ -121,13 +213,20 @@ public class TransitService {
             return Mono.error(new ResponseStatusException(HttpStatus.FORBIDDEN, "User is suspended"));
         }
         String publicModel = request.getModel();
+        if (sensitiveWordService != null && objectMapper != null) {
+            sensitiveWordService.scanJson(traceId, callerToken.getOrganizationId(), caller.getId(),
+                    callerToken.getId(), publicModel, objectMapper.valueToTree(request));
+        }
         
         List<ModelMapping> mappings = modelMappingMapper.selectList(
             new LambdaQueryWrapper<ModelMapping>()
                 .eq(ModelMapping::getPublicModelName, publicModel)
                 .eq(ModelMapping::isEnabled, true)
+                .eq(ModelMapping::isBillingEnabled, true)
                 .orderByDesc(ModelMapping::getPriority)
         );
+
+        mappings = mappings.stream().filter(PublicPricingPolicy::hasRequiredSale).toList();
 
         if (mappings.isEmpty()) {
             updateQuotaAndLog(callerToken, null, tokenKey, publicModel, 0, 0, 0, 0, "FAILED", traceId, startedAt, "MODEL_NOT_MAPPED", BillingBreakdown.zero());
@@ -149,6 +248,7 @@ public class TransitService {
         }
 
         BigDecimal customerPriceRatio = userPriceRatio(caller.getGroupId());
+        BigDecimal exchangeRate = money().usdCnyRate();
         int estimatedPromptTokens = estimateRequestTokens(request);
         int estimatedCompletionTokens = request.getMaxTokens() == null
                 ? Math.max(1, defaultMaxOutputTokens) : request.getMaxTokens();
@@ -158,16 +258,27 @@ public class TransitService {
         } catch (ArithmeticException overflow) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Requested token budget is too large");
         }
-        long reservedAmount = routes.stream()
+        long reservedSourceAmount = routes.stream()
                 .mapToLong(route -> calculateBilling(route.mapping(), estimatedPromptTokens,
-                        estimatedCompletionTokens, 0, 0, customerPriceRatio).totalAmount())
+                        estimatedCompletionTokens, 0, 0, customerPriceRatio, exchangeRate).totalAmount())
                 .max()
                 .orElse(0L);
+        long reservedAmount = money().usdToCnyAmount(reservedSourceAmount, exchangeRate);
 
         GatewaySettlementService.Reservation reservation;
         try {
             reservation = settlementService.reserve(callerToken, caller, reservedTokens, reservedAmount,
                     traceId, publicModel);
+            try {
+                settlementService.captureSourceSnapshot(traceId, reservedSourceAmount, amountScale, exchangeRate);
+            } catch (RuntimeException snapshotFailure) {
+                try {
+                    settlementService.release(reservation, "pricing snapshot failed");
+                } catch (RuntimeException releaseFailure) {
+                    snapshotFailure.addSuppressed(releaseFailure);
+                }
+                throw snapshotFailure;
+            }
         } catch (RuntimeException reservationFailure) {
             updateQuotaAndLog(callerToken, null, tokenKey, publicModel, 0, 0, 0, 0,
                     "FAILED", traceId, startedAt, safeMessage(reservationFailure), BillingBreakdown.zero());
@@ -193,10 +304,10 @@ public class TransitService {
                     int cacheWrite = Math.min(Math.max(0, prompt - cacheRead), resp.getUsage().cacheWriteTokens());
                     int cached = Math.addExact(cacheRead, cacheWrite);
                     BillingBreakdown billing = calculateBilling(routeMapping, prompt, completion,
-                            cacheRead, cacheWrite, customerPriceRatio);
+                            cacheRead, cacheWrite, customerPriceRatio, exchangeRate);
                     resp.setBilling(billingDetails(routeMapping, prompt, cacheRead, cacheWrite, customerPriceRatio,
                             billing, traceId));
-                    settlementService.settle(reservation, total, billing.totalAmount(),
+                    settlementService.settle(reservation, total, billing.settlementAmount(),
                             "API usage " + publicModel + " (" + traceId + ")");
                     updateQuotaAndLog(callerToken, routeChannel, tokenKey, publicModel, prompt,
                             completion, cacheRead, cacheWrite, total, estimatedUsage ? "SUCCESS_ESTIMATED" : "SUCCESS",
@@ -204,6 +315,12 @@ public class TransitService {
                     return Mono.just(resp);
                 })
                 .onErrorResume(e -> {
+                    if (isAmbiguousTimeout(e)) {
+                        settlementService.markUnknown(reservation, safeMessage(e));
+                        updateQuotaAndLog(callerToken, firstChannel, tokenKey, publicModel, 0, 0,
+                                0, 0, "UNKNOWN", traceId, startedAt, safeMessage(e), BillingBreakdown.zero());
+                        return Mono.error(e);
+                    }
                     try {
                         settlementService.release(reservation, safeMessage(e));
                     } catch (RuntimeException releaseFailure) {
@@ -226,6 +343,13 @@ public class TransitService {
                     long routeStartedAt = System.currentTimeMillis();
                     channelUrlPolicy.validate(route.channel().getBaseUrl());
                     rateLimiter.checkChannel(route.channel());
+                    ProviderCredentialService.SelectedCredential credential = null;
+                    if (providerCredentialService != null) {
+                        credential = providerCredentialService.select(route.channel());
+                        route.channel().setApiKey(credential.secret());
+                        route.channel().setSelectedCredentialId(credential.id());
+                    }
+                    ProviderCredentialService.SelectedCredential selectedCredential = credential;
                     ProviderGateway gateway = providerGatewayFactory.resolve(route.channel().getType());
                     request.setModel(publicModel);
                     log.info("Routing request {} for {} to channel {} (provider: {}, model: {})",
@@ -233,12 +357,20 @@ public class TransitService {
                             route.mapping().getChannelModelName());
                     return gateway.chatCompletions(route.channel(), request, publicModel,
                                     route.mapping().getChannelModelName())
-                            .flatMap(response -> healthUpdate(() -> channelHealthService.recordSuccess(
-                                            route.channel(), System.currentTimeMillis() - routeStartedAt))
+                            .flatMap(response -> healthUpdate(() -> {
+                                        long latency = System.currentTimeMillis() - routeStartedAt;
+                                        channelHealthService.recordSuccess(route.channel(), latency);
+                                        if (providerCredentialService != null && selectedCredential != null) {
+                                            providerCredentialService.recordSuccess(selectedCredential.id(), latency);
+                                        }
+                                    })
                                     .thenReturn(response))
                             .map(response -> new RoutedResponse(route, response));
                 })
                 .onErrorResume(error -> {
+                    if (providerCredentialService != null) {
+                        providerCredentialService.recordFailure(route.channel().getSelectedCredentialId(), error);
+                    }
                     boolean retryable = isRetryableUpstreamError(error);
                     Mono<Void> health = isChannelFault(error)
                             ? healthUpdate(() -> channelHealthService.recordFailure(route.channel(), error))
@@ -277,9 +409,26 @@ public class TransitService {
     private boolean isRetryableUpstreamError(Throwable error) {
         if (error instanceof WebClientResponseException responseException) {
             int status = responseException.getStatusCode().value();
-            return status == 401 || status == 408 || status == 409 || status == 429 || status >= 500;
+            return status == 401 || status == 403 || status == 429;
         }
-        return true;
+        if (error instanceof WebClientRequestException requestException) {
+            Throwable cause = requestException.getCause();
+            return cause instanceof java.net.ConnectException
+                    || cause instanceof java.net.UnknownHostException
+                    || cause instanceof java.net.NoRouteToHostException;
+        }
+        return false;
+    }
+
+    private boolean isAmbiguousTimeout(Throwable error) {
+        Throwable cursor = error;
+        while (cursor != null) {
+            if (cursor instanceof java.util.concurrent.TimeoutException
+                    || cursor instanceof java.net.SocketTimeoutException
+                    || cursor.getClass().getSimpleName().contains("ReadTimeout")) return true;
+            cursor = cursor.getCause();
+        }
+        return false;
     }
 
     private String safeMessage(Throwable error) {
@@ -323,7 +472,7 @@ public class TransitService {
         if (t.getTotalQuota() > 0 && t.getUsedQuota() >= t.getTotalQuota()) {
             throw new ResponseStatusException(org.springframework.http.HttpStatus.TOO_MANY_REQUESTS, "API Key quota exceeded");
         }
-        if (checkModel && !modelAllowed(t.getAllowedModels(), requestedModel)) {
+        if (checkModel && !apiKeyService.modelAllowed(t, requestedModel)) {
             throw new ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN, "Model is not allowed for this API Key");
         }
         if (!ipAllowed(t.getIpWhitelist(), clientIp)) {
@@ -457,15 +606,19 @@ public class TransitService {
         int cached = Math.addExact(cacheRead, cacheWrite);
         Log logRow = Log.builder()
                 .userId(t.getUserId())
+                .organizationId(defaultOrganizationId(t.getUserId()))
                 .tokenKey(tokenKey)
                 .tokenId(t.getId())
                 .model(model)
                 .channelId(channel == null ? null : channel.getId())
+                .credentialId(channel == null ? null : channel.getSelectedCredentialId())
+                .sourceCode(channel == null ? null : channel.getSourceCode())
                 .promptTokens(prompt)
                 .completionTokens(completion)
                 .cachedTokens(cached)
                 .cacheReadTokens(cacheRead)
                 .cacheWriteTokens(cacheWrite)
+                .cacheMissTokens(Math.max(0, prompt - cacheRead - cacheWrite))
                 .totalTokens(total)
                 .cost(billing.totalAmount() > 0 ? billing.totalAmount() : total)
                 .status(status)
@@ -486,6 +639,15 @@ public class TransitService {
                 .cacheReadCostAmount(billing.cacheReadCostAmount())
                 .cacheWriteCostAmount(billing.cacheWriteCostAmount())
                 .grossProfit(billing.grossProfit())
+                .pricingTier(billing.highContext() ? "LONG_CONTEXT_2X" : billing.tier() == null ? null : billing.tier().getTierName())
+                .contextThresholdTokens(billing.contextThresholdTokens())
+                .inputUnitSalePrice(billing.inputUnitSalePrice())
+                .outputUnitSalePrice(billing.outputUnitSalePrice())
+                .modelCurrency("USD")
+                .modelAmountScale(amountScale)
+                .settlementAmount(billing.settlementAmount())
+                .settlementCurrency("CNY")
+                .exchangeRate(billing.exchangeRate())
                 .createdAt(LocalDateTime.now())
                 .build();
         try {
@@ -497,8 +659,19 @@ public class TransitService {
         }
     }
 
+    private Long defaultOrganizationId(Long userId) {
+        if (userId == null) return null;
+        List<Long> values = jdbcTemplate.queryForList(
+                "SELECT default_organization_id FROM users WHERE id = ?", Long.class, userId);
+        return values.isEmpty() ? null : values.get(0);
+    }
+
     private boolean isRoutable(Channel channel) {
-        if (channel == null || !channel.isEnabled() || channel.getApiKey() == null || channel.getApiKey().isBlank()) return false;
+        if (channel == null || !channel.isEnabled()) return false;
+        boolean credentialAvailable = providerCredentialService != null
+                ? providerCredentialService.hasAvailable(channel)
+                : channel.getApiKey() != null && !channel.getApiKey().isBlank();
+        if (!credentialAvailable) return false;
         String health = Objects.toString(channel.getHealthStatus(), "UNTESTED").toUpperCase();
         if ("DISABLED".equals(health) || "UNTESTED".equals(health)) return false;
         if ("COOLDOWN".equals(health)) {
@@ -526,7 +699,7 @@ public class TransitService {
 
     private BillingBreakdown calculateBilling(ModelMapping mapping, int promptTokens, int completionTokens,
                                               int cacheReadTokens, int cacheWriteTokens,
-                                              BigDecimal customerPriceRatio) {
+                                              BigDecimal customerPriceRatio, BigDecimal exchangeRate) {
         if (!mapping.isBillingEnabled()) {
             return BillingBreakdown.zero();
         }
@@ -534,16 +707,27 @@ public class TransitService {
         int cachedTokens = Math.addExact(cacheReadTokens, cacheWriteTokens);
         int billableInputTokens = Math.max(0, promptTokens - cachedTokens);
         BigDecimal ratio = customerPriceRatio == null ? BigDecimal.ONE : customerPriceRatio;
-        long inputAmount = price(billableInputTokens, tier.getSaleInputPrice().multiply(ratio), tier.getSalePriceUnit());
-        long outputAmount = price(completionTokens, tier.getSaleOutputPrice().multiply(ratio), tier.getSalePriceUnit());
+        com.transit.model.ModelContextPricingPolicy contextPolicy = modelContextPricingService == null ? null : modelContextPricingService.find(mapping.getPublicModelName());
+        boolean highContext = contextPolicy != null && Boolean.TRUE.equals(contextPolicy.getEnabled())
+                && contextPolicy.getThresholdTokens() != null && promptTokens > contextPolicy.getThresholdTokens();
+        BigDecimal contextMultiplier = highContext ? ModelContextPricingService.FIXED_MULTIPLIER : BigDecimal.ONE;
+        BigDecimal effectiveInputPrice = tier.getSaleInputPrice().multiply(contextMultiplier).multiply(ratio);
+        BigDecimal effectiveOutputPrice = tier.getSaleOutputPrice().multiply(contextMultiplier).multiply(ratio);
+        long inputAmount = price(billableInputTokens, effectiveInputPrice, tier.getSalePriceUnit());
+        long outputAmount = price(completionTokens, effectiveOutputPrice, tier.getSalePriceUnit());
         long cacheReadAmount = price(cacheReadTokens, tier.getSaleCacheReadPrice().multiply(ratio), tier.getSalePriceUnit());
         long cacheWriteAmount = price(cacheWriteTokens, tier.getSaleCacheWritePrice().multiply(ratio), tier.getSalePriceUnit());
         long inputCostAmount = price(billableInputTokens, tier.getCostInputPrice(), tier.getCostPriceUnit());
         long outputCostAmount = price(completionTokens, tier.getCostOutputPrice(), tier.getCostPriceUnit());
         long cacheReadCostAmount = price(cacheReadTokens, tier.getCostCacheReadPrice(), tier.getCostPriceUnit());
         long cacheWriteCostAmount = price(cacheWriteTokens, tier.getCostCacheWritePrice(), tier.getCostPriceUnit());
+        long sourceTotal = Math.addExact(Math.addExact(inputAmount, outputAmount),
+                Math.addExact(cacheReadAmount, cacheWriteAmount));
         return new BillingBreakdown(tier, inputAmount, outputAmount, cacheReadAmount, cacheWriteAmount,
-                inputCostAmount, outputCostAmount, cacheReadCostAmount, cacheWriteCostAmount);
+                inputCostAmount, outputCostAmount, cacheReadCostAmount, cacheWriteCostAmount,
+                money().usdToCnyAmount(sourceTotal, exchangeRate), exchangeRate,
+                highContext, contextPolicy == null ? null : contextPolicy.getThresholdTokens(),
+                effectiveInputPrice, effectiveOutputPrice);
     }
 
     private ChatResponse.Billing billingDetails(ModelMapping mapping, int promptTokens,
@@ -555,7 +739,7 @@ public class TransitService {
         ModelPriceTier tier = breakdown.tier() == null ? priceTier(mapping, promptTokens) : breakdown.tier();
         int cachedTokens = Math.addExact(cacheReadTokens, cacheWriteTokens);
         ChatResponse.Billing details = new ChatResponse.Billing();
-        details.setCurrency("CNY");
+        details.setCurrency("USD");
         details.setAmountScale(amountScale);
         details.setTraceId(traceId);
         details.setBillingEnabled(enabled);
@@ -563,15 +747,15 @@ public class TransitService {
         details.setCachedTokens(cachedTokens);
         details.setCacheReadTokens(cacheReadTokens);
         details.setCacheWriteTokens(cacheWriteTokens);
-        details.setPriceTier(tier.getTierName());
+        details.setPriceTier(breakdown.highContext() ? "LONG_CONTEXT_2X" : tier.getTierName());
         details.setSaleGroupName(tier.getSaleGroupName());
         details.setPriceUnit(tier.getSalePriceUnit());
         details.setPriceSuffix(tier.getSalePriceSuffix());
         details.setInputPricePerMillion(enabled
-                ? tier.getSaleInputPrice().multiply(ratio)
+                ? breakdown.inputUnitSalePrice()
                 : BigDecimal.ZERO);
         details.setOutputPricePerMillion(enabled
-                ? tier.getSaleOutputPrice().multiply(ratio)
+                ? breakdown.outputUnitSalePrice()
                 : BigDecimal.ZERO);
         details.setCachedPricePerMillion(enabled
                 ? tier.getSaleCacheReadPrice().multiply(ratio)
@@ -584,6 +768,9 @@ public class TransitService {
         details.setCacheReadAmount(breakdown.cacheReadAmount());
         details.setCacheWriteAmount(breakdown.cacheWriteAmount());
         details.setTotalAmount(breakdown.totalAmount());
+        details.setSettlementAmount(breakdown.settlementAmount());
+        details.setSettlementCurrency("CNY");
+        details.setExchangeRate(breakdown.exchangeRate());
         return details;
     }
 
@@ -598,13 +785,13 @@ public class TransitService {
                 .saleCacheReadPrice(coalesce(mapping.getCachedPricePerMillion(), BigDecimal.ZERO))
                 .saleCacheWritePrice(BigDecimal.ZERO)
                 .salePriceUnit("M")
-                .salePriceSuffix("CNY / 1M Token")
+                .salePriceSuffix("USD / 1M Token")
                 .costInputPrice(coalesce(mapping.getInputCostPerMillion(), mapping.getCostPerMillion(), BigDecimal.ZERO))
                 .costOutputPrice(coalesce(mapping.getOutputCostPerMillion(), mapping.getCostPerMillion(), BigDecimal.ZERO))
                 .costCacheReadPrice(coalesce(mapping.getCachedCostPerMillion(), BigDecimal.ZERO))
                 .costCacheWritePrice(BigDecimal.ZERO)
                 .costPriceUnit("M")
-                .costPriceSuffix("CNY / 1M Token")
+                .costPriceSuffix("USD / 1M Token")
                 .build();
     }
 
@@ -643,6 +830,10 @@ public class TransitService {
         return BigDecimal.ZERO;
     }
 
+    private MoneyService money() {
+        return moneyService == null ? new MoneyService(new BigDecimal("6.76693506")) : moneyService;
+    }
+
     private record BillingBreakdown(
             ModelPriceTier tier,
             long inputAmount,
@@ -652,10 +843,17 @@ public class TransitService {
             long inputCostAmount,
             long outputCostAmount,
             long cacheReadCostAmount,
-            long cacheWriteCostAmount
+            long cacheWriteCostAmount,
+            long settlementAmount,
+            BigDecimal exchangeRate,
+            boolean highContext,
+            Integer contextThresholdTokens,
+            BigDecimal inputUnitSalePrice,
+            BigDecimal outputUnitSalePrice
     ) {
         static BillingBreakdown zero() {
-            return new BillingBreakdown(null, 0, 0, 0, 0, 0, 0, 0, 0);
+            return new BillingBreakdown(null, 0, 0, 0, 0, 0, 0, 0, 0, 0, BigDecimal.ONE,
+                    false, null, BigDecimal.ZERO, BigDecimal.ZERO);
         }
 
         long cachedAmount() {

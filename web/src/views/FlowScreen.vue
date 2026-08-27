@@ -366,8 +366,8 @@ const finishOAuth = async (provider: OAuthProvider, code: string, state: string)
   try {
     const res = await http.get(`/api/oauth/callback/${provider}`, { params: { code, state } })
     applyAuthResponse(res.data)
-    ElMessage.success(`${provider} 注册/登录成功`)
-    await router.replace(authRedirect())
+    ElMessage.success(res.data?.oauthAction === 'BIND' ? `${provider} 绑定成功` : `${provider} 注册/登录成功`)
+    await router.replace(res.data?.accountComplete === false ? '/console/profile' : authRedirect())
   } catch (error: unknown) {
     ElMessage.error(getHttpErrorMessage(error, `${provider} 第三方登录失败`))
     await router.replace({
@@ -406,8 +406,11 @@ const applyAuthResponse = (payload: Record<string, any>) => {
   if (!token) throw new Error('Missing access token')
   setAuth(token, {
     username: payload.username || authForm.identifier,
-    role: payload.role || 'USER'
-  })
+    role: payload.role || 'USER',
+    displayName: payload.displayName,
+    avatarPath: payload.avatarPath,
+    accountComplete: payload.accountComplete
+  }, payload.refresh_token)
 }
 
 const isEmail = (value: string) => /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(value.trim())

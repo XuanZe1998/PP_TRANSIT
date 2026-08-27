@@ -118,9 +118,19 @@ class AuthFlowIntegrationTests {
 
     @SuppressWarnings("unchecked")
     private Map<String, Object> register(String identifier, String password) {
+        Map<String, Object> verification = client.post()
+                .uri("/auth/verification/email/send")
+                .bodyValue(Map.of("recipient", identifier, "purpose", "REGISTER"))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(Map.class)
+                .returnResult()
+                .getResponseBody();
+        assertThat(verification).isNotNull();
+        String emailCode = verification.get("debugCode").toString();
         Map<String, Object> response = client.post()
                 .uri("/auth/register")
-                .bodyValue(Map.of("identifier", identifier, "password", password))
+                .bodyValue(Map.of("email", identifier, "emailCode", emailCode, "password", password))
                 .exchange()
                 .expectStatus().isOk()
                 .expectBody(Map.class)

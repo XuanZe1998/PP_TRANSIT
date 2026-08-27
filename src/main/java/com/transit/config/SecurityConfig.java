@@ -46,23 +46,26 @@ public class SecurityConfig {
                         // through an ASYNC redispatch after controller work.
                         .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                        .requestMatchers("/auth/register", "/auth/login", "/auth/validate-identifier").permitAll()
+                        .requestMatchers("/auth/register", "/auth/login", "/auth/refresh", "/auth/validate-identifier", "/auth/verification/**").permitAll()
                         .requestMatchers("/oauth/authorize", "/oauth/callback/**", "/oauth/token", "/oauth/refresh").permitAll()
                         .requestMatchers("/admin/auth/login").permitAll()
                         .requestMatchers("/webhooks/vmcard/**").permitAll()
                         .requestMatchers("/webhooks/anyipay").permitAll()
-                        .requestMatchers("/public/**", "/ops/catalog", "/plus/products", "/platform/user/docs",
-                                "/creative/catalog", "/creative/templates").permitAll()
+                        .requestMatchers("/public/**", "/ops/catalog", "/platform/user/docs",
+                                "/creative/catalog", "/creative/templates", "/creative/auto-movie/catalog",
+                                "/public/creative-assets/**").permitAll()
                         .requestMatchers("/v1/**").permitAll()
                         .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info").permitAll()
-                        .requestMatchers("/admin/api/**", "/platform/admin/**", "/plus/admin/**",
+                        .requestMatchers("/admin/api/**", "/platform/admin/**", "/admin/payment/**",
                                 "/service-orders/admin/**",
-                                "/payment-service/api/**",
+                                "/admin/payment-intents/**",
                                 "/channels/**", "/tokens/**", "/mappings/**", "/ops/overview",
                                 "/actuator/prometheus").hasRole("ADMIN")
-                        .requestMatchers("/user/**", "/platform/user/**", "/plus/orders/**", "/service-orders/**",
-                                "/service-07/**",
+                        .requestMatchers("/user/**", "/platform/user/**", "/service-orders/**",
+                                "/organizations/**",
+                                "/payment-intents/**",
                                 "/creative/tasks/**",
+                                "/creative/projects/**",
                                 "/creative/prompt/**", "/creative/connections/**",
                                 "/shopgpt/**", "/auth/logout", "/oauth/logout", "/oauth/revoke").hasAnyRole("USER", "ADMIN")
                         .requestMatchers("/admin/auth/logout").hasRole("ADMIN")
@@ -73,14 +76,18 @@ public class SecurityConfig {
                 .addFilterBefore(new PlatformAuthenticationFilter(oauthService, adminAuthService),
                         UsernamePasswordAuthenticationFilter.class)
                 .headers(headers -> headers
-                        .frameOptions(frame -> frame.deny())
-                        .contentTypeOptions(contentType -> { }))
+                    .frameOptions(frame -> frame.deny())
+                    .contentTypeOptions(contentType -> { })
+                    .httpStrictTransportSecurity(hsts -> hsts.includeSubDomains(true).maxAgeInSeconds(31536000))
+                    .referrerPolicy(referrer -> referrer.policy(org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter.ReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN))
+                    .permissionsPolicyHeader(policy -> policy.policy("camera=(), microphone=(), geolocation=(), payment=(self)"))
+                    .contentSecurityPolicy(policy -> policy.policyDirectives("default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; img-src 'self' data: https:; connect-src 'self' https:; script-src 'self'; style-src 'self' 'unsafe-inline'")))
                 .build();
     }
 
     @Bean
     public CorsConfigurationSource corsConfigurationSource(
-            @Value("${security.cors.allowed-origins:http://127.0.0.1:5173,http://localhost:5173,https://modelhub.qzz.io}") String origins) {
+            @Value("${security.cors.allowed-origins:http://127.0.0.1:5173,http://localhost:5173,https://linknux.com}") String origins) {
         CorsConfiguration config = new CorsConfiguration();
         config.setAllowedOrigins(Arrays.stream(origins.split(","))
                 .map(String::trim).filter(value -> !value.isBlank()).toList());

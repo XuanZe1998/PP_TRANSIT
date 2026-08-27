@@ -36,6 +36,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.startsWith;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
@@ -73,6 +74,7 @@ class TransitServiceTests {
         ReflectionTestUtils.setField(service, "maxRequestContentBytes", 2_097_152);
         when(channelSecretService.reveal(any(Channel.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
+        org.mockito.Mockito.lenient().when(apiKeyService.modelAllowed(any(Token.class), anyString())).thenReturn(true);
     }
 
     @Test
@@ -93,7 +95,8 @@ class TransitServiceTests {
         when(gatewayFactory.resolve("primary")).thenReturn(primaryGateway);
         when(gatewayFactory.resolve("fallback")).thenReturn(fallbackGateway);
         when(primaryGateway.chatCompletions(any(), any(), anyString(), anyString()))
-                .thenReturn(Mono.error(new RuntimeException("provider unavailable")));
+                .thenReturn(Mono.error(WebClientResponseException.create(
+                        429, "Too Many Requests", HttpHeaders.EMPTY, new byte[0], null)));
         ChatResponse successful = response();
         when(fallbackGateway.chatCompletions(any(), any(), anyString(), anyString()))
                 .thenReturn(Mono.just(successful));
@@ -110,7 +113,9 @@ class TransitServiceTests {
 
         verify(primaryGateway).chatCompletions(any(), any(), anyString(), anyString());
         verify(fallbackGateway).chatCompletions(any(), any(), anyString(), anyString());
-        verify(settlementService).settle(eq(reservation), eq(3), eq(2L), startsWith("API usage public-model"));
+        verify(settlementService).captureSourceSnapshot(anyString(), eq(2L), eq(10_000L),
+                eq(new BigDecimal("6.76693506")));
+        verify(settlementService).settle(eq(reservation), eq(3), eq(14L), startsWith("API usage public-model"));
         verify(settlementService, never()).release(any(), anyString());
     }
 
@@ -138,6 +143,30 @@ class TransitServiceTests {
         verify(fallbackGateway, never()).chatCompletions(any(), any(), anyString(), anyString());
         verify(settlementService).release(eq(reservation), anyString());
         verify(settlementService, never()).settle(any(), anyInt(), anyLong(), anyString());
+    }
+
+    @Test
+    void ambiguousTimeoutIsNotRetriedAndKeepsTheReservationForReconciliation() {
+        Token token = token(12L);
+        User user = user(120L);
+        GatewaySettlementService.Reservation reservation = reservation(token, user);
+        ModelMapping primaryMapping = mapping(1L, 11L, 100);
+        ModelMapping fallbackMapping = mapping(2L, 12L, 90);
+        arrangeBillableRequest(token, user, reservation);
+        when(apiKeyService.findBySecret("sk-timeout")).thenReturn(token);
+        when(mappingMapper.selectList(any())).thenReturn(List.of(primaryMapping, fallbackMapping));
+        when(channelMapper.selectById(11L)).thenReturn(channel(11L, "primary", "primary"));
+        when(channelMapper.selectById(12L)).thenReturn(channel(12L, "fallback", "fallback"));
+        when(gatewayFactory.resolve("primary")).thenReturn(primaryGateway);
+        when(primaryGateway.chatCompletions(any(), any(), anyString(), anyString()))
+                .thenReturn(Mono.error(new java.net.SocketTimeoutException("read timed out")));
+
+        StepVerifier.create(service.chatCompletions("Bearer sk-timeout", request(), "203.0.113.10"))
+                .expectError(java.net.SocketTimeoutException.class).verify();
+
+        verify(fallbackGateway, never()).chatCompletions(any(), any(), anyString(), anyString());
+        verify(settlementService).markUnknown(eq(reservation), argThat(value -> value.contains("read timed out")));
+        verify(settlementService, never()).release(eq(reservation), anyString());
     }
 
     @Test
@@ -247,7 +276,7 @@ class TransitServiceTests {
                         && result.getBilling().getTotalAmount() == 44L)
                 .verifyComplete();
 
-        verify(settlementService).settle(eq(reservation), eq(1_500), eq(44L), startsWith("API usage public-model"));
+        verify(settlementService).settle(eq(reservation), eq(1_500), eq(298L), startsWith("API usage public-model"));
     }
 
     @Test
@@ -306,7 +335,7 @@ class TransitServiceTests {
                         && result.getBilling().getTotalAmount() == 72L)
                 .verifyComplete();
 
-        verify(settlementService).settle(eq(reservation), eq(1_500), eq(72L), startsWith("API usage public-model"));
+        verify(settlementService).settle(eq(reservation), eq(1_500), eq(488L), startsWith("API usage public-model"));
         verify(logMapper).insert(org.mockito.ArgumentMatchers.<Log>argThat(log ->
                 log.getCacheReadTokens() == 200
                         && log.getCacheWriteTokens() == 100

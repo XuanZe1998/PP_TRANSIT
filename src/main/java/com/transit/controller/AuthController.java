@@ -1,6 +1,8 @@
 package com.transit.controller;
 
 import com.transit.service.AuthService;
+import com.transit.service.AccountVerificationPolicy;
+import com.transit.service.VerificationDeliveryService;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
@@ -15,11 +17,32 @@ import java.util.Map;
 public class AuthController {
 
     private final AuthService authService;
+    private final com.transit.service.VerificationCodeService verificationCodeService;
+    private final AccountVerificationPolicy verificationPolicy;
+    private final VerificationDeliveryService verificationDeliveryService;
 
     @PostMapping("/register")
     public Mono<Map<String, Object>> register(@RequestBody RegisterRequest request) {
-        String identifier = request.getIdentifier() != null ? request.getIdentifier() : request.getUsername();
-        return authService.register(identifier, request.getPassword());
+        return authService.register(request.getEmail(), request.getEmailCode(), request.getPhone(), request.getPhoneCode(),
+                request.getPassword(), request.getDisplayName());
+    }
+
+    @GetMapping("/verification/policy")
+    public Mono<Map<String, Object>> verificationPolicy() {
+        return Mono.just(Map.of(
+                "mode", verificationPolicy.mode().name(),
+                "registrationReady", verificationPolicy.registrationReady(verificationDeliveryService)
+        ));
+    }
+
+    @PostMapping("/verification/email/send")
+    public Mono<Map<String, Object>> sendEmailCode(@RequestBody VerificationRequest request) {
+        return Mono.fromCallable(() -> verificationCodeService.send("EMAIL", request.getRecipient(), request.getPurpose()));
+    }
+
+    @PostMapping("/verification/phone/send")
+    public Mono<Map<String, Object>> sendPhoneCode(@RequestBody VerificationRequest request) {
+        return Mono.fromCallable(() -> verificationCodeService.send("PHONE", request.getRecipient(), request.getPurpose()));
     }
 
     @GetMapping("/validate-identifier")
@@ -38,12 +61,27 @@ public class AuthController {
         return authService.logout(token);
     }
 
+    @PostMapping("/refresh")
+    public Mono<Map<String, Object>> refresh(@RequestBody RefreshRequest request) {
+        return Mono.fromCallable(() -> authService.refresh(request.getRefreshToken()));
+    }
+
     @Data
     public static class RegisterRequest {
         private String identifier;
         private String username;
         private String password;
         private String email;
+        private String emailCode;
+        private String phone;
+        private String phoneCode;
+        private String displayName;
+    }
+
+    @Data
+    public static class VerificationRequest {
+        private String recipient;
+        private String purpose = "REGISTER";
     }
 
     @Data
@@ -62,5 +100,10 @@ public class AuthController {
             }
             return account;
         }
+    }
+
+    @Data
+    public static class RefreshRequest {
+        private String refreshToken;
     }
 }

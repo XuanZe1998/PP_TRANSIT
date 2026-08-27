@@ -34,6 +34,29 @@ public class User {
     @TableField("phone")
     private String phone;
 
+    @TableField("display_name")
+    private String displayName;
+
+    @TableField("avatar_path")
+    private String avatarPath;
+
+    @TableField("email_verified_at")
+    private LocalDateTime emailVerifiedAt;
+
+    @TableField("phone_verified_at")
+    private LocalDateTime phoneVerifiedAt;
+
+    @TableField("locale")
+    @Builder.Default
+    private String locale = "zh-CN";
+
+    @TableField("timezone")
+    @Builder.Default
+    private String timezone = "Asia/Shanghai";
+
+    @TableField("last_login_at")
+    private LocalDateTime lastLoginAt;
+
     @TableField("auth_provider")
     private String authProvider;
 
@@ -46,6 +69,9 @@ public class User {
 
     @TableField("group_id")
     private Long groupId;
+
+    @TableField("default_organization_id")
+    private Long defaultOrganizationId;
 
     @TableField("balance")
     @Builder.Default

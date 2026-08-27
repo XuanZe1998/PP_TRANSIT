@@ -16,6 +16,7 @@ import com.transit.model.OAuthUserBinding;
 import com.transit.model.User;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
@@ -50,7 +51,10 @@ public class OAuthService {
     private final UserMapper userMapper;
     private final WebClient webClient;
     private final SecretHashService secretHashService;
+    private final AccountVerificationPolicy verificationPolicy;
     private final SecureRandom secureRandom = new SecureRandom();
+    @Autowired(required = false)
+    private AvatarStorageService avatarStorageService;
 
     @Value("${oauth.github.client-id:}")
     private String githubClientId;
@@ -101,12 +105,19 @@ public class OAuthService {
     private long refreshTokenExpiry;
 
     public AuthorizationStart beginAuthorization(String requestedProvider) {
+        return beginAuthorization(requestedProvider, null);
+    }
+
+    public AuthorizationStart beginAuthorization(String requestedProvider, Long targetUserId) {
         String provider = normalizeProvider(requestedProvider);
+        if (targetUserId != null) requireActiveUser(userMapper.selectById(targetUserId));
         String state = generateSecureToken();
         LocalDateTime now = LocalDateTime.now();
         loginStateMapper.insert(OAuthLoginState.builder()
                 .stateHash(secretHashService.hash(state))
                 .provider(provider)
+                .targetUserId(targetUserId)
+                .flowType(targetUserId == null ? "LOGIN" : "BIND")
                 .expiresAt(now.plusSeconds(Math.max(60, stateExpirySeconds)))
                 .createdAt(now)
                 .build());
@@ -146,31 +157,35 @@ public class OAuthService {
                     if (code == null || code.isBlank() || code.length() > 2048) {
                         throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "OAuth authorization code is missing or invalid");
                     }
-                    consumeLoginState(provider, state);
+                    OAuthLoginState loginState = consumeLoginState(provider, state);
                     return switch (provider) {
-                        case "github" -> exchangeGithubCode(code);
-                        case "google" -> exchangeGoogleCode(code);
+                        case "github" -> exchangeGithubCode(code, loginState.getTargetUserId());
+                        case "google" -> exchangeGoogleCode(code, loginState.getTargetUserId());
                         default -> throw unsupportedProvider();
                     };
                 })
                 .subscribeOn(Schedulers.boundedElastic());
     }
 
-    private void consumeLoginState(String provider, String state) {
+    private OAuthLoginState consumeLoginState(String provider, String state) {
         if (state == null || state.isBlank() || state.length() > 512) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "OAuth state is missing or invalid");
         }
         LocalDateTime now = LocalDateTime.now();
+        String stateHash = secretHashService.hash(state);
+        OAuthLoginState loginState = loginStateMapper.selectOne(new LambdaQueryWrapper<OAuthLoginState>()
+                .eq(OAuthLoginState::getStateHash, stateHash).eq(OAuthLoginState::getProvider, provider).last("LIMIT 1"));
         int updated = loginStateMapper.update(null,
                 new LambdaUpdateWrapper<OAuthLoginState>()
                         .set(OAuthLoginState::getConsumedAt, now)
-                        .eq(OAuthLoginState::getStateHash, secretHashService.hash(state))
+                        .eq(OAuthLoginState::getStateHash, stateHash)
                         .eq(OAuthLoginState::getProvider, provider)
                         .isNull(OAuthLoginState::getConsumedAt)
                         .gt(OAuthLoginState::getExpiresAt, now));
         if (updated != 1) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "OAuth state is expired, already used, or does not match");
         }
+        return loginState;
     }
 
     private void cleanupLoginStates(LocalDateTime now) {
@@ -178,7 +193,7 @@ public class OAuthService {
                 .lt(OAuthLoginState::getExpiresAt, now.minusHours(1)));
     }
 
-    private Map<String, Object> exchangeGithubCode(String code) {
+    private Map<String, Object> exchangeGithubCode(String code, Long targetUserId) {
         requireConfigured("GitHub", githubClientId, githubClientSecret);
         MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
         form.add("client_id", githubClientId);
@@ -187,10 +202,10 @@ public class OAuthService {
         form.add("redirect_uri", githubRedirectUri);
         Map<String, Object> response = postForm(githubTokenUri, form, "GitHub");
         String accessToken = requiredToken(response, "access_token", "GitHub");
-        return processProviderUser("github", accessToken);
+        return processProviderUser("github", accessToken, targetUserId);
     }
 
-    private Map<String, Object> exchangeGoogleCode(String code) {
+    private Map<String, Object> exchangeGoogleCode(String code, Long targetUserId) {
         requireConfigured("Google", googleClientId, googleClientSecret);
         MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
         form.add("client_id", googleClientId);
@@ -200,7 +215,7 @@ public class OAuthService {
         form.add("redirect_uri", googleRedirectUri);
         Map<String, Object> response = postForm(googleTokenUri, form, "Google");
         String accessToken = requiredToken(response, "access_token", "Google");
-        return processProviderUser("google", accessToken);
+        return processProviderUser("google", accessToken, targetUserId);
     }
 
     @SuppressWarnings("unchecked")
@@ -235,7 +250,7 @@ public class OAuthService {
         return value.toString();
     }
 
-    private Map<String, Object> processProviderUser(String provider, String providerAccessToken) {
+    private Map<String, Object> processProviderUser(String provider, String providerAccessToken, Long targetUserId) {
         Map<String, Object> userInfo = getUserInfo(provider, providerAccessToken);
         Object providerIdValue = userInfo.get("id") != null ? userInfo.get("id") : userInfo.get("sub");
         String providerUserId = providerIdValue == null ? "" : providerIdValue.toString().trim();
@@ -250,8 +265,13 @@ public class OAuthService {
                 .eq(OAuthUserBinding::getProviderUserId, providerUserId));
 
         User user;
+        if (binding != null && targetUserId != null && !Objects.equals(binding.getUserId(), targetUserId)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "该第三方账号已绑定其他平台账户");
+        }
         if (binding == null) {
-            user = findOrCreateUserFromProvider(provider, providerUserId, email, username);
+            user = targetUserId == null ? findOrCreateUserFromProvider(provider, providerUserId, email, username)
+                    : userMapper.selectById(targetUserId);
+            requireActiveUser(user);
             bindingMapper.insert(OAuthUserBinding.builder()
                     .userId(user.getId())
                     .provider(provider)
@@ -266,8 +286,25 @@ public class OAuthService {
         } else {
             user = userMapper.selectById(binding.getUserId());
         }
+        if (user != null) {
+            LocalDateTime now = LocalDateTime.now();
+            if (email != null && email.equalsIgnoreCase(Objects.toString(user.getEmail(), email)) && user.getEmailVerifiedAt() == null) user.setEmailVerifiedAt(now);
+            if ((user.getDisplayName() == null || user.getDisplayName().isBlank()) && !username.isBlank()) user.setDisplayName(username.substring(0, Math.min(80, username.length())));
+            if ((user.getAvatarPath() == null || user.getAvatarPath().isBlank()) && avatarStorageService != null) {
+                String avatarUrl = Objects.toString(userInfo.get(provider.equals("github") ? "avatar_url" : "picture"), "");
+                String host;
+                try { host = java.net.URI.create(avatarUrl).getHost(); } catch(Exception ignored) { host = null; }
+                if (host != null && (host.equals("avatars.githubusercontent.com") || host.endsWith(".googleusercontent.com"))) {
+                    try { byte[] bytes=webClient.get().uri(avatarUrl).retrieve().bodyToMono(byte[].class).block(); user.setAvatarPath(avatarStorageService.storeRemote(bytes)); }
+                    catch(Exception ignored) { /* Identity succeeds even if the optional avatar cache is unavailable. */ }
+                }
+            }
+            user.setLastLoginAt(now); userMapper.updateById(user);
+        }
         requireActiveUser(user);
-        return issueUserSession(user, "social:" + provider);
+        Map<String,Object> response = issueUserSession(user, "social:" + provider);
+        response.put("oauthAction", targetUserId == null ? "LOGIN" : "BIND");
+        return response;
     }
 
     @SuppressWarnings("unchecked")
@@ -332,6 +369,10 @@ public class OAuthService {
                 .username(uniqueUsername(baseUsername))
                 .password("")
                 .email(email)
+                .displayName(username.isBlank() ? null : username.substring(0, Math.min(80, username.length())))
+                .emailVerifiedAt(email == null ? null : LocalDateTime.now())
+                .locale("zh-CN")
+                .timezone("Asia/Shanghai")
                 .authProvider(provider)
                 .role("USER")
                 .status("ACTIVE")
@@ -385,6 +426,20 @@ public class OAuthService {
         return rotateRefreshToken(requireClient(clientId, clientSecret), refreshToken);
     }
 
+    public Map<String, Object> refreshFirstPartySession(String rawRefreshToken) {
+        OAuthToken token = findByRefreshToken(rawRefreshToken);
+        String clientId = token == null ? "" : Objects.toString(token.getClientId(), "");
+        if (token == null || Boolean.TRUE.equals(token.getRevoked()) || token.getExpiresAt() == null
+                || token.getExpiresAt().isBefore(LocalDateTime.now())
+                || !("local".equals(clientId) || clientId.startsWith("social:"))) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid or expired refresh token");
+        }
+        User user = userMapper.selectById(token.getUserId());
+        requireActiveUser(user);
+        tokenMapper.deleteById(token.getId());
+        return issueUserSession(user, clientId);
+    }
+
     private Map<String, Object> rotateRefreshToken(OAuthClient client, String rawRefreshToken) {
         OAuthToken token = findByRefreshToken(rawRefreshToken);
         if (token == null || Boolean.TRUE.equals(token.getRevoked()) || token.getExpiresAt() == null
@@ -417,6 +472,33 @@ public class OAuthService {
         }
     }
 
+    public List<Map<String, Object>> listSessions(Long userId, String rawAccessToken) {
+        OAuthToken current = findByAccessToken(rawAccessToken);
+        return tokenMapper.selectList(new LambdaQueryWrapper<OAuthToken>()
+                        .eq(OAuthToken::getUserId, userId).eq(OAuthToken::getRevoked, false)
+                        .gt(OAuthToken::getExpiresAt, LocalDateTime.now()).orderByDesc(OAuthToken::getCreatedAt))
+                .stream().map(token -> {
+                    Map<String,Object> item=new java.util.LinkedHashMap<>(); item.put("id",token.getId());
+                    item.put("client",token.getClientId()); item.put("device",Objects.toString(token.getDeviceName(), token.getClientId()));
+                    item.put("createdAt",token.getCreatedAt()); item.put("lastActiveAt",token.getLastActiveAt());
+                    item.put("current",current!=null&&Objects.equals(current.getId(),token.getId())); return item;
+                }).toList();
+    }
+
+    public void revokeSession(Long userId, Long sessionId) {
+        OAuthToken token=tokenMapper.selectById(sessionId);
+        if(token==null||!Objects.equals(userId,token.getUserId()))throw new ResponseStatusException(HttpStatus.NOT_FOUND,"会话不存在");
+        token.setRevoked(true);token.setRevokedAt(LocalDateTime.now());tokenMapper.updateById(token);
+    }
+
+    public void revokeOtherSessions(Long userId, String rawAccessToken) {
+        OAuthToken current=findByAccessToken(rawAccessToken);
+        LambdaUpdateWrapper<OAuthToken> update=new LambdaUpdateWrapper<OAuthToken>()
+                .set(OAuthToken::getRevoked,true).set(OAuthToken::getRevokedAt,LocalDateTime.now())
+                .eq(OAuthToken::getUserId,userId).eq(OAuthToken::getRevoked,false);
+        if(current!=null)update.ne(OAuthToken::getId,current.getId());tokenMapper.update(null,update);
+    }
+
     public Map<String, Object> validateToken(String rawAccessToken) {
         User user = getUserFromToken(rawAccessToken);
         return Map.of("userId", user.getId(), "username", user.getUsername(), "role", user.getRole());
@@ -447,6 +529,8 @@ public class OAuthService {
                 .accessExpiresAt(now.plusSeconds(Math.max(60, accessTokenExpiry)))
                 .expiresAt(now.plusSeconds(Math.max(accessTokenExpiry, refreshTokenExpiry)))
                 .revoked(false)
+                .deviceName(clientId == null || clientId.isBlank() ? "Web" : clientId)
+                .lastActiveAt(now)
                 .createdAt(now)
                 .build());
 
@@ -457,6 +541,9 @@ public class OAuthService {
         response.put("expires_in", accessTokenExpiry);
         response.put("user_id", user.getId());
         response.put("username", user.getUsername());
+        response.put("displayName", user.getDisplayName());
+        response.put("avatarPath", user.getAvatarPath());
+        response.put("accountComplete", verificationPolicy.isComplete(user));
         response.put("role", user.getRole());
         return response;
     }

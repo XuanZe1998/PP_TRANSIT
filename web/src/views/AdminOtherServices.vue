@@ -23,6 +23,13 @@
         </template>
       </el-table-column>
       <el-table-column prop="name" label="服务名称" min-width="150" />
+      <el-table-column label="类型" width="130">
+        <template #default="{ row }">
+          <el-tag :type="row.productType === 'CARD_KEY' ? 'success' : 'info'">
+            {{ row.productType === 'CARD_KEY' ? '卡密发货' : '普通服务' }}
+          </el-tag>
+        </template>
+      </el-table-column>
       <el-table-column prop="description" label="服务介绍" min-width="260" show-overflow-tooltip />
       <el-table-column label="价格" width="130">
         <template #default="{ row }">
@@ -50,11 +57,19 @@
       </el-tab-pane>
       <el-tab-pane label="服务订单" name="orders">
         <AdminServiceOrders />
+        <AdminProductCommerce />
       </el-tab-pane>
     </el-tabs>
 
     <el-dialog v-model="dialogVisible" :title="form.id ? '编辑服务' : '新增服务'" width="620px">
       <el-form label-position="top" :model="form">
+        <el-form-item label="服务类型" required>
+          <el-radio-group v-model="form.productType" @change="syncProductType">
+            <el-radio-button value="STANDARD">普通服务</el-radio-button>
+            <el-radio-button value="CARD_KEY">卡密自动发货</el-radio-button>
+          </el-radio-group>
+          <span class="form-tip form-tip-block">卡密服务在付款成功后自动发放加密库存中的一条卡密。</span>
+        </el-form-item>
         <el-form-item label="服务名称" required>
           <el-input v-model="form.name" maxlength="160" show-word-limit placeholder="例如：服务7" />
         </el-form-item>
@@ -111,6 +126,38 @@
         <el-form-item label="购买按钮文案">
           <el-input v-model="form.actionLabel" maxlength="40" placeholder="立即购买" />
         </el-form-item>
+        <template v-if="form.productType === 'CARD_KEY'">
+          <el-alert
+            title="卡密仅在付款成功后展示；库存内容使用服务端密钥加密，管理列表不会返回明文。"
+            type="success"
+            :closable="false"
+            show-icon
+          />
+          <el-form-item label="卡密兑换网站" required>
+            <el-input v-model="form.redemptionUrl" maxlength="2000" placeholder="https://redeem.example.com/" />
+            <span class="form-tip">
+              只接受 HTTPS 且域名必须在服务端白名单中。前台通过本站 /services/:id/redeem 安全跳转，不使用 iframe，也不会携带卡密参数。
+              {{ form.id && form.redemptionConfigured ? '留空则保留当前地址。' : '' }}
+            </span>
+          </el-form-item>
+          <el-form-item label="单笔最多购买">
+            <el-input-number v-model="form.maxPurchaseQuantity" :min="1" :max="1000" />
+          </el-form-item>
+          <el-form-item label="购买提示">
+            <el-input v-model="form.purchasePrompt" type="textarea" :rows="2" maxlength="1000" placeholder="例如：付款后在订单详情复制卡密，再前往兑换网站使用" />
+          </el-form-item>
+          <el-form-item label="初始卡密库存">
+            <el-input
+              v-model="form.inventoryText"
+              type="textarea"
+              :rows="6"
+              placeholder="粘贴多个卡密，可用逗号、中文逗号、顿号、换行或空格分隔"
+            />
+            <span class="form-tip form-tip-block">
+              已识别 {{ recognizedInventoryItems.length }} 条；保存服务后将立即加密导入，重复卡密自动忽略。
+            </span>
+          </el-form-item>
+        </template>
         <el-form-item label="允许购买">
           <el-switch v-model="form.purchaseEnabled" active-text="启用" inactive-text="停用" />
           <span class="form-tip">停用后服务仍可展示，但不会创建订单。</span>
@@ -128,11 +175,12 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import http, { getHttpErrorMessage } from '@/utils/http'
-import AdminServiceOrders from '@/views/AdminPlusOrders.vue'
+import AdminServiceOrders from '@/views/AdminServiceOrders.vue'
+import AdminProductCommerce from '@/views/AdminProductCommerce.vue'
 
 type OtherService = {
   id: number
@@ -147,6 +195,11 @@ type OtherService = {
   amountCents?: number
   currency?: string
   purchaseEnabled?: boolean
+  productType?: 'STANDARD' | 'CARD_KEY'
+  fulfillmentMode?: string
+  redemptionConfigured?: boolean
+  maxPurchaseQuantity?: number
+  purchasePrompt?: string
 }
 
 const route = useRoute()
@@ -171,8 +224,17 @@ const form = reactive({
   currency: 'CNY',
   price: 0,
   serviceFee: 0,
-  purchaseEnabled: false
+  purchaseEnabled: false,
+  productType: 'STANDARD' as 'STANDARD' | 'CARD_KEY',
+  redemptionUrl: '',
+  redemptionConfigured: false,
+  maxPurchaseQuantity: 1,
+  purchasePrompt: '',
+  inventoryText: ''
 })
+const recognizedInventoryItems = computed(() => Array.from(new Set(
+  form.inventoryText.split(/[\s,，、]+/u).map(item => item.trim()).filter(Boolean)
+)))
 
 const formatMoney = (cents?: number, currency?: string) => cents === null || cents === undefined
   ? '-'
@@ -207,6 +269,19 @@ function resetForm() {
   form.price = 0
   form.serviceFee = 0
   form.purchaseEnabled = false
+  form.productType = 'STANDARD'
+  form.redemptionUrl = ''
+  form.redemptionConfigured = false
+  form.maxPurchaseQuantity = 1
+  form.purchasePrompt = ''
+  form.inventoryText = ''
+}
+
+function syncProductType() {
+  if (form.productType === 'CARD_KEY') {
+    form.actionLabel = '立即购买'
+    if (!form.purchasePrompt) form.purchasePrompt = '付款成功后可在订单详情查看卡密并前往兑换。'
+  }
 }
 
 function openCreate() {
@@ -226,6 +301,12 @@ function openEdit(service: OtherService) {
   form.price = (service.priceCents || 0) / 100
   form.serviceFee = (service.serviceFeeCents || 0) / 100
   form.purchaseEnabled = service.purchaseEnabled === true
+  form.productType = service.productType || 'STANDARD'
+  form.redemptionUrl = ''
+  form.redemptionConfigured = service.redemptionConfigured === true
+  form.maxPurchaseQuantity = service.maxPurchaseQuantity || 1
+  form.purchasePrompt = service.purchasePrompt || ''
+  form.inventoryText = ''
   dialogVisible.value = true
 }
 
@@ -251,7 +332,9 @@ async function uploadLocalImage(event: Event) {
   try {
     const body = new FormData()
     body.append('file', file)
-    const response = await http.post<{ url: string }>('/api/admin/api/other-services/image', body)
+    const response = await http.post<{ url: string }>('/api/admin/api/other-services/image', body, {
+      timeout: 180_000
+    })
     form.imageUrl = response.data.url
     ElMessage.success('图片上传成功')
   } catch (error: unknown) {
@@ -267,6 +350,10 @@ async function save() {
     ElMessage.warning('请填写服务名称')
     return
   }
+  if (form.productType === 'CARD_KEY' && !form.redemptionUrl.trim() && !form.redemptionConfigured) {
+    ElMessage.warning('请填写卡密兑换网站')
+    return
+  }
   saving.value = true
   const payload = {
     name: form.name.trim(),
@@ -278,19 +365,43 @@ async function save() {
     currency: form.currency,
     priceCents: Math.round((form.price || 0) * 100),
     serviceFeeCents: Math.round((form.serviceFee || 0) * 100),
-    purchaseEnabled: form.purchaseEnabled
+    purchaseEnabled: form.purchaseEnabled,
+    productType: form.productType,
+    fulfillmentMode: form.productType === 'CARD_KEY' ? 'AUTOMATIC_DELIVERY' : 'MANUAL_PROCESSING',
+    redemptionUrl: form.redemptionUrl.trim() || undefined,
+    maxPurchaseQuantity: form.maxPurchaseQuantity,
+    purchasePrompt: form.purchasePrompt.trim()
   }
   try {
+    let savedService: OtherService
     if (form.id) {
-      await http.put(`/api/admin/api/other-services/${form.id}`, payload)
+      const response = await http.put<OtherService>(`/api/admin/api/other-services/${form.id}`, payload)
+      savedService = response.data
     } else {
-      await http.post('/api/admin/api/other-services', payload)
+      const response = await http.post<OtherService>('/api/admin/api/other-services', payload)
+      savedService = response.data
     }
-    ElMessage.success('服务已保存')
+    if (form.productType === 'CARD_KEY' && recognizedInventoryItems.value.length > 0) {
+      try {
+        const response = await http.post<{ imported: number }>(
+          `/api/admin/api/other-services/${savedService.id}/inventory/import`,
+          { content: form.inventoryText }
+        )
+        const imported = Number(response.data?.imported || 0)
+        ElMessage.success(`服务已保存，识别 ${recognizedInventoryItems.value.length} 条，成功导入 ${imported} 条卡密`)
+      } catch (inventoryError: unknown) {
+        form.id = savedService.id
+        ElMessage.error(`服务已保存，但${getHttpErrorMessage(inventoryError, '卡密导入失败')}`)
+        await load()
+        return
+      }
+    } else {
+      ElMessage.success('服务已保存')
+    }
     dialogVisible.value = false
     await load()
-  } catch (error: any) {
-    ElMessage.error(error?.response?.data?.message || '保存失败')
+  } catch (error: unknown) {
+    ElMessage.error(getHttpErrorMessage(error, '保存失败'))
   } finally {
     saving.value = false
   }
@@ -365,6 +476,11 @@ onMounted(load)
   margin-top: 6px;
   color: #94a3b8;
   font-size: 12px;
+}
+
+.form-tip-block {
+  display: block;
+  width: 100%;
 }
 
 .service-image-editor {

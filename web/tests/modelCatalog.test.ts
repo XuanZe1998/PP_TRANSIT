@@ -13,6 +13,7 @@ describe('model catalog helpers', () => {
         type: 'openai',
         minInputPricePerMillion: '1.25',
         minOutputPricePerMillion: 4,
+        minInputCostMultiplier: '0.55',
         routeCount: 2,
       },
       { publicName: '  ', type: 'invalid' },
@@ -20,10 +21,14 @@ describe('model catalog helpers', () => {
 
     expect(catalog.map(item => item.publicName)).toEqual(['deepseek-chat', 'gpt-4o-mini'])
     expect(catalog[1]).toMatchObject({
-      type: 'openai',
+      type: 'platform-route',
+      sourceName: '平台智能路由',
       minInputPricePerMillion: '1.25',
+      minInputCostMultiplier: '0.55',
+      currency: 'USD',
       routeCount: 2,
     })
+    expect(JSON.stringify(catalog[1])).not.toContain('openai')
   })
 
   it('filters callable models using the selected API Key scope', () => {

@@ -3,8 +3,10 @@ package com.transit.service;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.transit.model.User;
+import com.transit.dto.ShopGptCheckoutRequest;
+import com.transit.dto.ServiceOrderResponse;
 import jakarta.annotation.PostConstruct;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -34,7 +36,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 
 @Service
-@RequiredArgsConstructor
 public class ShopGptItemService {
 
     private static final Duration SESSION_TTL = Duration.ofMinutes(20);
@@ -43,6 +44,7 @@ public class ShopGptItemService {
     private static final int MAX_CAPTCHA_BYTES = 512 * 1024;
 
     private final ObjectMapper objectMapper;
+    private final ServiceOrderService serviceOrderService;
     private final Map<Long, ShopGptSession> sessions = new ConcurrentHashMap<>();
 
     @Value("${features.shopgpt.enabled:false}")
@@ -63,6 +65,14 @@ public class ShopGptItemService {
     private volatile WebClient webClient;
     private String baseUrl;
     private Duration requestTimeout;
+
+    @Autowired
+    public ShopGptItemService(ObjectMapper objectMapper, ServiceOrderService serviceOrderService) {
+        this.objectMapper = objectMapper;
+        this.serviceOrderService = serviceOrderService;
+    }
+
+    ShopGptItemService(ObjectMapper objectMapper) { this(objectMapper, null); }
 
     @PostConstruct
     void initializeClient() {
@@ -124,22 +134,35 @@ public class ShopGptItemService {
     }
 
     public Map<String, Object> trade(User user, int quantity, String captcha, Integer payId) {
-        ShopGptSession session = ensureSession(user);
-        synchronized (session) {
-            session.quantity = validateQuantity(quantity);
-            session.captcha = captcha == null ? "" : captcha.trim();
-            if (session.captcha.isBlank()) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Captcha is required");
-            }
-            session.payId = validatePayId(payId, session);
+        requireEnabled();
+        throw new ResponseStatusException(HttpStatus.GONE,
+                "Supplier checkout has migrated: create a local order and pay through AnyiPay; administrators procure it after payment");
+    }
 
-            MultiValueMap<String, String> form = baseForm(session);
-            form.add("captcha", session.captcha);
-            form.add("pay_id", String.valueOf(session.payId));
-            Map<String, Object> response = postJson("/user/api/order/trade", form, session);
-            session.captcha = "";
-            session.lastAccessAt = Instant.now();
-            return response;
+    public ServiceOrderResponse checkout(User user, ShopGptCheckoutRequest request) {
+        if (request == null || request.getQuantity() == null) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"quantity is required");
+        ShopGptSession session=ensureSession(user);
+        synchronized (session) {
+            int quantity=validateQuantity(request.getQuantity());
+            Map<String,Object> quote=syncSession(session,quantity,"",null);
+            Object valuationObject=quote.get("valuation"); Object stockObject=quote.get("stock");
+            if(!(valuationObject instanceof Map<?,?> valuation)||!(stockObject instanceof Map<?,?> stock)) throw upstreamFailure("Supplier quote is invalid",null);
+            Object valuationDataObject=valuation.get("data"); Object stockDataObject=stock.get("data");
+            if(!(valuationDataObject instanceof Map<?,?> valuationData)||!(stockDataObject instanceof Map<?,?> stockData)) throw upstreamFailure("Supplier quote is incomplete",null);
+            java.math.BigDecimal total;
+            int available;
+            try {
+                total=new java.math.BigDecimal(String.valueOf(valuationData.get("price")));
+                available=new java.math.BigDecimal(String.valueOf(stockData.get("stock"))).intValueExact();
+            } catch(RuntimeException invalid){throw upstreamFailure("Supplier returned an invalid price or stock",invalid);}
+            if(total.signum()<=0||available<quantity) throw new ResponseStatusException(HttpStatus.CONFLICT,"Supplier price changed or stock is insufficient");
+            long cents;
+            try{cents=total.movePointRight(2).setScale(0,java.math.RoundingMode.HALF_UP).longValueExact();}
+            catch(ArithmeticException invalid){throw new ResponseStatusException(HttpStatus.CONFLICT,"Supplier price is outside the supported range");}
+            String snapshot;
+            try{snapshot=objectMapper.writeValueAsString(Map.of("itemId",itemId,"quantity",quantity,"quotedAt",Instant.now().toString(),"valuation",valuation,"stock",stock));}
+            catch(Exception impossible){throw new IllegalStateException("Unable to store supplier quote",impossible);}
+            return serviceOrderService.createExternallyQuotedManualOrder(user,"ShopGPT Item 68",quantity,cents,snapshot,request);
         }
     }
 

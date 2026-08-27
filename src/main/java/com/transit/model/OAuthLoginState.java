@@ -25,6 +25,12 @@ public class OAuthLoginState {
 
     private String provider;
 
+    @TableField("target_user_id")
+    private Long targetUserId;
+
+    @TableField("flow_type")
+    private String flowType;
+
     @TableField("expires_at")
     private LocalDateTime expiresAt;
 

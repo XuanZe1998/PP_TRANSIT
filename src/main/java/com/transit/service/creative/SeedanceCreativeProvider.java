@@ -4,8 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.transit.service.CreativePlatformConfigService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -28,21 +28,7 @@ public class SeedanceCreativeProvider implements CreativeVideoProvider {
 
     private final WebClient webClient;
     private final ObjectMapper objectMapper;
-
-    @Value("${creative.seedance.enabled:false}")
-    private boolean enabled;
-
-    @Value("${creative.seedance.base-url:https://ark.cn-beijing.volces.com}")
-    private String baseUrl;
-
-    @Value("${creative.seedance.api-key:}")
-    private String apiKey;
-
-    @Value("${creative.seedance.default-model:doubao-seedance-1-5-pro-251215}")
-    private String defaultModel;
-
-    @Value("${creative.seedance.request-timeout-seconds:45}")
-    private long timeoutSeconds;
+    private final CreativePlatformConfigService platformConfigs;
 
     @Override
     public String key() {
@@ -51,7 +37,7 @@ public class SeedanceCreativeProvider implements CreativeVideoProvider {
 
     @Override
     public boolean isConfigured() {
-        return enabled && StringUtils.hasText(baseUrl) && StringUtils.hasText(apiKey);
+        return platformConfigs.platformAccess("VIDEO", false) != null;
     }
 
     @Override
@@ -60,12 +46,10 @@ public class SeedanceCreativeProvider implements CreativeVideoProvider {
         result.put("key", key());
         result.put("label", "Seedance 视频创作");
         result.put("configured", isConfigured());
-        result.put("defaultModel", defaultModel);
-        result.put("models", List.of(
-                model(defaultModel, "Seedance 1.5 Pro", "有声视频、文生视频、首尾帧", true),
-                model("doubao-seedance-1-0-pro-250528", "Seedance 1.0 Pro", "稳定的文生视频与首尾帧控制", false),
-                model("doubao-seedance-1-0-lite-t2v-250428", "Seedance Lite", "快速文生视频预览", false)
-        ));
+        CreativeProviderAccess access = platformConfigs.platformAccess("VIDEO", false);
+        result.put("defaultModel", access == null ? "" : access.defaultModel());
+        result.put("models", access == null ? List.of() : access.models().stream()
+                .map(item -> model(item, item, "管理员配置的视频模型", item.equals(access.defaultModel()))).toList());
         result.put("capabilities", List.of("text_to_video", "image_to_video", "first_last_frame", "storyboard", "video_extend"));
         return result;
     }
@@ -223,7 +207,7 @@ public class SeedanceCreativeProvider implements CreativeVideoProvider {
     }
 
     private CreativeProviderAccess platformAccess() {
-        return new CreativeProviderAccess(key(), "平台默认 Seedance", baseUrl, apiKey, defaultModel, List.of(defaultModel));
+        return platformConfigs.platformAccess("VIDEO", true);
     }
 
     private ResponseStatusException upstreamFailure(String action, WebClientResponseException exception) {
@@ -249,7 +233,7 @@ public class SeedanceCreativeProvider implements CreativeVideoProvider {
     }
 
     private Duration timeout() {
-        return Duration.ofSeconds(Math.max(10, Math.min(120, timeoutSeconds)));
+        return Duration.ofSeconds(45);
     }
 
     private String normalizeStatus(String vendorStatus) {

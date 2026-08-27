@@ -77,7 +77,6 @@ class SecurityBoundaryIntegrationTests {
             "/public/models",
             "/public/other-services",
             "/platform/user/docs",
-            "/plus/products",
             "/actuator/health",
             "/actuator/info"
     })
@@ -91,7 +90,6 @@ class SecurityBoundaryIntegrationTests {
             "/user/profile",
             "/user/tokens",
             "/platform/user/wallet",
-            "/plus/orders",
             "/service-orders",
             "/service-orders/admin/orders",
             "/admin/api/dashboard",
@@ -99,7 +97,6 @@ class SecurityBoundaryIntegrationTests {
             "/channels",
             "/tokens",
             "/mappings",
-            "/plus/admin/products",
             "/actuator/prometheus"
     })
     void protectedRoutesRejectAnonymousCallers(String path) {
@@ -113,7 +110,7 @@ class SecurityBoundaryIntegrationTests {
             "/user/tokens",
             "/user/logs",
             "/user/stats",
-            "/plus/orders",
+            "/user/usage/analytics",
             "/service-orders"
     })
     void ordinaryUsersCanUseUserRoutes(String path) {
@@ -141,11 +138,14 @@ class SecurityBoundaryIntegrationTests {
     @ParameterizedTest(name = "ordinary user is forbidden from {0}")
     @ValueSource(strings = {
             "/admin/api/dashboard",
+            "/admin/api/finance/summary",
+            "/admin/api/finance/transactions",
+            "/admin/api/finance/redeem-codes",
+            "/admin/api/finance/recharge-plans",
             "/platform/admin/dashboard",
             "/channels",
             "/tokens",
             "/mappings",
-            "/plus/admin/products",
             "/service-orders/admin/orders",
             "/actuator/prometheus"
     })
@@ -159,11 +159,14 @@ class SecurityBoundaryIntegrationTests {
     @ParameterizedTest(name = "administrator may use {0}")
     @ValueSource(strings = {
             "/admin/api/dashboard",
+            "/admin/api/finance/summary",
+            "/admin/api/finance/transactions",
+            "/admin/api/finance/redeem-codes",
+            "/admin/api/finance/recharge-plans",
             "/platform/admin/dashboard",
             "/channels",
             "/tokens",
             "/mappings",
-            "/plus/admin/products",
             "/service-orders/admin/orders",
             "/actuator/prometheus"
     })
@@ -172,6 +175,20 @@ class SecurityBoundaryIntegrationTests {
                 .header(HttpHeaders.AUTHORIZATION, bearer(adminToken))
                 .exchange().expectStatus().isOk()
                 .expectBody().consumeWith(ignored -> { });
+    }
+
+    @ParameterizedTest(name = "removed legacy route is inaccessible: {0}")
+    @ValueSource(strings = {
+            "/plus/products",
+            "/plus/orders",
+            "/plus/admin/products",
+            "/service-07/order",
+            "/payment-service/api/regions"
+    })
+    void removedLegacyRoutesAreInaccessible(String path) {
+        client.get().uri(path)
+                .header(HttpHeaders.AUTHORIZATION, bearer(adminToken))
+                .exchange().expectStatus().isForbidden();
     }
 
     @Test
@@ -219,6 +236,7 @@ class SecurityBoundaryIntegrationTests {
                 .bodyValue(Map.of(
                         "name", "one-time-key-" + UUID.randomUUID(),
                         "totalQuota", 5_000,
+                        "allowAllModels", true,
                         "enabled", true,
                         "description", "security regression test"))
                 .exchange().expectStatus().isOk()
@@ -279,6 +297,7 @@ class SecurityBoundaryIntegrationTests {
                             "userId", userId,
                             "name", "admin-created-" + UUID.randomUUID(),
                             "totalQuota", 1_000,
+                            "allowAllModels", true,
                             "enabled", true))
                     .exchange().expectStatus().isOk()
                     .expectBody(Map.class).returnResult().getResponseBody();
@@ -329,10 +348,69 @@ class SecurityBoundaryIntegrationTests {
         assertThat(publicCatalog).doesNotContain(upstreamSecret).doesNotContain("apiKey");
     }
 
+    @Test
+    @SuppressWarnings("unchecked")
+    void administratorCanSaveOneChannelModelPricingWithoutChangingSiblingModel() {
+        Map<String, Object> created = client.post().uri("/admin/api/channels")
+                .header(HttpHeaders.AUTHORIZATION, bearer(adminToken))
+                .bodyValue(Map.of(
+                        "name", "pricing-channel-" + UUID.randomUUID(),
+                        "type", "openai",
+                        "baseUrl", "https://127.0.0.1:9443/v1",
+                        "apiKey", "pricing-secret-" + UUID.randomUUID(),
+                        "models", "pricing-model-a\npricing-model-b",
+                        "enabled", true))
+                .exchange().expectStatus().isOk()
+                .expectBody(Map.class).returnResult().getResponseBody();
+        assertThat(created).isNotNull();
+        Long channelId = ((Number) created.get("id")).longValue();
+
+        client.put().uri("/admin/api/channels/{id}/model-pricing", channelId)
+                .header(HttpHeaders.AUTHORIZATION, bearer(userToken))
+                .bodyValue(Map.of("channelModelName", "pricing-model-a"))
+                .exchange().expectStatus().isForbidden();
+
+        Map<String, Object> updated = client.put().uri("/admin/api/channels/{id}/model-pricing", channelId)
+                .header(HttpHeaders.AUTHORIZATION, bearer(adminToken))
+                .bodyValue(Map.ofEntries(
+                        Map.entry("channelModelName", "pricing-model-a"),
+                        Map.entry("priority", 20),
+                        Map.entry("enabled", true),
+                        Map.entry("billingEnabled", true),
+                        Map.entry("trafficPercent", 75),
+                        Map.entry("priceRatio", 1),
+                        Map.entry("costPerMillion", 0),
+                        Map.entry("inputCostPerMillion", 1.25),
+                        Map.entry("outputCostPerMillion", 2.5),
+                        Map.entry("cachedCostPerMillion", 0),
+                        Map.entry("inputPricePerMillion", 2.5),
+                        Map.entry("outputPricePerMillion", 5),
+                        Map.entry("cachedPricePerMillion", 0)))
+                .exchange().expectStatus().isOk()
+                .expectBody(Map.class).returnResult().getResponseBody();
+        assertThat(updated).isNotNull().containsEntry("channelModelName", "pricing-model-a");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM model_mappings WHERE channel_id=?", Integer.class, channelId)).isEqualTo(2);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT traffic_percent FROM model_mappings WHERE channel_id=? AND channel_model_name='pricing-model-a'",
+                Integer.class, channelId)).isEqualTo(75);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT traffic_percent FROM model_mappings WHERE channel_id=? AND channel_model_name='pricing-model-b'",
+                Integer.class, channelId)).isEqualTo(100);
+    }
+
     @SuppressWarnings("unchecked")
     private Map<String, Object> register(String identifier, String password) {
+        Map<String, Object> verification = client.post().uri("/auth/verification/email/send")
+                .bodyValue(Map.of("recipient", identifier, "purpose", "REGISTER"))
+                .exchange().expectStatus().isOk()
+                .expectBody(Map.class).returnResult().getResponseBody();
+        assertThat(verification).isNotNull();
         Map<String, Object> response = client.post().uri("/auth/register")
-                .bodyValue(Map.of("identifier", identifier, "password", password))
+                .bodyValue(Map.of(
+                        "email", identifier,
+                        "emailCode", verification.get("debugCode").toString(),
+                        "password", password))
                 .exchange().expectStatus().isOk()
                 .expectBody(Map.class).returnResult().getResponseBody();
         assertThat(response).isNotNull();

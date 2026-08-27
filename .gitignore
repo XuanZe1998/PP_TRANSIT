@@ -38,10 +38,13 @@ web/dist/
 web/.vite/
 web/.vue-global-types/
 web/vite-dev.log
+.wrangler/
+*~
 
 ### Runtime data and logs ###
 data/
 output/pdf/
+reports/*.sql
 **/__pycache__/
 *.py[cod]
 *.log
@@ -49,9 +52,13 @@ output/pdf/
 
 # Local secrets (merchant keys, OAuth credentials, JWT/AES keys)
 config/application-local.yaml
+config/application-local-1.yaml
+config/.env.local
+config/.env.*.local
 .env
 .env.*
 !.env.example
+!config/.env.example
 
 ### Payment Service (Python 微服务) ###
 payment-service/.env

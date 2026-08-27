@@ -38,7 +38,7 @@ export type FlowScreenConfig = {
 export const publicNav = [
   { label: '产品总览', path: '/' },
   { label: '模型市场', path: '/market' },
-  { label: '文档 SDK', path: '/docs' },
+  { label: '文档 SDK', path: '/console/docs' },
   { label: '登录', path: '/login' }
 ]
 
@@ -247,7 +247,7 @@ export const flowScreens: FlowScreenConfig[] = [
     }
   },
   {
-    key: 'user-plus-orders',
+    key: 'user-service-orders',
     order: 9,
     path: '/services',
     role: 'user',
@@ -257,7 +257,7 @@ export const flowScreens: FlowScreenConfig[] = [
     primaryAction: '创建订单',
     cards: [
       { title: 'ChatGPT Plus 月度', description: '人工履约，订单凭证下载，不保存第三方账号密码。', tags: ['¥168', '凭证', '人工确认'] },
-      { title: 'Claude Pro 月度', description: '适合高质量文本和代码场景的 Plus 服务商品。', tags: ['¥198', '履约备注', '售后'] }
+      { title: 'Claude Pro 月度', description: '适合高质量文本和代码场景的会员服务商品。', tags: ['¥198', '履约备注', '售后'] }
     ],
     table: {
       title: '我的订单',
@@ -435,7 +435,7 @@ export const flowScreens: FlowScreenConfig[] = [
     }
   },
   {
-    key: 'admin-plus',
+    key: 'admin-services',
     order: 19,
     path: '/admin/other-services',
     role: 'admin',

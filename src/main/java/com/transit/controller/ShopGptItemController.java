@@ -3,6 +3,8 @@ package com.transit.controller;
 import com.transit.model.User;
 import com.transit.service.CurrentUserService;
 import com.transit.service.ShopGptItemService;
+import com.transit.dto.ShopGptCheckoutRequest;
+import com.transit.dto.ServiceOrderResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
@@ -46,6 +48,13 @@ public class ShopGptItemController {
                                            @RequestBody ShopGptDraftRequest request) {
         User user = currentUserService.requireUser(authHeader);
         return Mono.fromCallable(() -> shopGptItemService.trade(user, request.quantity(), request.captcha(), request.payId()));
+    }
+
+    @PostMapping("/order")
+    public Mono<ServiceOrderResponse> order(@RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authHeader,
+                                         @RequestBody ShopGptCheckoutRequest request) {
+        User user=currentUserService.requireUser(authHeader);
+        return Mono.fromCallable(()->shopGptItemService.checkout(user,request));
     }
 
     public record ShopGptDraftRequest(int quantity, String captcha, Integer payId) {

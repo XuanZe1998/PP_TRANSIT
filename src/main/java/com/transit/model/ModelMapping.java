@@ -10,6 +10,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 
 @TableName("model_mappings")
@@ -78,6 +79,66 @@ public class ModelMapping {
 
     @TableField("capability_tags")
     private String capabilityTags;
+
+    @Builder.Default
+    private String vendor = "unknown";
+
+    @Builder.Default
+    private String capability = "text";
+
+    @TableField("input_modalities")
+    @Builder.Default
+    private String inputModalities = "text";
+
+    @TableField("output_modalities")
+    @Builder.Default
+    private String outputModalities = "text";
+
+    @Builder.Default
+    private String protocols = "chat-completions";
+
+    @TableField("pricing_unit")
+    @Builder.Default
+    private String pricingUnit = "TOKEN";
+
+    @TableField("billing_mode")
+    @Builder.Default
+    private String billingMode = "PAID";
+
+    @TableField("pricing_status")
+    @Builder.Default
+    private String pricingStatus = "PENDING";
+
+    @TableField("pricing_message")
+    private String pricingMessage;
+
+    @TableField("pricing_source_url")
+    private String pricingSourceUrl;
+
+    @TableField("pricing_verified_at")
+    private LocalDateTime pricingVerifiedAt;
+
+    @TableField("official_unit_price")
+    @Builder.Default
+    private BigDecimal officialUnitPrice = BigDecimal.ZERO;
+
+    @TableField("cost_unit_price")
+    @Builder.Default
+    private BigDecimal costUnitPrice = BigDecimal.ZERO;
+
+    @TableField("sale_unit_price")
+    @Builder.Default
+    private BigDecimal saleUnitPrice = BigDecimal.ZERO;
+
+    @TableField("endpoint_path")
+    private String endpointPath;
+
+    @TableField("task_query_path")
+    private String taskQueryPath;
+
+    @TableField("task_query_method")
+    @Builder.Default
+    private String taskQueryMethod = "POST";
 
     /** Context-sensitive official, acquisition-cost and sale-price groups. */
     @TableField(exist = false)

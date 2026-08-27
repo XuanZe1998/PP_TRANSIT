@@ -1,6 +1,8 @@
 package com.transit.controller;
 
 import com.transit.service.OAuthService;
+import com.transit.service.CurrentUserService;
+import com.transit.model.User;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
@@ -15,12 +17,15 @@ import java.util.Map;
 public class OAuthController {
 
     private final OAuthService oauthService;
+    private final CurrentUserService currentUserService;
 
     @GetMapping("/authorize")
     public Mono<ResponseEntity<Map<String, String>>> authorize(
-            @RequestParam("provider") String provider) {
+            @RequestParam("provider") String provider,
+            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authHeader) {
         return Mono.fromCallable(() -> {
-            OAuthService.AuthorizationStart start = oauthService.beginAuthorization(provider);
+            User target = authHeader == null || authHeader.isBlank() ? null : currentUserService.requireUser(authHeader);
+            OAuthService.AuthorizationStart start = oauthService.beginAuthorization(provider, target == null ? null : target.getId());
             return ResponseEntity.ok(Map.of("url", start.url(), "state", start.state()));
         });
     }

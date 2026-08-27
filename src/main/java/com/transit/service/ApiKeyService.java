@@ -6,6 +6,7 @@ import com.transit.mapper.UserMapper;
 import com.transit.model.Token;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -23,32 +24,42 @@ public class ApiKeyService {
     private final TokenMapper tokenMapper;
     private final SecretHashService secretHashService;
     private final UserMapper userMapper;
+    private final JdbcTemplate jdbcTemplate;
     private final SecureRandom secureRandom = new SecureRandom();
 
     public IssuedApiKey issue(Long ownerId, Token request) {
         if (ownerId == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "An API Key must have an owner");
         }
-        if (userMapper.selectById(ownerId) == null) {
+        com.transit.model.User owner = userMapper.selectById(ownerId);
+        if (owner == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "API Key owner does not exist");
         }
         validate(request, null);
         String secret = generateSecret();
+        List<String> grants = requestedModels(request);
+        boolean allowAll = explicitAllowAll(request);
+        requireAuthorizationScope(allowAll, grants);
+        String legacyScope = allowAll ? "*" : String.join(",", grants);
         Token token = Token.builder()
                 .key(secretHashService.hash(secret))
                 .keyPrefix(preview(secret))
                 .userId(ownerId)
+                .organizationId(owner.getDefaultOrganizationId())
                 .name(normalizeName(request.getName()))
                 .usedQuota(0)
                 .totalQuota(request.getTotalQuota())
                 .enabled(true)
                 .createdAt(LocalDateTime.now())
                 .expiredAt(request.getExpiredAt())
-                .allowedModels(normalizeOptional(request.getAllowedModels(), 1000))
+                .allowedModels(legacyScope)
+                .allowAllModels(allowAll)
                 .ipWhitelist(normalizeOptional(request.getIpWhitelist(), 1000))
                 .description(normalizeOptional(request.getDescription(), 500))
                 .build();
         tokenMapper.insert(token);
+        synchronizeModels(token.getId(), allowAll, grants);
+        token.setAllowedModelIds(grants);
         return new IssuedApiKey(token, secret);
     }
 
@@ -96,10 +107,21 @@ public class ApiKeyService {
         current.setTotalQuota(request.getTotalQuota());
         current.setEnabled(request.isEnabled());
         current.setExpiredAt(request.getExpiredAt());
-        current.setAllowedModels(normalizeOptional(request.getAllowedModels(), 1000));
+        List<String> grants = requestedModels(request);
+        boolean omittedScope = !request.isAllowAllModels() && grants.isEmpty()
+                && (request.getAllowedModels() == null || request.getAllowedModels().isBlank());
+        boolean allowAll = omittedScope && current.isAllowAllModels() || explicitAllowAll(request);
+        if (omittedScope && !current.isAllowAllModels()) {
+            grants = allowedModelIds(current.getId());
+        }
+        requireAuthorizationScope(allowAll, grants);
+        current.setAllowedModels(allowAll ? "*" : String.join(",", grants));
+        current.setAllowAllModels(allowAll);
         current.setIpWhitelist(normalizeOptional(request.getIpWhitelist(), 1000));
         current.setDescription(normalizeOptional(request.getDescription(), 500));
         tokenMapper.updateById(current);
+        synchronizeModels(current.getId(), allowAll, grants);
+        current.setAllowedModelIds(grants);
         return view(current);
     }
 
@@ -108,6 +130,7 @@ public class ApiKeyService {
         if (token == null || (requiredOwnerId != null && !Objects.equals(token.getUserId(), requiredOwnerId))) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "API Key not found");
         }
+        jdbcTemplate.update("DELETE FROM api_key_models WHERE token_id = ?", id);
         tokenMapper.deleteById(id);
     }
 
@@ -122,6 +145,7 @@ public class ApiKeyService {
         Map<String, Object> result = new HashMap<>();
         result.put("id", token.getId());
         result.put("userId", token.getUserId());
+        result.put("organizationId", token.getOrganizationId());
         result.put("name", token.getName());
         result.put("keyPreview", keyPreview(token));
         result.put("usedQuota", token.getUsedQuota());
@@ -130,9 +154,79 @@ public class ApiKeyService {
         result.put("createdAt", token.getCreatedAt());
         result.put("expiredAt", token.getExpiredAt());
         result.put("allowedModels", token.getAllowedModels());
+        result.put("allowAllModels", token.isAllowAllModels());
+        result.put("allowedModelIds", allowedModelIds(token.getId()));
         result.put("ipWhitelist", token.getIpWhitelist());
         result.put("description", token.getDescription());
         return result;
+    }
+
+    public boolean modelAllowed(Token token, String requestedModel) {
+        if (token == null || requestedModel == null) return false;
+        if (token.isAllowAllModels()) return true;
+        Integer count = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM api_key_models
+                WHERE token_id = ? AND LOWER(model_name) = LOWER(?)
+                """, Integer.class, token.getId(), requestedModel);
+        if (count != null && count > 0) return true;
+        // Rolling-upgrade compatibility before the structured grant backfill.
+        String legacy = token.getAllowedModels();
+        if (legacy == null || legacy.isBlank()) return true;
+        return java.util.Arrays.stream(legacy.split(","))
+                .map(String::trim).anyMatch(value -> "*".equals(value) || value.equalsIgnoreCase(requestedModel));
+    }
+
+    public List<String> allowedModelIds(Long tokenId) {
+        if (tokenId == null) return List.of();
+        return jdbcTemplate.queryForList(
+                "SELECT model_name FROM api_key_models WHERE token_id = ? ORDER BY model_name",
+                String.class, tokenId);
+    }
+
+    private List<String> requestedModels(Token request) {
+        List<String> structured = request.getAllowedModelIds() == null ? List.of() : request.getAllowedModelIds();
+        if (!structured.isEmpty()) return normalizeModels(structured);
+        String legacy = request.getAllowedModels();
+        if (legacy == null || legacy.isBlank() || "*".equals(legacy.trim())) return List.of();
+        return normalizeModels(java.util.Arrays.asList(legacy.split(",")));
+    }
+
+    private boolean explicitAllowAll(Token request) {
+        return request.isAllowAllModels()
+                || "*".equals(request.getAllowedModels() == null ? null : request.getAllowedModels().trim());
+    }
+
+    private void requireAuthorizationScope(boolean allowAll, List<String> grants) {
+        if (!allowAll && (grants == null || grants.isEmpty())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Select at least one authorized model or explicitly allow all models");
+        }
+    }
+
+    private List<String> normalizeModels(List<String> values) {
+        List<String> result = values.stream().filter(Objects::nonNull).map(String::trim)
+                .filter(value -> !value.isBlank()).distinct().toList();
+        if (result.size() > 500) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Too many model grants");
+        for (String model : result) {
+            if (!model.matches("[A-Za-z0-9._:/-]{1,160}")) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Model grant is invalid");
+            }
+            Integer exists = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM model_mappings WHERE public_model_name = ? AND enabled = TRUE",
+                    Integer.class, model);
+            if (exists == null || exists == 0) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unknown model grant: " + model);
+            }
+        }
+        return result;
+    }
+
+    private void synchronizeModels(Long tokenId, boolean allowAll, List<String> models) {
+        jdbcTemplate.update("DELETE FROM api_key_models WHERE token_id = ?", tokenId);
+        if (!allowAll) {
+            models.forEach(model -> jdbcTemplate.update(
+                    "INSERT INTO api_key_models(token_id, model_name) VALUES (?, ?)", tokenId, model));
+        }
     }
 
     public String keyPreview(Token token) {

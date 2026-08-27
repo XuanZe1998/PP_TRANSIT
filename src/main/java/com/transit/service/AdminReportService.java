@@ -3,6 +3,8 @@ package com.transit.service;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 import java.util.Map;
@@ -49,11 +51,14 @@ public class AdminReportService {
     }
 
     public List<Map<String, Object>> settings() {
-        return jdbcTemplate.queryForList("SELECT setting_key, setting_value, description, updated_at FROM system_settings ORDER BY setting_key");
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList("SELECT setting_key, setting_value, description, updated_at FROM system_settings ORDER BY setting_key");
+        rows.forEach(this::redactSetting);
+        return rows;
     }
 
     public Map<String, Object> saveSetting(Map<String, Object> request) {
         String key = request.getOrDefault("key", "custom.setting").toString();
+        rejectCreativeOrSecretSetting(key);
         String value = request.getOrDefault("value", "").toString();
         String description = request.getOrDefault("description", "").toString();
         Integer count = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM system_settings WHERE setting_key = ?", Integer.class, key);
@@ -63,6 +68,17 @@ public class AdminReportService {
             jdbcTemplate.update("UPDATE system_settings SET setting_value = ?, description = ?, updated_at = CURRENT_TIMESTAMP WHERE setting_key = ?", value, description, key);
         }
         return Map.of("key", key, "value", value, "description", description);
+    }
+
+    private void rejectCreativeOrSecretSetting(String key) {
+        String normalized = key.toLowerCase();
+        if (normalized.startsWith("creative.") || normalized.contains("api-key") || normalized.contains("secret") || normalized.contains("access-key")) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "敏感配置不能写入明文 system_settings，请使用对应的专用配置页面");
+        }
+    }
+    private void redactSetting(Map<String, Object> row) {
+        String key = String.valueOf(row.get("setting_key")).toLowerCase();
+        if (key.contains("key") || key.contains("secret") || key.contains("password") || key.contains("token")) row.put("setting_value", "****");
     }
 
     private long queryLong(String sql) {

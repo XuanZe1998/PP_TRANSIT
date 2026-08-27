@@ -22,7 +22,7 @@ public class AdminDashboardService {
         long revenue = queryLong("SELECT COALESCE(SUM(CASE WHEN sale_amount > 0 THEN sale_amount ELSE cost END), 0) FROM logs WHERE UPPER(status) = 'SUCCESS'");
         long cost = queryLong("SELECT COALESCE(SUM(cost_amount), 0) FROM logs WHERE UPPER(status) = 'SUCCESS'");
         long activeUsers = queryLong("SELECT COUNT(*) FROM users WHERE COALESCE(status, 'ACTIVE') = 'ACTIVE'");
-        long pendingOrders = queryLong("SELECT COUNT(*) FROM plus_orders WHERE status IN ('PENDING', 'CONFIRMED')");
+        long pendingOrders = queryLong("SELECT COUNT(*) FROM service_orders WHERE status IN ('PENDING', 'CONFIRMED')");
 
         List<Map<String, Object>> channelHealth = jdbcTemplate.queryForList("""
                 SELECT id, name, type, enabled, health_status, cooldown_until, weight, rpm_limit, tpm_limit

@@ -14,6 +14,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 import org.springframework.web.server.ResponseStatusException;
@@ -26,6 +27,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
@@ -43,6 +45,8 @@ public class AdminChannelService {
     private final ProviderGatewayFactory providerGatewayFactory;
     private final ChannelSecretService channelSecretService;
     private final ModelPriceTierService priceTierService;
+    @Autowired(required = false)
+    private ProviderCredentialService providerCredentialService;
 
     @Transactional(readOnly = true)
     public List<Channel> list() {
@@ -68,6 +72,7 @@ public class AdminChannelService {
     public Channel create(Channel channel) {
         List<ModelMapping> requestedPricing = safePricing(channel.getModelPricing());
         normalize(channel);
+        rejectDuplicateManagedChannel(channel, null);
         requireCredentialEncryption();
         channel.setApiKey(channelSecretService.encrypt(channel.getApiKey()));
         channelMapper.insert(channel);
@@ -87,7 +92,12 @@ public class AdminChannelService {
                 || !Objects.equals(normalizedModels(current.getModels()), requestedModels);
         current.setName(request.getName());
         current.setType(request.getType());
+        current.setSourceCode(defaultString(request.getSourceCode(), current.getSourceCode()));
+        current.setSourceName(defaultString(request.getSourceName(), current.getSourceName()));
+        current.setProtocolType(defaultString(request.getProtocolType(), "openai-chat"));
         current.setBaseUrl(request.getBaseUrl());
+        normalizeSourceMetadata(current);
+        rejectDuplicateManagedChannel(current, id);
         if (request.getApiKey() != null && !request.getApiKey().isBlank() && !request.getApiKey().contains("***")) {
             requireCredentialEncryption();
             current.setApiKey(channelSecretService.encrypt(request.getApiKey()));
@@ -109,6 +119,62 @@ public class AdminChannelService {
         channelMapper.updateById(current);
         synchronizeModelMappings(id, parseModels(current.getModels()), safePricing(request.getModelPricing()));
         return channelView(channelMapper.selectById(id));
+    }
+
+    @Transactional
+    public ModelMapping saveModelPricing(Long channelId, ModelMapping request) {
+        Channel channel = channelMapper.selectById(channelId);
+        if (channel == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Channel not found");
+        }
+        String requestedName = defaultString(request.getChannelModelName(), request.getPublicModelName()).trim();
+        List<String> names = parseModels(requestedName);
+        if (names.size() != 1 || !names.get(0).equals(requestedName)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Exactly one valid model name is required");
+        }
+        String modelName = names.get(0);
+        ModelMapping target = modelMappingMapper.selectList(new LambdaQueryWrapper<ModelMapping>()
+                        .eq(ModelMapping::getChannelId, channelId)
+                        .eq(ModelMapping::getChannelModelName, modelName)
+                        .last("LIMIT 1"))
+                .stream().findFirst().orElseGet(() -> defaultMapping(channelId, modelName));
+        applyEditablePricing(target, request);
+        target.setPublicModelName(modelName);
+        target.setChannelModelName(modelName);
+        target.setChannelId(channelId);
+        validatePricing(target);
+        if (target.getId() == null) {
+            modelMappingMapper.insert(target);
+        } else {
+            modelMappingMapper.updateById(target);
+        }
+        priceTierService.synchronize(target, request.getPriceTiers());
+
+        List<String> channelModels = new java.util.ArrayList<>(parseModels(channel.getModels()));
+        if (!channelModels.contains(modelName)) {
+            channelModels.add(modelName);
+            channel.setModels(String.join("\n", channelModels));
+            channelMapper.updateById(channel);
+        }
+        return target;
+    }
+
+    @Transactional
+    public void deleteModelPricing(Long channelId, Long mappingId) {
+        Channel channel = channelMapper.selectById(channelId);
+        if (channel == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Channel not found");
+        }
+        ModelMapping mapping = modelMappingMapper.selectById(mappingId);
+        if (mapping == null || !Objects.equals(mapping.getChannelId(), channelId)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Channel model pricing not found");
+        }
+        priceTierService.deleteForMappings(List.of(mappingId));
+        modelMappingMapper.deleteById(mappingId);
+        channel.setModels(parseModels(channel.getModels()).stream()
+                .filter(model -> !model.equals(mapping.getChannelModelName()))
+                .collect(Collectors.joining("\n")));
+        channelMapper.updateById(channel);
     }
 
     @Transactional
@@ -163,7 +229,7 @@ public class AdminChannelService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Channel apiKey is required");
         }
 
-        int timeoutSeconds = Math.max(3, Math.min(120, intValue(request.get("timeoutSeconds"), 20)));
+        int timeoutSeconds = Math.max(3, Math.min(300, intValue(request.get("timeoutSeconds"), 20)));
         String prompt = stringValue(request.get("prompt"), "你是什么模型").trim();
         if (prompt.isBlank()) {
             prompt = "你是什么模型";
@@ -176,7 +242,7 @@ public class AdminChannelService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "Custom executable probes are disabled; use the built-in channel probe");
         }
-        Map<String, Object> result = runProbe(channel, model, prompt, timeoutSeconds);
+        Map<String, Object> result = runProbe(channel, model, prompt, timeoutSeconds, request);
         result.put("estimatedCostAmount", estimateCostAmount(channel.getId(), model, result));
         String probeStatus = stringValue(result.get("status"), "FAILED");
         updateNvidiaMappingVerification(channel, model, probeStatus);
@@ -188,6 +254,27 @@ public class AdminChannelService {
         response.put("channelId", id);
         response.put("healthStatus", healthStatus);
         return response;
+    }
+
+    public Map<String, Object> testCredential(Long channelId, Long credentialId) {
+        if (providerCredentialService == null) throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Credential service is unavailable");
+        Channel channel = channelMapper.selectById(channelId);
+        if (channel == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Channel not found");
+        ProviderCredentialService.SelectedCredential selected = providerCredentialService.select(channel, credentialId);
+        channel.setApiKey(selected.secret());
+        String model = resolveProviderModel(channel, Map.of());
+        if (model == null || model.isBlank()) {
+            providerCredentialService.releaseUnknown(credentialId);
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Configure at least one provider model before testing this credential");
+        }
+        Map<String, Object> result = runProbe(channel, model, "你是什么模型", 20, Map.of());
+        if ("SUCCESS".equalsIgnoreCase(Objects.toString(result.get("status"), ""))) {
+            providerCredentialService.recordSuccess(credentialId, longValue(result.get("latencyMs"), 0));
+        } else {
+            providerCredentialService.recordFailure(credentialId,
+                    new IllegalStateException(Objects.toString(result.get("error"), "Credential probe failed")));
+        }
+        return result;
     }
 
     public List<Map<String, Object>> healthChecks(Long channelId) {
@@ -213,7 +300,8 @@ public class AdminChannelService {
                 """);
     }
 
-    private Map<String, Object> runProbe(Channel channel, String model, String prompt, int timeoutSeconds) {
+    private Map<String, Object> runProbe(Channel channel, String model, String prompt, int timeoutSeconds,
+                                         Map<String, Object> options) {
         long started = System.currentTimeMillis();
         try {
             channelUrlPolicy.validate(channel.getBaseUrl());
@@ -222,10 +310,36 @@ public class AdminChannelService {
             // Several NVIDIA NIMs reject or stall on very small generation
             // budgets. 64 is still a cheap probe while matching the provider's
             // accepted Chat Completions envelope.
-            probeRequest.setMaxTokens("nvidia".equalsIgnoreCase(channel.getType()) ? 64 : 16);
+            int defaultMaxTokens = "nvidia".equalsIgnoreCase(channel.getType()) ? 64 : 16;
+            probeRequest.setMaxTokens(Math.max(1, Math.min(16_384,
+                    intValue(options.get("maxTokens"), defaultMaxTokens))));
+            if (options.containsKey("temperature")) {
+                probeRequest.setTemperature(doubleValue(options.get("temperature"), 1.0));
+            }
+            if (options.containsKey("topP")) {
+                probeRequest.setTopP(doubleValue(options.get("topP"), 1.0));
+            }
+            if (options.containsKey("seed")) {
+                probeRequest.setSeed(intValue(options.get("seed"), 42));
+            }
+            if (options.get("chatTemplateKwargs") instanceof Map<?, ?> templateOptions) {
+                Map<String, Object> values = new LinkedHashMap<>();
+                templateOptions.forEach((key, value) -> values.put(Objects.toString(key), value));
+                probeRequest.setChatTemplateKwargs(values);
+            }
             ChatRequest.Message message = new ChatRequest.Message();
             message.setRole("user");
-            message.setContent(prompt);
+            String imageUrl = stringValue(options.get("imageUrl"), "").trim();
+            if (imageUrl.isBlank()) {
+                message.setContent(prompt);
+            } else {
+                if (!imageUrl.startsWith("https://assets.ngc.nvidia.com/")) {
+                    throw new IllegalArgumentException("NVIDIA probe imageUrl must use assets.ngc.nvidia.com");
+                }
+                message.setContent(List.of(
+                        Map.of("type", "text", "text", prompt),
+                        Map.of("type", "image_url", "image_url", Map.of("url", imageUrl))));
+            }
             probeRequest.setMessages(List.of(message));
             ProviderGateway gateway = providerGatewayFactory.resolve(channel.getType());
             ChatResponse response = gateway.chatCompletions(channel, probeRequest, model, model)
@@ -412,9 +526,13 @@ public class AdminChannelService {
         boolean verified = "SUCCESS".equalsIgnoreCase(probeStatus);
         jdbcTemplate.update("""
                 UPDATE model_mappings
-                SET enabled = ?
+                SET enabled = ?, billing_enabled = ?, billing_mode = ?, pricing_status = ?,
+                    pricing_message = ?, pricing_source_url = ?, pricing_verified_at = CASE WHEN ? THEN CURRENT_TIMESTAMP ELSE pricing_verified_at END
                 WHERE channel_id = ? AND channel_model_name = ?
-                """, verified, channel.getId(), model);
+                """, verified, verified, verified ? "FREE_PREVIEW" : "DISABLED",
+                verified ? "FREE_PREVIEW" : "PENDING",
+                verified ? "免费开发预览 · 非生产服务，不承诺生产 SLA" : "等待 NVIDIA 连通性验证",
+                "https://docs.api.nvidia.com/nim/docs/run-anywhere", verified, channel.getId(), model);
     }
 
     private String healthStatus(Channel channel, String probeStatus) {
@@ -437,6 +555,8 @@ public class AdminChannelService {
     }
 
     private void normalize(Channel channel) {
+        normalizeSourceMetadata(channel);
+        channel.setProtocolType(defaultString(channel.getProtocolType(), "openai-chat"));
         channel.setGroupName(defaultString(channel.getGroupName(), "default"));
         channel.setWeight(channel.getWeight() <= 0 ? 100 : channel.getWeight());
         channel.setFailureThreshold(channel.getFailureThreshold() <= 0 ? 3 : channel.getFailureThreshold());
@@ -444,6 +564,37 @@ public class AdminChannelService {
         channel.setHealthStatus("UNTESTED");
         channel.setModels(normalizedModels(channel.getModels()));
         validateChannel(channel);
+    }
+
+    private void normalizeSourceMetadata(Channel channel) {
+        String type = defaultString(channel.getType(), "").toLowerCase(java.util.Locale.ROOT);
+        String baseUrl = defaultString(channel.getBaseUrl(), "").toLowerCase(java.util.Locale.ROOT);
+        if (type.equals("haoee") || type.equals("haoee-openai") || baseUrl.contains("haoee.com")) {
+            channel.setSourceCode("haoee");
+            channel.setSourceName("好易智算");
+            return;
+        }
+        if (type.equals("nvidia") || baseUrl.contains("nvidia.com")) {
+            channel.setSourceCode("nvidia");
+            channel.setSourceName("NVIDIA");
+            return;
+        }
+        channel.setSourceCode(defaultString(channel.getSourceCode(), "other"));
+        channel.setSourceName(defaultString(channel.getSourceName(), "其他第三方中转站"));
+    }
+
+    private void rejectDuplicateManagedChannel(Channel channel, Long currentId) {
+        String source = defaultString(channel.getSourceCode(), "other").toLowerCase(Locale.ROOT);
+        if (!List.of("haoee", "nvidia").contains(source)) return;
+        String normalizedUrl = defaultString(channel.getBaseUrl(), "").replaceAll("/+$", "").toLowerCase(Locale.ROOT);
+        List<Channel> existing = channelMapper.selectList(new LambdaQueryWrapper<Channel>()
+                .eq(Channel::getSourceCode, source));
+        boolean duplicate = existing.stream().anyMatch(item -> !Objects.equals(item.getId(), currentId)
+                && defaultString(item.getBaseUrl(), "").replaceAll("/+$", "").toLowerCase(Locale.ROOT).equals(normalizedUrl));
+        if (duplicate) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "该托管供应商渠道已存在，请在现有渠道的凭证池中添加 API Key");
+        }
     }
 
     private Channel channelView(Channel channel) {
@@ -532,21 +683,49 @@ public class AdminChannelService {
                 .channelModelName(model)
                 .channelId(channelId)
                 .priority(10)
-                .enabled(true)
+                .enabled(false)
                 .priceRatio(BigDecimal.ONE)
                 .costPerMillion(BigDecimal.ZERO)
-                .inputPricePerMillion(BigDecimal.ONE)
-                .outputPricePerMillion(BigDecimal.ONE)
+                .inputPricePerMillion(BigDecimal.ZERO)
+                .outputPricePerMillion(BigDecimal.ZERO)
                 .cachedPricePerMillion(BigDecimal.ZERO)
                 .inputCostPerMillion(BigDecimal.ZERO)
                 .outputCostPerMillion(BigDecimal.ZERO)
                 .cachedCostPerMillion(BigDecimal.ZERO)
-                .billingEnabled(true)
+                .billingEnabled(false)
+                .billingMode("DISABLED")
+                .pricingStatus("PENDING")
+                .pricingMessage("缺少关键销售价格")
+                .officialUnitPrice(BigDecimal.ZERO)
+                .costUnitPrice(BigDecimal.ZERO)
+                .saleUnitPrice(BigDecimal.ZERO)
                 .trafficPercent(100)
+                .capabilityTags("manual,pricing-required")
                 .build();
     }
 
     private void applyPricing(ModelMapping target, ModelMapping source) {
+        applyEditablePricing(target, source);
+        target.setVendor(defaultString(source.getVendor(), "unknown"));
+        target.setCapability(defaultString(source.getCapability(), "text"));
+        target.setInputModalities(defaultString(source.getInputModalities(), "text"));
+        target.setOutputModalities(defaultString(source.getOutputModalities(), "text"));
+        target.setProtocols(defaultString(source.getProtocols(), "chat-completions"));
+        target.setPricingUnit(defaultString(source.getPricingUnit(), "TOKEN"));
+        target.setBillingMode(defaultString(source.getBillingMode(), target.isBillingEnabled() ? "PAID" : "DISABLED"));
+        target.setPricingStatus(defaultString(source.getPricingStatus(), "PENDING"));
+        target.setPricingMessage(source.getPricingMessage());
+        target.setPricingSourceUrl(source.getPricingSourceUrl());
+        target.setPricingVerifiedAt(source.getPricingVerifiedAt());
+        target.setOfficialUnitPrice(coalesce(source.getOfficialUnitPrice(), BigDecimal.ZERO));
+        target.setCostUnitPrice(coalesce(source.getCostUnitPrice(), BigDecimal.ZERO));
+        target.setSaleUnitPrice(coalesce(source.getSaleUnitPrice(), BigDecimal.ZERO));
+        target.setEndpointPath(source.getEndpointPath());
+        target.setTaskQueryPath(source.getTaskQueryPath());
+        target.setTaskQueryMethod(defaultString(source.getTaskQueryMethod(), "POST"));
+    }
+
+    private void applyEditablePricing(ModelMapping target, ModelMapping source) {
         target.setPriority(source.getPriority());
         target.setEnabled(source.isEnabled());
         target.setPriceRatio(coalesce(source.getPriceRatio(), BigDecimal.ONE));
@@ -561,6 +740,14 @@ public class AdminChannelService {
         target.setCachedPricePerMillion(coalesce(source.getCachedPricePerMillion(),
                 suggestedSale(target.getCachedCostPerMillion(), target.getPriceRatio(), BigDecimal.ZERO)));
         target.setBillingEnabled(source.isBillingEnabled());
+        target.setBillingMode(defaultString(source.getBillingMode(), source.isBillingEnabled() ? "PAID" : "DISABLED"));
+        target.setPricingStatus(defaultString(source.getPricingStatus(), "PENDING"));
+        target.setPricingMessage(source.getPricingMessage());
+        target.setPricingSourceUrl(source.getPricingSourceUrl());
+        target.setPricingVerifiedAt(source.getPricingVerifiedAt());
+        target.setOfficialUnitPrice(coalesce(source.getOfficialUnitPrice(), BigDecimal.ZERO));
+        target.setCostUnitPrice(coalesce(source.getCostUnitPrice(), BigDecimal.ZERO));
+        target.setSaleUnitPrice(coalesce(source.getSaleUnitPrice(), BigDecimal.ZERO));
         target.setTrafficPercent(source.getTrafficPercent() <= 0 ? 100 : source.getTrafficPercent());
         target.setCapabilityTags(source.getCapabilityTags());
     }
@@ -585,6 +772,19 @@ public class AdminChannelService {
         validateAmount(mapping.getInputCostPerMillion(), "inputCostPerMillion");
         validateAmount(mapping.getOutputCostPerMillion(), "outputCostPerMillion");
         validateAmount(mapping.getCachedCostPerMillion(), "cachedCostPerMillion");
+        validateAmount(mapping.getOfficialUnitPrice(), "officialUnitPrice");
+        validateAmount(mapping.getCostUnitPrice(), "costUnitPrice");
+        validateAmount(mapping.getSaleUnitPrice(), "saleUnitPrice");
+        String unit = defaultString(mapping.getPricingUnit(), "TOKEN").toUpperCase(Locale.ROOT);
+        if (!List.of("TOKEN", "SECOND", "IMAGE", "MINUTE", "CHARACTER", "TASK").contains(unit)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported pricingUnit");
+        }
+        mapping.setPricingUnit(unit);
+        String mode = defaultString(mapping.getBillingMode(), mapping.isBillingEnabled() ? "PAID" : "DISABLED").toUpperCase(Locale.ROOT);
+        if (!List.of("PAID", "FREE_PREVIEW", "DISABLED").contains(mode)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported billingMode");
+        }
+        mapping.setBillingMode(mode);
     }
 
     private void validateAmount(BigDecimal value, String field) {
@@ -624,6 +824,12 @@ public class AdminChannelService {
         if (channel.getModels() != null && channel.getModels().length() > 2000) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Channel model list is too long");
         }
+        if (!channel.getSourceCode().matches("[A-Za-z0-9._-]{1,80}")) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Channel sourceCode is invalid");
+        }
+        if (!channel.getProtocolType().matches("[A-Za-z0-9._-]{1,80}")) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Channel protocolType is invalid");
+        }
         channelUrlPolicy.validate(channel.getBaseUrl());
     }
 
@@ -654,6 +860,12 @@ public class AdminChannelService {
         if (value instanceof Number number) return number.intValue();
         if (value == null || value.toString().isBlank()) return fallback;
         return Integer.parseInt(value.toString());
+    }
+
+    private double doubleValue(Object value, double fallback) {
+        if (value instanceof Number number) return number.doubleValue();
+        if (value == null || value.toString().isBlank()) return fallback;
+        return Double.parseDouble(value.toString());
     }
 
     private long longValue(Object value, long fallback) {

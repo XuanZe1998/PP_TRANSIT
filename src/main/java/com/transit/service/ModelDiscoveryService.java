@@ -6,6 +6,7 @@ import com.transit.mapper.ChannelMapper;
 import com.transit.mapper.ModelMappingMapper;
 import com.transit.model.Channel;
 import com.transit.model.ModelMapping;
+import com.transit.model.ProviderModel;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -42,11 +43,13 @@ public class ModelDiscoveryService {
     private final ChannelUrlPolicy channelUrlPolicy;
     private final WebClient webClient;
     private final JdbcTemplate jdbcTemplate;
+    private final ProviderModelCatalogService providerModelCatalogService;
 
     public List<Map<String, Object>> providerCatalog() {
         return List.of(
                 provider("openai", "OpenAI", "https://api.openai.com", "OPENAI", true),
                 provider("openai-compatible", "OpenAI Compatible", "", "OPENAI", true),
+                provider("haoee", "好易智算 MaaS", "https://maas.haoee.com", "OPENAI", true),
                 provider("anthropic", "Anthropic Claude", "https://api.anthropic.com", "ANTHROPIC", true),
                 provider("gemini", "Google Gemini", "https://generativelanguage.googleapis.com", "GEMINI", true),
                 provider("deepseek", "DeepSeek", "https://api.deepseek.com", "OPENAI", true),
@@ -147,6 +150,9 @@ public class ModelDiscoveryService {
 
     private List<String> fetchModels(Channel channel) {
         String type = normalizedType(channel);
+        if (isHaoee(channel, type)) {
+            return haoeeCatalogModels(channel.getId());
+        }
         String url = modelsUrl(channel, type);
         WebClient.RequestHeadersSpec<?> request = webClient.get().uri(url);
         if ("gemini".equals(type) || "google".equals(type)) {
@@ -165,8 +171,7 @@ public class ModelDiscoveryService {
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Provider returned an empty model catalog");
         }
         LinkedHashSet<String> result = new LinkedHashSet<>();
-        collectModels(payload.get("data"), result, false);
-        collectModels(payload.get("models"), result, true);
+        collectModels(payload, result, "gemini".equals(type) || "google".equals(type));
         if (result.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
                     "Provider response did not contain a supported model catalog");
@@ -174,11 +179,58 @@ public class ModelDiscoveryService {
         return result.stream().sorted(Comparator.naturalOrder()).limit(MAX_DISCOVERED_MODELS).toList();
     }
 
-    private void collectModels(JsonNode array, Set<String> result, boolean stripGeminiPrefix) {
-        if (array == null || !array.isArray()) return;
+    private List<String> haoeeCatalogModels(Long channelId) {
+        List<ProviderModel> catalog = providerModelCatalogService.listBySource("haoee");
+        if (catalog.isEmpty()) {
+            providerModelCatalogService.synchronizeHaoee(channelId);
+            catalog = providerModelCatalogService.listBySource("haoee");
+        }
+        return catalog.stream()
+                .filter(model -> !Set.of("FAILED", "UNSUPPORTED", "RETIRED")
+                        .contains(String.valueOf(model.getVerificationStatus()).toUpperCase(Locale.ROOT)))
+                .map(ProviderModel::getUpstreamModelName)
+                .filter(value -> value != null && value.matches(MODEL_PATTERN))
+                .distinct()
+                .sorted()
+                .limit(MAX_DISCOVERED_MODELS)
+                .toList();
+    }
+
+    private boolean isHaoee(Channel channel, String type) {
+        return "haoee".equals(type) || "haoee-openai".equals(type)
+                || "haoee".equalsIgnoreCase(channel.getSourceCode())
+                || (channel.getBaseUrl() != null && channel.getBaseUrl().toLowerCase(Locale.ROOT).contains("maas.haoee.com"));
+    }
+
+    private void collectModels(JsonNode payload, Set<String> result, boolean stripGeminiPrefix) {
+        if (payload == null || payload.isNull()) return;
+        if (payload.isArray()) {
+            collectModelArray(payload, result, stripGeminiPrefix);
+            return;
+        }
+        if (!payload.isObject()) return;
+        for (String field : List.of("data", "models", "items", "results", "records", "list")) {
+            JsonNode candidate = payload.get(field);
+            if (candidate == null || candidate.isNull()) continue;
+            if (candidate.isArray()) {
+                collectModelArray(candidate, result, stripGeminiPrefix || "models".equals(field));
+            } else if (candidate.isObject()) {
+                collectModels(candidate, result, stripGeminiPrefix);
+            }
+        }
+        JsonNode resultNode = payload.get("result");
+        if (resultNode != null && resultNode.isObject()) {
+            collectModels(resultNode, result, stripGeminiPrefix);
+        }
+    }
+
+    private void collectModelArray(JsonNode array, Set<String> result, boolean stripGeminiPrefix) {
         StreamSupport.stream(array.spliterator(), false).forEach(item -> {
             String value = text(item, "id");
             if (value == null) value = text(item, "name");
+            if (value == null) value = text(item, "model");
+            if (value == null) value = text(item, "modelId");
+            if (value == null) value = text(item, "model_name");
             if (value == null && item.isTextual()) value = item.asText();
             if (value == null) return;
             if (stripGeminiPrefix && value.startsWith("models/")) value = value.substring("models/".length());

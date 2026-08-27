@@ -4,6 +4,30 @@
 
 平台目前提供文生视频、图生视频、首尾帧控制、故事分镜、视频续写入口、提示词助手、模板和个人作品任务库。生成任务由后端创建并轮询，浏览器不会得到供应商 API Key。
 
+## TXT 自动成片
+
+启用后，`/studio` 会出现“TXT 自动成片”：上传 UTF-8 TXT 或粘贴原文，依次确认结构化剧本、角色/场景画像和视频分镜，最后由 FFmpeg 合成为完整 MP4。首期支持 30–90 秒、最多 12 个镜头。
+
+```yaml
+creative:
+  auto-movie:
+    enabled: true
+    public-base-url: https://你的公网域名
+    ffmpeg-path: ffmpeg
+    text:
+      base-url: https://api.openai.com
+      api-key: ${AUTO_MOVIE_TEXT_API_KEY}
+      default-model: gpt-4.1-mini
+    image:
+      base-url: https://api.openai.com
+      api-key: ${AUTO_MOVIE_IMAGE_API_KEY}
+      default-model: gpt-image-1
+```
+
+生产环境的 `public-base-url` 必须能从视频供应商侧访问，否则本地保存的角色/场景图无法作为 Seedance 参考图。服务器还需要安装 FFmpeg 并保证配置路径可执行。用户也可以在“模型设置”中创建 `openai-chat`、`openai-image` 和 `seedance` 三类自有连接；自有连接不扣平台余额。
+
+项目接口位于 `/creative/projects/**`，任务使用数据库租约队列，可在服务重启后继续。平台默认接口按 `creative.auto-movie.price` 的整数金额单位进行阶段预冻结与成功结果结算。
+
 ## 用户自带模型（BYOK）
 
 登录用户可在 `/studio` 右上角打开“模型设置”，保存多组自己的模型连接。每组连接包含：

@@ -7,12 +7,35 @@ spring:
     password:
     driver-class-name: org.h2.Driver
 
+gateway:
+  allow-private-upstreams: true
+  rate-limit:
+    distributed-enabled: false
+  idempotency:
+    enforce: false
+
+account:
+  verification-mode: EMAIL_ONLY
+
+verification:
+  debug-code-enabled: true
+
+uploads:
+  avatars-directory: ${java.io.tmpdir}/api-transit-test/avatars
+
+storage:
+  other-service-images:
+    directory: ${java.io.tmpdir}/api-transit-test/other-service-images
+
 security:
   data-encryption-key: AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=
   jwt:
     secret: test-only-jwt-secret-at-least-32-characters
 
 management:
+  health:
+    redis:
+      enabled: false
   prometheus:
     metrics:
       export:
@@ -21,6 +44,3 @@ management:
     web:
       exposure:
         include: health,info,prometheus
-
-gateway:
-  allow-private-upstreams: true

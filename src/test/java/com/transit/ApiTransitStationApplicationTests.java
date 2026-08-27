@@ -15,15 +15,15 @@ class ApiTransitStationApplicationTests {
     @Test
     void convertsPlainApplicationYamlArgumentIntoSpringConfigLocation() {
         String[] normalized = ApiTransitStationApplication.normalizeConfigArguments(new String[]{
-                "config/application-local.yaml",
+                "config/application-local-1.yaml",
                 "--server.port=0"
         });
 
         assertThat(normalized).contains("--server.port=0");
         assertThat(normalized).anySatisfy(argument -> assertThat(argument)
                 .startsWith("--spring.config.additional-location=file:")
-                .contains("application-local.yaml"));
-        assertThat(normalized).doesNotContain("config/application-local.yaml");
+                .contains("application-local-1.yaml"));
+        assertThat(normalized).doesNotContain("config/application-local-1.yaml");
     }
 
     @Test
@@ -33,8 +33,8 @@ class ApiTransitStationApplicationTests {
 
         String explicit = "--spring.config.additional-location=file:/safe/application.yaml";
         assertThat(ApiTransitStationApplication.normalizeConfigArguments(new String[]{
-                "config/application-local.yaml", explicit
-        })).containsExactly("config/application-local.yaml", explicit);
+                "config/application-local-1.yaml", explicit
+        })).containsExactly("config/application-local-1.yaml", explicit);
     }
 
 }

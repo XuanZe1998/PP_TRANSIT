@@ -62,6 +62,23 @@ public class AdminModelService {
         mapping.setBillingEnabled(request.isBillingEnabled());
         mapping.setTrafficPercent(request.getTrafficPercent());
         mapping.setCapabilityTags(request.getCapabilityTags());
+        mapping.setVendor(request.getVendor());
+        mapping.setCapability(request.getCapability());
+        mapping.setInputModalities(request.getInputModalities());
+        mapping.setOutputModalities(request.getOutputModalities());
+        mapping.setProtocols(request.getProtocols());
+        mapping.setPricingUnit(request.getPricingUnit());
+        mapping.setBillingMode(request.getBillingMode());
+        mapping.setPricingStatus(request.getPricingStatus());
+        mapping.setPricingMessage(request.getPricingMessage());
+        mapping.setPricingSourceUrl(request.getPricingSourceUrl());
+        mapping.setPricingVerifiedAt(request.getPricingVerifiedAt());
+        mapping.setOfficialUnitPrice(request.getOfficialUnitPrice());
+        mapping.setCostUnitPrice(request.getCostUnitPrice());
+        mapping.setSaleUnitPrice(request.getSaleUnitPrice());
+        mapping.setEndpointPath(request.getEndpointPath());
+        mapping.setTaskQueryPath(request.getTaskQueryPath());
+        mapping.setTaskQueryMethod(request.getTaskQueryMethod());
         normalize(mapping);
         modelMappingMapper.updateById(mapping);
         priceTierService.synchronize(mapping, request.getPriceTiers());
@@ -125,6 +142,56 @@ public class AdminModelService {
         if (mapping.getCapabilityTags() != null && mapping.getCapabilityTags().length() > 1000) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "capabilityTags is too long");
         }
+        mapping.setVendor(normalizeEnumLike(mapping.getVendor(), "unknown", 80));
+        mapping.setCapability(normalizeEnumLike(mapping.getCapability(), "text", 40));
+        mapping.setInputModalities(normalizeCsv(mapping.getInputModalities(), "text", 255));
+        mapping.setOutputModalities(normalizeCsv(mapping.getOutputModalities(), "text", 255));
+        mapping.setProtocols(normalizeCsv(mapping.getProtocols(), "chat-completions", 255));
+        mapping.setPricingUnit(normalizeEnumLike(mapping.getPricingUnit(), "TOKEN", 40).toUpperCase(Locale.ROOT));
+        mapping.setBillingMode(normalizeEnumLike(mapping.getBillingMode(), mapping.isBillingEnabled() ? "PAID" : "DISABLED", 24).toUpperCase(Locale.ROOT));
+        mapping.setPricingStatus(normalizeEnumLike(mapping.getPricingStatus(), "PENDING", 24).toUpperCase(Locale.ROOT));
+        if (!List.of("TOKEN", "SECOND", "IMAGE", "MINUTE", "CHARACTER", "TASK").contains(mapping.getPricingUnit())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported pricing unit");
+        }
+        if (!List.of("PAID", "FREE_PREVIEW", "DISABLED").contains(mapping.getBillingMode())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported billing mode");
+        }
+        if (!List.of("VERIFIED", "ESTIMATED", "FREE_PREVIEW", "PENDING").contains(mapping.getPricingStatus())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported pricing status");
+        }
+        if (mapping.getOfficialUnitPrice() == null) mapping.setOfficialUnitPrice(BigDecimal.ZERO);
+        if (mapping.getCostUnitPrice() == null) mapping.setCostUnitPrice(BigDecimal.ZERO);
+        if (mapping.getSaleUnitPrice() == null) mapping.setSaleUnitPrice(BigDecimal.ZERO);
+        validatePrice(mapping.getOfficialUnitPrice(), "officialUnitPrice");
+        validatePrice(mapping.getCostUnitPrice(), "costUnitPrice");
+        validatePrice(mapping.getSaleUnitPrice(), "saleUnitPrice");
+        if (mapping.getEndpointPath() != null && mapping.getEndpointPath().length() > 500) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "endpointPath is too long");
+        }
+        if (mapping.getTaskQueryPath() != null && mapping.getTaskQueryPath().length() > 500) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "taskQueryPath is too long");
+        }
+        String queryMethod = mapping.getTaskQueryMethod() == null ? "POST" : mapping.getTaskQueryMethod().toUpperCase(Locale.ROOT);
+        if (!List.of("GET", "POST").contains(queryMethod)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "taskQueryMethod must be GET or POST");
+        }
+        mapping.setTaskQueryMethod(queryMethod);
+    }
+
+    private String normalizeEnumLike(String value, String fallback, int max) {
+        String normalized = value == null || value.isBlank() ? fallback : value.trim();
+        if (normalized.length() > max || !normalized.matches("[A-Za-z0-9._-]+")) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Model catalog metadata is invalid");
+        }
+        return normalized;
+    }
+
+    private String normalizeCsv(String value, String fallback, int max) {
+        String normalized = value == null || value.isBlank() ? fallback : value.trim();
+        if (normalized.length() > max || !normalized.matches("[A-Za-z0-9._,-]+")) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Model catalog metadata is invalid");
+        }
+        return normalized;
     }
 
     private void validatePrice(BigDecimal value, String field) {

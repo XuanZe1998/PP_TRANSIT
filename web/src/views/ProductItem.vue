@@ -51,7 +51,7 @@
           </div>
 
           <div class="badge-row">
-            <span class="badge green">自动发货</span>
+            <span class="badge green">人工采购履约</span>
             <span v-if="product.sold !== null" class="badge blue">已售 {{ product.sold.toLocaleString() }}</span>
             <span class="badge cyan">{{ product.stock === null ? '库存待同步' : `库存 ${product.stock}` }}</span>
           </div>
@@ -85,29 +85,7 @@
               </div>
             </label>
 
-            <label>
-              <span>人机验证</span>
-              <div class="captcha-row">
-                <el-input v-model="form.captcha" size="large" placeholder="输入右侧验证码" />
-                <button type="button" class="captcha-image" :disabled="captchaLoading" @click="refreshCaptcha">
-                  <img v-if="captchaUrl" :src="captchaUrl" alt="验证码" />
-                  <span v-else>刷新</span>
-                </button>
-              </div>
-            </label>
-
-            <div class="pay-methods" aria-label="付款方式">
-              <button
-                v-for="method in payMethods"
-                :key="method.id"
-                type="button"
-                :class="{ selected: form.payId === method.id }"
-                @click="form.payId = method.id"
-              >
-                <el-icon><Check /></el-icon>
-                <span>{{ method.name }}</span>
-              </button>
-            </div>
+            <BillingCheckoutFields v-model="checkout" />
 
             <p class="sync-status" :class="{ error: syncError }">{{ syncMessage }}</p>
 
@@ -148,7 +126,7 @@
             <li>账号为一号一绑欧洲渠道，该商品无质保，请谨慎购买。</li>
             <li>非日抛号，但建议尽快做好账号与会话数据备份。</li>
             <li>请尽快使用剩余额度，重要会话内容及时保存。</li>
-            <li>本功能开关启用后，点击购买会向外部服务提交真实订单，并可能跳转到真实支付页。</li>
+            <li>本站只读取供应商实时价格和库存；付款统一通过本站 AnyiPay，付款后由管理员人工采购并交付。</li>
           </ul>
         </article>
 
@@ -178,6 +156,7 @@ import {
   Warning
 } from '@element-plus/icons-vue'
 import http from '@/utils/http'
+import BillingCheckoutFields, { type BillingCheckout } from '@/components/BillingCheckoutFields.vue'
 
 type PayMethod = {
   id: number
@@ -207,6 +186,7 @@ const form = reactive({
   captcha: '',
   payId: 7
 })
+const checkout = ref<BillingCheckout>({ billingName:'', contactEmail:'', billingAddressLine1:'', billingDistrict:'', billingCity:'', billingProvince:'', billingPostalCode:'', billingCountry:'China', paymentMethod:'alipay' })
 
 const userEmail = ref('')
 const captchaUrl = ref('')
@@ -240,6 +220,7 @@ const changeQuantity = (step: number) => {
 const applyEmail = (email: string) => {
   userEmail.value = email
   form.contact = email
+  checkout.value.contactEmail = email
 }
 
 const normalizePayMethods = (rows: unknown): PayMethod[] => {
@@ -314,15 +295,11 @@ const scheduleSync = () => {
 }
 
 const loadSession = async () => {
-  const res = await http.get('/api/shopgpt/item-68/session')
+  const res = await http.post('/api/shopgpt/item-68/sync', { quantity: form.quantity })
   applyEmail(res.data.email)
-  const methods = normalizePayMethods(res.data.payMethods)
-  payMethods.value = methods.length ? methods : [{ id: 7, name: '支付宝' }]
-  form.payId = payMethods.value[0].id
-  applySyncPayload(res.data.sync)
+  applySyncPayload(res.data)
   sessionReady.value = true
-  syncMessage.value = `已连接第三方会话：联系方式为 ${userEmail.value}，不会复用邮箱或平台密码作为查询凭据。`
-  await refreshCaptcha()
+  syncMessage.value = `已读取供应商实时价格与库存；本站不会调用供应商支付或下单接口。`
 }
 
 const shareProduct = async () => {
@@ -345,15 +322,15 @@ const submitOrder = async () => {
     ElMessage.warning('当前账号没有邮箱，无法同步到第三方页面')
     return
   }
-  if (!form.captcha.trim()) {
-    ElMessage.warning('请输入第三方页面验证码')
+  if (Object.entries(checkout.value).some(([key,value]) => key !== 'paymentMethod' && !String(value).trim())) {
+    ElMessage.warning('请完整填写账单和支付信息')
     return
   }
 
   try {
     await ElMessageBox.confirm(
-      `确认向外部服务提交 ${form.quantity} 件真实订单，当前合计 ¥${totalPrice.value.toFixed(2)} CNY？`,
-      '外部真实下单确认',
+      `确认按服务端最新询价创建 ${form.quantity} 件本站订单，当前合计 ¥${totalPrice.value.toFixed(2)} CNY？`,
+      '本站 AnyiPay 结账',
       { type: 'warning', confirmButtonText: '确认提交', cancelButtonText: '取消' }
     )
   } catch {
@@ -361,32 +338,28 @@ const submitOrder = async () => {
   }
 
   submitting.value = true
+  const paymentWindow = window.open('', '_blank')
   try {
-    const res = await http.post('/api/shopgpt/item-68/trade', {
+    const res = await http.post('/api/shopgpt/item-68/order', {
       quantity: form.quantity,
-      captcha: form.captcha,
-      payId: form.payId
+      ...checkout.value
     })
-    if (res.data?.code === 200 && res.data?.data?.url) {
-      window.location.href = res.data.data.url
-      return
-    }
-    if (res.data?.code === 200) {
-      ElMessage.success(res.data?.msg || '第三方订单已提交')
-      return
-    }
-    ElMessage.error(res.data?.msg || '第三方下单失败')
-    await refreshCaptcha()
+    const intentId = res.data?.paymentIntent?.id
+    if (!intentId) throw new Error('支付意图创建失败')
+    const started = await http.post(`/api/payment-intents/${intentId}/start`)
+    if (started.data?.paymentUrl) paymentWindow?.location.replace(started.data.paymentUrl)
+    else paymentWindow?.close()
+    ElMessage.success(started.data?.status === 'PAID' ? '付款成功，订单已进入人工采购' : '订单已创建，请完成付款')
   } catch (error) {
-    ElMessage.error(errorMessage(error, '第三方下单失败'))
-    await refreshCaptcha()
+    paymentWindow?.close()
+    ElMessage.error(errorMessage(error, error instanceof Error ? error.message : '本站订单创建失败'))
   } finally {
     submitting.value = false
   }
 }
 
 watch(
-  () => [form.quantity, form.captcha, form.payId],
+  () => form.quantity,
   () => {
     if (userEmail.value) scheduleSync()
   }

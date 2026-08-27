@@ -10,6 +10,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 
 import java.time.LocalDateTime;
+import java.math.BigDecimal;
 
 @TableName("logs")
 @Data
@@ -35,6 +36,15 @@ public class Log {
     @TableField("channel_id")
     private Long channelId;
 
+    @TableField("organization_id")
+    private Long organizationId;
+
+    @TableField("credential_id")
+    private Long credentialId;
+
+    @TableField("source_code")
+    private String sourceCode;
+
     @TableField("prompt_tokens")
     private int promptTokens;
 
@@ -49,6 +59,9 @@ public class Log {
 
     @TableField("cache_write_tokens")
     private int cacheWriteTokens;
+
+    @TableField("cache_miss_tokens")
+    private int cacheMissTokens;
 
     @TableField("total_tokens")
     private int totalTokens;
@@ -109,6 +122,45 @@ public class Log {
 
     @TableField("gross_profit")
     private long grossProfit;
+
+    @TableField("model_currency")
+    private String modelCurrency;
+
+    @TableField("model_amount_scale")
+    private long modelAmountScale;
+
+    @TableField("settlement_amount")
+    private long settlementAmount;
+
+    @TableField("settlement_currency")
+    private String settlementCurrency;
+
+    @TableField("exchange_rate")
+    private java.math.BigDecimal exchangeRate;
+
+    @TableField("billing_unit")
+    private String billingUnit;
+
+    @TableField("billable_quantity")
+    private BigDecimal billableQuantity;
+
+    @TableField("unit_sale_price")
+    private BigDecimal unitSalePrice;
+
+    @TableField("unit_cost_price")
+    private BigDecimal unitCostPrice;
+
+    @TableField("pricing_tier")
+    private String pricingTier;
+
+    @TableField("context_threshold_tokens")
+    private Integer contextThresholdTokens;
+
+    @TableField("input_unit_sale_price")
+    private BigDecimal inputUnitSalePrice;
+
+    @TableField("output_unit_sale_price")
+    private BigDecimal outputUnitSalePrice;
 
     @TableField("created_at")
     private LocalDateTime createdAt;

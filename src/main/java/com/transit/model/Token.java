@@ -31,6 +31,9 @@ public class Token {
     @TableField("user_id")
     private Long userId;
 
+    @TableField("organization_id")
+    private Long organizationId;
+
     private String name;
 
     @TableField("used_quota")
@@ -52,6 +55,14 @@ public class Token {
 
     @TableField("allowed_models")
     private String allowedModels;
+
+    @TableField("allow_all_models")
+    private boolean allowAllModels;
+
+    /** Structured model grants used by create/update APIs; persisted in api_key_models. */
+    @TableField(exist = false)
+    @Builder.Default
+    private java.util.List<String> allowedModelIds = java.util.List.of();
 
     @TableField("ip_whitelist")
     private String ipWhitelist;
