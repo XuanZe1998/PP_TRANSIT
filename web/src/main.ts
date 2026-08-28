@@ -2,16 +2,9 @@ import { createApp } from 'vue'
 import './style.css'
 import App from './App.vue'
 import router from './router'
-import 'element-plus/dist/index.css'
-import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 import { initInactivityGuard } from './utils/auth'
-import { ElMessage } from 'element-plus'
 
 const app = createApp(App)
-
-for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
-  app.component(key, component)
-}
 
 app.use(router)
 app.mount('#app')
@@ -32,7 +25,11 @@ initInactivityGuard(idleTimeoutMs, () => {
   })
 })
 
-window.addEventListener('auth-timeout', () => {
+window.addEventListener('auth-timeout', async () => {
+  const [{ ElMessage }] = await Promise.all([
+    import('element-plus/es/components/message/index'),
+    import('element-plus/theme-chalk/el-message.css'),
+  ])
   ElMessage.warning('登录状态已失效，请重新登录')
 })
 

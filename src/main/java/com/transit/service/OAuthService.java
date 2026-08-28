@@ -15,6 +15,8 @@ import com.transit.model.OAuthToken;
 import com.transit.model.OAuthUserBinding;
 import com.transit.model.User;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -30,6 +32,7 @@ import org.springframework.web.util.UriComponentsBuilder;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.annotation.PostConstruct;
 
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
@@ -43,6 +46,10 @@ import java.util.Objects;
 @Service
 @RequiredArgsConstructor
 public class OAuthService {
+
+    private static final Logger log = LoggerFactory.getLogger(OAuthService.class);
+    private static final String PRODUCTION_GITHUB_CALLBACK = "https://linknux.com/oauth/callback/github";
+    private static final String PRODUCTION_GOOGLE_CALLBACK = "https://linknux.com/oauth/callback/google";
 
     private final OAuthClientMapper clientMapper;
     private final OAuthCodeMapper codeMapper;
@@ -106,6 +113,21 @@ public class OAuthService {
 
     @Value("${oauth.token.refresh-token-expiry:604800}")
     private long refreshTokenExpiry;
+
+    @PostConstruct
+    void reportOAuthConfiguration() {
+        log.info("OAuth callback configuration: github={}, google={} (client secrets are never logged)",
+                githubRedirectUri, googleRedirectUri);
+        warnOnUnexpectedProductionCallback("GitHub", githubRedirectUri, PRODUCTION_GITHUB_CALLBACK);
+        warnOnUnexpectedProductionCallback("Google", googleRedirectUri, PRODUCTION_GOOGLE_CALLBACK);
+    }
+
+    private void warnOnUnexpectedProductionCallback(String provider, String configured, String expected) {
+        if (configured != null && configured.contains("linknux.com") && !expected.equals(configured)) {
+            log.error("{} OAuth callback is invalid for production. Expected exactly '{}', configured '{}'. "
+                    + "Update both the environment and the provider console allowlist.", provider, expected, configured);
+        }
+    }
 
     public AuthorizationStart beginAuthorization(String requestedProvider) {
         return beginAuthorization(requestedProvider, null);

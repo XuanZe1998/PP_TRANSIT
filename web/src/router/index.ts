@@ -1,11 +1,17 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import { getToken, getUser } from '@/utils/auth'
 
-const FlowScreen=()=>import('@/views/FlowScreen.vue'),PublicSite=()=>import('@/views/PublicSite.vue'),UserConsole=()=>import('@/views/UserConsole.vue')
+const FlowScreen=()=>import('@/views/FlowScreen.vue'),UserConsole=()=>import('@/views/UserConsole.vue')
 const AdminLayout=()=>import('@/components/AdminLayout.vue'),AdminConsole=()=>import('@/views/AdminConsole.vue'),AdminLogin=()=>import('@/views/AdminLogin.vue')
 const AdminOtherServices=()=>import('@/views/AdminOtherServices.vue'),AdminVmCardTest=()=>import('@/views/AdminVmCardTest.vue')
 const ModelGateway=()=>import('@/views/ModelGateway.vue'),AdminCreativeConfig=()=>import('@/views/AdminCreativeConfig.vue')
 const LegalPage=()=>import('@/views/LegalPage.vue')
+const PublicLayout=()=>import('@/layouts/PublicLayout.vue')
+const HomePage=()=>import('@/views/HomePage.vue')
+const ModelMarket=()=>import('@/views/ModelMarket.vue')
+const OtherServices=()=>import('@/views/OtherServices.vue')
+const PricingPage=()=>import('@/views/PricingPage.vue')
+const DocsPage=()=>import('@/views/DocsPage.vue')
 
 export const shopGptEnabled = import.meta.env.VITE_ENABLE_SHOPGPT === 'true'
 const ProductItem = () => import('@/views/ProductItem.vue')
@@ -30,13 +36,19 @@ const routes: RouteRecordRaw[] = [
         { path: '/item', redirect: '/pricing' },
         { path: '/item/68', redirect: '/pricing' }
       ] as RouteRecordRaw[]),
-  { path: '/', component: PublicSite, meta: { title: '首页', role: 'public' } },
+  {
+    path: '/',
+    component: PublicLayout,
+    children: [
+      { path: '', component: HomePage, meta: { title: '首页', role: 'public' } },
+      { path: 'market', component: ModelMarket, meta: { title: '模型市场', role: 'public' } },
+      { path: 'services', component: OtherServices, meta: { title: '成品服务', role: 'public' } },
+      { path: 'pricing', component: PricingPage, meta: { title: '套餐价格', role: 'public' } },
+      { path: 'docs', component: DocsPage, meta: { title: '开发文档', role: 'public' } }
+    ]
+  },
   { path: '/studio', component: CreativeStudio, meta: { title: 'AI 创作工作台', role: 'public' } },
-  { path: '/market', component: PublicSite, meta: { title: '模型市场', role: 'public' } },
-  { path: '/services', component: PublicSite, meta: { title: '成品服务', role: 'public' } },
   { path: '/services/:id/redeem', component: CardRedemptionRedirect, meta: { title: '卡密兑换', role: 'public' } },
-  { path: '/pricing', component: PublicSite, meta: { title: '套餐价格', role: 'public' } },
-  { path: '/docs', component: PublicSite, meta: { title: '开发文档', role: 'public' } },
   { path: '/terms', component: LegalPage, meta: { title: '用户协议', role: 'public', legalKind: 'terms' } },
   { path: '/privacy', component: LegalPage, meta: { title: '隐私政策', role: 'public', legalKind: 'privacy' } },
   { path: '/console', component: UserConsole, meta: { title: '用户总览', role: 'user' } },

@@ -16,7 +16,7 @@ describe('enterprise and API calling flows', () => {
   })
 
   it('opens model call information instead of redirecting to the playground', () => {
-    const site = source('src/views/PublicSite.vue')
+    const site = source('src/views/ModelMarket.vue')
     const dialog = source('src/components/ModelCallDialog.vue')
     expect(site).toContain('ModelCallDialog')
     expect(site).not.toMatch(/callModel[\s\S]{0,500}playground/)

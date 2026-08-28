@@ -375,7 +375,7 @@ onMounted(() => {
 
 <style scoped>
 .item-page {
-  min-height: 100vh;
+  min-height: 100dvh;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.86), rgba(246, 248, 251, 0.96)),
     radial-gradient(circle at 18% 12%, rgba(20, 184, 166, 0.16), transparent 30%),
@@ -863,6 +863,12 @@ onMounted(() => {
 
   .price-block strong {
     font-size: 34px;
+  }
+}
+
+@media (max-height: 600px) {
+  .item-nav {
+    position: static;
   }
 }
 </style>

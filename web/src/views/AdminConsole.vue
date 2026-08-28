@@ -2659,7 +2659,9 @@ function healthType(value: string) {
 .admin-table-shell {
   width: 100%;
   min-width: 0;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-inline: contain;
 }
 
 .admin-table-shell :deep(.el-table__inner-wrapper),

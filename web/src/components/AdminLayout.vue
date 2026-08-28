@@ -43,8 +43,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, type Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { Connection, DataBoard, Grid, Lock, Setting, User, Wallet } from '@element-plus/icons-vue'
 import http from '@/utils/http'
 import { clearAuth } from '@/utils/auth'
 
@@ -52,23 +53,23 @@ const route = useRoute()
 const router = useRouter()
 const verificationWarning = ref('')
 
-type NavItem = { path: string; label: string; icon?: string; children?: Array<{ path: string; label: string }> }
+type NavItem = { path: string; label: string; icon?: Component; children?: Array<{ path: string; label: string }> }
 const navItems: NavItem[] = [
-  { path: '/admin', label: '运营总览', icon: 'DataBoard' },
-  { path: 'users-access', label: '用户与权限', icon: 'User', children: [
+  { path: '/admin', label: '运营总览', icon: DataBoard },
+  { path: 'users-access', label: '用户与权限', icon: User, children: [
     { path: '/admin/users', label: '用户与分组' }, { path: '/admin/tokens', label: 'Token 与权限' }
   ] },
-  { path: '/admin/model-gateway', label: '模型网关', icon: 'Connection' },
-  { path: 'content-services', label: '内容与服务', icon: 'Grid', children: [
+  { path: '/admin/model-gateway', label: '模型网关', icon: Connection },
+  { path: 'content-services', label: '内容与服务', icon: Grid, children: [
     { path: '/admin/creative-config', label: 'AI 创作配置' }, { path: '/admin/other-services', label: '服务与订单' }
   ] },
-  { path: 'finance-payment', label: '财务与支付', icon: 'Wallet', children: [
+  { path: 'finance-payment', label: '财务与支付', icon: Wallet, children: [
     { path: '/admin/finance', label: '钱包财务' }, { path: '/admin/vmcard-test', label: 'VMCard 测试' }
   ] },
-  { path: 'audit-security', label: '审计与安全', icon: 'Lock', children: [
+  { path: 'audit-security', label: '审计与安全', icon: Lock, children: [
     { path: '/admin/audit-logs', label: '调用审计' }, { path: '/admin/security', label: '安全策略' }
   ] },
-  { path: '/admin/settings', label: '系统配置与报表', icon: 'Setting' }
+  { path: '/admin/settings', label: '系统配置与报表', icon: Setting }
 ]
 
 const activeRoute = computed(() => {
@@ -100,7 +101,7 @@ const logout = async () => {
 
 <style scoped>
 .admin-shell {
-  min-height: 100vh;
+  min-height: 100dvh;
 }
 
 .admin-shell > .el-container {
@@ -108,6 +109,10 @@ const logout = async () => {
 }
 
 .admin-aside {
+  position: sticky;
+  top: 0;
+  height: 100dvh;
+  overflow-y: auto;
   padding: 24px 16px;
   border-right: 1px solid #d7e4f7;
   background: linear-gradient(180deg, rgba(250,253,255,.98), rgba(235,244,255,.96));
@@ -236,7 +241,8 @@ const logout = async () => {
     flex: 0 0 76px;
     width: 76px !important;
     padding: 16px 10px;
-    overflow: hidden;
+    overflow-x: hidden;
+    overflow-y: auto;
   }
 
   .brand {
@@ -276,6 +282,16 @@ const logout = async () => {
     align-items: flex-start;
     flex-direction: column;
     gap: 14px;
+  }
+}
+
+@media (max-height: 600px) {
+  .admin-header {
+    position: static;
+  }
+
+  .admin-aside {
+    max-height: 100dvh;
   }
 }
 </style>

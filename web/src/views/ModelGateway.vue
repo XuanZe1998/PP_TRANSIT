@@ -456,7 +456,7 @@ onMounted(loadGatewayData)
 .gateway-issues div { display: grid; gap: 3px; }.gateway-issues strong { color: #34433a; }.gateway-issues small { color: #829087; line-height: 1.45; }
 .gateway-health-panel { margin-bottom: 14px; }
 .catalog-filters { display: grid; grid-template-columns: 180px 190px minmax(220px, 1fr); gap: 10px; margin-bottom: 14px; }
-.gateway-table-shell { width: 100%; min-width: 0; overflow: hidden; }
+.gateway-table-shell { width: 100%; min-width: 0; overflow-x: auto; overflow-y: hidden; overscroll-behavior-inline: contain; }
 .gateway-table-shell :deep(.el-table__body),.gateway-table-shell :deep(.el-table__header) { min-width: 1250px; }
 .gateway-table-shell :deep(.el-scrollbar__bar.is-horizontal) { height: 10px; opacity: 1; }
 .gateway-table-shell :deep(.el-scrollbar__thumb) { background-color: #64748b; }
