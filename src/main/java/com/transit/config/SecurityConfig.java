@@ -54,7 +54,7 @@ public class SecurityConfig {
                         .requestMatchers("/public/**", "/ops/catalog", "/platform/user/docs",
                                 "/creative/catalog", "/creative/templates", "/creative/auto-movie/catalog",
                                 "/public/creative-assets/**").permitAll()
-                        .requestMatchers("/v1/**").permitAll()
+                        .requestMatchers("/v1", "/v1/**", "/models", "/chat/completions").permitAll()
                         .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info").permitAll()
                         .requestMatchers("/admin/api/**", "/platform/admin/**", "/admin/payment/**",
                                 "/service-orders/admin/**",
