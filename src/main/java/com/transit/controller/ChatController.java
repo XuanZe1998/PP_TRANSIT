@@ -13,7 +13,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 import jakarta.servlet.http.HttpServletRequest;
@@ -22,7 +21,6 @@ import reactor.core.publisher.Mono;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/v1")
 @RequiredArgsConstructor
 public class ChatController {
 
@@ -33,7 +31,17 @@ public class ChatController {
     @Value("${gateway.trust-forwarded-headers:false}")
     private boolean trustForwardedHeaders;
 
-    @PostMapping("/chat/completions")
+    @GetMapping({"/v1", "/v1/"})
+    public Map<String, Object> apiInfo() {
+        return Map.of(
+                "object", "api.info",
+                "name", "API Transit",
+                "version", "v1",
+                "status", "ok",
+                "endpoints", java.util.List.of("/v1/models", "/v1/chat/completions"));
+    }
+
+    @PostMapping({"/v1/chat/completions", "/chat/completions"})
     public Mono<ResponseEntity<?>> chatCompletions(@RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorization,
                                                     @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
                                                     @RequestBody ChatRequest request,
@@ -58,7 +66,7 @@ public class ChatController {
                 .map(response -> ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON).body(response));
     }
 
-    @GetMapping("/models")
+    @GetMapping({"/v1/models", "/models"})
     public Mono<Map<String, Object>> models(
             @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorization,
             HttpServletRequest httpRequest) {

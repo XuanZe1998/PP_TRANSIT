@@ -77,12 +77,36 @@ class SecurityBoundaryIntegrationTests {
             "/public/models",
             "/public/other-services",
             "/platform/user/docs",
+            "/v1",
+            "/v1/",
             "/actuator/health",
             "/actuator/info"
     })
     void documentedPublicRoutesRemainAnonymous(String path) {
         client.get().uri(path).exchange().expectStatus().isOk()
                 .expectBody().consumeWith(ignored -> { });
+    }
+
+    @Test
+    void teleAgentCompatibilityRoutesReachTheApiKeyBoundary() {
+        client.get().uri("/v1")
+                .exchange().expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.object").isEqualTo("api.info")
+                .jsonPath("$.status").isEqualTo("ok");
+
+        client.get().uri("/models")
+                .exchange().expectStatus().isUnauthorized()
+                .expectBody()
+                .jsonPath("$.error.message").isEqualTo("Missing Authorization header");
+
+        client.post().uri("/chat/completions")
+                .bodyValue(Map.of(
+                        "model", "claude-opus-4-7",
+                        "messages", List.of(Map.of("role", "user", "content", "ping"))))
+                .exchange().expectStatus().isUnauthorized()
+                .expectBody()
+                .jsonPath("$.error.message").isEqualTo("Missing Authorization header");
     }
 
     @ParameterizedTest(name = "anonymous caller is rejected by {0}")
@@ -264,6 +288,10 @@ class SecurityBoundaryIntegrationTests {
         assertThat(listedKey.get("keyPreview").toString()).doesNotContain(secret);
 
         client.get().uri("/v1/models")
+                .header(HttpHeaders.AUTHORIZATION, bearer(secret))
+                .exchange().expectStatus().isOk()
+                .expectBody().consumeWith(ignored -> { });
+        client.get().uri("/models")
                 .header(HttpHeaders.AUTHORIZATION, bearer(secret))
                 .exchange().expectStatus().isOk()
                 .expectBody().consumeWith(ignored -> { });
