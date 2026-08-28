@@ -1,0 +1,3 @@
+-- Runtime-compatible additive tables and columns are installed by
+-- EnterpriseSchemaService. This marker keeps Flyway history aligned across
+-- existing and newly provisioned MySQL installations.

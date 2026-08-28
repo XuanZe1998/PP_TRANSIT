@@ -89,7 +89,7 @@ public class VerificationCodeService {
         catch(Exception e){throw new IllegalStateException("无法创建验证码摘要",e);}
     }
     private String normalizeChannel(String channel){String v=channel==null?"":channel.trim().toUpperCase(Locale.ROOT);if(!v.equals("EMAIL")&&!v.equals("PHONE"))throw bad("不支持的验证通道");return v;}
-    private String normalizePurpose(String purpose){String v=purpose==null?"REGISTER":purpose.trim().toUpperCase(Locale.ROOT);if(!v.matches("REGISTER|BIND|CHANGE"))throw bad("不支持的验证用途");return v;}
+    private String normalizePurpose(String purpose){String v=purpose==null?"REGISTER":purpose.trim().toUpperCase(Locale.ROOT);if(!v.matches("REGISTER|BIND|CHANGE|NEW_LOGIN_IP"))throw bad("不支持的验证用途");return v;}
     private String normalizeRecipient(String channel,String value){
         String v=value==null?"":value.trim();
         if("EMAIL".equals(channel)) {

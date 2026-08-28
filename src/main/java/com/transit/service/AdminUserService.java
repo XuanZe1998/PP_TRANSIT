@@ -21,23 +21,33 @@ public class AdminUserService {
 
     private final JdbcTemplate jdbcTemplate;
     private final UserMapper userMapper;
+    private final PersonalDataCryptoService personalDataCrypto;
 
     @Value("${billing.max-admin-adjustment:1000000000000}")
     private long maxAdminAdjustment;
 
     public List<Map<String, Object>> users() {
-        return jdbcTemplate.queryForList("""
+        List<Map<String,Object>> rows = jdbcTemplate.queryForList("""
                 SELECT u.id, u.username, u.email, u.phone, u.role, COALESCE(u.status, 'ACTIVE') AS status,
-                       u.balance, u.created_at, u.group_id,
+                       u.balance, u.created_at, u.group_id, COALESCE(u.account_type,'PERSONAL') account_type,
                        COALESCE(g.display_name, 'Default users') AS group_name,
                        COALESCE(g.price_ratio, 1) AS price_ratio,
                        (SELECT COUNT(*) FROM tokens t WHERE t.user_id = u.id) AS token_count,
-                       (SELECT COUNT(*) FROM logs l WHERE l.user_id = u.id) AS request_count
+                       (SELECT COUNT(*) FROM logs l WHERE l.user_id = u.id) AS request_count,
+                       (SELECT h.encrypted_ip FROM login_ip_history h WHERE h.user_id=u.id ORDER BY h.last_seen_at DESC LIMIT 1) last_ip_encrypted,
+                       (SELECT h.ip_preview FROM login_ip_history h WHERE h.user_id=u.id ORDER BY h.last_seen_at DESC LIMIT 1) last_ip_preview,
+                       (SELECT h.last_seen_at FROM login_ip_history h WHERE h.user_id=u.id ORDER BY h.last_seen_at DESC LIMIT 1) last_login_ip_at,
+                       (SELECT COUNT(*) FROM login_ip_history h WHERE h.user_id=u.id) login_ip_count
                 FROM users u
                 LEFT JOIN user_groups g ON g.id = u.group_id
                 ORDER BY u.created_at DESC
                 LIMIT 500
                 """);
+        rows.forEach(row -> {
+            String revealed = personalDataCrypto.decrypt((String) row.remove("last_ip_encrypted"));
+            row.put("last_login_ip", revealed == null ? row.get("last_ip_preview") : revealed);
+        });
+        return rows;
     }
 
     public List<Map<String, Object>> groups() {
@@ -109,7 +119,7 @@ public class AdminUserService {
         String safeReason = reason == null ? "" : reason.trim();
         if (safeReason.length() < 3 || safeReason.length() > 500) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "A 3 to 500 character adjustment reason is required");
+                    "调账原因必须为 3–500 个字符");
         }
         int updated = jdbcTemplate.update("""
                 UPDATE users SET balance = balance + ?
@@ -136,6 +146,27 @@ public class AdminUserService {
                 userId, adminId, amount, safeReason, balanceAfter, LocalDateTime.now()
         );
         return Map.of("userId", userId, "amount", amount, "balance", balanceAfter);
+    }
+
+    @Transactional
+    public Map<String,Object> upgradeToEnterprise(Long userId, Map<String,Object> request) {
+        User user = userMapper.selectById(userId);
+        if (user == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "用户不存在");
+        if ("ENTERPRISE".equalsIgnoreCase(user.getAccountType())) throw new ResponseStatusException(HttpStatus.CONFLICT, "该用户已是企业用户");
+        String company = stringValue(request, "companyName", "").trim();
+        String contact = stringValue(request, "contactName", user.getDisplayName()).trim();
+        if (company.isBlank() || company.length() > 160 || contact.isBlank() || contact.length() > 80)
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "请填写有效的企业名称和联系人");
+        Long organizationId = user.getDefaultOrganizationId();
+        if (organizationId == null) throw new ResponseStatusException(HttpStatus.CONFLICT, "用户个人组织不存在");
+        Integer others = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM organization_members WHERE organization_id=? AND user_id<>? AND status='ACTIVE'", Integer.class, organizationId, userId);
+        if (others != null && others > 0) throw new ResponseStatusException(HttpStatus.CONFLICT, "已有成员的个人组织不能直接升级");
+        LocalDateTime now = LocalDateTime.now();
+        jdbcTemplate.update("UPDATE organizations SET name=?,organization_type='COMPANY',updated_at=? WHERE id=? AND organization_type='PERSONAL'", company, now, organizationId);
+        jdbcTemplate.update("UPDATE users SET account_type='ENTERPRISE',display_name=? WHERE id=?", contact, userId);
+        jdbcTemplate.update("INSERT INTO enterprise_profiles(user_id,organization_id,company_name,contact_name,contact_phone,contact_email,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)",
+                userId, organizationId, company, contact, user.getPhone() == null ? "" : user.getPhone(), user.getEmail(), now, now);
+        return Map.of("userId", userId, "accountType", "ENTERPRISE", "organizationId", organizationId, "companyName", company);
     }
 
     private String stringValue(Map<String, Object> map, String key, String fallback) {

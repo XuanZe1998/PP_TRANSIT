@@ -28,7 +28,8 @@ public class AccountVerificationPolicy {
 
     public boolean isComplete(User user) {
         return user != null && user.getEmailVerifiedAt() != null
-                && (!requiresPhone() || user.getPhoneVerifiedAt() != null);
+                && (!requiresPhone() || "ENTERPRISE".equalsIgnoreCase(user.getAccountType())
+                || user.getPhoneVerifiedAt() != null);
     }
 
     public boolean registrationReady(VerificationDeliveryService delivery) {

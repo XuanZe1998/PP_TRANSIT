@@ -1,15 +1,11 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
-import FlowScreen from '@/views/FlowScreen.vue'
-import PublicSite from '@/views/PublicSite.vue'
-import UserConsole from '@/views/UserConsole.vue'
-import AdminLayout from '@/components/AdminLayout.vue'
-import AdminConsole from '@/views/AdminConsole.vue'
-import AdminLogin from '@/views/AdminLogin.vue'
-import AdminOtherServices from '@/views/AdminOtherServices.vue'
-import AdminVmCardTest from '@/views/AdminVmCardTest.vue'
-import ModelGateway from '@/views/ModelGateway.vue'
-import AdminCreativeConfig from '@/views/AdminCreativeConfig.vue'
 import { getToken, getUser } from '@/utils/auth'
+
+const FlowScreen=()=>import('@/views/FlowScreen.vue'),PublicSite=()=>import('@/views/PublicSite.vue'),UserConsole=()=>import('@/views/UserConsole.vue')
+const AdminLayout=()=>import('@/components/AdminLayout.vue'),AdminConsole=()=>import('@/views/AdminConsole.vue'),AdminLogin=()=>import('@/views/AdminLogin.vue')
+const AdminOtherServices=()=>import('@/views/AdminOtherServices.vue'),AdminVmCardTest=()=>import('@/views/AdminVmCardTest.vue')
+const ModelGateway=()=>import('@/views/ModelGateway.vue'),AdminCreativeConfig=()=>import('@/views/AdminCreativeConfig.vue')
+const LegalPage=()=>import('@/views/LegalPage.vue')
 
 export const shopGptEnabled = import.meta.env.VITE_ENABLE_SHOPGPT === 'true'
 const ProductItem = () => import('@/views/ProductItem.vue')
@@ -41,6 +37,8 @@ const routes: RouteRecordRaw[] = [
   { path: '/services/:id/redeem', component: CardRedemptionRedirect, meta: { title: '卡密兑换', role: 'public' } },
   { path: '/pricing', component: PublicSite, meta: { title: '套餐价格', role: 'public' } },
   { path: '/docs', component: PublicSite, meta: { title: '开发文档', role: 'public' } },
+  { path: '/terms', component: LegalPage, meta: { title: '用户协议', role: 'public', legalKind: 'terms' } },
+  { path: '/privacy', component: LegalPage, meta: { title: '隐私政策', role: 'public', legalKind: 'privacy' } },
   { path: '/console', component: UserConsole, meta: { title: '用户总览', role: 'user' } },
   { path: '/console/keys', component: UserConsole, meta: { title: 'API Key 管理', role: 'user' } },
   { path: '/console/playground', component: UserConsole, meta: { title: '在线调试', role: 'user' } },

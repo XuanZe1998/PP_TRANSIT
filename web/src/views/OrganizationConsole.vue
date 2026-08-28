@@ -1,141 +1,36 @@
 <template>
   <section class="organization-page">
-    <div class="page-heading">
-      <div><p class="eyebrow">ENTERPRISE</p><h1>企业账户</h1><p>管理成员、独立钱包额度和模型用量。</p></div>
-      <el-button type="primary" @click="createVisible = true">创建公司</el-button>
-    </div>
-
-    <el-card v-loading="loading" shadow="never">
-      <el-tabs v-model="selectedId" @tab-change="loadOrganization">
-        <el-tab-pane v-for="org in organizations" :key="org.id" :name="String(org.id)" :label="`${org.name} · ${org.role}`" />
-      </el-tabs>
-      <el-empty v-if="!organizations.length" description="还没有企业账户" />
-      <template v-else>
-        <div class="toolbar">
-          <el-button v-if="canManage" @click="inviteVisible = true">邀请成员</el-button>
-          <el-button v-if="isOwner" @click="allocation(false)">分配额度</el-button>
-          <el-button v-if="isOwner" @click="allocation(true)">收回额度</el-button>
-          <el-button @click="loadOrganization">刷新</el-button>
-        </div>
-        <el-table :data="members" stripe>
-          <el-table-column prop="username" label="成员" min-width="150" />
-          <el-table-column prop="email" label="邮箱" min-width="190" />
-          <el-table-column prop="role" label="角色" width="120" />
-          <el-table-column prop="balance" label="可用额度" width="130" />
-          <el-table-column prop="heldAmount" label="预占" width="110" />
-        </el-table>
-      </template>
-    </el-card>
-
-    <el-card v-if="organizations.length" shadow="never" class="usage-card">
-      <template #header><strong>模型用量明细</strong></template>
-      <el-table :data="usage" max-height="420">
-        <el-table-column prop="username" label="成员" min-width="120" />
-        <el-table-column prop="tokenName" label="Key" min-width="140" />
-        <el-table-column prop="sourceCode" label="来源" width="120" />
-        <el-table-column prop="model" label="模型" min-width="170" />
-        <el-table-column prop="inputTokens" label="输入" width="100" />
-        <el-table-column prop="outputTokens" label="输出" width="100" />
-        <el-table-column prop="cacheReadTokens" label="缓存命中" width="110" />
-        <el-table-column prop="cacheWriteTokens" label="缓存写入" width="110" />
-        <el-table-column prop="cacheMissTokens" label="缓存未命中" width="120" />
-        <el-table-column prop="requestCount" label="请求数" width="90" />
-        <el-table-column prop="successRate" label="成功率" width="100" />
-        <el-table-column prop="saleAmount" label="费用" width="110" />
-        <el-table-column prop="grossProfit" label="毛利" width="110" />
-      </el-table>
-    </el-card>
-
-    <el-dialog v-model="createVisible" title="创建公司" width="420px">
-      <el-input v-model="companyName" maxlength="100" placeholder="公司名称" />
-      <template #footer><el-button @click="createVisible=false">取消</el-button><el-button type="primary" @click="createCompany">创建</el-button></template>
-    </el-dialog>
-    <el-dialog v-model="inviteVisible" title="邀请成员" width="460px">
-      <el-form label-width="80px">
-        <el-form-item label="邮箱"><el-input v-model="inviteForm.email" /></el-form-item>
-        <el-form-item label="角色"><el-select v-model="inviteForm.role"><el-option v-for="r in roles" :key="r" :value="r" :label="r" /></el-select></el-form-item>
-      </el-form>
-      <el-alert v-if="inviteToken" type="success" :closable="false" :title="`一次性邀请令牌：${inviteToken}`" />
-      <template #footer><el-button @click="inviteVisible=false">关闭</el-button><el-button type="primary" @click="invite">生成邀请</el-button></template>
-    </el-dialog>
-    <el-dialog v-model="allocationVisible" :title="reclaiming ? '收回额度' : '分配额度'" width="440px">
-      <el-form label-width="90px">
-        <el-form-item label="成员"><el-select v-model="allocationForm.memberId"><el-option v-for="m in allocatableMembers" :key="m.memberId" :value="m.memberId" :label="m.username" /></el-select></el-form-item>
-        <el-form-item label="额度"><el-input-number v-model="allocationForm.amount" :min="1" :precision="0" /></el-form-item>
-      </el-form>
-      <template #footer><el-button @click="allocationVisible=false">取消</el-button><el-button type="primary" @click="submitAllocation">确认</el-button></template>
-    </el-dialog>
+    <div class="page-heading"><div><p class="eyebrow">ENTERPRISE</p><h1>企业账户</h1><p>管理成员、钱包额度、Token 和调用前数据脱敏。</p></div><el-button type="primary" @click="createVisible=true">创建公司</el-button></div>
+    <el-card v-loading="loading" shadow="never"><el-tabs v-model="selectedId" @tab-change="loadOrganization"><el-tab-pane v-for="org in organizations" :key="org.id" :name="String(org.id)" :label="`${org.name} · ${org.role}`"/></el-tabs><el-empty v-if="!organizations.length" description="还没有企业账户"/><template v-else><div class="toolbar"><el-button v-if="canManage" @click="inviteVisible=true">邀请成员</el-button><el-button v-if="isOwner" @click="allocation(false)">分配额度</el-button><el-button v-if="isOwner" @click="allocation(true)">收回额度</el-button><el-button @click="loadOrganization">刷新</el-button></div><el-table :data="members" stripe><el-table-column prop="username" label="成员"/><el-table-column prop="email" label="邮箱"/><el-table-column prop="role" label="角色" width="120"/><el-table-column prop="balance" label="可用额度" width="130"/><el-table-column prop="heldAmount" label="预占" width="110"/><el-table-column v-if="canManage" label="操作" width="180"><template #default="{row}"><el-button link type="primary" @click="openMember(row)">编辑</el-button><el-button v-if="isOwner&&row.role!=='OWNER'" link type="danger" @click="removeMember(row)">软删除</el-button></template></el-table-column></el-table></template></el-card>
+    <el-card v-if="organizations.length" shadow="never" class="section-card"><template #header><div class="card-head"><strong>企业 Token</strong><el-button v-if="canManage" size="small" type="primary" @click="openToken()">新增成员 Token</el-button></div></template><el-table :data="tokens"><el-table-column prop="name" label="名称"/><el-table-column prop="keyPreview" label="Key"/><el-table-column prop="userId" label="成员 ID" width="100"/><el-table-column prop="totalQuota" label="总额度"/><el-table-column prop="usedQuota" label="已使用"/><el-table-column label="状态"><template #default="{row}"><el-tag :type="row.enabled?'success':'info'">{{row.enabled?'启用':'停用'}}</el-tag></template></el-table-column><el-table-column v-if="canManage" label="操作"><template #default="{row}"><el-button link type="primary" @click="openToken(row)">编辑</el-button><el-button link type="danger" @click="deleteToken(row)">删除</el-button></template></el-table-column></el-table></el-card>
+    <el-card v-if="isOwner" shadow="never" class="section-card"><template #header><strong>数据安全服务</strong></template><el-switch v-model="security.enabled" active-text="调用前脱敏，回复后还原"/><p class="security-note">默认关闭。内置手机号、邮箱、身份证、银行卡和 API Key 识别；占位符映射仅存在于单次请求内存。</p><el-checkbox-group v-model="security.builtinRules"><el-checkbox v-for="rule in builtinRules" :key="rule" :label="rule"/></el-checkbox-group><el-input v-model="security.customText" type="textarea" :rows="5" placeholder="每行：规则名称=RE2 表达式（最多 20 条）"/><el-button type="primary" @click="saveSecurity">保存数据安全策略</el-button></el-card>
+    <el-card v-if="organizations.length" shadow="never" class="section-card"><template #header><strong>模型用量明细</strong></template><el-table :data="usage" max-height="420"><el-table-column prop="username" label="成员"/><el-table-column prop="tokenName" label="Key"/><el-table-column prop="sourceCode" label="来源"/><el-table-column prop="model" label="模型"/><el-table-column prop="inputTokens" label="输入"/><el-table-column prop="outputTokens" label="输出"/><el-table-column prop="requestCount" label="请求数"/><el-table-column prop="successRate" label="成功率"/><el-table-column prop="saleAmount" label="费用"/></el-table></el-card>
+    <el-dialog v-model="createVisible" title="创建公司" width="420px"><el-input v-model="companyName" maxlength="100" placeholder="公司名称"/><template #footer><el-button @click="createVisible=false">取消</el-button><el-button type="primary" @click="createCompany">创建</el-button></template></el-dialog>
+    <el-dialog v-model="inviteVisible" title="邀请成员" width="460px"><el-form label-width="80px"><el-form-item label="邮箱"><el-input v-model="inviteForm.email"/></el-form-item><el-form-item label="角色"><el-select v-model="inviteForm.role"><el-option v-for="r in roles" :key="r" :value="r"/></el-select></el-form-item></el-form><el-alert v-if="inviteToken" type="success" :closable="false" :title="`一次性邀请令牌：${inviteToken}`"/><template #footer><el-button @click="inviteVisible=false">关闭</el-button><el-button type="primary" @click="invite">生成邀请</el-button></template></el-dialog>
+    <el-dialog v-model="allocationVisible" :title="reclaiming?'收回额度':'分配额度'" width="440px"><el-form label-width="90px"><el-form-item label="成员"><el-select v-model="allocationForm.memberId"><el-option v-for="m in allocatableMembers" :key="m.memberId" :value="m.memberId" :label="m.username"/></el-select></el-form-item><el-form-item label="额度"><el-input-number v-model="allocationForm.amount" :min="1" :precision="0"/></el-form-item></el-form><template #footer><el-button @click="allocationVisible=false">取消</el-button><el-button type="primary" @click="submitAllocation">确认</el-button></template></el-dialog>
+    <el-dialog v-model="memberVisible" title="编辑企业成员" width="460px"><el-form label-width="90px"><el-form-item label="显示名称"><el-input v-model="memberForm.displayName" maxlength="80"/></el-form-item><el-form-item label="角色"><el-select v-model="memberForm.role"><el-option v-for="r in roles" :key="r" :value="r"/></el-select></el-form-item><el-form-item label="状态"><el-select v-model="memberForm.status"><el-option label="启用" value="ACTIVE"/><el-option label="停用" value="SUSPENDED"/></el-select></el-form-item><el-form-item label="钱包额度"><el-input-number v-model="memberForm.walletQuota" :min="0" :precision="0"/></el-form-item></el-form><template #footer><el-button @click="memberVisible=false">取消</el-button><el-button type="primary" @click="saveMember">保存</el-button></template></el-dialog>
+    <el-dialog v-model="tokenVisible" :title="tokenForm.id?'编辑 Token':'新增成员 Token'" width="520px"><el-form label-width="100px"><el-form-item v-if="!tokenForm.id" label="所属成员"><el-select v-model="tokenForm.userId"><el-option v-for="m in members" :key="m.memberId" :value="m.memberId" :label="m.username"/></el-select></el-form-item><el-form-item label="名称"><el-input v-model="tokenForm.name"/></el-form-item><el-form-item label="总额度"><el-input-number v-model="tokenForm.totalQuota" :min="0" :precision="0"/></el-form-item><el-form-item label="模型权限"><el-input v-model="tokenForm.allowedModels" placeholder="* 或逗号分隔模型 ID"/></el-form-item><el-form-item label="IP 白名单"><el-input v-model="tokenForm.ipWhitelist"/></el-form-item><el-form-item label="有效期"><el-date-picker v-model="tokenForm.expiredAt" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss"/></el-form-item><el-form-item label="启用"><el-switch v-model="tokenForm.enabled"/></el-form-item></el-form><el-alert v-if="issuedSecret" type="success" :closable="false" :title="`新 Key 仅展示一次：${issuedSecret}`"/><template #footer><el-button @click="tokenVisible=false">关闭</el-button><el-button type="primary" @click="saveToken">保存</el-button></template></el-dialog>
   </section>
 </template>
-
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import { ElMessage } from 'element-plus'
-import http, { getHttpErrorMessage } from '@/utils/http'
-
-type Organization = { id: number; name: string; role: string }
-type Member = { memberId: number; username: string; email?: string; role: string; balance: number; heldAmount: number }
-const organizations = ref<Organization[]>([]), members = ref<Member[]>([]), usage = ref<Record<string, unknown>[]>([])
-const selectedId = ref(''), loading = ref(false), createVisible = ref(false), inviteVisible = ref(false), allocationVisible = ref(false)
-const companyName = ref(''), inviteToken = ref(''), reclaiming = ref(false)
-const roles = ['ORG_ADMIN', 'BILLING', 'MEMBER']
-const inviteForm = ref({ email: '', role: 'MEMBER' })
-const allocationForm = ref({ memberId: undefined as number | undefined, amount: 1 })
-const selected = computed(() => organizations.value.find(item => String(item.id) === selectedId.value))
-const isOwner = computed(() => selected.value?.role === 'OWNER')
-const canManage = computed(() => ['OWNER', 'ORG_ADMIN'].includes(selected.value?.role || ''))
-const allocatableMembers = computed(() => members.value.filter(item => item.role !== 'OWNER'))
-const idempotencyKey = () => `web-${crypto.randomUUID()}`
-
-async function loadOrganizations() {
-  loading.value = true
-  try {
-    organizations.value = (await http.get('/organizations')).data.map((item: Record<string, unknown>) => ({
-      id: Number(item.id), name: String(item.name), role: String(item.member_role ?? item.role)
-    }))
-    if (!selectedId.value && organizations.value.length) selectedId.value = String(organizations.value[0].id)
-    await loadOrganization()
-  } catch (error) { ElMessage.error(getHttpErrorMessage(error)) } finally { loading.value = false }
-}
-async function loadOrganization() {
-  if (!selectedId.value) return
-  const [memberResponse, usageResponse] = await Promise.all([
-    http.get(`/organizations/${selectedId.value}/members`), http.get(`/organizations/${selectedId.value}/usage`)
-  ])
-  members.value = memberResponse.data.map((item: Record<string, unknown>) => ({
-    memberId: Number(item.user_id ?? item.userId), username: String(item.username), email: item.email ? String(item.email) : undefined,
-    role: String(item.member_role ?? item.role), balance: Number(item.balance ?? 0), heldAmount: Number(item.held_balance ?? item.heldAmount ?? 0)
-  }))
-  usage.value = usageResponse.data.map((item: Record<string, unknown>) => ({
-    username: item.username, tokenName: item.token_name ?? item.token_id, sourceCode: item.source_code, model: item.model,
-    inputTokens: item.input_tokens, outputTokens: item.output_tokens, cacheReadTokens: item.cache_hit_tokens,
-    cacheWriteTokens: item.cache_write_tokens, cacheMissTokens: item.cache_miss_tokens, requestCount: item.request_count,
-    successRate: Number(item.request_count) ? `${(Number(item.success_count) * 100 / Number(item.request_count)).toFixed(1)}%` : '0%',
-    saleAmount: item.sale_amount, grossProfit: item.gross_profit
-  }))
-}
-async function createCompany() {
-  try { await http.post('/organizations', { name: companyName.value }); createVisible.value=false; companyName.value=''; await loadOrganizations(); ElMessage.success('公司已创建') }
-  catch (error) { ElMessage.error(getHttpErrorMessage(error)) }
-}
-async function invite() {
-  try {
-    const response = await http.post(`/organizations/${selectedId.value}/invitations`, inviteForm.value, { headers: { 'Idempotency-Key': idempotencyKey() } })
-    inviteToken.value = response.data.invitationToken
-    ElMessage.success('邀请已创建，令牌仅展示一次')
-  } catch (error) { ElMessage.error(getHttpErrorMessage(error)) }
-}
-function allocation(reclaim: boolean) { reclaiming.value = reclaim; allocationForm.value = { memberId: allocatableMembers.value[0]?.memberId, amount: 1 }; allocationVisible.value=true }
-async function submitAllocation() {
-  try {
-    const suffix = reclaiming.value ? '/allocations/reclaim' : '/allocations'
-    await http.post(`/organizations/${selectedId.value}${suffix}`, { userId: allocationForm.value.memberId, amount: allocationForm.value.amount }, { headers: { 'Idempotency-Key': idempotencyKey() } })
-    allocationVisible.value=false; await loadOrganization(); ElMessage.success(reclaiming.value ? '额度已收回' : '额度已分配')
-  } catch (error) { ElMessage.error(getHttpErrorMessage(error)) }
-}
+import{computed,onMounted,ref}from'vue';import{ElMessage,ElMessageBox}from'element-plus';import http,{getHttpErrorMessage}from'@/utils/http'
+type Organization={id:number;name:string;role:string};type Member={memberId:number;username:string;email?:string;role:string;balance:number;heldAmount:number}
+const organizations=ref<Organization[]>([]),members=ref<Member[]>([]),usage=ref<any[]>([]),tokens=ref<any[]>([]),selectedId=ref(''),loading=ref(false),createVisible=ref(false),inviteVisible=ref(false),allocationVisible=ref(false),memberVisible=ref(false),tokenVisible=ref(false),companyName=ref(''),inviteToken=ref(''),reclaiming=ref(false),issuedSecret=ref('')
+const roles=['ORG_ADMIN','BILLING','MEMBER'],builtinRules=['PHONE','EMAIL','CN_ID','BANK_CARD','API_KEY'],inviteForm=ref({email:'',role:'MEMBER'}),allocationForm=ref<any>({}),memberForm=ref<any>({}),tokenForm=ref<any>({}),security=ref({enabled:false,builtinRules:[...builtinRules],customText:''})
+const selected=computed(()=>organizations.value.find(i=>String(i.id)===selectedId.value)),isOwner=computed(()=>selected.value?.role==='OWNER'),canManage=computed(()=>['OWNER','ORG_ADMIN'].includes(selected.value?.role||'')),allocatableMembers=computed(()=>members.value.filter(i=>i.role!=='OWNER')),idempotencyKey=()=>`web-${crypto.randomUUID()}`
+async function loadOrganizations(){loading.value=true;try{organizations.value=(await http.get('/organizations')).data.map((i:any)=>({id:Number(i.id),name:String(i.name),role:String(i.member_role??i.role)}));if(!selectedId.value&&organizations.value.length)selectedId.value=String(organizations.value[0].id);await loadOrganization()}catch(e){ElMessage.error(getHttpErrorMessage(e))}finally{loading.value=false}}
+async function loadOrganization(){if(!selectedId.value)return;const req:any[]=[http.get(`/organizations/${selectedId.value}/members`),http.get(`/organizations/${selectedId.value}/usage`),http.get(`/organizations/${selectedId.value}/tokens`)];if(isOwner.value)req.push(http.get(`/organizations/${selectedId.value}/data-security`));const[m,u,t,s]=await Promise.all(req);members.value=m.data.map((i:any)=>({memberId:Number(i.user_id??i.userId),username:String(i.username),email:i.email,role:String(i.member_role??i.role),balance:Number(i.balance||0),heldAmount:Number(i.held_balance||0)}));usage.value=u.data.map((i:any)=>({username:i.username,tokenName:i.token_name??i.token_id,sourceCode:i.source_code,model:i.model,inputTokens:i.input_tokens,outputTokens:i.output_tokens,requestCount:i.request_count,successRate:Number(i.request_count)?`${(Number(i.success_count)*100/Number(i.request_count)).toFixed(1)}%`:'0%',saleAmount:i.sale_amount}));tokens.value=t.data||[];if(s){const p=s.data||{};security.value={enabled:p.enabled===true,builtinRules:p.builtinRules||[...builtinRules],customText:(p.customRules||[]).map((r:any)=>`${r.name}=${r.pattern}`).join('\n')}}}
+async function createCompany(){try{await http.post('/organizations',{name:companyName.value});createVisible.value=false;companyName.value='';await loadOrganizations();ElMessage.success('公司已创建')}catch(e){ElMessage.error(getHttpErrorMessage(e))}}
+async function invite(){try{const r=await http.post(`/organizations/${selectedId.value}/invitations`,inviteForm.value,{headers:{'Idempotency-Key':idempotencyKey()}});inviteToken.value=r.data.invitationToken;ElMessage.success('邀请已创建，令牌仅展示一次')}catch(e){ElMessage.error(getHttpErrorMessage(e))}}
+function allocation(reclaim:boolean){reclaiming.value=reclaim;allocationForm.value={memberId:allocatableMembers.value[0]?.memberId,amount:1};allocationVisible.value=true}
+async function submitAllocation(){try{await http.post(`/organizations/${selectedId.value}${reclaiming.value?'/allocations/reclaim':'/allocations'}`,{userId:allocationForm.value.memberId,amount:allocationForm.value.amount},{headers:{'Idempotency-Key':idempotencyKey()}});allocationVisible.value=false;await loadOrganization();ElMessage.success('额度已更新')}catch(e){ElMessage.error(getHttpErrorMessage(e))}}
+function openMember(row:Member){memberForm.value={userId:row.memberId,displayName:row.username,role:row.role,status:'ACTIVE',walletQuota:row.balance};memberVisible.value=true}
+async function saveMember(){try{await http.patch(`/organizations/${selectedId.value}/members/${memberForm.value.userId}`,memberForm.value);memberVisible.value=false;await loadOrganization();ElMessage.success('成员已更新')}catch(e){ElMessage.error(getHttpErrorMessage(e))}}
+async function removeMember(row:Member){try{await ElMessageBox.confirm(`确认软删除成员 ${row.username}？余额会回收，组织 Token 会撤销。`,'删除成员',{type:'warning'});await http.delete(`/organizations/${selectedId.value}/members/${row.memberId}`);await loadOrganization();ElMessage.success('成员已移出企业')}catch(e:any){if(e!=='cancel')ElMessage.error(getHttpErrorMessage(e))}}
+function openToken(row?:any){issuedSecret.value='';tokenForm.value=row?{...row,allowedModels:row.allowAllModels?'*':(row.allowedModelIds||[]).join(',')}:{userId:members.value[0]?.memberId,name:'成员 API Key',totalQuota:0,allowedModels:'*',ipWhitelist:'',expiredAt:null,enabled:true};tokenVisible.value=true}
+async function saveToken(){try{const p={...tokenForm.value,allowAllModels:tokenForm.value.allowedModels.trim()==='*',allowedModelIds:tokenForm.value.allowedModels.trim()==='*'?[]:tokenForm.value.allowedModels.split(',').map((v:string)=>v.trim()).filter(Boolean)};const r=tokenForm.value.id?await http.patch(`/organizations/${selectedId.value}/tokens/${tokenForm.value.id}`,p):await http.post(`/organizations/${selectedId.value}/members/${tokenForm.value.userId}/tokens`,p);issuedSecret.value=r.data?.secret||'';await loadOrganization();ElMessage.success('Token 已保存')}catch(e){ElMessage.error(getHttpErrorMessage(e))}}
+async function deleteToken(row:any){try{await ElMessageBox.confirm(`确认删除 Token ${row.name}？`,'删除 Token',{type:'warning'});await http.delete(`/organizations/${selectedId.value}/tokens/${row.id}`);await loadOrganization()}catch(e:any){if(e!=='cancel')ElMessage.error(getHttpErrorMessage(e))}}
+async function saveSecurity(){try{const customRules=security.value.customText.split('\n').map(v=>v.trim()).filter(Boolean).map(line=>{const i=line.indexOf('=');return{name:line.slice(0,i).trim(),pattern:line.slice(i+1).trim()}});await http.put(`/organizations/${selectedId.value}/data-security`,{enabled:security.value.enabled,builtinRules:security.value.builtinRules,customRules});ElMessage.success('策略已保存');await loadOrganization()}catch(e){ElMessage.error(getHttpErrorMessage(e))}}
 onMounted(loadOrganizations)
 </script>
-
-<style scoped>
-.organization-page{max-width:1280px;margin:0 auto;padding:32px 24px}.page-heading{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}.page-heading h1{margin:2px 0 6px}.page-heading p{margin:0;color:#64748b}.eyebrow{font-size:12px!important;color:#2563eb!important;letter-spacing:.16em}.toolbar{display:flex;gap:10px;margin:4px 0 18px}.usage-card{margin-top:20px}
-</style>
+<style scoped>.organization-page{max-width:1280px;margin:0 auto;padding:32px 24px}.page-heading,.card-head{display:flex;justify-content:space-between;align-items:center;gap:16px}.page-heading{margin-bottom:20px}.page-heading h1{margin:2px 0 6px}.page-heading p{margin:0;color:#64748b}.eyebrow{font-size:12px!important;color:#2563eb!important;letter-spacing:.16em}.toolbar{display:flex;flex-wrap:wrap;gap:10px;margin:4px 0 18px}.section-card{margin-top:20px}.security-note{color:#64748b;line-height:1.7}.section-card :deep(.el-textarea){margin:14px 0}@media(max-width:640px){.organization-page{padding:20px 12px}.page-heading{align-items:flex-start;flex-direction:column}}</style>

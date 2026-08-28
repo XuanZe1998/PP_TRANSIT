@@ -8,6 +8,7 @@ import com.transit.dto.MoneyAmount;
 import lombok.Data;
 
 import java.time.LocalDateTime;
+import java.math.BigDecimal;
 
 @Data
 @TableName("wallet_recharge_orders")
@@ -19,7 +20,7 @@ public class WalletRechargeOrder {
     @TableField("plan_name") private String planName;
     @TableField("payment_amount_units") private Long paymentAmountUnits;
     @TableField("base_credit_units") private Long baseCreditUnits;
-    @TableField("bonus_percent") private Integer bonusPercent;
+    @TableField("bonus_percent") private BigDecimal bonusPercent;
     @TableField("bonus_credit_units") private Long bonusCreditUnits;
     @TableField("total_credit_units") private Long totalCreditUnits;
     private String status;

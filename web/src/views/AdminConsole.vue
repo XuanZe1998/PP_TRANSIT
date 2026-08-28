@@ -15,7 +15,7 @@
     </section>
 
     <section v-if="metrics.length" class="metric-grid admin-metrics">
-      <article v-for="metric in metrics" :key="metric.label" class="metric-card">
+      <article v-for="metric in metrics" :key="metric.label" :class="['metric-card',{clickable:metric.href}]" :tabindex="metric.href?0:undefined" @click="metric.href&&router.push(metric.href)" @keyup.enter="metric.href&&router.push(metric.href)">
         <span>{{ metric.label }}</span>
         <div>
           <strong>{{ metric.value }}</strong>
@@ -137,7 +137,7 @@
         <el-form label-position="top">
           <el-form-item label="套餐名称"><el-input v-model="rechargePlanForm.name" maxlength="120" /></el-form-item>
           <el-form-item label="售价（内部单位，10,000 = ¥1）"><el-input-number v-model="rechargePlanForm.amount" :min="1" :step="10000" style="width:100%" /></el-form-item>
-          <el-form-item label="赠送比例 %"><el-input-number v-model="rechargePlanForm.bonusPercent" :min="0" :max="1000" style="width:100%" /></el-form-item>
+          <el-form-item label="赠送比例 %"><el-input-number v-model="rechargePlanForm.bonusPercent" :min="0" :max="1000" :precision="3" :step="0.001" style="width:100%" /><div class="field-hint">支持 0 或 0.001%–1000.000%，订单会保存当前比例快照。</div></el-form-item>
           <el-form-item label="排序"><el-input-number v-model="rechargePlanForm.sortOrder" :min="0" style="width:100%" /></el-form-item>
           <el-form-item label="启用"><el-switch v-model="rechargePlanForm.enabled" /></el-form-item>
         </el-form>
@@ -320,6 +320,7 @@
               <el-button v-if="module === 'channels'" link type="primary" @click="testChannel(row)">测试</el-button>
               <el-button v-if="module === 'channels'" link type="success" @click="openModelDiscovery(row)">同步模型</el-button>
               <el-button v-if="module === 'users'" link type="primary" @click="openAdjust(row)">调账</el-button>
+              <el-button v-if="module === 'users' && String(row.account_type||'PERSONAL')==='PERSONAL'" link type="success" @click="upgradeEnterprise(row)">升级企业</el-button>
               <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
               <el-button v-if="config.deletable" link type="danger" @click="removeRow(row)">删除</el-button>
             </template>
@@ -621,7 +622,7 @@
           <div class="field-hint">当前调整折合：{{ money(adjustForm.amount) }}</div>
         </el-form-item>
         <el-form-item label="原因" required>
-          <el-input v-model="adjustForm.reason" type="textarea" maxlength="240" show-word-limit />
+          <el-input v-model="adjustForm.reason" type="textarea" minlength="3" maxlength="500" show-word-limit placeholder="请输入 3–500 个字符的调账原因" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -782,6 +783,7 @@
 import { computed, defineAsyncComponent, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Refresh, Search } from '@element-plus/icons-vue'
+import { useRouter } from 'vue-router'
 import http, { getHttpErrorMessage, getHttpErrorNotice } from '@/utils/http'
 import { formatCny, formatPerMillionUsd, formatUsd } from '@/utils/money'
 const AdminUsageCharts = defineAsyncComponent(() => import('@/components/AdminUsageCharts.vue'))
@@ -808,6 +810,7 @@ type Config = {
 }
 
 const props = defineProps<{ module: ModuleKey }>()
+const router=useRouter()
 
 const module = computed(() => props.module)
 const gatewayModules: ModuleKey[] = ['channels', 'models']
@@ -980,6 +983,10 @@ const configs: Record<ModuleKey, Config> = {
     columns: [
       { prop: 'username', label: '用户', minWidth: 150 },
       { prop: 'email', label: '邮箱', minWidth: 180 },
+      { prop: 'account_type', label: '账户类型', width: 110 },
+      { prop: 'last_login_ip', label: '最近登录 IP', minWidth: 150 },
+      { prop: 'last_login_ip_at', label: '登录时间', minWidth: 170 },
+      { prop: 'login_ip_count', label: '历史 IP', width: 90 },
       { prop: 'role', label: '角色', width: 100 },
       { prop: 'status', label: '状态', width: 110, kind: 'status' },
       { prop: 'group_name', label: '分组', minWidth: 130 },
@@ -1192,7 +1199,7 @@ const metrics = computed(() => {
       { label: '总请求', value: number(m.requests), badge: `${percent(m.successRate)} 成功`, tone: 'green' },
       { label: '收入', value: money(m.revenue), badge: `成本 ${money(m.cost)}`, tone: 'blue' },
       { label: '毛利率', value: percent(m.grossMargin), badge: '实时估算', tone: 'orange' },
-      { label: '待处理订单', value: number(m.pendingOrders), badge: `${number(m.activeUsers)} 用户`, tone: 'purple' }
+      { label: '待处理订单', value: number(m.pendingOrders), badge: `${number(m.activeUsers)} 用户 · 点击查看`, tone: 'purple', href: '/admin/other-services?tab=orders&status=pending' }
     ]
   }
   if (module.value === 'finance') {
@@ -2472,6 +2479,14 @@ function openAdjust(row: any) {
   adjustVisible.value = true
 }
 
+async function upgradeEnterprise(row:any){
+  try{
+    const result=await ElMessageBox.prompt('请输入企业名称','升级为企业用户',{inputValue:`${row.username} 的企业`,inputPattern:/^.{1,160}$/,inputErrorMessage:'企业名称需为 1–160 个字符',type:'warning'})
+    await http.post(`/api/admin/api/users/${row.id}/upgrade-enterprise`,{companyName:result.value.trim(),contactName:row.username})
+    ElMessage.success('用户已升级为企业用户');await load()
+  }catch(error:any){if(error==='cancel'||error==='close')return;ElMessage.error(getHttpErrorMessage(error,'升级企业用户失败'))}
+}
+
 async function saveAdjust() {
   if (!adjustTarget.value) return
   if (!Number.isFinite(adjustForm.amount) || adjustForm.amount === 0) {
@@ -2479,8 +2494,8 @@ async function saveAdjust() {
     return
   }
   const reason = adjustForm.reason.trim()
-  if (!reason) {
-    ElMessage.warning('请填写调账原因')
+  if (reason.length < 3 || reason.length > 500) {
+    ElMessage.warning('调账原因必须为 3–500 个字符')
     return
   }
   try {
@@ -2591,6 +2606,7 @@ function healthType(value: string) {
 .admin-metrics {
   margin-bottom: 0;
 }
+.admin-metrics .metric-card.clickable{cursor:pointer;transition:transform .16s ease,box-shadow .16s ease}.admin-metrics .metric-card.clickable:hover,.admin-metrics .metric-card.clickable:focus{transform:translateY(-2px);box-shadow:0 14px 30px rgba(37,99,235,.14);outline:2px solid #93c5fd;outline-offset:2px}
 
 .panel {
   min-width: 0;

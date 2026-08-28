@@ -166,6 +166,7 @@ import OtherServices from '@/views/OtherServices.vue'
 import ModelSalePricing from '@/components/ModelSalePricing.vue'
 import DeveloperDocs from '@/components/DeveloperDocs.vue'
 import AccountMenu from '@/components/AccountMenu.vue'
+import ModelCallDialog from '@/components/ModelCallDialog.vue'
 
 type PublicModel = {
   publicName: string
@@ -357,6 +358,8 @@ const ModelMarket = defineComponent({
     const total = ref(0)
     const loading = ref(false)
     const error = ref('')
+    const callVisible = ref(false)
+    const callTarget = ref<EnrichedModel | null>(null)
     const allModels = ref<EnrichedModel[]>([])
     const resultsElement = ref<HTMLElement | null>(null)
     let searchTimer: number | undefined
@@ -475,7 +478,8 @@ const ModelMarket = defineComponent({
         ElMessage.warning(model.verificationMessage || '该模型尚未验证通过，暂不能调用')
         return
       }
-      router.push({ path: '/console/playground', query: { model: model.publicName } })
+      callTarget.value = model
+      callVisible.value = true
     }
 
     const copyModel = async (model: EnrichedModel) => {
@@ -681,7 +685,13 @@ const ModelMarket = defineComponent({
           ])
         ]),
         h('pre', `import OpenAI from "openai";\n\nconst client = new OpenAI({\n  apiKey: "YOUR_API_KEY",\n  baseURL: "${gatewayBaseUrl.value}"\n});\n\nawait client.chat.completions.create({\n  model: "YOUR_ENABLED_MODEL",\n  messages: [{ role: "user", content: "Hello" }]\n});`)
-      ])
+      ]),
+      h(ModelCallDialog, {
+        modelValue: callVisible.value,
+        'onUpdate:modelValue': (value:boolean) => { callVisible.value = value },
+        modelId: callTarget.value?.publicName || '',
+        capability: String((callTarget.value as any)?.pricingModel?.capability || 'TEXT')
+      })
     ])
   }
 })

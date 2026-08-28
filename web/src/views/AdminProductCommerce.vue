@@ -17,7 +17,7 @@
         <span>已识别 {{ recognizedInventoryItems.length }} 条，重复内容将自动去重</span>
         <el-button type="success" :loading="inventoryImporting" :disabled="recognizedInventoryItems.length === 0" @click="importInventory">批量导入</el-button>
       </div>
-      <el-table :data="inventory"><el-table-column prop="id" label="ID" width="90" /><el-table-column prop="status" label="状态" /><el-table-column prop="reservedOrderId" label="订单 ID" /><el-table-column prop="createdAt" label="导入时间" /><el-table-column label="操作"><template #default="{ row }"><el-button v-if="row.status === 'AVAILABLE'" link type="danger" @click="deleteInventory(row.id)">删除未售</el-button></template></el-table-column></el-table>
+      <el-table :data="inventory"><el-table-column prop="id" label="ID" width="90" /><el-table-column prop="secretPreview" label="卡密掩码"/><el-table-column prop="status" label="状态" /><el-table-column prop="reservedOrderId" label="订单 ID" /><el-table-column prop="createdAt" label="导入时间" /><el-table-column label="操作" width="160"><template #default="{ row }"><el-button v-if="row.status === 'AVAILABLE'" link type="primary" @click="replaceInventory(row.id)">替换</el-button><el-button v-if="row.status === 'AVAILABLE'" link type="danger" @click="deleteInventory(row.id)">删除未售</el-button></template></el-table-column></el-table>
     </section>
     <section class="panel"><div class="panel-title"><h3>优惠码</h3><el-button type="primary" @click="openCoupon()">新增</el-button></div>
       <el-table :data="coupons"><el-table-column prop="code" label="代码" /><el-table-column label="固定优惠"><template #default="{ row }">{{ (row.discountCents / 100).toFixed(2) }}</template></el-table-column><el-table-column prop="remainingUses" label="剩余次数" /><el-table-column label="状态"><template #default="{ row }">{{ row.enabled ? '启用' : '停用' }}</template></el-table-column><el-table-column label="操作"><template #default="{ row }"><el-button link @click="openCoupon(row)">编辑</el-button><el-button link type="danger" @click="disableCoupon(row.id)">停用</el-button></template></el-table-column></el-table>
@@ -27,7 +27,7 @@
 </template>
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import http, { getHttpErrorMessage } from '@/utils/http'
 type ProductService = Record<string, any> & { id:number; name:string }
 type Coupon = { id?:number; code:string; discountCents:number; remainingUses:number; enabled:boolean; serviceIds:number[] }
@@ -42,6 +42,7 @@ async function saveConfig(){if(!form.value)return;saving.value=true;try{await ht
 async function loadInventory(){if(!selectedId.value)return;const [i,s]=await Promise.all([http.get(`/api/admin/api/other-services/${selectedId.value}/inventory`),http.get(`/api/admin/api/other-services/${selectedId.value}/inventory/stats`)]);inventory.value=i.data||[];stats.value=s.data||{}}
 async function importInventory(){if(!selectedId.value||recognizedInventoryItems.value.length===0)return;inventoryImporting.value=true;try{const recognized=recognizedInventoryItems.value.length;const r=await http.post(`/api/admin/api/other-services/${selectedId.value}/inventory/import`,{content:inventoryText.value});const imported=Number(r.data.imported||0);ElMessage.success(`识别 ${recognized} 条，成功导入 ${imported} 条${imported<recognized?'，已忽略库中重复卡密':''}`);inventoryText.value='';await loadInventory()}catch(e){ElMessage.error(getHttpErrorMessage(e,'卡密导入失败'))}finally{inventoryImporting.value=false}}
 async function deleteInventory(id:number){await http.delete(`/api/admin/api/other-services/${selectedId.value}/inventory/${id}`);await loadInventory()}
+async function replaceInventory(id:number){try{const result=await ElMessageBox.prompt('完整卡密只用于覆盖写入，保存后仍只显示尾号。','替换未售卡密',{inputType:'password',inputPattern:/^.{1,10000}$/,inputErrorMessage:'请输入卡密'});await http.put(`/api/admin/api/other-services/${selectedId.value}/inventory/${id}`,{content:result.value});await loadInventory();ElMessage.success('卡密已安全替换')}catch(e:any){if(e!=='cancel'&&e!=='close')ElMessage.error(getHttpErrorMessage(e,'替换失败'))}}
 function openCoupon(c?:Coupon){Object.assign(couponForm,c?{...c,discount:c.discountCents/100}:{id:undefined,code:'',discount:0,remainingUses:1,enabled:true,serviceIds:[]});couponVisible.value=true}
 async function saveCoupon(){const p={code:couponForm.code,discountCents:Math.round(couponForm.discount*100),remainingUses:couponForm.remainingUses,enabled:couponForm.enabled,serviceIds:couponForm.serviceIds};if(couponForm.id)await http.put(`/api/service-orders/admin/coupons/${couponForm.id}`,p);else await http.post('/api/service-orders/admin/coupons',p);couponVisible.value=false;await load()}
 async function disableCoupon(id:number){await http.delete(`/api/service-orders/admin/coupons/${id}`);await load()}

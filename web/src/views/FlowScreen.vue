@@ -365,6 +365,12 @@ const finishOAuth = async (provider: OAuthProvider, code: string, state: string)
   authLoading.value = true
   try {
     const res = await http.get(`/api/oauth/callback/${provider}`, { params: { code, state } })
+    if (res.data?.verificationRequired) {
+      window.dispatchEvent(new CustomEvent('ip-login-challenge', { detail: res.data }))
+      ElMessage.warning('检测到新的登录 IP，请完成邮箱验证')
+      await router.replace({ path: '/', query: { auth: 'login' } })
+      return
+    }
     applyAuthResponse(res.data)
     ElMessage.success(res.data?.oauthAction === 'BIND' ? `${provider} 绑定成功` : `${provider} 注册/登录成功`)
     await router.replace(res.data?.accountComplete === false ? '/console/profile' : authRedirect())

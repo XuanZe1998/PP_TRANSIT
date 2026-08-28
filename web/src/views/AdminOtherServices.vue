@@ -47,9 +47,10 @@
           <el-tag :type="row.enabled ? 'success' : 'info'">{{ row.enabled ? '展示' : '隐藏' }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="150" fixed="right">
+      <el-table-column label="操作" width="230" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
+          <el-button v-if="row.productType==='CARD_KEY'" link type="success" @click="manageCards">卡密管理</el-button>
           <el-button link type="danger" @click="remove(row)">删除</el-button>
         </template>
       </el-table-column>
@@ -289,7 +290,8 @@ function openCreate() {
   dialogVisible.value = true
 }
 
-function openEdit(service: OtherService) {
+async function openEdit(service: OtherService) {
+  try{service={...service,...(await http.get<OtherService>(`/api/admin/api/other-services/${service.id}`)).data}}catch{/* list data remains usable */}
   form.id = service.id
   form.name = service.name
   form.description = service.description || ''
@@ -302,13 +304,14 @@ function openEdit(service: OtherService) {
   form.serviceFee = (service.serviceFeeCents || 0) / 100
   form.purchaseEnabled = service.purchaseEnabled === true
   form.productType = service.productType || 'STANDARD'
-  form.redemptionUrl = ''
+  form.redemptionUrl = (service as any).redemptionUrl || ''
   form.redemptionConfigured = service.redemptionConfigured === true
   form.maxPurchaseQuantity = service.maxPurchaseQuantity || 1
   form.purchasePrompt = service.purchasePrompt || ''
   form.inventoryText = ''
   dialogVisible.value = true
 }
+function manageCards(){activeTab.value='orders';router.replace({query:{tab:'orders'}});window.setTimeout(()=>document.querySelector('.commerce-admin')?.scrollIntoView({behavior:'smooth'}),50)}
 
 function chooseLocalImage() {
   imageFileInput.value?.click()

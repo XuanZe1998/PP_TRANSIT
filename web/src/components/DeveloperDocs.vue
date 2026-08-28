@@ -8,7 +8,7 @@
       <label><span>模型 ID</span><el-input v-model="model" placeholder="例如 claude-opus-4-8" /></label>
     </div>
     <el-alert :title="selected?.note || '请选择客户端'" type="info" :closable="false" show-icon />
-    <div class="docs-endpoints"><div><span>Base URL</span><code>{{ baseUrl }}</code></div><div><span>Chat Completions</span><code>{{ baseUrl }}/chat/completions</code></div></div>
+    <div class="docs-endpoints"><div><span>OpenAI SDK Base URL</span><code>{{ baseUrl }}</code></div><div><span>Anthropic SDK Base URL</span><code>{{ anthropicBase }}</code></div><div><span>OpenAI Chat Completions</span><code>{{ baseUrl }}/chat/completions</code></div><div><span>Anthropic Messages</span><code>{{ anthropicBase }}/v1/messages</code></div></div>
     <div class="docs-code-head"><strong>可直接使用的配置</strong><el-button size="small" @click="copy">复制</el-button></div>
     <pre>{{ generated }}</pre>
     <div class="docs-checklist"><b>连通检查</b><ol><li>先请求 <code>GET {{ baseUrl }}/models</code> 确认 Key 和模型权限。</li><li>再用所选模型发送最小 Chat Completions 请求。</li><li>若客户端要求“完整端点”，填写 <code>{{ baseUrl }}/chat/completions</code>；要求 Base URL 时只填 <code>{{ baseUrl }}</code>。</li></ol></div>
@@ -37,7 +37,9 @@ const fallbackClients:Client[]=[
 const configured=String(import.meta.env.VITE_API_BASE_URL||'').replace(/\/$/,'')
 const baseUrl=ref(`${configured||window.location.origin}/v1`),clients=ref<Client[]>([]),clientId=ref('curl'),os=ref('windows'),apiKey=ref('YOUR_API_KEY'),model=ref('YOUR_MODEL_ID')
 const selected=computed(()=>clients.value.find(item=>item.id===clientId.value))
+const anthropicBase=computed(()=>baseUrl.value.replace(/\/v1$/,''))
 const generated=computed(()=>{
+  if(selected.value?.protocol==='ANTHROPIC'||clientId.value==='claude-code')return `from anthropic import Anthropic\n\nclient = Anthropic(api_key="${apiKey.value}", base_url="${anthropicBase.value}")\nmessage = client.messages.create(model="${model.value}", max_tokens=1024, messages=[{"role":"user","content":"Hello"}])`
   if(clientId.value==='python')return `from openai import OpenAI\n\nclient = OpenAI(api_key="${apiKey.value}", base_url="${baseUrl.value}")\nresponse = client.chat.completions.create(model="${model.value}", messages=[{"role":"user","content":"Hello"}])`
   if(clientId.value==='javascript')return `import OpenAI from "openai";\n\nconst client = new OpenAI({ apiKey: "${apiKey.value}", baseURL: "${baseUrl.value}" });\nawait client.chat.completions.create({ model: "${model.value}", messages: [{ role: "user", content: "Hello" }] });`
   if(clientId.value==='curl')return `curl ${os.value==='windows'?'^':'\\'}\n  -H "Authorization: Bearer ${apiKey.value}" ${os.value==='windows'?'^':'\\'}\n  -H "Content-Type: application/json" ${os.value==='windows'?'^':'\\'}\n  -d '${JSON.stringify({model:model.value,messages:[{role:'user',content:'Hello'}]})}' ${baseUrl.value}/chat/completions`

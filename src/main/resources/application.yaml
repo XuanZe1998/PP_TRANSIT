@@ -233,12 +233,14 @@ account:
   verification-mode: ${ACCOUNT_VERIFICATION_MODE:EMAIL_AND_PHONE}
 
 platform:
-  public-base-url: ${PLATFORM_PUBLIC_BASE_URL:https://linknux.com}
+  public-base-url: ${PLATFORM_PUBLIC_BASE_URL:https://api.linknux.com}
 
 security:
   # Base64-encoded 32-byte AES key. Keep this in your external local YAML or
   # production secret manager. Generate with: openssl rand -base64 32
   data-encryption-key: ${DATA_ENCRYPTION_KEY:}
+  # Only these direct peers may supply X-Forwarded-For / X-Real-IP.
+  trusted-proxies: ${TRUSTED_PROXIES:127.0.0.1,::1}
   admin-session-expiry: ${ADMIN_SESSION_EXPIRY:28800}
   password:
     bcrypt-strength: ${BCRYPT_STRENGTH:12}

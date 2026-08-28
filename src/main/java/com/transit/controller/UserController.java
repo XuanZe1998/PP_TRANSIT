@@ -25,6 +25,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import jakarta.servlet.http.HttpServletRequest;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -56,6 +57,9 @@ public class UserController {
     private final ModelContextPricingService modelContextPricingService;
     private final UserProfileService userProfileService;
     private final AccountVerificationPolicy verificationPolicy;
+    private final com.transit.service.ClientIpResolver clientIpResolver;
+    private final com.transit.service.LoginIpService loginIpService;
+    private final com.transit.service.LegalDocumentService legalDocumentService;
 
     @Value("${billing.default-max-output-tokens:4096}")
     private int playgroundMaxOutputTokens;
@@ -67,7 +71,8 @@ public class UserController {
     private long amountScale;
 
     @GetMapping("/profile")
-    public Mono<Map<String, Object>> getProfile(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+    public Mono<Map<String, Object>> getProfile(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+                                                HttpServletRequest request) {
         User user = currentUserService.requireUser(authHeader);
         Map<String, Object> profile = new HashMap<>();
         profile.put("id", user.getId());
@@ -77,6 +82,8 @@ public class UserController {
         profile.put("email", user.getEmail());
         profile.put("phone", user.getPhone());
         profile.put("role", user.getRole());
+        profile.put("accountType", Objects.toString(user.getAccountType(), "PERSONAL"));
+        profile.put("defaultOrganizationId", user.getDefaultOrganizationId());
         profile.put("status", user.getStatus());
         profile.put("authProvider", user.getAuthProvider());
         profile.put("emailVerifiedAt", user.getEmailVerifiedAt());
@@ -86,7 +93,17 @@ public class UserController {
         profile.put("lastLoginAt", user.getLastLoginAt());
         profile.put("accountComplete", verificationPolicy.isComplete(user));
         profile.put("createdAt", user.getCreatedAt());
+        profile.put("currentLoginIp", clientIpResolver.resolve(request));
+        profile.put("loginIpHistory", loginIpService.history(user.getId()));
+        profile.put("agreementRequired", !legalDocumentService.isCurrentAccepted(user.getId()));
         return Mono.just(profile);
+    }
+
+    @DeleteMapping("/login-ips/{id}/trust")
+    public Mono<Map<String,Object>> revokeTrustedIp(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+                                                    @PathVariable Long id) {
+        User user = currentUserService.requireUser(authHeader);
+        return Mono.fromCallable(() -> { loginIpService.revoke(user.getId(), id); return Map.of("revoked", true); });
     }
 
     @PatchMapping("/profile")

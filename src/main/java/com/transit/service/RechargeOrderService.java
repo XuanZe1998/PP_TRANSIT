@@ -56,9 +56,9 @@ public class RechargeOrderService {
         if (rows.isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Recharge plan not found or unavailable");
         Map<String,Object> plan = rows.get(0);
         long base = ((Number)plan.get("amount")).longValue();
-        int bonusPercent = ((Number)plan.get("bonus_percent")).intValue();
-        if (base <= 0 || bonusPercent < 0) throw conflict("Recharge plan amount is invalid");
-        long bonus = BigDecimal.valueOf(base).multiply(BigDecimal.valueOf(bonusPercent))
+        BigDecimal bonusPercent = new BigDecimal(plan.get("bonus_percent").toString()).setScale(3, RoundingMode.UNNECESSARY);
+        if (base <= 0 || bonusPercent.signum() < 0) throw conflict("Recharge plan amount is invalid");
+        long bonus = BigDecimal.valueOf(base).multiply(bonusPercent)
                 .divide(BigDecimal.valueOf(100), 0, RoundingMode.HALF_UP).longValueExact();
         long total;
         try { total = Math.addExact(base, bonus); } catch (ArithmeticException overflow) { throw conflict("Recharge plan amount is outside the supported range"); }

@@ -73,6 +73,10 @@ public class User {
     @TableField("default_organization_id")
     private Long defaultOrganizationId;
 
+    @TableField("account_type")
+    @Builder.Default
+    private String accountType = "PERSONAL";
+
     @TableField("balance")
     @Builder.Default
     private long balance = 0; // Credits in tokens

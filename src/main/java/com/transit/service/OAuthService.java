@@ -29,6 +29,7 @@ import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.util.UriComponentsBuilder;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
+import jakarta.servlet.http.HttpServletRequest;
 
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
@@ -52,6 +53,8 @@ public class OAuthService {
     private final WebClient webClient;
     private final SecretHashService secretHashService;
     private final AccountVerificationPolicy verificationPolicy;
+    private final LoginIpService loginIps;
+    private final ClientIpResolver clientIps;
     private final SecureRandom secureRandom = new SecureRandom();
     @Autowired(required = false)
     private AvatarStorageService avatarStorageService;
@@ -152,6 +155,12 @@ public class OAuthService {
     }
 
     public Mono<Map<String, Object>> handleCallback(String requestedProvider, String code, String state) {
+        return handleCallback(requestedProvider, code, state, null);
+    }
+
+    public Mono<Map<String, Object>> handleCallback(String requestedProvider, String code, String state,
+                                                     HttpServletRequest servletRequest) {
+        String clientIp = servletRequest == null ? "0.0.0.0" : clientIps.resolve(servletRequest);
         return Mono.fromCallable(() -> {
                     String provider = normalizeProvider(requestedProvider);
                     if (code == null || code.isBlank() || code.length() > 2048) {
@@ -159,8 +168,8 @@ public class OAuthService {
                     }
                     OAuthLoginState loginState = consumeLoginState(provider, state);
                     return switch (provider) {
-                        case "github" -> exchangeGithubCode(code, loginState.getTargetUserId());
-                        case "google" -> exchangeGoogleCode(code, loginState.getTargetUserId());
+                        case "github" -> exchangeGithubCode(code, loginState.getTargetUserId(), clientIp);
+                        case "google" -> exchangeGoogleCode(code, loginState.getTargetUserId(), clientIp);
                         default -> throw unsupportedProvider();
                     };
                 })
@@ -193,7 +202,7 @@ public class OAuthService {
                 .lt(OAuthLoginState::getExpiresAt, now.minusHours(1)));
     }
 
-    private Map<String, Object> exchangeGithubCode(String code, Long targetUserId) {
+    private Map<String, Object> exchangeGithubCode(String code, Long targetUserId, String clientIp) {
         requireConfigured("GitHub", githubClientId, githubClientSecret);
         MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
         form.add("client_id", githubClientId);
@@ -202,10 +211,10 @@ public class OAuthService {
         form.add("redirect_uri", githubRedirectUri);
         Map<String, Object> response = postForm(githubTokenUri, form, "GitHub");
         String accessToken = requiredToken(response, "access_token", "GitHub");
-        return processProviderUser("github", accessToken, targetUserId);
+        return processProviderUser("github", accessToken, targetUserId, clientIp);
     }
 
-    private Map<String, Object> exchangeGoogleCode(String code, Long targetUserId) {
+    private Map<String, Object> exchangeGoogleCode(String code, Long targetUserId, String clientIp) {
         requireConfigured("Google", googleClientId, googleClientSecret);
         MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
         form.add("client_id", googleClientId);
@@ -215,7 +224,7 @@ public class OAuthService {
         form.add("redirect_uri", googleRedirectUri);
         Map<String, Object> response = postForm(googleTokenUri, form, "Google");
         String accessToken = requiredToken(response, "access_token", "Google");
-        return processProviderUser("google", accessToken, targetUserId);
+        return processProviderUser("google", accessToken, targetUserId, clientIp);
     }
 
     @SuppressWarnings("unchecked")
@@ -250,7 +259,8 @@ public class OAuthService {
         return value.toString();
     }
 
-    private Map<String, Object> processProviderUser(String provider, String providerAccessToken, Long targetUserId) {
+    private Map<String, Object> processProviderUser(String provider, String providerAccessToken, Long targetUserId,
+                                                    String clientIp) {
         Map<String, Object> userInfo = getUserInfo(provider, providerAccessToken);
         Object providerIdValue = userInfo.get("id") != null ? userInfo.get("id") : userInfo.get("sub");
         String providerUserId = providerIdValue == null ? "" : providerIdValue.toString().trim();
@@ -302,7 +312,18 @@ public class OAuthService {
             user.setLastLoginAt(now); userMapper.updateById(user);
         }
         requireActiveUser(user);
-        Map<String,Object> response = issueUserSession(user, "social:" + provider);
+        if (targetUserId == null) {
+            if (!loginIps.hasHistory(user.getId())) loginIps.trust(user.getId(), clientIp);
+            else if (!loginIps.isTrusted(user.getId(), clientIp)) {
+                if (user.getEmail() == null || user.getEmail().isBlank()) {
+                    throw new ResponseStatusException(HttpStatus.PRECONDITION_REQUIRED, "请先联系管理员为账号补充邮箱后再验证新登录地址");
+                }
+                Map<String,Object> challenge = new HashMap<>(loginIps.createChallenge(user.getId(), user.getEmail(), clientIp));
+                challenge.put("oauthAction", "LOGIN");
+                return challenge;
+            } else loginIps.touch(user.getId(), clientIp);
+        }
+        Map<String,Object> response = issueUserSession(user, "social:" + provider, loginIps.digest(clientIp));
         response.put("oauthAction", targetUserId == null ? "LOGIN" : "BIND");
         return response;
     }
@@ -515,6 +536,10 @@ public class OAuthService {
     }
 
     public Map<String, Object> issueUserSession(User user, String clientId) {
+        return issueUserSession(user, clientId, null);
+    }
+
+    public Map<String, Object> issueUserSession(User user, String clientId, String ipDigest) {
         requireActiveUser(user);
         String accessToken = generateSecureToken();
         String refreshToken = generateSecureToken();
@@ -530,6 +555,7 @@ public class OAuthService {
                 .expiresAt(now.plusSeconds(Math.max(accessTokenExpiry, refreshTokenExpiry)))
                 .revoked(false)
                 .deviceName(clientId == null || clientId.isBlank() ? "Web" : clientId)
+                .ipDigest(ipDigest)
                 .lastActiveAt(now)
                 .createdAt(now)
                 .build());
@@ -545,6 +571,8 @@ public class OAuthService {
         response.put("avatarPath", user.getAvatarPath());
         response.put("accountComplete", verificationPolicy.isComplete(user));
         response.put("role", user.getRole());
+        response.put("accountType", Objects.toString(user.getAccountType(), "PERSONAL"));
+        response.put("defaultOrganizationId", user.getDefaultOrganizationId());
         return response;
     }
 

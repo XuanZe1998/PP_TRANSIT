@@ -277,6 +277,7 @@ public class ServiceCommerceService {
             if (itemContent.length() > 10000) throw badRequest("Each inventory item must be at most 10000 characters");
             ServiceInventoryItem item = new ServiceInventoryItem();
             item.setServiceId(serviceId); item.setContentEncrypted(secretService.encrypt(itemContent)); item.setContentFingerprint(fingerprint(itemContent));
+            item.setSecretPreview(secretPreview(itemContent));
             item.setStatus(AVAILABLE); item.setCreatedAt(now());
             try { inventoryMapper.insert(item); inserted++; } catch (RuntimeException duplicate) { /* duplicate import is ignored */ }
         }
@@ -350,6 +351,26 @@ public class ServiceCommerceService {
                 .eq(ServiceInventoryItem::getId, inventoryId).eq(ServiceInventoryItem::getServiceId, serviceId)
                 .eq(ServiceInventoryItem::getStatus, AVAILABLE));
         if (deleted != 1) throw conflict("Only an unsold available inventory item can be deleted");
+    }
+
+    public ServiceInventoryItem replaceAvailableInventory(Long serviceId, Long inventoryId, String content) {
+        String normalized = content == null ? "" : content.trim();
+        if (normalized.isBlank() || normalized.length() > 10000) throw badRequest("卡密内容需为 1–10000 个字符");
+        if (!secretService.isConfigured()) throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Inventory encryption is not configured");
+        try {
+            int changed = jdbcTemplate.update("UPDATE service_inventory_items SET content_encrypted=?,content_fingerprint=?,secret_preview=? WHERE id=? AND service_id=? AND status='AVAILABLE'",
+                    secretService.encrypt(normalized), fingerprint(normalized), secretPreview(normalized), inventoryId, serviceId);
+            if (changed != 1) throw conflict("只能替换未售出的可用卡密");
+        } catch (org.springframework.dao.DuplicateKeyException duplicate) {
+            throw conflict("该卡密已存在于库存中");
+        }
+        return inventoryMapper.selectById(inventoryId);
+    }
+
+    private String secretPreview(String value) {
+        String normalized = value == null ? "" : value.trim();
+        if (normalized.length() <= 4) return "****";
+        return "****" + normalized.substring(normalized.length() - 4);
     }
 
     private void consumeCouponReservation(ServiceOrder order) {

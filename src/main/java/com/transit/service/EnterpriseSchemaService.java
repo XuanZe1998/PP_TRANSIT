@@ -35,6 +35,8 @@ public class EnterpriseSchemaService {
         return args -> {
             createTables();
             addColumns();
+            upgradeColumnTypes();
+            seedLegalSettings();
             backfillMultiUnitPricing();
             createIndexes();
             backfillOrganizations();
@@ -71,6 +73,80 @@ public class EnterpriseSchemaService {
     }
 
     private void createTables() {
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS enterprise_profiles (
+                    user_id BIGINT PRIMARY KEY,
+                    organization_id BIGINT NOT NULL,
+                    company_name VARCHAR(160) NOT NULL,
+                    contact_name VARCHAR(80) NOT NULL,
+                    contact_phone VARCHAR(40) NOT NULL,
+                    contact_email VARCHAR(255) NOT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+                """);
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS legal_acceptances (
+                    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+                    user_id BIGINT NOT NULL,
+                    terms_version VARCHAR(40) NOT NULL,
+                    privacy_version VARCHAR(40) NOT NULL,
+                    ip_digest VARCHAR(255) NOT NULL,
+                    accepted_at DATETIME NOT NULL,
+                    UNIQUE(user_id, terms_version, privacy_version)
+                )
+                """);
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS login_ip_history (
+                    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+                    user_id BIGINT NOT NULL,
+                    ip_digest VARCHAR(255) NOT NULL,
+                    encrypted_ip VARCHAR(1000) NULL,
+                    ip_preview VARCHAR(80) NOT NULL,
+                    verified BOOLEAN NOT NULL DEFAULT FALSE,
+                    first_seen_at DATETIME NOT NULL,
+                    last_seen_at DATETIME NOT NULL,
+                    revoked_at DATETIME NULL,
+                    UNIQUE(user_id, ip_digest)
+                )
+                """);
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS login_ip_challenges (
+                    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+                    challenge_id VARCHAR(96) NOT NULL UNIQUE,
+                    user_id BIGINT NOT NULL,
+                    ip_digest VARCHAR(255) NOT NULL,
+                    encrypted_ip VARCHAR(1000) NULL,
+                    ip_preview VARCHAR(80) NOT NULL,
+                    status VARCHAR(24) NOT NULL DEFAULT 'PENDING',
+                    attempts INT NOT NULL DEFAULT 0,
+                    expires_at DATETIME NOT NULL,
+                    consumed_at DATETIME NULL,
+                    created_at DATETIME NOT NULL
+                )
+                """);
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS enterprise_masking_policies (
+                    organization_id BIGINT PRIMARY KEY,
+                    enabled BOOLEAN NOT NULL DEFAULT FALSE,
+                    builtin_rules VARCHAR(500) NOT NULL,
+                    custom_rules TEXT NULL,
+                    updated_by BIGINT NOT NULL,
+                    updated_at DATETIME NOT NULL
+                )
+                """);
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS enterprise_masking_audits (
+                    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+                    organization_id BIGINT NOT NULL,
+                    user_id BIGINT NOT NULL,
+                    token_id BIGINT NOT NULL,
+                    trace_id VARCHAR(120) NULL,
+                    category VARCHAR(80) NOT NULL,
+                    hit_count INT NOT NULL,
+                    created_at DATETIME NOT NULL
+                )
+                """);
         jdbcTemplate.execute("""
                 CREATE TABLE IF NOT EXISTS organizations (
                     id BIGINT PRIMARY KEY AUTO_INCREMENT,
@@ -243,6 +319,14 @@ public class EnterpriseSchemaService {
     }
 
     private void addColumns() {
+        ensureColumn("users", "account_type",
+                "ALTER TABLE users ADD COLUMN account_type VARCHAR(24) NOT NULL DEFAULT 'PERSONAL'");
+        ensureColumn("organization_members", "removed_at",
+                "ALTER TABLE organization_members ADD COLUMN removed_at DATETIME NULL");
+        ensureColumn("organization_members", "updated_at",
+                "ALTER TABLE organization_members ADD COLUMN updated_at DATETIME NULL");
+        ensureColumn("service_inventory_items", "secret_preview",
+                "ALTER TABLE service_inventory_items ADD COLUMN secret_preview VARCHAR(80) NULL");
         ensureColumn("users", "default_organization_id",
                 "ALTER TABLE users ADD COLUMN default_organization_id BIGINT NULL");
         ensureColumn("tokens", "allow_all_models",
@@ -309,7 +393,35 @@ public class EnterpriseSchemaService {
         ensureColumn("model_tasks", "unit_cost_price", "ALTER TABLE model_tasks ADD COLUMN unit_cost_price DECIMAL(18,6) NOT NULL DEFAULT 0");
     }
 
+    private void upgradeColumnTypes() {
+        String product = jdbcTemplate.execute((ConnectionCallback<String>) connection ->
+                connection.getMetaData().getDatabaseProductName());
+        if (product != null && product.toLowerCase(Locale.ROOT).contains("mysql")) {
+            jdbcTemplate.execute("ALTER TABLE recharge_plans MODIFY COLUMN bonus_percent DECIMAL(7,3) NOT NULL DEFAULT 0");
+        } else {
+            jdbcTemplate.execute("ALTER TABLE recharge_plans ALTER COLUMN bonus_percent DECIMAL(7,3)");
+        }
+    }
+
+    private void seedLegalSettings() {
+        Map<String,String> values = Map.of(
+                "legal.operator", "LinkNux API 服务平台",
+                "legal.contact_email", "support@linknux.com",
+                "legal.address", "请以运营主体公示信息为准",
+                "legal.terms_version", "2026-08-28",
+                "legal.privacy_version", "2026-08-28",
+                "legal.effective_date", "2026-08-28");
+        values.forEach((key, value) -> jdbcTemplate.update("INSERT INTO system_settings(setting_key,setting_value,description,updated_at) SELECT ?,?,'用户协议与隐私政策公示配置',? WHERE NOT EXISTS (SELECT 1 FROM system_settings WHERE setting_key=?)",
+                key, value, LocalDateTime.now(), key));
+    }
+
     private void createIndexes() {
+        ensureIndex("login_ip_history", "idx_login_ip_user_seen",
+                "CREATE INDEX idx_login_ip_user_seen ON login_ip_history(user_id, last_seen_at)");
+        ensureIndex("login_ip_challenges", "idx_login_challenge_user_created",
+                "CREATE INDEX idx_login_challenge_user_created ON login_ip_challenges(user_id, created_at)");
+        ensureIndex("enterprise_masking_audits", "idx_masking_audit_org_created",
+                "CREATE INDEX idx_masking_audit_org_created ON enterprise_masking_audits(organization_id, created_at)");
         ensureIndex("provider_credentials", "idx_provider_credential_route",
                 "CREATE INDEX idx_provider_credential_route ON provider_credentials(channel_id, enabled, health_status, priority)");
         ensureIndex("organization_members", "idx_org_member_user",
