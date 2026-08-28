@@ -7,31 +7,28 @@ const source = (path: string) => readFileSync(resolve(root, path), 'utf8')
 
 describe('model marketplace layout', () => {
   it('uses a full-width themed header and numbered client-side pagination', () => {
-    const publicSite = source('src/views/PublicSite.vue')
+    const publicSite = source('src/views/ModelMarket.vue')
+    const layout = source('src/layouts/PublicLayout.vue')
     const css = source('src/style.css')
-    expect(publicSite).toContain('site-nav-inner')
-    expect(publicSite).toContain('ElPagination')
-    expect(publicSite).toContain("layout: 'total, prev, pager, next'")
-    expect(publicSite).toContain('const start = (page.value - 1) * size')
+    expect(layout).toContain('site-nav-inner')
+    expect(publicSite).toContain('<el-pagination')
+    expect(publicSite).toContain('layout="total, sizes, prev, pager, next, jumper"')
+    expect(publicSite).toContain(':page-sizes="[10, 20, 50]"')
     expect(publicSite).not.toContain('加载更多（已显示')
     expect(css).toContain('.market-pagination')
     expect(css).toMatch(/\.site-nav\s*\{[\s\S]*?width:\s*100%/)
   })
 
   it('offers a dedicated upstream selector independent from model publisher', () => {
-    const publicSite = source('src/views/PublicSite.vue')
-    expect(publicSite).toContain("h('h3', '模型上游')")
+    const publicSite = source('src/views/ModelMarket.vue')
+    expect(publicSite).toContain('<h3>模型上游</h3>')
     expect(publicSite).toContain('const upstreamOptions = computed')
-    expect(publicSite).toContain("model.upstreamLabels[code]||'平台智能路由'")
+    expect(publicSite).toContain("filters.source")
     expect(publicSite).not.toContain("{ label: '好易智算', value: 'haoee' }")
-
-    const standaloneMarket = source('src/views/ModelMarket.vue')
-    expect(standaloneMarket).toContain('placeholder="选择模型上游"')
-    expect(standaloneMarket).toContain('source: sourceFilter.value')
   })
 
   it('uses the gateway icon and keeps the desktop grid responsive', () => {
-    expect(source('src/views/PublicSite.vue')).toContain('/model-icons/model-gateway.png')
+    expect(source('src/views/ModelMarket.vue')).toContain('/model-icons/model-gateway.png')
 
     const css = source('src/style.css')
     expect(css).toMatch(/\.market-grid\s*\{[^}]*repeat\(2,\s*minmax\(0,\s*1fr\)\)/s)

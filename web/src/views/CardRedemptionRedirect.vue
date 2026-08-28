@@ -34,7 +34,7 @@ onMounted(() => window.setTimeout(redirect, 500))
 
 <style scoped>
 .redemption-redirect {
-  min-height: 100vh;
+  min-height: 100dvh;
   display: grid;
   place-items: center;
   padding: 24px;

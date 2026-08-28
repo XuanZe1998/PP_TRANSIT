@@ -40,7 +40,7 @@ describe('admin analytics and security experience', () => {
 
   it('shares the ordered sale-price matrix across public and user model views', () => {
     const component = source('src/components/ModelSalePricing.vue')
-    const publicSite = source('src/views/PublicSite.vue')
+    const publicSite = source('src/views/ModelMarket.vue')
     const userConsole = source('src/views/UserConsole.vue')
     expect(component).toContain('输入 / 未命中')
     expect(component).toContain('缓存命中')

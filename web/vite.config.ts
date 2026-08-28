@@ -4,6 +4,7 @@ import path from 'path'
 import AutoImport from 'unplugin-auto-import/vite'
 import Components from 'unplugin-vue-components/vite'
 import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
+import ElementPlus from 'unplugin-element-plus/vite'
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
@@ -12,7 +13,12 @@ export default defineConfig(({ mode }) => {
 
   return {
     envDir,
-    plugins: [vue(),AutoImport({resolvers:[ElementPlusResolver()]}),Components({resolvers:[ElementPlusResolver()]})],
+    plugins: [
+      vue(),
+      AutoImport({ resolvers: [ElementPlusResolver()], dts: 'src/auto-imports.d.ts' }),
+      Components({ resolvers: [ElementPlusResolver()], dts: 'src/components.d.ts' }),
+      ElementPlus(),
+    ],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, './src'),
