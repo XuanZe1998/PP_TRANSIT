@@ -33,17 +33,17 @@ try {
 
     $branch = (& git branch --show-current).Trim()
     if ($branch -ne "master") { throw "Production deployment is only allowed from master" }
-    Invoke-Native git fetch --quiet origin master
+    Invoke-Native -FilePath git -Arguments @("fetch", "--quiet", "origin", "master")
     $head = (& git rev-parse HEAD).Trim()
     $originMaster = (& git rev-parse origin/master).Trim()
     if ($head -ne $originMaster) { throw "Local master must exactly match origin/master" }
 
-    Invoke-Native (Join-Path $repoRoot "mvnw.cmd") --batch-mode --no-transfer-progress verify
+    Invoke-Native -FilePath (Join-Path $repoRoot "mvnw.cmd") -Arguments @("--batch-mode", "--no-transfer-progress", "verify")
     Push-Location (Join-Path $repoRoot "web")
     try {
-        Invoke-Native npm ci
-        Invoke-Native npm test
-        Invoke-Native npm run build
+        Invoke-Native -FilePath npm -Arguments @("ci")
+        Invoke-Native -FilePath npm -Arguments @("test")
+        Invoke-Native -FilePath npm -Arguments @("run", "build")
     } finally {
         Pop-Location
     }
@@ -56,7 +56,7 @@ try {
 
     Copy-Item -LiteralPath (Join-Path $repoRoot "target\API_transit_station-0.0.1-SNAPSHOT.jar") `
         -Destination (Join-Path $stage "api-transit.jar")
-    Invoke-Native tar -C (Join-Path $repoRoot "web\dist") -czf (Join-Path $stage "frontend.tar.gz") .
+    Invoke-Native -FilePath tar -Arguments @("-C", (Join-Path $repoRoot "web\dist"), "-czf", (Join-Path $stage "frontend.tar.gz"), ".")
     $jarHash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $stage "api-transit.jar")).Hash.ToLowerInvariant()
     $frontendHash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $stage "frontend.tar.gz")).Hash.ToLowerInvariant()
     $manifest = @(
@@ -67,13 +67,21 @@ try {
 
     $identity = (Resolve-Path -LiteralPath $IdentityFile).Path
     $sshArgs = @("-i", $identity, "-p", "$Port", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes")
-    Invoke-Native ssh @sshArgs "$DeployUser@$ProductionHost" "install -d -m 0700 '/var/lib/api-transit-deploy/incoming/$releaseId'"
-    Invoke-Native scp -i $identity -P "$Port" -o BatchMode=yes -o StrictHostKeyChecking=yes `
-        (Join-Path $stage "api-transit.jar") `
-        (Join-Path $stage "frontend.tar.gz") `
-        (Join-Path $stage "SHA256SUMS") `
+    Invoke-Native -FilePath ssh -Arguments (@($sshArgs) + @(
+        "$DeployUser@$ProductionHost",
+        "install -d -m 0700 '/var/lib/api-transit-deploy/incoming/$releaseId'"
+    ))
+    Invoke-Native -FilePath scp -Arguments @(
+        "-i", $identity, "-P", "$Port", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes",
+        (Join-Path $stage "api-transit.jar"),
+        (Join-Path $stage "frontend.tar.gz"),
+        (Join-Path $stage "SHA256SUMS"),
         "${DeployUser}@${ProductionHost}:/var/lib/api-transit-deploy/incoming/$releaseId/"
-    Invoke-Native ssh @sshArgs "$DeployUser@$ProductionHost" "sudo /usr/local/sbin/api-transit-release '$releaseId'"
+    )
+    Invoke-Native -FilePath ssh -Arguments (@($sshArgs) + @(
+        "$DeployUser@$ProductionHost",
+        "sudo /usr/local/sbin/api-transit-release '$releaseId'"
+    ))
 
     Invoke-WebRequest -Uri "https://linknux.com/" -UseBasicParsing -TimeoutSec 20 | Out-Null
     $models = Invoke-RestMethod -Uri "https://api.linknux.com/public/models?size=1" -TimeoutSec 20
