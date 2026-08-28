@@ -26,7 +26,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class PlatformOperationsService {
 
-    @Value("${platform.public-base-url:https://linknux.com}")
+    @Value("${platform.public-base-url:https://api.linknux.com}")
     private String publicBaseUrl;
 
     private final JdbcTemplate jdbcTemplate;
@@ -102,14 +102,17 @@ public class PlatformOperationsService {
     }
 
     public Map<String, Object> docsMetadata() {
-        String baseUrl = publicBaseUrl.replaceAll("/+$", "") + "/v1";
+        String rootUrl = publicBaseUrl.replaceAll("/+$", "");
+        String baseUrl = rootUrl + "/v1";
         return Map.of(
                 "baseUrl", baseUrl,
+                "anthropicBaseUrl", rootUrl,
                 "endpoints", Map.of(
                         "models", baseUrl + "/models",
                         "chatCompletions", baseUrl + "/chat/completions",
                         "responses", baseUrl + "/responses",
-                        "embeddings", baseUrl + "/embeddings"),
+                        "embeddings", baseUrl + "/embeddings",
+                        "anthropicMessages", rootUrl + "/v1/messages"),
                 "keyPolicy", Map.of(
                         "allowAllModels", true,
                         "modelSelectionField", "model",

@@ -9,6 +9,8 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -16,9 +18,11 @@ import reactor.core.scheduler.Schedulers;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.regex.Pattern;
+import java.sql.Statement;
 
 @Service
 @RequiredArgsConstructor
@@ -31,6 +35,9 @@ public class AuthService {
     private final TransactionTemplate transactionTemplate;
     private final VerificationCodeService verificationCodeService;
     private final AccountVerificationPolicy verificationPolicy;
+    private final JdbcTemplate jdbcTemplate;
+    private final LoginIpService loginIps;
+    private final LegalDocumentService legalDocuments;
     private static final Pattern EMAIL_PATTERN = Pattern.compile("^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$");
     private static final Pattern PHONE_PATTERN = Pattern.compile("^(1[3-9]\\d{9}|\\+[1-9]\\d{7,14})$");
     private static final Pattern PASSWORD_PATTERN = Pattern.compile("^(?=.*[A-Za-z])(?=.*\\d).{10,}$");
@@ -74,40 +81,67 @@ public class AuthService {
 
     public Mono<Map<String, Object>> register(String email, String emailCode, String phone, String phoneCode,
                                                String password, String displayName) {
+        return register(new Registration("PERSONAL", null, displayName, phone, email, emailCode,
+                phoneCode, password, password, legalDocuments.termsVersion(), legalDocuments.privacyVersion(), true), "0.0.0.0");
+    }
+
+    public Mono<Map<String,Object>> register(Registration request, String clientIp) {
         return Mono.fromCallable(() -> transactionTemplate.execute(status -> {
-            String normalizedEmail = normalizeIdentifier(email);
-            String normalizedPhone = verificationPolicy.requiresPhone()
-                    ? VerificationCodeService.normalizePhone(phone) : null;
-            if (!isEmail(normalizedEmail) || (verificationPolicy.requiresPhone() && !isPhone(normalizedPhone))) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                        verificationPolicy.requiresPhone() ? "请填写有效的邮箱和手机号" : "请填写有效的邮箱");
+            String accountType = Objects.toString(request.accountType(), "PERSONAL").trim().toUpperCase();
+            if (!List.of("PERSONAL", "ENTERPRISE").contains(accountType)) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "账户类型无效");
+            String normalizedEmail = normalizeIdentifier(request.email());
+            boolean phoneRequired = "ENTERPRISE".equals(accountType) || verificationPolicy.requiresPhone();
+            String normalizedPhone = phoneRequired ? VerificationCodeService.normalizePhone(request.phone()) : null;
+            if (!isEmail(normalizedEmail) || (phoneRequired && !isPhone(normalizedPhone)))
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, phoneRequired ? "请填写有效的邮箱和手机号" : "请填写有效的邮箱");
+            validatePassword(request.password());
+            boolean legacyPayload = request.confirmPassword() == null && request.termsVersion() == null
+                    && request.privacyVersion() == null && !request.acceptedAgreements();
+            if (request.confirmPassword() != null && !Objects.equals(request.password(), request.confirmPassword()))
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "两次输入的密码不一致");
+            if (!legacyPayload) {
+                if (!request.acceptedAgreements()) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "请阅读并接受用户协议和隐私政策");
+                if (!legalDocuments.termsVersion().equals(request.termsVersion()) || !legalDocuments.privacyVersion().equals(request.privacyVersion()))
+                    throw new ResponseStatusException(HttpStatus.CONFLICT, "协议版本已更新，请重新阅读并接受");
             }
-            validatePassword(password);
             if (findUserByIdentifier(normalizedEmail) != null
-                    || (verificationPolicy.requiresPhone() && findUserByIdentifier(normalizedPhone) != null)) {
+                    || (phoneRequired && findUserByIdentifier(normalizedPhone) != null)) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "邮箱或手机号已注册");
             }
-            verificationCodeService.consume("EMAIL", normalizedEmail, "REGISTER", emailCode);
-            if (verificationPolicy.requiresPhone()) {
-                verificationCodeService.consume("PHONE", normalizedPhone, "REGISTER", phoneCode);
+            verificationCodeService.consume("EMAIL", normalizedEmail, "REGISTER", request.emailCode());
+            if (verificationPolicy.requiresPhone() && "PERSONAL".equals(accountType)) {
+                verificationCodeService.consume("PHONE", normalizedPhone, "REGISTER", request.phoneCode());
             }
             LocalDateTime now = LocalDateTime.now();
-            String name = displayName == null ? "" : displayName.trim();
-            if (name.length() > 80) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "显示名称不能超过 80 个字符");
+            String name = request.contactName() == null ? "" : request.contactName().trim();
+            if (legacyPayload && name.isBlank()) name = normalizedEmail.substring(0, normalizedEmail.indexOf('@'));
+            if (name.isBlank() || name.length() > 80) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "联系人或显示名称需为 1–80 个字符");
+            String companyName = request.companyName() == null ? "" : request.companyName().trim();
+            if ("ENTERPRISE".equals(accountType) && (companyName.isBlank() || companyName.length() > 160))
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "企业名称需为 1–160 个字符");
             User user = User.builder().username(normalizedEmail)
-                    .displayName(name.isBlank() ? normalizedEmail.substring(0, normalizedEmail.indexOf('@')) : name)
-                    .password(passwordEncoder.encode(password)).email(normalizedEmail).phone(normalizedPhone)
-                    .emailVerifiedAt(now).phoneVerifiedAt(verificationPolicy.requiresPhone() ? now : null)
+                    .displayName(name).accountType(accountType)
+                    .password(passwordEncoder.encode(request.password())).email(normalizedEmail).phone(normalizedPhone)
+                    .emailVerifiedAt(now).phoneVerifiedAt(verificationPolicy.requiresPhone() && "PERSONAL".equals(accountType) ? now : null)
                     .locale("zh-CN").timezone("Asia/Shanghai")
                     .authProvider("local").role("USER").status("ACTIVE").balance(0)
                     .createdAt(now).lastLoginAt(now).build();
             try { userMapper.insert(user); }
             catch (DuplicateKeyException exception) { throw new ResponseStatusException(HttpStatus.CONFLICT, "邮箱或手机号已注册"); }
-            return oauthService.issueUserSession(user, "local");
+            long organizationId = createOrganization(user, accountType, companyName, now);
+            user.setDefaultOrganizationId(organizationId);
+            if ("ENTERPRISE".equals(accountType)) jdbcTemplate.update("INSERT INTO enterprise_profiles(user_id,organization_id,company_name,contact_name,contact_phone,contact_email,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)",
+                    user.getId(), organizationId, companyName, name, normalizedPhone, normalizedEmail, now, now);
+            String ipDigest = loginIps.digest(clientIp);
+            if (!legacyPayload) legalDocuments.accept(user.getId(), request.termsVersion(), request.privacyVersion(), ipDigest);
+            loginIps.trust(user.getId(), clientIp);
+            return oauthService.issueUserSession(user, "local", ipDigest);
         })).subscribeOn(Schedulers.boundedElastic());
     }
 
-    public Mono<Map<String, Object>> login(String username, String password) {
+    public Mono<Map<String, Object>> login(String username, String password) { return login(username, password, "0.0.0.0"); }
+
+    public Mono<Map<String, Object>> login(String username, String password, String clientIp) {
         return Mono.fromCallable(() -> {
             String identifier = normalizeIdentifier(username);
             authenticationThrottle.checkAllowed(identifier);
@@ -125,10 +159,26 @@ public class AuthService {
                 throw new ResponseStatusException(HttpStatus.FORBIDDEN, "User account is not active");
             }
             authenticationThrottle.success(identifier);
+            if (!loginIps.isTrusted(user.getId(), clientIp)) return loginIps.createChallenge(user.getId(), user.getEmail(), clientIp);
             user.setLastLoginAt(LocalDateTime.now());
             userMapper.updateById(user);
-            return oauthService.issueUserSession(user, "local");
+            loginIps.touch(user.getId(), clientIp);
+            Map<String,Object> session = oauthService.issueUserSession(user, "local", loginIps.digest(clientIp));
+            session.put("agreementRequired", !legalDocuments.isCurrentAccepted(user.getId()));
+            return session;
         }).subscribeOn(Schedulers.boundedElastic());
+    }
+
+    public Mono<Map<String,Object>> verifyLoginIp(String challengeId, String code, String clientIp) {
+        return Mono.fromCallable(() -> transactionTemplate.execute(status -> {
+            LoginIpService.VerifiedChallenge verified = loginIps.verify(challengeId, code, clientIp);
+            User user = userMapper.selectById(verified.userId());
+            if (user == null || !"ACTIVE".equalsIgnoreCase(user.getStatus())) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "用户不可用");
+            user.setLastLoginAt(LocalDateTime.now()); userMapper.updateById(user);
+            Map<String,Object> session = oauthService.issueUserSession(user, "local", verified.ipDigest());
+            session.put("agreementRequired", !legalDocuments.isCurrentAccepted(user.getId()));
+            return session;
+        })).subscribeOn(Schedulers.boundedElastic());
     }
 
     public Mono<Map<String, Object>> logout(String accessToken) {
@@ -195,5 +245,25 @@ public class AuthService {
         }
         return null;
     }
+
+    private long createOrganization(User user, String accountType, String companyName, LocalDateTime now) {
+        GeneratedKeyHolder key = new GeneratedKeyHolder();
+        jdbcTemplate.update(connection -> {
+            var statement = connection.prepareStatement("INSERT INTO organizations(name,organization_type,status,created_by,created_at,updated_at) VALUES (?,?,'ACTIVE',?,?,?)", new String[]{"id"});
+            statement.setString(1, "ENTERPRISE".equals(accountType) ? companyName : user.getDisplayName() + " 的个人组织");
+            statement.setString(2, "ENTERPRISE".equals(accountType) ? "COMPANY" : "PERSONAL");
+            statement.setLong(3, user.getId()); statement.setObject(4, now); statement.setObject(5, now); return statement;
+        }, key);
+        long organizationId = Objects.requireNonNull(key.getKey()).longValue();
+        jdbcTemplate.update("INSERT INTO organization_members(organization_id,user_id,member_role,status,joined_at,updated_at) VALUES (?,?,'OWNER','ACTIVE',?,?)", organizationId, user.getId(), now, now);
+        jdbcTemplate.update("INSERT INTO wallet_accounts(organization_id,user_id,account_type,balance,status,created_at,updated_at) VALUES (?,?, 'TREASURY',0,'ACTIVE',?,?)", organizationId, user.getId(), now, now);
+        jdbcTemplate.update("UPDATE users SET default_organization_id=? WHERE id=?", organizationId, user.getId());
+        return organizationId;
+    }
+
+    public record Registration(String accountType, String companyName, String contactName, String phone,
+                               String email, String emailCode, String phoneCode, String password,
+                               String confirmPassword, String termsVersion, String privacyVersion,
+                               boolean acceptedAgreements) {}
 
 }

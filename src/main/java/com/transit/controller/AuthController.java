@@ -7,6 +7,8 @@ import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.web.bind.annotation.*;
+import jakarta.servlet.http.HttpServletRequest;
+import com.transit.service.ClientIpResolver;
 import reactor.core.publisher.Mono;
 
 import java.util.Map;
@@ -20,11 +22,14 @@ public class AuthController {
     private final com.transit.service.VerificationCodeService verificationCodeService;
     private final AccountVerificationPolicy verificationPolicy;
     private final VerificationDeliveryService verificationDeliveryService;
+    private final ClientIpResolver clientIps;
 
     @PostMapping("/register")
-    public Mono<Map<String, Object>> register(@RequestBody RegisterRequest request) {
-        return authService.register(request.getEmail(), request.getEmailCode(), request.getPhone(), request.getPhoneCode(),
-                request.getPassword(), request.getDisplayName());
+    public Mono<Map<String, Object>> register(@RequestBody RegisterRequest request, HttpServletRequest servletRequest) {
+        return authService.register(new AuthService.Registration(request.getAccountType(), request.getCompanyName(),
+                request.contactName(), request.getPhone(), request.getEmail(), request.getEmailCode(), request.getPhoneCode(),
+                request.getPassword(), request.getConfirmPassword(), request.getTermsVersion(), request.getPrivacyVersion(),
+                Boolean.TRUE.equals(request.getAcceptedAgreements())), clientIps.resolve(servletRequest));
     }
 
     @GetMapping("/verification/policy")
@@ -51,8 +56,13 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    public Mono<Map<String, Object>> login(@RequestBody LoginRequest request) {
-        return authService.login(request.identifier(), request.getPassword());
+    public Mono<Map<String, Object>> login(@RequestBody LoginRequest request, HttpServletRequest servletRequest) {
+        return authService.login(request.identifier(), request.getPassword(), clientIps.resolve(servletRequest));
+    }
+
+    @PostMapping("/login/ip-verify")
+    public Mono<Map<String,Object>> verifyIp(@RequestBody IpVerifyRequest request, HttpServletRequest servletRequest) {
+        return authService.verifyLoginIp(request.getChallengeId(), request.getCode(), clientIps.resolve(servletRequest));
     }
 
     @PostMapping("/logout")
@@ -76,6 +86,15 @@ public class AuthController {
         private String phone;
         private String phoneCode;
         private String displayName;
+        private String accountType = "PERSONAL";
+        private String companyName;
+        private String contactName;
+        private String confirmPassword;
+        private String termsVersion;
+        private String privacyVersion;
+        private Boolean acceptedAgreements;
+
+        public String contactName() { return contactName == null || contactName.isBlank() ? displayName : contactName; }
     }
 
     @Data
@@ -106,4 +125,7 @@ public class AuthController {
     public static class RefreshRequest {
         private String refreshToken;
     }
+
+    @Data
+    public static class IpVerifyRequest { private String challengeId; private String code; }
 }

@@ -46,7 +46,7 @@ public class SecurityConfig {
                         // through an ASYNC redispatch after controller work.
                         .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                        .requestMatchers("/auth/register", "/auth/login", "/auth/refresh", "/auth/validate-identifier", "/auth/verification/**").permitAll()
+                        .requestMatchers("/auth/register", "/auth/login", "/auth/login/ip-verify", "/auth/refresh", "/auth/validate-identifier", "/auth/verification/**").permitAll()
                         .requestMatchers("/oauth/authorize", "/oauth/callback/**", "/oauth/token", "/oauth/refresh").permitAll()
                         .requestMatchers("/admin/auth/login").permitAll()
                         .requestMatchers("/webhooks/vmcard/**").permitAll()
@@ -92,7 +92,7 @@ public class SecurityConfig {
         config.setAllowedOrigins(Arrays.stream(origins.split(","))
                 .map(String::trim).filter(value -> !value.isBlank()).toList());
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
-        config.setAllowedHeaders(List.of("Authorization", "Content-Type", "Idempotency-Key", "X-Requested-With"));
+        config.setAllowedHeaders(List.of("Authorization", "Content-Type", "Idempotency-Key", "X-Requested-With", "x-api-key", "anthropic-version", "anthropic-beta"));
         config.setExposedHeaders(List.of("X-Request-Id", "Retry-After", "X-RateLimit-Limit", "X-RateLimit-Remaining"));
         config.setAllowCredentials(false);
         config.setMaxAge(3600L);

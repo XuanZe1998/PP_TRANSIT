@@ -1,5 +1,5 @@
 export type AuthScope = 'user' | 'admin'
-export type UserInfo = { username: string; role: string; displayName?: string; avatarPath?: string; accountComplete?: boolean }
+export type UserInfo = { username: string; role: string; displayName?: string; avatarPath?: string; accountComplete?: boolean; accountType?: 'PERSONAL'|'ENTERPRISE' }
 
 const keys = {
   user: { token: 'user_access_token', refresh: 'user_refresh_token', user: 'user_info', active: 'user_last_active_at' },

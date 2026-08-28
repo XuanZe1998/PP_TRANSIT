@@ -77,6 +77,8 @@ public class TransitService {
     private SensitiveWordService sensitiveWordService;
     @Autowired(required = false)
     private PublicUpstreamMappingService publicUpstreamMappingService;
+    @Autowired(required = false)
+    private EnterpriseDataMaskingService enterpriseDataMaskingService;
 
     @Value("${billing.amount-scale:10000}")
     private long amountScale;
@@ -217,6 +219,9 @@ public class TransitService {
             sensitiveWordService.scanJson(traceId, callerToken.getOrganizationId(), caller.getId(),
                     callerToken.getId(), publicModel, objectMapper.valueToTree(request));
         }
+        Long organizationId = callerToken.getOrganizationId() == null ? caller.getDefaultOrganizationId() : callerToken.getOrganizationId();
+        EnterpriseDataMaskingService.MaskingContext masking = enterpriseDataMaskingService == null
+                ? null : enterpriseDataMaskingService.mask(request, organizationId, caller.getId(), callerToken.getId(), traceId);
         
         List<ModelMapping> mappings = modelMappingMapper.selectList(
             new LambdaQueryWrapper<ModelMapping>()
@@ -292,6 +297,7 @@ public class TransitService {
                 .publishOn(Schedulers.boundedElastic())
                 .flatMap(routed -> {
                     ChatResponse resp = routed.response();
+                    if (enterpriseDataMaskingService != null) enterpriseDataMaskingService.restore(resp, masking);
                     ModelMapping routeMapping = routed.route().mapping();
                     Channel routeChannel = routed.route().channel();
                     resp.setModel(publicModel);

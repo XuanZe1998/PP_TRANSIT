@@ -8,6 +8,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
+import jakarta.servlet.http.HttpServletRequest;
 
 import java.util.Map;
 
@@ -34,8 +35,9 @@ public class OAuthController {
     public Mono<ResponseEntity<Map<String, Object>>> callback(
             @PathVariable String provider,
             @RequestParam("code") String code,
-            @RequestParam("state") String state) {
-        return oauthService.handleCallback(provider, code, state)
+            @RequestParam("state") String state,
+            HttpServletRequest request) {
+        return oauthService.handleCallback(provider, code, state, request)
                 .map(ResponseEntity::ok);
     }
 

@@ -20,6 +20,8 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Locale;
 import java.util.regex.Pattern;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 @Service
 public class OtherServiceCatalogService {
@@ -58,6 +60,20 @@ public class OtherServiceCatalogService {
         return enrich(otherServiceMapper.selectList(new LambdaQueryWrapper<OtherService>()
                 .orderByAsc(OtherService::getSortOrder)
                 .orderByAsc(OtherService::getId)));
+    }
+
+    public Map<String,Object> adminDetail(Long id) {
+        OtherService service = otherServiceMapper.selectById(id);
+        if (service == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Service not found");
+        enrich(service); Map<String,Object> view = new LinkedHashMap<>();
+        view.put("id", service.getId()); view.put("name", service.getName()); view.put("description", service.getDescription());
+        view.put("imageUrl", service.getImageUrl()); view.put("sortOrder", service.getSortOrder()); view.put("enabled", service.getEnabled());
+        view.put("actionLabel", service.getActionLabel()); view.put("priceCents", service.getPriceCents()); view.put("serviceFeeCents", service.getServiceFeeCents());
+        view.put("currency", service.getCurrency()); view.put("purchaseEnabled", service.getPurchaseEnabled()); view.put("productType", service.getProductType());
+        view.put("fulfillmentMode", service.getFulfillmentMode()); view.put("purchasePrompt", service.getPurchasePrompt()); view.put("maxPurchaseQuantity", service.getMaxPurchaseQuantity());
+        view.put("manualStock", service.getManualStock()); view.put("wholesaleTiersJson", service.getWholesaleTiersJson()); view.put("inputSchemaJson", service.getInputSchemaJson());
+        view.put("redemptionUrl", service.getRedemptionUrl()); view.put("redemptionConfigured", service.getRedemptionConfigured()); view.put("availableStock", service.getAvailableStock());
+        return view;
     }
 
     @Transactional

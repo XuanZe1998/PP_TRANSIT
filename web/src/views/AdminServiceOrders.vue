@@ -8,7 +8,8 @@
       <el-button :loading="loading" @click="fetchOrders">刷新</el-button>
     </div>
 
-    <el-table v-loading="loading" :data="orders" empty-text="暂无服务订单">
+    <el-alert v-if="pendingOnly" type="warning" :closable="false" title="当前仅显示待处理（PENDING / CONFIRMED）订单" />
+    <el-table v-loading="loading" :data="displayOrders" empty-text="暂无服务订单">
       <el-table-column prop="orderNo" label="订单号" min-width="190" />
       <el-table-column prop="userId" label="用户 ID" width="90" />
       <el-table-column prop="productName" label="服务名称" min-width="180" />
@@ -76,7 +77,8 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import http, { getHttpErrorMessage } from '@/utils/http'
 
@@ -101,6 +103,7 @@ type ServiceOrder = {
 }
 
 const orders = ref<ServiceOrder[]>([])
+const route=useRoute(),pendingOnly=computed(()=>route.query.status==='pending'),displayOrders=computed(()=>pendingOnly.value?orders.value.filter(item=>['PENDING','CONFIRMED'].includes(item.status)):orders.value)
 const selectedOrder = ref<ServiceOrder | null>(null)
 const loading = ref(false)
 const saving = ref(false)

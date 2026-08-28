@@ -28,6 +28,10 @@ public class ApiKeyService {
     private final SecureRandom secureRandom = new SecureRandom();
 
     public IssuedApiKey issue(Long ownerId, Token request) {
+        return issueForOrganization(ownerId, null, request);
+    }
+
+    public IssuedApiKey issueForOrganization(Long ownerId, Long organizationId, Token request) {
         if (ownerId == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "An API Key must have an owner");
         }
@@ -45,7 +49,7 @@ public class ApiKeyService {
                 .key(secretHashService.hash(secret))
                 .keyPrefix(preview(secret))
                 .userId(ownerId)
-                .organizationId(owner.getDefaultOrganizationId())
+                .organizationId(organizationId == null ? owner.getDefaultOrganizationId() : organizationId)
                 .name(normalizeName(request.getName()))
                 .usedQuota(0)
                 .totalQuota(request.getTotalQuota())

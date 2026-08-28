@@ -16,7 +16,11 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.Objects;
 import java.sql.Statement;
+import com.transit.mapper.TokenMapper;
+import com.transit.model.Token;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 
 @Service
 @RequiredArgsConstructor
@@ -24,6 +28,8 @@ public class OrganizationService {
     private final JdbcTemplate jdbcTemplate;
     private final SecretHashService secretHashService;
     private final IdempotencyService idempotency;
+    private final TokenMapper tokenMapper;
+    private final ApiKeyService apiKeys;
     private final SecureRandom random = new SecureRandom();
 
     public List<Map<String, Object>> list(User user) {
@@ -49,7 +55,7 @@ public class OrganizationService {
             var statement = connection.prepareStatement("""
                     INSERT INTO organizations(name, organization_type, status, created_by, created_at, updated_at)
                     VALUES (?, 'COMPANY', 'ACTIVE', ?, ?, ?)
-                    """, Statement.RETURN_GENERATED_KEYS);
+                    """, new String[]{"id"});
             statement.setString(1, normalized); statement.setLong(2, owner.getId());
             statement.setObject(3, now); statement.setObject(4, now);
             return statement;
@@ -82,7 +88,7 @@ public class OrganizationService {
                        wa.balance, wa.held_balance, om.joined_at
                 FROM organization_members om JOIN users u ON u.id=om.user_id
                 LEFT JOIN wallet_accounts wa ON wa.organization_id=om.organization_id AND wa.user_id=om.user_id
-                WHERE om.organization_id=? AND (?=FALSE OR om.user_id=?) ORDER BY om.joined_at
+                WHERE om.organization_id=? AND om.status<>'REMOVED' AND (?=FALSE OR om.user_id=?) ORDER BY om.joined_at
                 """, organizationId, "MEMBER".equals(role), caller.getId());
     }
 
@@ -111,7 +117,7 @@ public class OrganizationService {
                         INSERT INTO organization_invitations
                         (organization_id,email,member_role,token_hash,status,invited_by,expires_at,created_at)
                         VALUES (?,?,?,?, 'PENDING',?,?,?)
-                        """, Statement.RETURN_GENERATED_KEYS);
+                        """, new String[]{"id"});
                 statement.setLong(1, organizationId); statement.setString(2, email); statement.setString(3, role);
                 statement.setString(4, secretHashService.hash(token)); statement.setLong(5, caller.getId());
                 statement.setObject(6, expires); statement.setObject(7, created);
@@ -231,6 +237,79 @@ public class OrganizationService {
                 GROUP BY l.user_id,u.username,l.token_id,t.name,l.source_code,l.model
                 ORDER BY sale_amount DESC
                 """, organizationId, ownOnly, caller.getId(), start, start, end, end);
+    }
+
+    @Transactional
+    public Map<String,Object> updateMember(User caller, Long organizationId, Long memberUserId, Map<String,Object> request) {
+        requireRole(caller.getId(), organizationId, "OWNER", "ORG_ADMIN");
+        String current = currentRole(memberUserId, organizationId);
+        if ("OWNER".equals(current) && !Objects.equals(caller.getId(), memberUserId))
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "不能修改企业主账户");
+        if (request.containsKey("role")) {
+            String role = string(request.get("role")).toUpperCase();
+            if (!List.of("ORG_ADMIN", "BILLING", "MEMBER").contains(role)) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "成员角色无效");
+            jdbcTemplate.update("UPDATE organization_members SET member_role=?,updated_at=? WHERE organization_id=? AND user_id=?", role, LocalDateTime.now(), organizationId, memberUserId);
+        }
+        if (request.containsKey("displayName")) {
+            String name = string(request.get("displayName"));
+            if (name.isBlank() || name.length() > 80) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "成员名称需为 1–80 个字符");
+            jdbcTemplate.update("UPDATE users SET display_name=? WHERE id=?", name, memberUserId);
+        }
+        if (request.containsKey("status")) {
+            String status = string(request.get("status")).toUpperCase();
+            if (!List.of("ACTIVE", "SUSPENDED").contains(status)) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "成员状态无效");
+            jdbcTemplate.update("UPDATE organization_members SET status=?,updated_at=? WHERE organization_id=? AND user_id=?", status, LocalDateTime.now(), organizationId, memberUserId);
+        }
+        if (request.containsKey("walletQuota")) {
+            long desired = number(request.get("walletQuota"));
+            if (desired < 0) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "账户额度不能为负数");
+            Map<String,Object> wallet = lockWallet(organizationId, memberUserId);
+            long currentBalance = ((Number) wallet.get("balance")).longValue();
+            if (desired != currentBalance) allocate(caller, organizationId, Map.of("userId", memberUserId, "amount", Math.abs(desired-currentBalance)), UUID.randomUUID().toString(), desired < currentBalance);
+        }
+        return members(caller, organizationId).stream().filter(row -> ((Number)row.get("user_id")).longValue()==memberUserId).findFirst().orElseThrow();
+    }
+
+    @Transactional
+    public void removeMember(User caller, Long organizationId, Long memberUserId) {
+        requireRole(caller.getId(), organizationId, "OWNER");
+        if (Objects.equals(caller.getId(), memberUserId)) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "企业主不能删除自己");
+        requireRole(memberUserId, organizationId, "ORG_ADMIN", "BILLING", "MEMBER");
+        Map<String,Object> memberWallet = lockWallet(organizationId, memberUserId);
+        long held = ((Number) memberWallet.get("held_balance")).longValue();
+        if (held > 0) throw new ResponseStatusException(HttpStatus.CONFLICT, "成员存在预占额度，结算完成后才能删除");
+        long balance = ((Number) memberWallet.get("balance")).longValue();
+        if (balance > 0) allocate(caller, organizationId, Map.of("userId", memberUserId, "amount", balance), UUID.randomUUID().toString(), true);
+        jdbcTemplate.update("UPDATE tokens SET enabled=FALSE WHERE organization_id=? AND user_id=?", organizationId, memberUserId);
+        jdbcTemplate.update("UPDATE wallet_accounts SET status='REMOVED',updated_at=? WHERE organization_id=? AND user_id=?", LocalDateTime.now(), organizationId, memberUserId);
+        jdbcTemplate.update("UPDATE organization_members SET status='REMOVED',removed_at=?,updated_at=? WHERE organization_id=? AND user_id=?", LocalDateTime.now(), LocalDateTime.now(), organizationId, memberUserId);
+    }
+
+    public List<Map<String,Object>> tokens(User caller, Long organizationId) {
+        String role = currentRole(caller.getId(), organizationId);
+        return tokenMapper.selectList(new LambdaQueryWrapper<Token>().eq(Token::getOrganizationId, organizationId)
+                        .eq("MEMBER".equals(role), Token::getUserId, caller.getId()).orderByDesc(Token::getCreatedAt))
+                .stream().map(apiKeys::view).toList();
+    }
+
+    public Map<String,Object> createToken(User caller, Long organizationId, Long memberUserId, Token request) {
+        requireRole(caller.getId(), organizationId, "OWNER", "ORG_ADMIN");
+        requireRole(memberUserId, organizationId, "OWNER", "ORG_ADMIN", "BILLING", "MEMBER");
+        return apiKeys.issuedView(apiKeys.issueForOrganization(memberUserId, organizationId, request));
+    }
+
+    public Map<String,Object> updateToken(User caller, Long organizationId, Long tokenId, Token request) {
+        requireRole(caller.getId(), organizationId, "OWNER", "ORG_ADMIN");
+        Token token = tokenMapper.selectById(tokenId);
+        if (token == null || !Objects.equals(token.getOrganizationId(), organizationId)) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "API Key 不存在");
+        return apiKeys.update(tokenId, token.getUserId(), request, false);
+    }
+
+    public void deleteToken(User caller, Long organizationId, Long tokenId) {
+        requireRole(caller.getId(), organizationId, "OWNER", "ORG_ADMIN");
+        Token token = tokenMapper.selectById(tokenId);
+        if (token == null || !Objects.equals(token.getOrganizationId(), organizationId)) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "API Key 不存在");
+        apiKeys.delete(tokenId, token.getUserId());
     }
 
     private void requireRole(Long userId, Long organizationId, String... roles) {

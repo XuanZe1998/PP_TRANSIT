@@ -10,6 +10,8 @@ import com.transit.dto.MoneyAmount;
 import java.util.LinkedHashMap;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 
 @Service
 @RequiredArgsConstructor
@@ -62,7 +64,7 @@ public class AdminBillingService {
     public Map<String, Object> createRechargePlan(Map<String, Object> request) {
         String name = requiredName(request);
         long amount = planAmount(request);
-        int bonus = bonusPercent(request);
+        BigDecimal bonus = bonusPercent(request);
         int sortOrder = intValue(request, "sortOrder", 100);
         boolean enabled = booleanValue(request.get("enabled"), true);
         jdbcTemplate.update("INSERT INTO recharge_plans(name,amount,bonus_percent,enabled,sort_order) VALUES (?,?,?,?,?)",
@@ -102,9 +104,14 @@ public class AdminBillingService {
         return amount;
     }
 
-    private int bonusPercent(Map<String, Object> request) {
-        int bonus = intValue(request, "bonusPercent", intValue(request, "bonus_percent", 0));
-        if (bonus < 0 || bonus > 1000) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "赠送比例必须在0到1000之间");
+    private BigDecimal bonusPercent(Map<String, Object> request) {
+        Object raw = request.containsKey("bonusPercent") ? request.get("bonusPercent") : request.get("bonus_percent");
+        BigDecimal bonus;
+        try { bonus = raw == null || raw.toString().isBlank() ? BigDecimal.ZERO : new BigDecimal(raw.toString()).setScale(3, RoundingMode.UNNECESSARY); }
+        catch (Exception error) { throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "赠送比例最多保留三位小数"); }
+        if (bonus.signum() < 0 || bonus.compareTo(new BigDecimal("1000.000")) > 0
+                || (bonus.signum() > 0 && bonus.compareTo(new BigDecimal("0.001")) < 0))
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "赠送比例必须为 0 或 0.001%–1000.000%");
         return bonus;
     }
 

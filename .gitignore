@@ -45,6 +45,8 @@ web/vite-dev.log
 data/
 output/pdf/
 reports/*.sql
+reports/model-validation-*.md
+reports/model-validation-*.json
 **/__pycache__/
 *.py[cod]
 *.log

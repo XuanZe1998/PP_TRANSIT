@@ -574,7 +574,7 @@ public class SchemaRepairService {
                     plan_name VARCHAR(120) NOT NULL,
                     payment_amount_units BIGINT NOT NULL,
                     base_credit_units BIGINT NOT NULL,
-                    bonus_percent INT NOT NULL,
+                    bonus_percent DECIMAL(7,3) NOT NULL,
                     bonus_credit_units BIGINT NOT NULL,
                     total_credit_units BIGINT NOT NULL,
                     status VARCHAR(32) NOT NULL DEFAULT 'PENDING',
@@ -950,7 +950,7 @@ public class SchemaRepairService {
                     id BIGINT PRIMARY KEY AUTO_INCREMENT,
                     name VARCHAR(120) NOT NULL UNIQUE,
                     amount BIGINT NOT NULL,
-                    bonus_percent INT NOT NULL DEFAULT 0,
+                    bonus_percent DECIMAL(7,3) NOT NULL DEFAULT 0,
                     enabled BOOLEAN NOT NULL DEFAULT TRUE,
                     sort_order INT NOT NULL DEFAULT 0,
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP

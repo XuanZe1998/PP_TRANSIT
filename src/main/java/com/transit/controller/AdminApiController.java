@@ -134,6 +134,18 @@ public class AdminApiController {
         });
     }
 
+    @PostMapping("/users/{id}/upgrade-enterprise")
+    public Mono<Map<String,Object>> upgradeEnterprise(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+                                                       @PathVariable Long id, @RequestBody Map<String,Object> request,
+                                                       HttpServletRequest servletRequest) {
+        User admin = requireAdmin(authHeader);
+        return Mono.fromCallable(() -> {
+            Map<String,Object> result = userService.upgradeToEnterprise(id, request);
+            audit(admin, "UPGRADE_ENTERPRISE", "USER", id, null, result, servletRequest);
+            return result;
+        });
+    }
+
     @GetMapping("/user-groups")
     public Flux<Map<String, Object>> userGroups(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
         requireAdmin(authHeader);
@@ -667,6 +679,12 @@ public class AdminApiController {
         return Flux.fromIterable(otherServiceCatalogService.listAllServices());
     }
 
+    @GetMapping("/other-services/{id}")
+    public Mono<Map<String,Object>> otherServiceDetail(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+                                                        @PathVariable Long id) {
+        requireAdmin(authHeader); return Mono.fromCallable(() -> otherServiceCatalogService.adminDetail(id));
+    }
+
     @PostMapping(value = "/other-services/image", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public Mono<Map<String, String>> uploadOtherServiceImage(
             @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
@@ -760,6 +778,19 @@ public class AdminApiController {
             serviceCommerceService.deleteAvailableInventory(id, inventoryId);
             audit(admin, "DELETE_SERVICE_INVENTORY", "SERVICE_INVENTORY", inventoryId,
                     null, Map.of("serviceId", id), servletRequest);
+        });
+    }
+
+    @PutMapping("/other-services/{id}/inventory/{inventoryId}")
+    public Mono<ServiceInventoryItem> replaceOtherServiceInventory(
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader, @PathVariable Long id,
+            @PathVariable Long inventoryId, @RequestBody InventoryImportRequest request,
+            HttpServletRequest servletRequest) {
+        User admin = requireAdmin(authHeader);
+        return Mono.fromCallable(() -> {
+            ServiceInventoryItem item = serviceCommerceService.replaceAvailableInventory(id, inventoryId, request == null ? null : request.getContent());
+            audit(admin, "REPLACE_SERVICE_INVENTORY", "SERVICE_INVENTORY", inventoryId, null, Map.of("serviceId", id), servletRequest);
+            return item;
         });
     }
 

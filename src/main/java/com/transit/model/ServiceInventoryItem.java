@@ -17,6 +17,7 @@ public class ServiceInventoryItem {
     @TableField("service_id") private Long serviceId;
     @JsonIgnore @TableField("content_encrypted") private String contentEncrypted;
     @JsonIgnore @TableField("content_fingerprint") private String contentFingerprint;
+    @TableField("secret_preview") private String secretPreview;
     private String status;
     @TableField("reserved_order_id") private Long reservedOrderId;
     @TableField("reserved_until") private LocalDateTime reservedUntil;

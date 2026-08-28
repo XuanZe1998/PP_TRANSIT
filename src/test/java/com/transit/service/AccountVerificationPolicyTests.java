@@ -27,6 +27,13 @@ class AccountVerificationPolicyTests {
     }
 
     @Test
+    void enterpriseRegistrationNeedsVerifiedEmailButTreatsPhoneAsContactData() {
+        AccountVerificationPolicy policy = new AccountVerificationPolicy("EMAIL_AND_PHONE");
+        User user = User.builder().accountType("ENTERPRISE").emailVerifiedAt(LocalDateTime.now()).build();
+        assertThat(policy.isComplete(user)).isTrue();
+    }
+
+    @Test
     void rejectsUnknownMode() {
         assertThatThrownBy(() -> new AccountVerificationPolicy("OPTIONAL"))
                 .isInstanceOf(IllegalStateException.class);

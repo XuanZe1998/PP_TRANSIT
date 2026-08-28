@@ -25,7 +25,8 @@ public class ChannelUrlPolicy {
         try {
             URI uri = URI.create(value);
             String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.ROOT);
-            if (!ALLOWED_SCHEMES.contains(scheme) || uri.getHost() == null || uri.getUserInfo() != null) {
+            boolean localDevelopmentHttp = allowPrivateAddresses && "http".equals(scheme);
+            if ((!ALLOWED_SCHEMES.contains(scheme) && !localDevelopmentHttp) || uri.getHost() == null || uri.getUserInfo() != null) {
                 throw rejected();
             }
             if (allowPrivateAddresses) {
