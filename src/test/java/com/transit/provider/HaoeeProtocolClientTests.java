@@ -1,6 +1,7 @@
 package com.transit.provider;
 
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import com.transit.dto.ChatRequest;
 import com.transit.model.Channel;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
@@ -17,6 +18,35 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class HaoeeProtocolClientTests {
+    @Test
+    void sendsTheMappedUpstreamModelForThePublicClaude47Alias() {
+        AtomicReference<ClientRequest> captured = new AtomicReference<>();
+        WebClient client = WebClient.builder().exchangeFunction(request -> {
+            captured.set(request);
+            return Mono.just(ClientResponse.create(HttpStatus.OK)
+                    .header("Content-Type", MediaType.APPLICATION_JSON_VALUE)
+                    .body("{\"id\":\"chatcmpl-test\",\"model\":\"claude-opus-4-8\",\"choices\":[]}").build());
+        }).build();
+        HaoeeGateway gateway = new HaoeeGateway(client);
+        Channel channel = Channel.builder().baseUrl("https://maas.haoee.com/v1")
+                .apiKey("haoee-secret").build();
+        ChatRequest request = new ChatRequest();
+        request.setModel("claude-opus-4-7");
+        request.setStream(true);
+
+        StepVerifier.create(gateway.chatCompletions(channel, request,
+                        "claude-opus-4-7", "claude-opus-4-8"))
+                .expectNextCount(1)
+                .verifyComplete();
+
+        assertThat(captured.get().url().toString())
+                .isEqualTo("https://maas.haoee.com/v1/chat/completions");
+        assertThat(captured.get().headers().getFirst("Authorization")).isEqualTo("Bearer haoee-secret");
+        assertThat(captured.get().headers().getFirst("ModelName")).isEqualTo("claude-opus-4-8");
+        assertThat(request.getModel()).isEqualTo("claude-opus-4-8");
+        assertThat(request.isStream()).isFalse();
+    }
+
     @Test
     void sendsHaoeeAuthorizationAndModelNameHeadersToTheConfiguredProtocolPath() {
         AtomicReference<ClientRequest> captured = new AtomicReference<>();

@@ -39,6 +39,16 @@ public class GatewayExceptionHandler {
 
     @ExceptionHandler({WebClientResponseException.class, WebClientRequestException.class})
     ResponseEntity<Map<String, Object>> gatewayError(Exception exception, HttpServletRequest request) {
+        String requestId = requestId(request);
+        if (exception instanceof WebClientResponseException response) {
+            String upstreamPath = response.getRequest() == null ? "unknown"
+                    : response.getRequest().getURI().getPath();
+            log.warn("Upstream response failure requestId={} path={} status={} body={}", requestId,
+                    upstreamPath, response.getStatusCode().value(), safeUpstreamBody(response.getResponseBodyAsString()));
+        } else {
+            log.warn("Upstream connection failure requestId={} path={} error={}", requestId,
+                    request.getRequestURI(), safeUpstreamBody(exception.getMessage()));
+        }
         return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
                 .body(error("Upstream provider request failed", "upstream_error",
                         "upstream_error", request));
@@ -99,5 +109,13 @@ public class GatewayExceptionHandler {
     private String requestId(HttpServletRequest request) {
         Object value = request.getAttribute(RequestIdFilter.ATTRIBUTE);
         return value == null ? "unknown" : value.toString();
+    }
+
+    private String safeUpstreamBody(String value) {
+        if (value == null || value.isBlank()) return "(empty)";
+        String sanitized = value.replaceAll("(?i)Bearer\\s+[A-Za-z0-9._~-]+", "Bearer [REDACTED]")
+                .replaceAll("(?i)sk-[A-Za-z0-9_-]+", "sk-[REDACTED]")
+                .replaceAll("[\\r\\n\\t]+", " ");
+        return sanitized.length() <= 1000 ? sanitized : sanitized.substring(0, 1000) + "…";
     }
 }

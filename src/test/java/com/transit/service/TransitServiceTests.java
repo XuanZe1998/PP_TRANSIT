@@ -60,6 +60,7 @@ class TransitServiceTests {
     @Mock private ModelPriceTierService priceTierService;
     @Mock private ProviderGateway primaryGateway;
     @Mock private ProviderGateway fallbackGateway;
+    @Mock private ProviderModelCatalogService providerModelCatalogService;
 
     private TransitService service;
 
@@ -72,9 +73,11 @@ class TransitServiceTests {
         ReflectionTestUtils.setField(service, "amountScale", 10_000L);
         ReflectionTestUtils.setField(service, "defaultMaxOutputTokens", 64);
         ReflectionTestUtils.setField(service, "maxRequestContentBytes", 2_097_152);
+        ReflectionTestUtils.setField(service, "providerModelCatalogService", providerModelCatalogService);
         when(channelSecretService.reveal(any(Channel.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
         org.mockito.Mockito.lenient().when(apiKeyService.modelAllowed(any(Token.class), anyString())).thenReturn(true);
+        org.mockito.Mockito.lenient().when(providerModelCatalogService.isRouteVerified(any(), anyString())).thenReturn(true);
     }
 
     @Test
