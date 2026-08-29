@@ -36,7 +36,7 @@
 ## 价格待配置模型（目录可见，计费调用暂停）
 
 - 无精确同名官网基准：`doubao-seed-2-0-lite-260215`、`glm-5.2`、`gpt-5.6-luna`
-- NVIDIA 仅有开发预览、无生产逐 Token 采购价：`deepseek-ai/deepseek-v4-flash-0731`、`google/diffusiongemma-26b-a4b-it`、`google/gemma-4-31b-it`、`meta/llama-3.1-70b-instruct`、`minimaxai/minimax-m3`、`mistralai/mistral-nemotron`、`stepfun-ai/step-3.7-flash`
+- NVIDIA 仅有开发预览、无生产逐 Token 采购价：`deepseek-ai/deepseek-v4-flash-0731`、`google/diffusiongemma-26b-a4b-it`、`google/gemma-4-31b-it`、`meta/llama-3.1-70b-instruct`、`minimaxai/minimax-m3`
 
 ## 写入后校验
 

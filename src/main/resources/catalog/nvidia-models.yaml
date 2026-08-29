@@ -43,7 +43,6 @@ models:
   - mistralai/mistral-7b-instruct-v0.3
   - mistralai/mistral-large
   - mistralai/mistral-large-2-instruct
-  - mistralai/mistral-nemotron
   - mistralai/mixtral-8x22b-v0.1
   - moonshotai/kimi-k2.6
   - moonshotai/kimi-k3
@@ -53,7 +52,6 @@ models:
   - nvidia/embed-qa-4
   - nvidia/ising-calibration-1.5-31b
   - nvidia/llama-3.1-nemoguard-8b-content-safety
-  - nvidia/llama-3.1-nemoguard-8b-topic-control
   - nvidia/llama-3.1-nemotron-51b-instruct
   - nvidia/llama-3.1-nemotron-70b-instruct
   - nvidia/llama-3.1-nemotron-nano-8b-v1
@@ -97,7 +95,6 @@ models:
   - openai/gpt-oss-20b
   - poolside/laguna-xs-2.1
   - snowflake/arctic-embed-l
-  - stepfun-ai/step-3.7-flash
   - thinkingmachines/inkling
   - writer/palmyra-creative-122b
   - writer/palmyra-fin-70b-32k

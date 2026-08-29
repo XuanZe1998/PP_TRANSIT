@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.reactive.function.client.ClientRequest;
 import org.springframework.web.reactive.function.client.ClientResponse;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -75,5 +76,43 @@ class HaoeeProtocolClientTests {
     void doesNotDuplicateAnExistingBearerPrefix() {
         assertThat(HaoeeGateway.authorization("Bearer haoee-secret"))
                 .isEqualTo("Bearer haoee-secret");
+    }
+
+    @Test
+    void preservesResponsesSseEventNamesDataAndHeaders() {
+        AtomicReference<ClientRequest> captured = new AtomicReference<>();
+        WebClient client = WebClient.builder().exchangeFunction(request -> {
+            captured.set(request);
+            return Mono.just(ClientResponse.create(HttpStatus.OK)
+                    .header("Content-Type", MediaType.TEXT_EVENT_STREAM_VALUE)
+                    .body("""
+                            event: response.created
+                            data: {"type":"response.created","response":{"id":"resp_1"}}
+
+                            event: response.completed
+                            data: {"type":"response.completed","response":{"usage":{"input_tokens":7,"output_tokens":3}}}
+
+                            """).build());
+        }).build();
+        HaoeeProtocolClient gateway = new HaoeeProtocolClient(client);
+        Channel channel = Channel.builder().baseUrl("https://maas.haoee.com/v1")
+                .apiKey("haoee-secret").build();
+
+        StepVerifier.create(gateway.streamEvents(channel, "gpt-5.4-pro", "/v1/responses",
+                        JsonNodeFactory.instance.objectNode().put("stream", true)))
+                .assertNext(event -> {
+                    assertThat(event.event()).isEqualTo("response.created");
+                    assertThat(event.data()).contains("resp_1");
+                })
+                .assertNext(event -> {
+                    assertThat(event.event()).isEqualTo("response.completed");
+                    assertThat(event.data()).contains("\"input_tokens\":7");
+                })
+                .verifyComplete();
+
+        assertThat(captured.get().url().toString()).isEqualTo("https://maas.haoee.com/v1/responses");
+        assertThat(captured.get().headers().getFirst("Authorization")).isEqualTo("Bearer haoee-secret");
+        assertThat(captured.get().headers().getFirst("ModelName")).isEqualTo("gpt-5.4-pro");
+        assertThat(captured.get().headers().getAccept()).contains(MediaType.TEXT_EVENT_STREAM);
     }
 }

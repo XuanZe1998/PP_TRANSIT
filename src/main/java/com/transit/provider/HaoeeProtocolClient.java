@@ -3,9 +3,11 @@ package com.transit.provider;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.transit.model.Channel;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
+import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.util.UriComponentsBuilder;
@@ -55,6 +57,22 @@ public class HaoeeProtocolClient {
                 .contentType(MediaType.APPLICATION_JSON)
                 .accept(MediaType.TEXT_EVENT_STREAM)
                 .bodyValue(body).retrieve().bodyToFlux(String.class);
+    }
+
+    /**
+     * Decodes a Responses stream as real SSE frames so event names are not lost.
+     * The returned events are forwarded unchanged by the public gateway.
+     */
+    public Flux<ServerSentEvent<String>> streamEvents(Channel channel, String providerModel,
+                                                       String path, JsonNode body) {
+        return webClient.post().uri(endpoint(channel, path))
+                .header(HttpHeaders.AUTHORIZATION, HaoeeGateway.authorization(channel.getApiKey()))
+                .header("ModelName", providerModel)
+                .contentType(MediaType.APPLICATION_JSON)
+                .accept(MediaType.TEXT_EVENT_STREAM)
+                .bodyValue(body)
+                .retrieve()
+                .bodyToFlux(new ParameterizedTypeReference<ServerSentEvent<String>>() {});
     }
 
     public Mono<JsonNode> multipart(Channel channel, String providerModel, String path,
