@@ -48,7 +48,7 @@ security:
   data-encryption-key: ${DATA_ENCRYPTION_KEY}
 ```
 
-连接测试调用只读任务列表接口，不创建视频任务。Base URL 只允许公网 HTTPS 地址；本地开发如确实需要连接局域网中转站，可显式设置 `gateway.allow-private-upstreams: true`。
+连接测试调用只读任务列表接口，不创建视频任务。Base URL 只允许公网 HTTPS 地址；本地开发如确实需要连接局域网兼容服务，可显式设置 `gateway.allow-private-upstreams: true`。
 
 ## 启用 Seedance
 
@@ -75,9 +75,9 @@ $env:SEEDANCE_API_KEY = "你的方舟 API Key"
 - 创建任务：`POST /api/v3/contents/generations/tasks`
 - 查询任务：`GET /api/v3/contents/generations/tasks/{taskId}`
 
-## 接入中转站
+## 接入兼容服务
 
-如果后续使用的 API 中转站兼容火山方舟的 Seedance 协议，只需在“模型设置”中填写中转站域名、Key 和模型 ID。Base URL 支持以下形式，任务路径会自动规范化：
+如果后续使用的授权服务兼容火山方舟的 Seedance 协议，只需在“模型设置”中填写服务域名、Key 和模型 ID。Base URL 支持以下形式，任务路径会自动规范化：
 
 - `https://ark.cn-beijing.volces.com`
 - `https://relay.example.com/api/v3`

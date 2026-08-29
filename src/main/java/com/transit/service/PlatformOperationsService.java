@@ -348,8 +348,8 @@ public class PlatformOperationsService {
         String baseUrl = "/api/v1";
         String token = "YOUR_API_KEY";
         String config = switch (clientType == null ? "openai" : clientType.toLowerCase()) {
-            case "cherry-studio" -> "provider: API Transit\nbase_url: " + baseUrl + "\napi_key: " + token;
-            case "claude-code-router" -> "{\n  \"Providers\": [{\"name\":\"api-transit\",\"api_base_url\":\"" + baseUrl + "\",\"api_key\":\"" + token + "\"}]\n}";
+            case "cherry-studio" -> "provider: Linknux\nbase_url: " + baseUrl + "\napi_key: " + token;
+            case "claude-code-router" -> "{\n  \"Providers\": [{\"name\":\"linknux\",\"api_base_url\":\"" + baseUrl + "\",\"api_key\":\"" + token + "\"}]\n}";
             default -> "OPENAI_BASE_URL=" + baseUrl + "\nOPENAI_API_KEY=" + token;
         };
         return Map.of(

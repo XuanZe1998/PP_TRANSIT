@@ -1484,7 +1484,7 @@ public class SchemaRepairService {
         insertIfMissing("user_groups", "name", "premium",
                 "INSERT INTO user_groups(name, display_name, price_ratio, monthly_quota, description) VALUES ('premium', 'Premium users', 0.8, 0, 'Discounted commercial group')");
         insertIfMissing("system_settings", "setting_key", "site.name",
-                "INSERT INTO system_settings(setting_key, setting_value, description) VALUES ('site.name', 'API Transit Station', 'Site name')");
+                "INSERT INTO system_settings(setting_key, setting_value, description) VALUES ('site.name', 'Linknux', 'Site name')");
         insertIfMissing("system_settings", "setting_key", "register.mode",
                 "INSERT INTO system_settings(setting_key, setting_value, description) VALUES ('register.mode', 'invite_or_open', 'Registration policy')");
         insertIfMissing("system_settings", "setting_key", "billing.usd_cny_rate",

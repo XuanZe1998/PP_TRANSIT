@@ -8,6 +8,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
@@ -38,6 +39,8 @@ public class AuthService {
     private final JdbcTemplate jdbcTemplate;
     private final LoginIpService loginIps;
     private final LegalDocumentService legalDocuments;
+    @Autowired(required = false)
+    private AgentDistributionService agentDistributionService;
     private static final Pattern EMAIL_PATTERN = Pattern.compile("^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$");
     private static final Pattern PHONE_PATTERN = Pattern.compile("^(1[3-9]\\d{9}|\\+[1-9]\\d{7,14})$");
     private static final Pattern PASSWORD_PATTERN = Pattern.compile("^(?=.*[A-Za-z])(?=.*\\d).{10,}$");
@@ -86,6 +89,10 @@ public class AuthService {
     }
 
     public Mono<Map<String,Object>> register(Registration request, String clientIp) {
+        return register(request, clientIp, null);
+    }
+
+    public Mono<Map<String,Object>> register(Registration request, String clientIp, String inviteCode) {
         return Mono.fromCallable(() -> transactionTemplate.execute(status -> {
             String accountType = Objects.toString(request.accountType(), "PERSONAL").trim().toUpperCase();
             if (!List.of("PERSONAL", "ENTERPRISE").contains(accountType)) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "账户类型无效");
@@ -135,6 +142,7 @@ public class AuthService {
             String ipDigest = loginIps.digest(clientIp);
             if (!legacyPayload) legalDocuments.accept(user.getId(), request.termsVersion(), request.privacyVersion(), ipDigest);
             loginIps.trust(user.getId(), clientIp);
+            if (agentDistributionService != null) agentDistributionService.bindByInvite(user.getId(), inviteCode, "REGISTER");
             return oauthService.issueUserSession(user, "local", ipDigest);
         })).subscribeOn(Schedulers.boundedElastic());
     }

@@ -81,6 +81,8 @@ public class TransitService {
     private EnterpriseDataMaskingService enterpriseDataMaskingService;
     @Autowired(required = false)
     private ProviderModelCatalogService providerModelCatalogService;
+    @Autowired(required = false)
+    private AgentDistributionService agentDistributionService;
 
     @Value("${billing.amount-scale:10000}")
     private long amountScale;
@@ -293,7 +295,8 @@ public class TransitService {
         }
 
         Channel firstChannel = routes.get(0).channel();
-        return attemptRoute(routes, 0, request, publicModel, traceId)
+        boolean requireReliableCost = agentDistributionService != null && agentDistributionService.requiresReliableCost(caller.getId());
+        return attemptRoute(routes, 0, request, publicModel, traceId, requireReliableCost)
                 // WebClient emits on a Netty event-loop. All JDBC settlement and
                 // audit work must run on a worker that permits blocking I/O.
                 .publishOn(Schedulers.boundedElastic())
@@ -315,8 +318,13 @@ public class TransitService {
                             cacheRead, cacheWrite, customerPriceRatio, exchangeRate);
                     resp.setBilling(billingDetails(routeMapping, prompt, cacheRead, cacheWrite, customerPriceRatio,
                             billing, traceId));
-                    settlementService.settle(reservation, total, billing.settlementAmount(),
-                            "API usage " + publicModel + " (" + traceId + ")");
+                    String settlementRemark = "API usage " + publicModel + " (" + traceId + ")";
+                    if (requireReliableCost) {
+                        settlementService.settle(reservation, total, billing.settlementAmount(),
+                                money().usdToCnyAmount(billing.totalCostAmount(), exchangeRate), settlementRemark);
+                    } else {
+                        settlementService.settle(reservation, total, billing.settlementAmount(), settlementRemark);
+                    }
                     updateQuotaAndLog(callerToken, routeChannel, tokenKey, publicModel, prompt,
                             completion, cacheRead, cacheWrite, total, estimatedUsage ? "SUCCESS_ESTIMATED" : "SUCCESS",
                             traceId, startedAt, null, billing);
@@ -341,7 +349,7 @@ public class TransitService {
     }
 
     private Mono<RoutedResponse> attemptRoute(List<Route> routes, int index, ChatRequest request,
-                                              String publicModel, String traceId) {
+                                              String publicModel, String traceId, boolean requireReliableCost) {
         if (index >= routes.size()) {
             return Mono.error(new ResponseStatusException(HttpStatus.BAD_GATEWAY,
                     "All upstream channels failed for model: " + publicModel));
@@ -353,7 +361,9 @@ public class TransitService {
                     rateLimiter.checkChannel(route.channel());
                     ProviderCredentialService.SelectedCredential credential = null;
                     if (providerCredentialService != null) {
-                        credential = providerCredentialService.select(route.channel());
+                        String stickySession = request.getPreviousResponseId() == null || request.getPreviousResponseId().isBlank()
+                                ? request.getSessionId() : request.getPreviousResponseId();
+                        credential = providerCredentialService.select(route.channel(), publicModel, stickySession, requireReliableCost);
                         route.channel().setApiKey(credential.secret());
                         route.channel().setSelectedCredentialId(credential.id());
                     }
@@ -393,7 +403,7 @@ public class TransitService {
                         }
                         log.warn("Channel {} failed for request {}; trying fallback channel: {}",
                                 route.channel().getName(), traceId, safeMessage(error));
-                        return attemptRoute(routes, index + 1, request, publicModel, traceId);
+                        return attemptRoute(routes, index + 1, request, publicModel, traceId, requireReliableCost);
                     }));
                 });
     }

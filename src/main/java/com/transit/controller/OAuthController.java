@@ -23,10 +23,12 @@ public class OAuthController {
     @GetMapping("/authorize")
     public Mono<ResponseEntity<Map<String, String>>> authorize(
             @RequestParam("provider") String provider,
+            @RequestParam(value = "inviteCode", required = false) String inviteCode,
             @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authHeader) {
         return Mono.fromCallable(() -> {
             User target = authHeader == null || authHeader.isBlank() ? null : currentUserService.requireUser(authHeader);
-            OAuthService.AuthorizationStart start = oauthService.beginAuthorization(provider, target == null ? null : target.getId());
+            OAuthService.AuthorizationStart start = oauthService.beginAuthorization(provider,
+                    target == null ? null : target.getId(), target == null ? inviteCode : null);
             return ResponseEntity.ok(Map.of("url", start.url(), "state", start.state()));
         });
     }

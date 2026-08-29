@@ -19,6 +19,7 @@
       <article v-for="item in dimensions" :key="item.key">
         <span>{{ item.label }}</span>
         <strong>{{ salePrice(item.price) }}</strong>
+        <small v-if="rebateBps">返利后预计 {{ netPrice(item.price) }}</small>
       </article>
     </div>
     <div v-if="pricingUnit === 'TOKEN' && contextPricing.enabled" class="context-price-note">
@@ -31,7 +32,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-const props = withDefaults(defineProps<{ model: Record<string, any>; compact?: boolean }>(), { compact: false })
+const props = withDefaults(defineProps<{ model: Record<string, any>; compact?: boolean; rebateBps?: number }>(), { compact: false, rebateBps: 0 })
+const rebateBps = computed(() => Math.max(0, Math.min(10000, Number(props.rebateBps || 0))))
 
 const pricingUnit = computed(() => String(props.model.pricing?.unit || props.model.pricingUnit || 'TOKEN').toUpperCase())
 const billingMode = computed(() => String(props.model.pricing?.billingMode || props.model.billingMode || 'PAID').toUpperCase())
@@ -63,10 +65,14 @@ function salePrice(value: unknown) {
     ? `$${price.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 6 })}`
     : '不计费'
 }
+function netPrice(value: unknown) {
+  const price = decimal(value) * (10000 - rebateBps.value) / 10000
+  return price > 0 ? `$${price.toLocaleString('en-US', { maximumFractionDigits: 6 })}` : '不计费'
+}
 </script>
 
 <style scoped>
-.model-sale-pricing{display:grid;gap:10px;min-width:0;padding:12px;border:1px solid #dce7e0;border-radius:10px;background:#fbfdfb}.model-sale-pricing header{display:flex;align-items:center;justify-content:space-between;gap:10px}.model-sale-pricing header strong{color:#263c30;font-size:13px}.model-sale-pricing header span{color:#78867d;font-size:10px}.pricing-pending{display:grid;gap:4px;padding:10px;border:1px dashed #aac5eb;border-radius:8px;background:#f2f7ff}.pricing-pending strong{color:#205493;font-size:12px}.pricing-pending span{color:#657b96;font-size:10px}.sale-price-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.sale-price-grid article{display:grid;min-width:0;gap:3px;padding:8px;border-radius:8px;background:#f2f7f3}.sale-price-grid span{color:#6c7c72;font-size:10px}.sale-price-grid strong{overflow-wrap:anywhere;color:#20372a;font-family:"JetBrains Mono","Cascadia Code",monospace;font-size:12px}.compact{padding:10px}.compact .sale-price-grid article{padding:7px}@media(max-width:520px){.sale-price-grid{grid-template-columns:minmax(0,1fr)}}
+.model-sale-pricing{display:grid;gap:10px;min-width:0;padding:12px;border:1px solid #dce7e0;border-radius:10px;background:#fbfdfb}.model-sale-pricing header{display:flex;align-items:center;justify-content:space-between;gap:10px}.model-sale-pricing header strong{color:#263c30;font-size:13px}.model-sale-pricing header span{color:#78867d;font-size:10px}.pricing-pending{display:grid;gap:4px;padding:10px;border:1px dashed #aac5eb;border-radius:8px;background:#f2f7ff}.pricing-pending strong{color:#205493;font-size:12px}.pricing-pending span{color:#657b96;font-size:10px}.sale-price-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.sale-price-grid article{display:grid;min-width:0;gap:3px;padding:8px;border-radius:8px;background:#f2f7f3}.sale-price-grid span,.sale-price-grid small{color:#6c7c72;font-size:10px}.sale-price-grid small{color:#08734f}.sale-price-grid strong{overflow-wrap:anywhere;color:#20372a;font-family:"JetBrains Mono","Cascadia Code",monospace;font-size:12px}.compact{padding:10px}.compact .sale-price-grid article{padding:7px}@media(max-width:520px){.sale-price-grid{grid-template-columns:minmax(0,1fr)}}
 .pricing-free{display:grid;gap:4px;padding:10px;border:1px solid #9ddbc4;border-radius:8px;background:#edfff7}.pricing-free strong{color:#08734f;font-size:13px}.pricing-free span{color:#3e7562;font-size:10px;line-height:1.5}.unit-sale-price{display:grid;grid-template-columns:1fr auto;align-items:end;gap:3px 12px;padding:11px;border-radius:8px;background:#f2f7f3}.unit-sale-price span,.unit-sale-price small{color:#6c7c72;font-size:10px}.unit-sale-price strong{color:#173b29;font-family:"JetBrains Mono","Cascadia Code",monospace;font-size:18px}.unit-sale-price small{grid-column:1/-1}
 .context-price-note{display:grid;gap:4px;padding:9px;border:1px solid #bfd4f3;border-radius:8px;background:#f1f7ff}.context-price-note strong{color:#164f97;font-size:11px}.context-price-note span{color:#526f91;font-size:10px;line-height:1.5}
 </style>

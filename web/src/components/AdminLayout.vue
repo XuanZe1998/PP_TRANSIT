@@ -2,9 +2,9 @@
   <el-container class="admin-shell">
     <el-aside width="260px" class="admin-aside">
       <div class="brand" @click="$router.push('/')">
-        <div class="brand-mark">AT</div>
+        <div class="brand-mark"><img :src="siteConfig.logoUrl" alt="" /></div>
         <div class="brand-copy">
-          <div class="brand-title">API Transit</div>
+          <div class="brand-title">{{ siteConfig.name }}</div>
           <div class="brand-subtitle">商业运营后台</div>
         </div>
       </div>
@@ -48,6 +48,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { Connection, DataBoard, Grid, Lock, Setting, User, Wallet } from '@element-plus/icons-vue'
 import http from '@/utils/http'
 import { clearAuth } from '@/utils/auth'
+import { siteConfig } from '@/config/site'
 
 const route = useRoute()
 const router = useRouter()
@@ -64,7 +65,7 @@ const navItems: NavItem[] = [
     { path: '/admin/creative-config', label: 'AI 创作配置' }, { path: '/admin/other-services', label: '服务与订单' }
   ] },
   { path: 'finance-payment', label: '财务与支付', icon: Wallet, children: [
-    { path: '/admin/finance', label: '钱包财务' }, { path: '/admin/vmcard-test', label: 'VMCard 测试' }
+    { path: '/admin/finance', label: '钱包财务' }, { path: '/admin/agents', label: '代理、号池与运维' }, { path: '/admin/vmcard-test', label: 'VMCard 测试' }
   ] },
   { path: 'audit-security', label: '审计与安全', icon: Lock, children: [
     { path: '/admin/audit-logs', label: '调用审计' }, { path: '/admin/security', label: '安全策略' }
@@ -101,6 +102,8 @@ const logout = async () => {
 
 <style scoped>
 .admin-shell {
+  min-height: 100vh;
+  min-height: 100svh;
   min-height: 100dvh;
 }
 
@@ -111,8 +114,12 @@ const logout = async () => {
 .admin-aside {
   position: sticky;
   top: 0;
+  height: 100vh;
+  height: 100svh;
   height: 100dvh;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   padding: 24px 16px;
   border-right: 1px solid #d7e4f7;
   background: linear-gradient(180deg, rgba(250,253,255,.98), rgba(235,244,255,.96));
@@ -134,10 +141,10 @@ const logout = async () => {
   border-radius: 8px;
   display: grid;
   place-items: center;
-  background: #2563eb;
-  color: #fff;
-  font-weight: 800;
+  background: #eef6ff;
 }
+
+.brand-mark img { width: 38px; height: 38px; object-fit: contain; }
 
 .brand-title {
   font-weight: 800;
@@ -291,6 +298,8 @@ const logout = async () => {
   }
 
   .admin-aside {
+    max-height: 100vh;
+    max-height: 100svh;
     max-height: 100dvh;
   }
 }

@@ -65,6 +65,8 @@ public class OAuthService {
     private final SecureRandom secureRandom = new SecureRandom();
     @Autowired(required = false)
     private AvatarStorageService avatarStorageService;
+    @Autowired(required = false)
+    private AgentDistributionService agentDistributionService;
 
     @Value("${oauth.github.client-id:}")
     private String githubClientId;
@@ -130,12 +132,20 @@ public class OAuthService {
     }
 
     public AuthorizationStart beginAuthorization(String requestedProvider) {
-        return beginAuthorization(requestedProvider, null);
+        return beginAuthorization(requestedProvider, null, null);
     }
 
     public AuthorizationStart beginAuthorization(String requestedProvider, Long targetUserId) {
+        return beginAuthorization(requestedProvider, targetUserId, null);
+    }
+
+    public AuthorizationStart beginAuthorization(String requestedProvider, Long targetUserId, String inviteCode) {
         String provider = normalizeProvider(requestedProvider);
         if (targetUserId != null) requireActiveUser(userMapper.selectById(targetUserId));
+        String normalizedInvite = inviteCode == null ? null : inviteCode.trim();
+        if (normalizedInvite != null && (normalizedInvite.isBlank() || !normalizedInvite.matches("[A-Za-z0-9_-]{4,32}"))) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "邀请码格式无效");
+        }
         String state = generateSecureToken();
         LocalDateTime now = LocalDateTime.now();
         loginStateMapper.insert(OAuthLoginState.builder()
@@ -143,6 +153,7 @@ public class OAuthService {
                 .provider(provider)
                 .targetUserId(targetUserId)
                 .flowType(targetUserId == null ? "LOGIN" : "BIND")
+                .inviteCode(targetUserId == null ? normalizedInvite : null)
                 .expiresAt(now.plusSeconds(Math.max(60, stateExpirySeconds)))
                 .createdAt(now)
                 .build());
@@ -190,8 +201,8 @@ public class OAuthService {
                     }
                     OAuthLoginState loginState = consumeLoginState(provider, state);
                     return switch (provider) {
-                        case "github" -> exchangeGithubCode(code, loginState.getTargetUserId(), clientIp);
-                        case "google" -> exchangeGoogleCode(code, loginState.getTargetUserId(), clientIp);
+                        case "github" -> exchangeGithubCode(code, loginState.getTargetUserId(), loginState.getInviteCode(), clientIp);
+                        case "google" -> exchangeGoogleCode(code, loginState.getTargetUserId(), loginState.getInviteCode(), clientIp);
                         default -> throw unsupportedProvider();
                     };
                 })
@@ -224,7 +235,7 @@ public class OAuthService {
                 .lt(OAuthLoginState::getExpiresAt, now.minusHours(1)));
     }
 
-    private Map<String, Object> exchangeGithubCode(String code, Long targetUserId, String clientIp) {
+    private Map<String, Object> exchangeGithubCode(String code, Long targetUserId, String inviteCode, String clientIp) {
         requireConfigured("GitHub", githubClientId, githubClientSecret);
         MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
         form.add("client_id", githubClientId);
@@ -233,10 +244,10 @@ public class OAuthService {
         form.add("redirect_uri", githubRedirectUri);
         Map<String, Object> response = postForm(githubTokenUri, form, "GitHub");
         String accessToken = requiredToken(response, "access_token", "GitHub");
-        return processProviderUser("github", accessToken, targetUserId, clientIp);
+        return processProviderUser("github", accessToken, targetUserId, inviteCode, clientIp);
     }
 
-    private Map<String, Object> exchangeGoogleCode(String code, Long targetUserId, String clientIp) {
+    private Map<String, Object> exchangeGoogleCode(String code, Long targetUserId, String inviteCode, String clientIp) {
         requireConfigured("Google", googleClientId, googleClientSecret);
         MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
         form.add("client_id", googleClientId);
@@ -246,7 +257,7 @@ public class OAuthService {
         form.add("redirect_uri", googleRedirectUri);
         Map<String, Object> response = postForm(googleTokenUri, form, "Google");
         String accessToken = requiredToken(response, "access_token", "Google");
-        return processProviderUser("google", accessToken, targetUserId, clientIp);
+        return processProviderUser("google", accessToken, targetUserId, inviteCode, clientIp);
     }
 
     @SuppressWarnings("unchecked")
@@ -282,7 +293,7 @@ public class OAuthService {
     }
 
     private Map<String, Object> processProviderUser(String provider, String providerAccessToken, Long targetUserId,
-                                                    String clientIp) {
+                                                    String inviteCode, String clientIp) {
         Map<String, Object> userInfo = getUserInfo(provider, providerAccessToken);
         Object providerIdValue = userInfo.get("id") != null ? userInfo.get("id") : userInfo.get("sub");
         String providerUserId = providerIdValue == null ? "" : providerIdValue.toString().trim();
@@ -297,12 +308,16 @@ public class OAuthService {
                 .eq(OAuthUserBinding::getProviderUserId, providerUserId));
 
         User user;
+        boolean created = false;
         if (binding != null && targetUserId != null && !Objects.equals(binding.getUserId(), targetUserId)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "该第三方账号已绑定其他平台账户");
         }
         if (binding == null) {
-            user = targetUserId == null ? findOrCreateUserFromProvider(provider, providerUserId, email, username)
-                    : userMapper.selectById(targetUserId);
+            if (targetUserId == null) {
+                ProviderUser resolved = findOrCreateUserFromProvider(provider, providerUserId, email, username);
+                user = resolved.user();
+                created = resolved.created();
+            } else user = userMapper.selectById(targetUserId);
             requireActiveUser(user);
             bindingMapper.insert(OAuthUserBinding.builder()
                     .userId(user.getId())
@@ -315,6 +330,9 @@ public class OAuthService {
                     .expiresAt(null)
                     .createdAt(LocalDateTime.now())
                     .build());
+            if (created && agentDistributionService != null) {
+                agentDistributionService.bindByInvite(user.getId(), inviteCode, "OAUTH_REGISTER");
+            }
         } else {
             user = userMapper.selectById(binding.getUserId());
         }
@@ -402,10 +420,10 @@ public class OAuthService {
         }
     }
 
-    private User findOrCreateUserFromProvider(String provider, String providerUserId, String email, String username) {
+    private ProviderUser findOrCreateUserFromProvider(String provider, String providerUserId, String email, String username) {
         if (email != null) {
             User existing = userMapper.selectOne(new LambdaQueryWrapper<User>().eq(User::getEmail, email));
-            if (existing != null) return existing;
+            if (existing != null) return new ProviderUser(existing, false);
         }
         String baseUsername = username.isBlank() ? provider + "_" + providerUserId : username;
         User user = User.builder()
@@ -423,7 +441,7 @@ public class OAuthService {
                 .createdAt(LocalDateTime.now())
                 .build();
         userMapper.insert(user);
-        return user;
+        return new ProviderUser(user, true);
     }
 
     private String uniqueUsername(String baseUsername) {
@@ -703,5 +721,8 @@ public class OAuthService {
     }
 
     public record AuthorizationStart(String url, String state) {
+    }
+
+    private record ProviderUser(User user, boolean created) {
     }
 }

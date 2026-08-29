@@ -5,6 +5,7 @@ import com.transit.model.User;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -21,6 +22,8 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class GatewaySettlementService {
     private final JdbcTemplate jdbcTemplate;
+    @Autowired(required = false)
+    private AgentDistributionService agentDistributionService;
 
     @Value("${billing.reservation-expiry-seconds:600}")
     private long reservationExpirySeconds;
@@ -101,6 +104,16 @@ public class GatewaySettlementService {
      * explicitly estimated actual usage. */
     @Transactional
     public void settle(Reservation reservation, int actualTokens, long actualAmount, String remark) {
+        settleInternal(reservation, actualTokens, actualAmount, null, remark);
+    }
+
+    /** Settles with a reliable cost snapshot and triggers idempotent gross-profit distribution. */
+    @Transactional
+    public void settle(Reservation reservation, int actualTokens, long actualAmount, long actualCostAmount, String remark) {
+        settleInternal(reservation, actualTokens, actualAmount, Math.max(0, actualCostAmount), remark);
+    }
+
+    private void settleInternal(Reservation reservation, int actualTokens, long actualAmount, Long actualCostAmount, String remark) {
         Map<String, Object> row = lock(reservation.id());
         String status = String.valueOf(row.get("status"));
         if ("SETTLED".equals(status)) return;
@@ -131,6 +144,9 @@ public class GatewaySettlementService {
                     VALUES (?, 'CONSUME', ?, ?, 'api', ?, ?)
                     """, reservation.userId(), -safeAmount, balanceAfter,
                     remark, LocalDateTime.now());
+        }
+        if (actualCostAmount != null && agentDistributionService != null) {
+            agentDistributionService.settleApiUsage(reservation.id(), reservation.userId(), safeAmount, actualCostAmount);
         }
     }
 

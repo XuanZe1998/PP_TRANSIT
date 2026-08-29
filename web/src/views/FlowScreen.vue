@@ -2,9 +2,9 @@
   <div class="flow-shell" :class="`role-${screen.role}`">
     <aside v-if="screen.role !== 'public'" class="flow-sidebar">
       <div class="flow-brand" @click="go('/')">
-        <div class="brand-mark"></div>
+        <img class="brand-mark" src="/brand/linknux-mark-192.png" alt="" />
         <div>
-          <strong>API Transit</strong>
+          <strong>Linknux</strong>
           <span>{{ screen.role === 'admin' ? 'Admin Console' : 'User Console' }}</span>
         </div>
       </div>
@@ -441,7 +441,7 @@ const AuthWorkspace = defineComponent({
           h(ElRadioButton, { label: 'register' }, () => '注册'),
           h(ElRadioButton, { label: 'login' }, () => '登录')
         ]),
-        h('h2', authMode.value === 'register' ? '创建 API Transit 账号' : '登录 API Transit'),
+        h('h2', authMode.value === 'register' ? '创建 Linknux 账号' : '登录 Linknux'),
         h('p', { class: 'auth-hint' }, authMode.value === 'register'
           ? '只能使用邮箱或手机号注册。手机号支持中国大陆 11 位号码和 E.164 国际格式。'
           : '可使用邮箱、手机号或用户名登录。'),

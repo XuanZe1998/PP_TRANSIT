@@ -580,7 +580,7 @@ public class AdminChannelService {
             return;
         }
         channel.setSourceCode(defaultString(channel.getSourceCode(), "other"));
-        channel.setSourceName(defaultString(channel.getSourceName(), "其他第三方中转站"));
+        channel.setSourceName(defaultString(channel.getSourceName(), "其他兼容服务"));
     }
 
     private void rejectDuplicateManagedChannel(Channel channel, Long currentId) {

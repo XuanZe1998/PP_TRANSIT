@@ -44,6 +44,13 @@ public class OtherService {
     @TableField("service_fee_cents")
     private Long serviceFeeCents;
 
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
+    @TableField("cost_cents")
+    private Long costCents;
+
+    @TableField("commission_refund_window_days")
+    private Integer commissionRefundWindowDays;
+
     @TableField(exist = false)
     private Long amountCents;
 

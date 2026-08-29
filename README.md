@@ -1,4 +1,6 @@
-# API Transit Station
+# Linknux
+
+面向开发者与团队的一站式 AI 能力平台，统一连接主流模型，提供智能路由、用量治理、创作工具与企业协作。
 
 面向多供应商大模型的统一网关与运营后台。后端采用 Spring Boot 3 / MyBatis-Plus，前端采用 Vue 3 / Element Plus；对外提供 OpenAI Chat Completions 兼容接口，并将 Anthropic、Gemini 与多种 OpenAI-compatible 上游统一到同一个模型、路由、计费和审计体系。
 

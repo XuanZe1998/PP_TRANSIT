@@ -91,7 +91,7 @@ export const flowScreens: FlowScreenConfig[] = [
     path: '/',
     role: 'public',
     title: '首页 / 产品总览',
-    subtitle: '面向企业和团队的多模型 API 中转站，统一接入、分发、计费与审计。',
+    subtitle: '面向开发者与团队的一站式 AI 能力平台，统一连接主流模型，提供智能路由、用量治理、创作工具与企业协作。',
     primaryAction: '立即接入',
     metrics: gatewayMetrics,
     cards: [
@@ -194,7 +194,7 @@ export const flowScreens: FlowScreenConfig[] = [
       { label: '模型', value: 'deepseek-chat' },
       { label: 'temperature', value: '0.7' },
       { label: 'stream', value: 'true' },
-      { label: 'Prompt', value: '解释 API 中转站的故障切换机制' }
+      { label: 'Prompt', value: '解释多模型平台的故障切换机制' }
     ],
     code: 'curl https://api.example.com/v1/chat/completions \\\n  -H "Authorization: Bearer sk-..." \\\n  -d "{ model, messages, stream }"'
   },

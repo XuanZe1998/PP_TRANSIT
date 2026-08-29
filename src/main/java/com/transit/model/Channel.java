@@ -32,7 +32,7 @@ public class Channel {
 
     @TableField("source_name")
     @Builder.Default
-    private String sourceName = "其他第三方中转站";
+    private String sourceName = "其他兼容服务";
 
     @TableField("protocol_type")
     @Builder.Default

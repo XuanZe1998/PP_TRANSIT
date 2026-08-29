@@ -3,8 +3,8 @@
     <header class="site-nav">
       <div class="site-nav-inner">
         <button class="site-brand" @click="go('/')">
-          <span class="site-brand-mark">A</span>
-          <span>API Transit</span>
+          <img class="site-brand-mark brand-image" :src="siteConfig.logoUrl" alt="" />
+          <span>{{ siteConfig.name }}</span>
         </button>
         <nav class="site-links" aria-label="Primary navigation">
           <button :class="{ active: route.path === '/' }" @click="go('/')">首页</button>
@@ -31,6 +31,7 @@
 import { defineAsyncComponent, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getToken } from '@/utils/auth'
+import { siteConfig } from '@/config/site'
 
 const route = useRoute()
 const router = useRouter()
