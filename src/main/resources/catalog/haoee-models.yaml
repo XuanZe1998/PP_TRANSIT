@@ -1,4 +1,6 @@
-version: "2026-08-23"
+version: "2026-08-29"
+aliases:
+  claude-opus-4-7: claude-opus-4-8
 models:
   - { name: claude-opus-4-7, vendor: anthropic, capability: text, protocols: "chat-completions,messages" }
   - { name: claude-opus-4-8, vendor: anthropic, capability: text, protocols: "chat-completions,messages" }

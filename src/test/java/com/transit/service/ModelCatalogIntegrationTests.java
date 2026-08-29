@@ -118,6 +118,29 @@ class ModelCatalogIntegrationTests {
                 .isEqualTo("gpt-5.4");
     }
 
+    @Test
+    void mapsTheRetiredClaude47PublicIdToTheLiveClaude48UpstreamId() {
+        jdbcTemplate.update("""
+                INSERT INTO channels(name,type,source_code,source_name,protocol_type,base_url,api_key,models,
+                                     enabled,health_status)
+                VALUES ('alias-haoee','haoee','haoee','好易智算','multi','https://maas.haoee.com',
+                        'plaintext-test-key','claude-opus-4-7',TRUE,'HEALTHY')
+                """);
+        Long channelId = jdbcTemplate.queryForObject(
+                "SELECT id FROM channels WHERE name='alias-haoee'", Long.class);
+
+        providerModelCatalogService.synchronizeHaoee(channelId);
+
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT channel_model_name FROM model_mappings
+                WHERE channel_id=? AND public_model_name='claude-opus-4-7'
+                """, String.class, channelId)).isEqualTo("claude-opus-4-8");
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT verification_status FROM provider_models
+                WHERE source_code='haoee' AND upstream_model_name='claude-opus-4-7'
+                """, String.class)).isEqualTo("RETIRED");
+    }
+
     private long channel(String name, String type, String health, LocalDateTime cooldownUntil) {
         jdbcTemplate.update("""
                 INSERT INTO channels(name, type, base_url, api_key, enabled, health_status, cooldown_until)

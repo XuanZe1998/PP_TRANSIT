@@ -76,14 +76,27 @@ public class ProviderModelCatalogService implements ApplicationRunner {
 
     @Transactional
     public int synchronizeHaoee(long channelId) {
-        List<CatalogSeed> seeds = loadHaoeeManifest();
         Channel channel = channelMapper.selectById(channelId);
+        List<CatalogSeed> manifest = loadHaoeeManifest();
+        List<CatalogSeed> seeds = liveHaoeeCatalog(channel, manifest);
         boolean initializeChannelSelection = channel != null && channel.getModels() == null;
         LocalDateTime now = LocalDateTime.now();
         for (CatalogSeed seed : seeds) {
             upsert("haoee", "好易智算", channelId, seed, now, null);
         }
+        // Alias seeds are kept in the reviewed manifest so a fresh installation can
+        // create the public route even after the upstream has retired the old id.
+        Map<String, String> aliases = loadHaoeeAliases();
+        Map<String, CatalogSeed> manifestByName = manifest.stream()
+                .collect(java.util.stream.Collectors.toMap(CatalogSeed::name, seed -> seed));
+        for (String publicName : aliases.keySet()) {
+            if (seeds.stream().noneMatch(seed -> seed.name().equals(publicName))) {
+                CatalogSeed aliasSeed = manifestByName.get(publicName);
+                if (aliasSeed != null) upsert("haoee", "好易智算", channelId, aliasSeed, now, null);
+            }
+        }
         markMissing("haoee", seeds.stream().map(CatalogSeed::name).collect(java.util.stream.Collectors.toSet()), now);
+        applyHaoeeAliases(channelId, aliases, manifestByName, now);
         if (initializeChannelSelection) {
             List<String> routedModels = modelMappingMapper.selectList(new LambdaQueryWrapper<ModelMapping>()
                             .eq(ModelMapping::getChannelId, channelId)
@@ -93,8 +106,78 @@ public class ProviderModelCatalogService implements ApplicationRunner {
             jdbcTemplate.update("UPDATE channels SET models=? WHERE id=?",
                     String.join("\n", routedModels), channelId);
         }
-        log.info("Haoee provider catalog synchronized from versioned manifest: {} models", seeds.size());
+        log.info("Haoee provider catalog synchronized: {} upstream models, {} compatibility aliases",
+                seeds.size(), aliases.size());
         return seeds.size();
+    }
+
+    private List<CatalogSeed> liveHaoeeCatalog(Channel storedChannel, List<CatalogSeed> manifest) {
+        // Integration tests and one-time plaintext migrations deliberately retain
+        // the reviewed manifest path. Production credentials are encrypted.
+        if (storedChannel == null || !channelSecretService.isEncrypted(storedChannel.getApiKey())) return manifest;
+        try {
+            Channel channel = channelSecretService.reveal(storedChannel);
+            String base = Objects.toString(channel.getBaseUrl(), "https://maas.haoee.com").replaceAll("/+$", "");
+            String endpoint = base.endsWith("/v1") ? base + "/models" : base + "/v1/models";
+            JsonNode payload = webClient.get().uri(endpoint)
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + channel.getApiKey())
+                    .retrieve().bodyToMono(JsonNode.class).timeout(Duration.ofSeconds(30)).block();
+            if (payload == null || !payload.path("data").isArray()) {
+                throw new IllegalStateException("Haoee returned an invalid model catalog");
+            }
+            Map<String, CatalogSeed> metadata = manifest.stream()
+                    .collect(java.util.stream.Collectors.toMap(CatalogSeed::name, seed -> seed));
+            List<CatalogSeed> live = new ArrayList<>();
+            payload.path("data").forEach(node -> {
+                String id = node.path("id").asText("").trim();
+                if (!id.matches(MODEL_PATTERN)) return;
+                live.add(metadata.getOrDefault(id, inferHaoee(id)));
+            });
+            if (live.isEmpty()) throw new IllegalStateException("Haoee returned an empty model catalog");
+            live.sort(Comparator.comparing(CatalogSeed::name));
+            return live;
+        } catch (RuntimeException error) {
+            log.warn("Haoee live catalog refresh failed; using reviewed manifest: {}", limit(error.getMessage(), 300));
+            return manifest;
+        }
+    }
+
+    private CatalogSeed inferHaoee(String id) {
+        String lower = id.toLowerCase(Locale.ROOT);
+        String vendor = lower.startsWith("claude") ? "anthropic"
+                : lower.startsWith("gpt") ? "openai"
+                : lower.startsWith("gemini") ? "google" : "haoee";
+        String capability = lower.contains("image") ? "image"
+                : lower.contains("reason") || lower.contains("deepseek") ? "reasoning" : "text";
+        return new CatalogSeed(id, vendor, capability, "chat-completions", "TOKEN", null, null, "POST");
+    }
+
+    private void applyHaoeeAliases(long channelId, Map<String, String> aliases,
+                                   Map<String, CatalogSeed> manifest, LocalDateTime now) {
+        aliases.forEach((publicName, upstreamName) -> {
+            CatalogSeed target = manifest.getOrDefault(upstreamName, inferHaoee(upstreamName));
+            modelMappingMapper.selectList(new LambdaQueryWrapper<ModelMapping>()
+                            .eq(ModelMapping::getChannelId, channelId)
+                            .eq(ModelMapping::getPublicModelName, publicName))
+                    .forEach(mapping -> {
+                        mapping.setChannelModelName(upstreamName);
+                        mapping.setVendor(target.vendor());
+                        mapping.setCapability(target.capability());
+                        mapping.setInputModalities(inputModalities(target.capability()));
+                        mapping.setOutputModalities(outputModalities(target.capability()));
+                        mapping.setProtocols(target.protocols());
+                        modelMappingMapper.updateById(mapping);
+                    });
+            ProviderModel retired = providerModelMapper.selectOne(new LambdaQueryWrapper<ProviderModel>()
+                    .eq(ProviderModel::getSourceCode, "haoee")
+                    .eq(ProviderModel::getUpstreamModelName, publicName).last("LIMIT 1"));
+            if (retired != null) {
+                retired.setVerificationStatus("RETIRED");
+                retired.setVerificationMessage("上游模型已下线；公网兼容别名路由至 " + upstreamName);
+                retired.setUpdatedAt(now);
+                providerModelMapper.updateById(retired);
+            }
+        });
     }
 
     public int synchronizeConfiguredHaoee() {
@@ -362,8 +445,7 @@ public class ProviderModelCatalogService implements ApplicationRunner {
         ProviderModel existing = providerModelMapper.selectOne(new LambdaQueryWrapper<ProviderModel>()
                 .eq(ProviderModel::getSourceCode, source)
                 .eq(ProviderModel::getUpstreamModelName, seed.name()).last("LIMIT 1"));
-        boolean routeAvailable = hasEnabledRoute(channelId, seed.name());
-        String status = routeAvailable ? "AVAILABLE" : existing == null || "RETIRED".equals(existing.getVerificationStatus())
+        String status = existing == null || "RETIRED".equals(existing.getVerificationStatus())
                 ? "DISCOVERED" : existing.getVerificationStatus();
         if (!supported(seed.protocols())) status = "UNSUPPORTED";
         if (existing == null) {
@@ -384,13 +466,44 @@ public class ProviderModelCatalogService implements ApplicationRunner {
         existing.setTaskQueryMethod(seed.taskQueryMethod());
         existing.setVerificationStatus(status);
         existing.setVerificationMessage("UNSUPPORTED".equals(status) ? "当前网关尚未实现该协议" : existing.getVerificationMessage());
-        existing.setVerifiedAt(routeAvailable && existing.getVerifiedAt() == null ? now : existing.getVerifiedAt());
         existing.setLastSeenAt(now);
         existing.setMissingSyncCount(0);
         existing.setRawMetadata(rawMetadata);
         existing.setUpdatedAt(now);
         if (existing.getId() == null) providerModelMapper.insert(existing); else providerModelMapper.updateById(existing);
-        if (supported(seed.protocols())) ensureMapping(channelId, seed, routeAvailable);
+        if (supported(seed.protocols())) ensureMapping(channelId, seed, "AVAILABLE".equals(status));
+    }
+
+    public boolean isRouteVerified(Channel channel, String upstreamModelName) {
+        if (channel == null || upstreamModelName == null) return false;
+        String source = Objects.toString(channel.getSourceCode(), channel.getType()).toLowerCase(Locale.ROOT);
+        if (!Set.of("haoee", "nvidia").contains(source)) return true;
+        ProviderModel model = providerModelMapper.selectOne(new LambdaQueryWrapper<ProviderModel>()
+                .eq(ProviderModel::getSourceCode, source)
+                .eq(ProviderModel::getUpstreamModelName, upstreamModelName).last("LIMIT 1"));
+        return model != null && "AVAILABLE".equals(model.getVerificationStatus());
+    }
+
+    @Transactional
+    public void recordRouteSuccess(Channel channel, String upstreamModelName) {
+        if (channel == null || upstreamModelName == null) return;
+        String source = Objects.toString(channel.getSourceCode(), channel.getType()).toLowerCase(Locale.ROOT);
+        if (!Set.of("haoee", "nvidia").contains(source)) return;
+        ProviderModel model = providerModelMapper.selectOne(new LambdaQueryWrapper<ProviderModel>()
+                .eq(ProviderModel::getSourceCode, source)
+                .eq(ProviderModel::getUpstreamModelName, upstreamModelName).last("LIMIT 1"));
+        if (model == null || "AVAILABLE".equals(model.getVerificationStatus())) return;
+        LocalDateTime now = LocalDateTime.now();
+        model.setVerificationStatus("AVAILABLE");
+        model.setVerificationMessage("真实网关调用成功");
+        model.setVerifiedAt(now);
+        model.setUpdatedAt(now);
+        providerModelMapper.updateById(model);
+        jdbcTemplate.update("""
+                INSERT INTO provider_model_verifications
+                (provider_model_id,source_code,upstream_model_name,status,message,started_at,completed_at)
+                VALUES (?,?,?,?,?,?,?)
+                """, model.getId(), source, upstreamModelName, "AVAILABLE", "真实网关调用成功", now, now);
     }
 
     private boolean isExcluded(String source, String upstreamModelName) {
@@ -500,6 +613,25 @@ public class ProviderModelCatalogService implements ApplicationRunner {
             return result;
         } catch (Exception error) {
             throw new IllegalStateException("Unable to load Haoee catalog manifest", error);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, String> loadHaoeeAliases() {
+        try (InputStream input = new ClassPathResource(HAOEE_RESOURCE).getInputStream()) {
+            Map<String, Object> document = new Yaml().load(input);
+            Map<String, Object> raw = (Map<String, Object>) document.getOrDefault("aliases", Map.of());
+            Map<String, String> aliases = new LinkedHashMap<>();
+            raw.forEach((publicName, upstream) -> {
+                String target = Objects.toString(upstream, "").trim();
+                if (!publicName.matches(MODEL_PATTERN) || !target.matches(MODEL_PATTERN)) {
+                    throw new IllegalStateException("Invalid Haoee compatibility alias");
+                }
+                aliases.put(publicName, target);
+            });
+            return aliases;
+        } catch (Exception error) {
+            throw new IllegalStateException("Unable to load Haoee catalog aliases", error);
         }
     }
 

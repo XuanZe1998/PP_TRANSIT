@@ -12,7 +12,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import java.time.LocalDateTime;
 import java.util.List;
 
-/** Versioned, reviewed Haoee catalog. Runtime documentation scraping is deliberately avoided. */
+/** Live Haoee catalog synchronization with a reviewed fail-safe manifest. */
 @Slf4j
 @Configuration
 @RequiredArgsConstructor
@@ -40,7 +40,7 @@ public class HaoeeCatalogBootstrapService {
             long channelId = ensureChannel();
             ensureCredential(channelId);
             int total = providerModelCatalogService.synchronizeHaoee(channelId);
-            log.info("Haoee catalog synchronized from versioned manifest: {} models", total);
+            log.info("Haoee catalog synchronized: {} upstream models", total);
             if (!manualVerificationOnly && (verifyOnStartup || legacyActivateModels)) {
                 List<Long> queued = verificationService.queue("haoee", startupVerificationLimit, false);
                 verificationService.verifyQueuedAsync(queued, false);

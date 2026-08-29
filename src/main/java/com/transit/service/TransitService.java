@@ -79,6 +79,8 @@ public class TransitService {
     private PublicUpstreamMappingService publicUpstreamMappingService;
     @Autowired(required = false)
     private EnterpriseDataMaskingService enterpriseDataMaskingService;
+    @Autowired(required = false)
+    private ProviderModelCatalogService providerModelCatalogService;
 
     @Value("${billing.amount-scale:10000}")
     private long amountScale;
@@ -103,7 +105,7 @@ public class TransitService {
                 .stream()
                 .filter(PublicPricingPolicy::hasRequiredSale)
                 .filter(mapping -> apiKeyService.modelAllowed(token, mapping.getPublicModelName()))
-                .filter(mapping -> isRoutable(channelMapper.selectById(mapping.getChannelId())))
+                .filter(mapping -> isVerifiedRoute(mapping, channelMapper.selectById(mapping.getChannelId())))
                 .map(ModelMapping::getPublicModelName)
                 .filter(Objects::nonNull)
                 .distinct()
@@ -126,7 +128,7 @@ public class TransitService {
                 .filter(mapping -> apiKeyService.modelAllowed(token, mapping.getPublicModelName()))
                 .forEach(mapping -> {
                     Channel channel = channelMapper.selectById(mapping.getChannelId());
-                    if (!isRoutable(channel) || result.containsKey(mapping.getPublicModelName())) return;
+                    if (!isVerifiedRoute(mapping, channel) || result.containsKey(mapping.getPublicModelName())) return;
                     Map<String, Object> item = new LinkedHashMap<>();
                     item.put("id", mapping.getPublicModelName());
                     item.put("object", "model");
@@ -366,6 +368,10 @@ public class TransitService {
                             .flatMap(response -> healthUpdate(() -> {
                                         long latency = System.currentTimeMillis() - routeStartedAt;
                                         channelHealthService.recordSuccess(route.channel(), latency);
+                                        if (providerModelCatalogService != null) {
+                                            providerModelCatalogService.recordRouteSuccess(route.channel(),
+                                                    route.mapping().getChannelModelName());
+                                        }
                                         if (providerCredentialService != null && selectedCredential != null) {
                                             providerCredentialService.recordSuccess(selectedCredential.id(), latency);
                                         }
@@ -400,6 +406,11 @@ public class TransitService {
                     return Mono.empty();
                 })
                 .then();
+    }
+
+    private boolean isVerifiedRoute(ModelMapping mapping, Channel channel) {
+        return isRoutable(channel) && (providerModelCatalogService == null
+                || providerModelCatalogService.isRouteVerified(channel, mapping.getChannelModelName()));
     }
 
     private boolean isChannelFault(Throwable error) {
