@@ -30,6 +30,7 @@ class RechargePaymentIntegrationTests {
                 .emailVerifiedAt(LocalDateTime.now(ZoneOffset.UTC))
                 .role("USER").status("ACTIVE").balance(0).createdAt(LocalDateTime.now(ZoneOffset.UTC)).build();
         userMapper.insert(user);
+        Long organizationId=createPersonalOrganization(user);
         Long planId=jdbcTemplate.queryForObject("SELECT id FROM recharge_plans WHERE bonus_percent>0 ORDER BY id LIMIT 1",Long.class);
         RechargeOrderRequest request=new RechargeOrderRequest(); request.setPlanId(planId); request.setPaymentMethod("alipay");
         request.setContactEmail(user.getEmail()); request.setBillingName("Lisa White"); request.setBillingAddressLine1("305 Main St");
@@ -39,11 +40,31 @@ class RechargePaymentIntegrationTests {
         PaymentIntent paid=paymentIntentService.start(user,order.getPaymentIntent().getId());
         assertThat(paid.getStatus()).isEqualTo("PAID");
         assertThat(userMapper.selectById(user.getId()).getBalance()).isEqualTo(order.getTotalCreditUnits());
+        assertThat(walletBalance(organizationId,user.getId())).isEqualTo(order.getTotalCreditUnits());
         paymentIntentService.start(user,paid.getId());
         assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM wallet_transactions WHERE user_id=? AND type IN ('RECHARGE','GIFT')",Integer.class,user.getId())).isEqualTo(2);
         PaymentIntent refunded=paymentIntentService.refund(paid.getId(),"integration test refund");
         assertThat(refunded.getStatus()).isEqualTo("REFUNDED");
         assertThat(userMapper.selectById(user.getId()).getBalance()).isZero();
+        assertThat(walletBalance(organizationId,user.getId())).isZero();
         assertThat(rechargeOrderService.get(user,order.getId()).getStatus()).isEqualTo("REFUNDED");
+    }
+
+    private Long createPersonalOrganization(User user){
+        LocalDateTime now=LocalDateTime.now(ZoneOffset.UTC);
+        jdbcTemplate.update("INSERT INTO organizations(name,organization_type,status,created_by,created_at,updated_at) VALUES (?,'PERSONAL','ACTIVE',?,?,?)",
+                user.getUsername()+" personal",user.getId(),now,now);
+        Long organizationId=jdbcTemplate.queryForObject("SELECT MAX(id) FROM organizations WHERE created_by=?",Long.class,user.getId());
+        jdbcTemplate.update("INSERT INTO organization_members(organization_id,user_id,member_role,status,joined_at) VALUES (?,?,'OWNER','ACTIVE',?)",
+                organizationId,user.getId(),now);
+        jdbcTemplate.update("INSERT INTO wallet_accounts(organization_id,user_id,account_type,balance,status,created_at,updated_at) VALUES (?,?,'TREASURY',0,'ACTIVE',?,?)",
+                organizationId,user.getId(),now,now);
+        jdbcTemplate.update("UPDATE users SET default_organization_id=? WHERE id=?",organizationId,user.getId());
+        return organizationId;
+    }
+
+    private long walletBalance(Long organizationId,Long userId){
+        Long value=jdbcTemplate.queryForObject("SELECT balance FROM wallet_accounts WHERE organization_id=? AND user_id=?",Long.class,organizationId,userId);
+        return value==null?0:value;
     }
 }

@@ -27,6 +27,7 @@ public class PaymentBusinessSettlementService {
     private final WalletRechargeOrderMapper rechargeOrderMapper;
     private final ServiceCommerceService serviceCommerceService;
     private final JdbcTemplate jdbcTemplate;
+    private final WalletBalanceService walletBalanceService;
 
     @Transactional
     public void settle(PaymentIntent intent) {
@@ -78,10 +79,9 @@ public class PaymentBusinessSettlementService {
         WalletRechargeOrder order = requireRecharge(intent);
         if (!"REFUND_PENDING".equals(order.getStatus())) return;
         long amount = order.getTotalCreditUnits();
-        jdbcTemplate.update("UPDATE users SET balance=balance+? WHERE id=?", amount, order.getUserId());
-        Long balance = jdbcTemplate.queryForObject("SELECT balance FROM users WHERE id=?", Long.class, order.getUserId());
+        long balance = walletBalanceService.credit(order.getUserId(), amount).balance();
         jdbcTemplate.update("INSERT INTO wallet_transactions(user_id,type,amount,balance_after,channel,remark,reference_type,reference_id,created_at) VALUES (?, 'REFUND_RELEASE', ?, ?, 'anyipay', ?, ?, ?, ?)",
-                order.getUserId(), amount, balance == null ? 0 : balance,
+                order.getUserId(), amount, balance,
                 "Refund failed; held recharge credit restored", refundReference(intent).replace("RFD_HOLD_","RFD_REL_"), order.getId(), now());
         order.setStatus("PAID"); order.setUpdatedAt(now()); rechargeOrderMapper.updateById(order);
     }
@@ -124,10 +124,9 @@ public class PaymentBusinessSettlementService {
         if (amount <= 0) return;
         Integer existing = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM wallet_transactions WHERE reference_type=? AND reference_id=?", Integer.class, referenceType, order.getId());
         if (existing != null && existing > 0) return;
-        jdbcTemplate.update("UPDATE users SET balance=balance+? WHERE id=?", amount, order.getUserId());
-        Long balance = jdbcTemplate.queryForObject("SELECT balance FROM users WHERE id=?", Long.class, order.getUserId());
+        long balance = walletBalanceService.credit(order.getUserId(), amount).balance();
         jdbcTemplate.update("INSERT INTO wallet_transactions(user_id,type,amount,balance_after,channel,remark,reference_type,reference_id,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
-                order.getUserId(), type, amount, balance == null ? 0 : balance, "anyipay",
+                order.getUserId(), type, amount, balance, "anyipay",
                 "Recharge order " + order.getOrderNo(), referenceType, order.getId(), now());
     }
 
@@ -144,11 +143,10 @@ public class PaymentBusinessSettlementService {
         WalletRechargeOrder order = requireRecharge(intent);
         if (!"PAID".equals(order.getStatus())) throw conflict("Only a paid recharge can be refunded");
         long amount = order.getTotalCreditUnits();
-        int debited = jdbcTemplate.update("UPDATE users SET balance=balance-? WHERE id=? AND balance>=?", amount, order.getUserId(), amount);
-        if (debited != 1) throw conflict("User balance is insufficient to reverse this recharge and its bonus");
-        Long balance = jdbcTemplate.queryForObject("SELECT balance FROM users WHERE id=?", Long.class, order.getUserId());
+        long balance = walletBalanceService.debit(order.getUserId(), amount,
+                "User balance is insufficient to reverse this recharge and its bonus").balance();
         jdbcTemplate.update("INSERT INTO wallet_transactions(user_id,type,amount,balance_after,channel,remark,reference_type,reference_id,created_at) VALUES (?, 'REFUND_HOLD', ?, ?, 'anyipay', ?, ?, ?, ?)",
-                order.getUserId(), -amount, balance == null ? 0 : balance,
+                order.getUserId(), -amount, balance,
                 "Held for full recharge refund", refundReference(intent), order.getId(), now());
         order.setStatus("REFUND_PENDING"); order.setUpdatedAt(now()); rechargeOrderMapper.updateById(order);
     }

@@ -19,6 +19,7 @@ import java.util.Map;
 public class RedeemCodeService {
     private final JdbcTemplate jdbcTemplate;
     private final SecretHashService secretHashService;
+    private final WalletBalanceService walletBalanceService;
     private final SecureRandom random = new SecureRandom();
 
     public List<Map<String, Object>> list() {
@@ -79,14 +80,7 @@ public class RedeemCodeService {
                     "Redeem code is unavailable or expired");
         }
         long amount = ((Number) row.get("amount")).longValue();
-        int credited = jdbcTemplate.update(
-                "UPDATE users SET balance = balance + ? WHERE id = ? AND status = 'ACTIVE'",
-                amount, userId);
-        if (credited != 1) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "User account is unavailable");
-        }
-        Long balance = jdbcTemplate.queryForObject("SELECT balance FROM users WHERE id = ?", Long.class, userId);
-        long balanceAfter = balance == null ? 0 : balance;
+        long balanceAfter = walletBalanceService.credit(userId, amount).balance();
         String codePreview = row.get("code_prefix") == null ? preview(rawCode.trim()) : row.get("code_prefix").toString();
         jdbcTemplate.update("""
                 INSERT INTO wallet_transactions

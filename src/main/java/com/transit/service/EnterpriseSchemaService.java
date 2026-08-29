@@ -28,6 +28,7 @@ import java.util.Map;
 public class EnterpriseSchemaService {
     private final JdbcTemplate jdbcTemplate;
     private final TransactionTemplate transactions;
+    private final WalletBalanceReconciliationService walletBalanceReconciliationService;
 
     @Bean
     @Order(1)
@@ -40,6 +41,7 @@ public class EnterpriseSchemaService {
             backfillMultiUnitPricing();
             createIndexes();
             backfillOrganizations();
+            walletBalanceReconciliationService.reconcileOnce();
             backfillApiKeyModels();
         };
     }
@@ -383,6 +385,8 @@ public class EnterpriseSchemaService {
                 "ALTER TABLE logs ADD COLUMN cache_miss_tokens INT NOT NULL DEFAULT 0");
         ensureColumn("gateway_reservations", "wallet_account_id",
                 "ALTER TABLE gateway_reservations ADD COLUMN wallet_account_id BIGINT NULL");
+        ensureColumn("gateway_reservations", "funding_wallet_account_id",
+                "ALTER TABLE gateway_reservations ADD COLUMN funding_wallet_account_id BIGINT NULL");
         ensureColumn("logs", "billing_unit", "ALTER TABLE logs ADD COLUMN billing_unit VARCHAR(40) NOT NULL DEFAULT 'TOKEN'");
         ensureColumn("logs", "billable_quantity", "ALTER TABLE logs ADD COLUMN billable_quantity DECIMAL(24,6) NOT NULL DEFAULT 0");
         ensureColumn("logs", "unit_sale_price", "ALTER TABLE logs ADD COLUMN unit_sale_price DECIMAL(18,6) NOT NULL DEFAULT 0");
