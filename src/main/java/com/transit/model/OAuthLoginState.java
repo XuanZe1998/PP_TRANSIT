@@ -31,6 +31,9 @@ public class OAuthLoginState {
     @TableField("flow_type")
     private String flowType;
 
+    @TableField("invite_code")
+    private String inviteCode;
+
     @TableField("expires_at")
     private LocalDateTime expiresAt;
 

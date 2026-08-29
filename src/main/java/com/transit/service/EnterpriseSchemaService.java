@@ -338,7 +338,7 @@ public class EnterpriseSchemaService {
         ensureColumn("channels", "source_code",
                 "ALTER TABLE channels ADD COLUMN source_code VARCHAR(80) NOT NULL DEFAULT 'other'");
         ensureColumn("channels", "source_name",
-                "ALTER TABLE channels ADD COLUMN source_name VARCHAR(160) NOT NULL DEFAULT '其他第三方中转站'");
+                "ALTER TABLE channels ADD COLUMN source_name VARCHAR(160) NOT NULL DEFAULT '其他兼容服务'");
         ensureColumn("channels", "protocol_type",
                 "ALTER TABLE channels ADD COLUMN protocol_type VARCHAR(80) NOT NULL DEFAULT 'openai-chat'");
         ensureColumn("model_mappings", "vendor",

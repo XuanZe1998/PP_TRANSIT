@@ -195,7 +195,7 @@ public class CreativeTaskService {
 
     private CreativeVideoProvider unsupportedProvider(String providerKey) {
         throw new ResponseStatusException(HttpStatus.NOT_FOUND,
-                "未找到创作供应商 “" + providerKey + "”。新增中转站时实现 CreativeVideoProvider 即可接入。");
+                "未找到创作供应商 “" + providerKey + "”。新增兼容服务时实现 CreativeVideoProvider 即可接入。");
     }
 
     private CreativeTask userTask(User user, Long id) {

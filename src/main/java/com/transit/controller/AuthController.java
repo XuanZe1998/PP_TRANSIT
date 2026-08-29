@@ -29,7 +29,7 @@ public class AuthController {
         return authService.register(new AuthService.Registration(request.getAccountType(), request.getCompanyName(),
                 request.contactName(), request.getPhone(), request.getEmail(), request.getEmailCode(), request.getPhoneCode(),
                 request.getPassword(), request.getConfirmPassword(), request.getTermsVersion(), request.getPrivacyVersion(),
-                Boolean.TRUE.equals(request.getAcceptedAgreements())), clientIps.resolve(servletRequest));
+                Boolean.TRUE.equals(request.getAcceptedAgreements())), clientIps.resolve(servletRequest), request.getInviteCode());
     }
 
     @GetMapping("/verification/policy")
@@ -93,6 +93,7 @@ public class AuthController {
         private String termsVersion;
         private String privacyVersion;
         private Boolean acceptedAgreements;
+        private String inviteCode;
 
         public String contactName() { return contactName == null || contactName.isBlank() ? displayName : contactName; }
     }

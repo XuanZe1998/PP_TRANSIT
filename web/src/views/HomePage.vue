@@ -1,12 +1,9 @@
 <template>
   <section class="site-hero">
     <div class="hero-copy">
-      <p class="eyebrow">AI API 中转与模型聚合平台</p>
-      <h1>统一接入主流大模型，把调用、计费和风控放到一个控制台。</h1>
-      <p>
-        兼容 OpenAI SDK，集中管理 OpenAI、Claude、Gemini、DeepSeek、Grok、Qwen 等模型渠道，
-        支持 Key 配额、余额计费、失败切换、用量审计和团队权限。
-      </p>
+      <p class="eyebrow">Linknux · AI 能力平台</p>
+      <h1>连接主流模型，让团队专注创造。</h1>
+      <p>面向开发者与团队的一站式 AI 能力平台，统一连接主流模型，提供智能路由、用量治理、创作工具与企业协作。</p>
       <div class="hero-actions">
         <el-button type="primary" size="large" @click="openAuth('register')">立即创建账号</el-button>
         <el-button size="large" @click="router.push('/market')">查看模型广场</el-button>
@@ -18,7 +15,7 @@
       </div>
     </div>
 
-    <div class="hero-product" aria-label="API Transit product preview">
+    <div class="hero-product" aria-label="Linknux product preview">
       <div class="product-toolbar">
         <span></span><span></span><span></span>
         <strong>调度能力示意（非实时数据）</strong>

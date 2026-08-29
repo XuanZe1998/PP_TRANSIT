@@ -1,8 +1,8 @@
 <template>
   <el-dialog v-model="visible" class="auth-dialog" width="min(520px, 92vw)" :show-close="true" :close-on-click-modal="!loading" @closed="closeDialog">
     <div class="auth-dialog-head">
-      <span class="auth-dialog-mark">AT</span>
-      <div><p>SECURE ACCESS</p><h2>{{ mode === 'register' ? '创建 API Transit 账号' : '登录 API Transit' }}</h2></div>
+      <span class="auth-dialog-mark"><img :src="siteConfig.logoUrl" alt="" /></span>
+      <div><p>SECURE ACCESS</p><h2>{{ mode === 'register' ? `创建 ${siteConfig.name} 账号` : `登录 ${siteConfig.name}` }}</h2></div>
     </div>
     <el-radio-group v-if="!ipChallengeId" v-model="mode" class="auth-mode" @change="changeMode">
       <el-radio-button value="login">登录</el-radio-button><el-radio-button value="register">注册</el-radio-button>
@@ -20,6 +20,7 @@
         <el-form-item v-if="form.accountType==='ENTERPRISE'" label="企业名称"><el-input v-model="form.companyName" size="large" maxlength="160" autocomplete="organization" /></el-form-item>
         <el-form-item :label="form.accountType==='ENTERPRISE'?'联系人姓名':'显示名称'"><el-input v-model="form.contactName" size="large" maxlength="80" autocomplete="name" /></el-form-item>
         <el-form-item label="邮箱"><el-input v-model="form.email" size="large" autocomplete="email" placeholder="team@example.com" /></el-form-item>
+        <el-form-item v-if="form.inviteCode" label="代理邀请码"><el-input v-model="form.inviteCode" size="large" readonly /></el-form-item>
         <el-form-item label="邮箱验证码"><div class="verify-row"><el-input v-model="form.emailCode" size="large" maxlength="6" inputmode="numeric" /><el-button :disabled="emailCountdown>0" @click="sendCode('email')">{{ emailCountdown ? `${emailCountdown}s` : '发送验证码' }}</el-button></div></el-form-item>
         <el-form-item v-if="phoneRequired" label="手机号"><el-input v-model="form.phone" size="large" autocomplete="tel" placeholder="13800138000 / +8613800138000" /></el-form-item>
         <el-form-item v-if="requiresPhone && form.accountType==='PERSONAL'" label="短信验证码"><div class="verify-row"><el-input v-model="form.phoneCode" size="large" maxlength="6" inputmode="numeric" /><el-button :disabled="phoneCountdown>0" @click="sendCode('phone')">{{ phoneCountdown ? `${phoneCountdown}s` : '发送验证码' }}</el-button></div></el-form-item>
@@ -42,6 +43,7 @@ import { ElMessage } from 'element-plus'
 import http, { getHttpErrorMessage } from '@/utils/http'
 import { setAuth } from '@/utils/auth'
 import { clearOAuthState, saveOAuthState, type OAuthProvider } from '@/utils/oauthState'
+import { siteConfig } from '@/config/site'
 
 const route = useRoute(), router = useRouter()
 const visible = computed({
@@ -54,7 +56,7 @@ const verificationMode = ref<'EMAIL_ONLY'|'EMAIL_AND_PHONE'>('EMAIL_AND_PHONE')
 const requiresPhone = computed(() => verificationMode.value === 'EMAIL_AND_PHONE')
 const phoneRequired = computed(() => form.accountType === 'ENTERPRISE' || requiresPhone.value)
 const identifierStatus = ref<{ valid: boolean; available: boolean; type: string } | null>(null)
-const form = reactive({ identifier: '', accountType:'PERSONAL' as 'PERSONAL'|'ENTERPRISE',companyName:'',contactName:'',email:'', emailCode:'', phone:'', phoneCode:'', password: '', confirmPassword: '',acceptedAgreements:false })
+const form = reactive({ identifier: '', accountType:'PERSONAL' as 'PERSONAL'|'ENTERPRISE',companyName:'',contactName:'',email:'', emailCode:'', phone:'', phoneCode:'', password: '', confirmPassword: '',acceptedAgreements:false,inviteCode:String(route.query.aff || '').trim().slice(0,32) })
 const legal=ref<any>(null),ipChallengeId=ref(''),maskedEmail=ref(''),ipVerifyCode=ref('')
 const emailCountdown=ref(0),phoneCountdown=ref(0)
 let timer: number | undefined, requestId = 0
@@ -121,7 +123,7 @@ async function submit() {
   loading.value = true
   try {
     const endpoint = mode.value === 'register' ? '/api/auth/register' : '/api/auth/login'
-    const registration = {accountType:form.accountType,companyName:form.companyName.trim(),contactName:form.contactName.trim(),email:form.email.trim(),emailCode:form.emailCode,phone:form.phone.trim(),phoneCode:form.phoneCode,password:form.password,confirmPassword:form.confirmPassword,acceptedAgreements:form.acceptedAgreements,termsVersion:legal.value?.terms_version,privacyVersion:legal.value?.privacy_version}
+    const registration = {accountType:form.accountType,companyName:form.companyName.trim(),contactName:form.contactName.trim(),email:form.email.trim(),emailCode:form.emailCode,phone:form.phone.trim(),phoneCode:form.phoneCode,password:form.password,confirmPassword:form.confirmPassword,acceptedAgreements:form.acceptedAgreements,termsVersion:legal.value?.terms_version,privacyVersion:legal.value?.privacy_version,inviteCode:form.inviteCode}
     const response = await http.post(endpoint, mode.value === 'register' ? registration : { username: form.identifier.trim(), password: form.password })
     if(response.data?.verificationRequired){ipChallengeId.value=String(response.data.challengeId);maskedEmail.value=String(response.data.maskedEmail||'邮箱');ElMessage.warning('请验证新的登录 IP');return}
     const token = response.data?.access_token || response.data?.token
@@ -138,7 +140,9 @@ async function submit() {
 async function verifyLoginIp(){if(!/^\d{6}$/.test(ipVerifyCode.value))return ElMessage.warning('请输入 6 位验证码');loading.value=true;try{const response=await http.post('/api/auth/login/ip-verify',{challengeId:ipChallengeId.value,code:ipVerifyCode.value});const token=response.data?.access_token;if(!token)throw new Error('Missing access token');setAuth(token,{username:response.data?.username||form.identifier,role:response.data?.role||'USER',displayName:response.data?.displayName,avatarPath:response.data?.avatarPath,accountType:response.data?.accountType},response.data?.refresh_token);ElMessage.success('验证成功');ipChallengeId.value='';await router.push(response.data?.accountType==='ENTERPRISE'?'/console/organization':'/console')}catch(e){ElMessage.error(getHttpErrorMessage(e,'登录地址验证失败'))}finally{loading.value=false}}
 async function startOAuth(provider: OAuthProvider) {
   try {
-    const response = await http.get('/api/oauth/authorize', { params: { provider } })
+    const response = await http.get('/api/oauth/authorize', {
+      params: { provider, inviteCode: mode.value === 'register' ? form.inviteCode : undefined }
+    })
     const url = String(response.data?.url || ''), state = String(response.data?.state || '')
     const parsed = new URL(url)
     if (!state || parsed.protocol !== 'https:' || parsed.searchParams.get('state') !== state) throw new Error('OAuth 授权地址校验失败')
@@ -154,7 +158,7 @@ const isPhone = (value: string) => /^(1[3-9]\d{9}|\+[1-9]\d{7,14})$/.test(value.
 </script>
 
 <style scoped>
-.auth-dialog-head{display:flex;align-items:center;gap:14px;margin-bottom:18px}.auth-dialog-mark{display:grid;width:48px;height:48px;place-items:center;border-radius:14px;background:linear-gradient(135deg,#1769ff,#00b8d9);box-shadow:0 10px 24px rgba(23,105,255,.24);color:#fff;font-weight:900}.auth-dialog-head p{margin:0;color:#0b91b5;font-size:11px;font-weight:800;letter-spacing:.16em}.auth-dialog-head h2{margin:3px 0 0;color:#132846;font-size:24px}.auth-mode{width:100%;margin-bottom:18px}.auth-mode :deep(.el-radio-button){width:50%}.auth-mode :deep(.el-radio-button__inner){width:100%}.auth-submit{width:100%}.oauth-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}.auth-security-note{margin:16px 0 0;color:#71829b;font-size:12px;line-height:1.65}.ok{color:#149260}.bad{color:#d73d5b}
+.auth-dialog-head{display:flex;align-items:center;gap:14px;margin-bottom:18px}.auth-dialog-mark{display:grid;width:48px;height:48px;place-items:center;border-radius:14px;background:#eef6ff;box-shadow:0 10px 24px rgba(23,105,255,.18)}.auth-dialog-mark img{width:42px;height:42px;object-fit:contain}.auth-dialog-head p{margin:0;color:#0b91b5;font-size:11px;font-weight:800;letter-spacing:.16em}.auth-dialog-head h2{margin:3px 0 0;color:#132846;font-size:24px}.auth-mode{width:100%;margin-bottom:18px}.auth-mode :deep(.el-radio-button){width:50%}.auth-mode :deep(.el-radio-button__inner){width:100%}.auth-submit{width:100%}.oauth-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}.auth-security-note{margin:16px 0 0;color:#71829b;font-size:12px;line-height:1.65}.ok{color:#149260}.bad{color:#d73d5b}
 .verify-row{display:grid;width:100%;grid-template-columns:minmax(0,1fr) auto;gap:8px}
 .agreement-check{margin:0 0 16px;white-space:normal}.agreement-check a{color:#2563eb}.auth-submit.secondary{margin:10px 0 0;width:100%}
 </style>

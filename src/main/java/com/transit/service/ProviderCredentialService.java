@@ -8,6 +8,7 @@ import com.transit.model.ProviderCredential;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,6 +20,7 @@ import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.time.Duration;
+import java.util.Objects;
 
 @Service
 @RequiredArgsConstructor
@@ -30,6 +32,8 @@ public class ProviderCredentialService {
     private final ConcurrentHashMap<Long, AtomicInteger> inFlight = new ConcurrentHashMap<>();
     @Autowired(required = false)
     private StringRedisTemplate redis;
+    @Value("${features.linknux.provider-accounts.enabled:false}")
+    private boolean providerAccountsEnabled;
 
     public List<ProviderCredential> list(Long channelId) {
         return mapper.selectList(new LambdaQueryWrapper<ProviderCredential>()
@@ -58,6 +62,14 @@ public class ProviderCredentialService {
                 .secret(secrets.encrypt(request.getSecret()))
                 .secretPreview(mask(request.getSecret()))
                 .priority(request.getPriority()).weight(Math.max(1, request.getWeight()))
+                .platform(normalize(request.getPlatform(), "COMPATIBLE"))
+                .authType(normalize(request.getAuthType(), "API_KEY"))
+                .accountGroup(normalize(request.getAccountGroup(), "default"))
+                .upstreamProxyId(request.getUpstreamProxyId())
+                .costMode(normalize(request.getCostMode(), "MODEL_MAPPING"))
+                .periodCostAmount(Math.max(0, request.getPeriodCostAmount()))
+                .costReliable(request.isCostReliable())
+                .modelScope(request.getModelScope())
                 .rpmLimit(Math.max(0, request.getRpmLimit()))
                 .tpmLimit(Math.max(0, request.getTpmLimit()))
                 .concurrencyLimit(Math.max(0, request.getConcurrencyLimit()))
@@ -82,6 +94,14 @@ public class ProviderCredentialService {
         row.setRpmLimit(Math.max(0, request.getRpmLimit()));
         row.setTpmLimit(Math.max(0, request.getTpmLimit()));
         row.setConcurrencyLimit(Math.max(0, request.getConcurrencyLimit()));
+        row.setPlatform(normalize(request.getPlatform(), row.getPlatform()));
+        row.setAuthType(normalize(request.getAuthType(), row.getAuthType()));
+        row.setAccountGroup(normalize(request.getAccountGroup(), row.getAccountGroup()));
+        row.setUpstreamProxyId(request.getUpstreamProxyId());
+        row.setCostMode(normalize(request.getCostMode(), row.getCostMode()));
+        row.setPeriodCostAmount(Math.max(0, request.getPeriodCostAmount()));
+        row.setCostReliable(request.isCostReliable());
+        row.setModelScope(request.getModelScope());
         row.setEnabled(request.isEnabled());
         row.setUpdatedAt(LocalDateTime.now());
         mapper.updateById(row);
@@ -94,6 +114,72 @@ public class ProviderCredentialService {
 
     /** Selects one healthy credential while preserving the legacy channel key as a fallback. */
     public SelectedCredential select(Channel channel) {
+        return providerAccountsEnabled ? selectEnhanced(channel, null, null, false) : selectLegacy(channel);
+    }
+
+    /** Selects an account with optional model compatibility and session stickiness. */
+    public SelectedCredential select(Channel channel, String model, String sessionId) {
+        return select(channel, model, sessionId, false);
+    }
+
+    public SelectedCredential select(Channel channel, String model, String sessionId, boolean requireReliableCost) {
+        if (!providerAccountsEnabled && !requireReliableCost) return selectLegacy(channel);
+        return selectEnhanced(channel, model, sessionId, requireReliableCost);
+    }
+
+    private SelectedCredential selectEnhanced(Channel channel, String model, String sessionId, boolean requireReliableCost) {
+        if (sessionId != null && !sessionId.isBlank()) {
+            Long stickyId = stickyCredential(channel.getId(), sessionId);
+            if (stickyId != null) {
+                ProviderCredential sticky = mapper.selectById(stickyId);
+                if (eligible(sticky, channel, model) && (!requireReliableCost || sticky.isCostReliable())) {
+                    acquire(sticky.getId());
+                    return new SelectedCredential(sticky.getId(), secrets.decrypt(sticky.getSecret()));
+                }
+            }
+        }
+        List<ProviderCredential> candidates = mapper.selectList(new LambdaQueryWrapper<ProviderCredential>()
+                        .eq(ProviderCredential::getChannelId, channel.getId())
+                        .eq(ProviderCredential::isEnabled, true))
+                .stream()
+                .filter(item -> eligible(item, channel, model))
+                .filter(item -> !requireReliableCost || item.isCostReliable())
+                .sorted(Comparator.comparingInt(ProviderCredential::getPriority).reversed()
+                        .thenComparingLong(item -> active(item.getId()))
+                        .thenComparingLong(ProviderCredential::getAverageLatencyMs)
+                        .thenComparing(item -> item.getLastUsedAt() == null ? LocalDateTime.MIN : item.getLastUsedAt())
+                        .thenComparingLong(ProviderCredential::getId))
+                .toList();
+        if (candidates.isEmpty()) {
+            if (requireReliableCost) {
+                throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "No active account has a reliable cost snapshot for commission traffic");
+            }
+            String legacy = secrets.decrypt(channel.getApiKey());
+            if (legacy == null || legacy.isBlank()) {
+                throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Channel has no active credential");
+            }
+            return new SelectedCredential(null, legacy);
+        }
+        int topPriority = candidates.get(0).getPriority();
+        long minimumActive = candidates.stream().filter(item -> item.getPriority() == topPriority)
+                .mapToLong(item -> active(item.getId())).min().orElse(0);
+        List<ProviderCredential> tier = candidates.stream()
+                .filter(item -> item.getPriority() == topPriority && active(item.getId()) == minimumActive).toList();
+        int totalWeight = tier.stream().mapToInt(item -> Math.max(1, item.getWeight())).sum();
+        int cursor = Math.floorMod(roundRobin.computeIfAbsent(channel.getId(), ignored -> new AtomicInteger())
+                .getAndIncrement(), totalWeight);
+        ProviderCredential selected = tier.get(0);
+        for (ProviderCredential candidate : tier) {
+            cursor -= Math.max(1, candidate.getWeight());
+            if (cursor < 0) { selected = candidate; break; }
+        }
+        acquire(selected.getId());
+        if (sessionId != null && !sessionId.isBlank()) rememberSticky(channel.getId(), sessionId, selected.getId());
+        return new SelectedCredential(selected.getId(), secrets.decrypt(selected.getSecret()));
+    }
+
+    /** Exact pre-Linknux selection semantics used while the rollout flag is disabled. */
+    private SelectedCredential selectLegacy(Channel channel) {
         List<ProviderCredential> candidates = mapper.selectList(new LambdaQueryWrapper<ProviderCredential>()
                         .eq(ProviderCredential::getChannelId, channel.getId())
                         .eq(ProviderCredential::isEnabled, true))
@@ -143,6 +229,7 @@ public class ProviderCredentialService {
                     .set(ProviderCredential::getConsecutiveFailures, 0)
                     .setSql("total_successes = total_successes + 1")
                     .set(ProviderCredential::getAverageLatencyMs, Math.max(0, latencyMs))
+                    .set(ProviderCredential::getLastUsedAt, LocalDateTime.now())
                     .set(ProviderCredential::getLastError, null));
         } finally {
             release(credentialId);
@@ -158,6 +245,7 @@ public class ProviderCredentialService {
                     .set(ProviderCredential::getHealthStatus, "DEGRADED")
                     .setSql("consecutive_failures = consecutive_failures + 1")
                     .setSql("total_failures = total_failures + 1")
+                    .set(ProviderCredential::getLastErrorClass, UpstreamErrorClassifier.classify(error).name())
                     .set(ProviderCredential::getLastError, message.substring(0, Math.min(1000, message.length()))));
         } finally {
             release(credentialId);
@@ -188,6 +276,10 @@ public class ProviderCredentialService {
                 String key = redisKey(credentialId);
                 redis.opsForValue().increment(key);
                 redis.expire(key, Duration.ofMinutes(30));
+                String rpmKey = "gateway:credential:" + credentialId + ":rpm:" +
+                        java.time.LocalDateTime.now().withSecond(0).withNano(0);
+                redis.opsForValue().increment(rpmKey);
+                redis.expire(rpmKey, Duration.ofMinutes(2));
             } catch (RuntimeException ignored) { /* local counter remains authoritative for this instance */ }
         }
     }
@@ -205,6 +297,50 @@ public class ProviderCredentialService {
     }
 
     private String redisKey(Long credentialId) { return "gateway:credential:" + credentialId + ":inflight"; }
+
+    private boolean eligible(ProviderCredential item, Channel channel, String model) {
+        if (item == null || channel == null || !Objects.equals(item.getChannelId(), channel.getId()) || !item.isEnabled()) return false;
+        LocalDateTime now = LocalDateTime.now();
+        if (item.getCooldownUntil() != null && item.getCooldownUntil().isAfter(now)) return false;
+        if (item.getTemporaryUnschedulableUntil() != null && item.getTemporaryUnschedulableUntil().isAfter(now)) return false;
+        if ("DISABLED".equalsIgnoreCase(item.getHealthStatus())) return false;
+        if (item.getOauthExpiresAt() != null && item.getOauthExpiresAt().isBefore(now)
+                && !"API_KEY".equalsIgnoreCase(item.getAuthType())) return false;
+        if (item.getConcurrencyLimit() > 0 && active(item.getId()) >= item.getConcurrencyLimit()) return false;
+        if (model != null && item.getModelScope() != null && !item.getModelScope().isBlank()
+                && java.util.Arrays.stream(item.getModelScope().split(",")).map(String::trim)
+                .noneMatch(scope -> "*".equals(scope) || scope.equalsIgnoreCase(model))) return false;
+        return !rpmExhausted(item);
+    }
+
+    private boolean rpmExhausted(ProviderCredential item) {
+        if (item.getRpmLimit() <= 0 || redis == null) return false;
+        try {
+            String value = redis.opsForValue().get("gateway:credential:" + item.getId() + ":rpm:" +
+                    java.time.LocalDateTime.now().withSecond(0).withNano(0));
+            return value != null && Long.parseLong(value) >= item.getRpmLimit();
+        } catch (RuntimeException ignored) { return false; }
+    }
+
+    private Long stickyCredential(Long channelId, String sessionId) {
+        if (redis == null || sessionId.length() > 256) return null;
+        try {
+            String value = redis.opsForValue().get("gateway:sticky:" + channelId + ":" + Integer.toHexString(sessionId.hashCode()));
+            return value == null ? null : Long.valueOf(value);
+        } catch (RuntimeException ignored) { return null; }
+    }
+
+    private void rememberSticky(Long channelId, String sessionId, Long credentialId) {
+        if (redis == null || sessionId.length() > 256) return;
+        try {
+            redis.opsForValue().set("gateway:sticky:" + channelId + ":" + Integer.toHexString(sessionId.hashCode()),
+                    String.valueOf(credentialId), Duration.ofHours(2));
+        } catch (RuntimeException ignored) { /* sticky routing is best effort */ }
+    }
+
+    private String normalize(String value, String fallback) {
+        return value == null || value.isBlank() ? fallback : value.trim().toUpperCase(java.util.Locale.ROOT);
+    }
 
     private ProviderCredential redact(ProviderCredential row) {
         row.setSecret(null);

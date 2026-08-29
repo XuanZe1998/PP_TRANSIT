@@ -1,0 +1,13 @@
+{
+  "name": "Linknux",
+  "short_name": "Linknux",
+  "description": "面向开发者与团队的一站式 AI 能力平台，统一连接主流模型，提供智能路由、用量治理、创作工具与企业协作。",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f4f7fb",
+  "theme_color": "#1769ff",
+  "icons": [
+    { "src": "/brand/linknux-mark-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/brand/linknux-mark-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

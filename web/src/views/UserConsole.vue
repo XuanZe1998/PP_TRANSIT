@@ -3,7 +3,7 @@
     <div class="user-console user-console-embedded">
       <aside class="user-sidebar">
         <button class="site-brand console-brand" title="用户工作台" aria-label="用户工作台" @click="go('/console')">
-          <span class="site-brand-mark">A</span>
+          <img class="site-brand-mark brand-image" src="/brand/linknux-mark-192.png" alt="" />
           <span>
             <strong>用户工作台</strong>
             <small>{{ currentUser?.username || '已登录账号' }}</small>
@@ -631,7 +631,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Compass, DataLine, Document, HomeFilled, Key, Monitor, ShoppingCart, SwitchButton, Tickets, Wallet, User } from '@element-plus/icons-vue'
+import { Compass, DataLine, Document, HomeFilled, Key, Monitor, Promotion, ShoppingCart, SwitchButton, Tickets, Wallet, User } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { clearAuth, getUser } from '@/utils/auth'
 import http, { createIdempotencyKey, getHttpErrorMessage, getHttpErrorNotice } from '@/utils/http'
@@ -758,6 +758,7 @@ const navItems = [
   { key: 'playground', label: '在线调试', path: '/console/playground', icon: Monitor, title: '在线调试', eyebrow: '请求测试', subtitle: '无需写代码，直接验证模型返回。', action: '发送请求', actionPath: '/console/playground' },
   { key: 'logs', label: '用量日志', path: '/console/logs', icon: Tickets, title: '用量日志', eyebrow: '审计记录', subtitle: '按 Key、模型、日期追踪请求消耗。', action: '导出 CSV', actionPath: '/console/logs' },
   { key: 'wallet', label: '钱包充值', path: '/console/wallet', icon: Wallet, title: '钱包充值', eyebrow: '余额中心', subtitle: '充值余额、查看消耗和账单状态。', action: '去充值', actionPath: '/pricing' },
+  { key: 'agent', label: '代理中心', path: '/console/agent', icon: Promotion, title: '代理中心', eyebrow: '合作伙伴', subtitle: '查看邀请客户、返利、佣金和提现。', action: '进入代理中心', actionPath: '/console/agent' },
   { key: 'docs', label: '文档 SDK', path: '/console/docs', icon: Document, title: '开发文档', eyebrow: '接入指南', subtitle: '在工作台内查看多客户端配置和调用方式。', action: '查看文档', actionPath: '/console/docs' },
   { key: 'profile', label: '个人中心', path: '/console/profile', icon: User, title: '个人中心', eyebrow: '账户安全', subtitle: '管理头像、联系方式、密码、第三方账号和登录设备。', action: '保存信息', actionPath: '/console/profile' }
 ]

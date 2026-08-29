@@ -2,7 +2,7 @@
   <main class="admin-login">
     <section class="login-panel">
       <div class="brand-row">
-        <div class="brand-mark">A</div>
+        <div class="brand-mark"><img src="/brand/linknux-mark-192.png" alt="" /></div>
         <div>
           <h1>管理员登录</h1>
           <p>登录后才能访问后台渠道、模型映射和令牌管理。</p>
@@ -78,6 +78,8 @@ const submit = async () => {
 
 <style scoped>
 .admin-login {
+  min-height: 100vh;
+  min-height: 100svh;
   min-height: 100dvh;
   display: grid;
   place-items: center;
@@ -110,10 +112,10 @@ const submit = async () => {
   border-radius: 8px;
   display: grid;
   place-items: center;
-  background: #2f8af5;
-  color: #fff;
-  font-weight: 700;
+  background: #eef6ff;
 }
+
+.brand-mark img { width: 38px; height: 38px; object-fit: contain; }
 
 h1 {
   margin: 0;

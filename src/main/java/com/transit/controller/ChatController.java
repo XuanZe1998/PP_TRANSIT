@@ -35,7 +35,7 @@ public class ChatController {
     public Map<String, Object> apiInfo() {
         return Map.of(
                 "object", "api.info",
-                "name", "API Transit",
+                "name", "Linknux",
                 "version", "v1",
                 "status", "ok",
                 "endpoints", java.util.List.of("/v1/models", "/v1/chat/completions"));
@@ -44,8 +44,13 @@ public class ChatController {
     @PostMapping({"/v1/chat/completions", "/chat/completions"})
     public Mono<ResponseEntity<?>> chatCompletions(@RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorization,
                                                     @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+                                                    @RequestHeader(value = "session_id", required = false) String underscoreSessionId,
+                                                    @RequestHeader(value = "X-Session-Id", required = false) String sessionId,
                                                     @RequestBody ChatRequest request,
                                                     HttpServletRequest httpRequest) {
+        if (request.getSessionId() == null || request.getSessionId().isBlank()) {
+            request.setSessionId(sessionId == null || sessionId.isBlank() ? underscoreSessionId : sessionId);
+        }
         String clientIp = clientIp(httpRequest);
         if (request.isStream()) {
             if (universalModelService != null

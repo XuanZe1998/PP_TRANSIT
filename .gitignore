@@ -38,6 +38,8 @@ web/dist/
 web/.vite/
 web/.vue-global-types/
 web/vite-dev.log
+web/test-results/
+web/playwright-report/
 .wrangler/
 *~
 

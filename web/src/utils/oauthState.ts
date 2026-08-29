@@ -33,7 +33,7 @@ export interface ConsumedOAuthState {
   redirect?: string
 }
 
-const STORAGE_KEY = 'api-transit.oauth-state.v1'
+const STORAGE_KEY = 'linknux.oauth-state.v1'
 const STORAGE_VERSION = 1
 export const OAUTH_STATE_TTL_MS = 10 * 60 * 1000
 

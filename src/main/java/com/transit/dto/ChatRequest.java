@@ -26,6 +26,10 @@ public class ChatRequest {
     private Map<String, Object> chatTemplateKwargs;
     private Integer seed;
     private String user;
+    @JsonProperty("previous_response_id")
+    private String previousResponseId;
+    @JsonProperty("session_id")
+    private String sessionId;
 
     @Data
     public static class Message {

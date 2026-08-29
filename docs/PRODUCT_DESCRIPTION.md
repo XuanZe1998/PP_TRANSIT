@@ -1,8 +1,8 @@
-# API Transit Station 产品说明文档
+# Linknux 产品说明文档
 
 ## 1. 产品概述
 
-API Transit Station 是一个面向企业和团队的 AI 模型 API 中转与运营平台。平台将 OpenAI、DeepSeek、Anthropic、Google Gemini、xAI Grok、OpenRouter、硅基流动、阿里云兼容接口、腾讯云兼容接口等供应商接入到统一网关中，对业务方提供一套 OpenAI Chat Completions 风格的调用入口。
+Linknux 是面向开发者与团队的一站式 AI 能力平台，统一连接 OpenAI、DeepSeek、Anthropic、Google Gemini、xAI Grok、OpenRouter、硅基流动、阿里云兼容接口和腾讯云兼容接口等服务，为业务提供 OpenAI Chat Completions 风格的统一调用入口。
 
 平台的核心目标是让上层应用不直接感知底层模型供应商差异，通过统一模型名、渠道配置、调用令牌、额度控制和日志审计，把多模型接入从“分散写死在业务代码里”整理成“可配置、可运营、可审计”的基础设施能力。
 

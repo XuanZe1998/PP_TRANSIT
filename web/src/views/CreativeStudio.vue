@@ -55,7 +55,7 @@
     </main>
 
     <el-dialog v-model="connectionDialogVisible" title="我的模型连接" width="min(760px, 94vw)" :teleported="false" class="connection-dialog">
-      <div class="connection-help"><span>🔐</span><p><b>使用你自己的 Seedance / 方舟额度</b><br>API Key 仅发送到本站后端并加密保存，浏览器不会再次读取明文。兼容火山方舟视频生成任务协议的中转站也可接入。<a href="https://www.volcengine.com/docs/82379/1520757?lang=zh" target="_blank" rel="noopener">查看官方接口文档 ↗</a></p></div>
+      <div class="connection-help"><span>🔐</span><p><b>使用你自己的 Seedance / 方舟额度</b><br>API Key 仅发送到本站后端并加密保存，浏览器不会再次读取明文。兼容火山方舟视频生成任务协议的授权服务也可接入。<a href="https://www.volcengine.com/docs/82379/1520757?lang=zh" target="_blank" rel="noopener">查看官方接口文档 ↗</a></p></div>
       <div v-if="connections.length" class="connection-list">
         <article v-for="connection in connections" :key="connection.id" :class="{ disabled: !connection.enabled }">
           <div><b>{{ connection.displayName }}</b><span>{{ connection.provider === 'seedance' ? '视频' : connection.provider === 'openai-chat' ? '文本' : '图片' }}</span><p>{{ connection.baseUrl }}</p><small>{{ connection.models.length }} 个模型 · Key {{ connection.apiKeyPreview || '已保存' }}</small></div>
@@ -69,7 +69,7 @@
           <el-form-item label="连接名称"><el-input v-model="connectionForm.displayName" maxlength="160" placeholder="例如：我的火山方舟" /></el-form-item>
           <el-form-item label="协议类型"><el-select v-model="connectionForm.provider" :disabled="Boolean(connectionForm.id)" @change="applyProviderPreset"><el-option label="视频 · Seedance / 方舟兼容" value="seedance" /><el-option label="文本 · OpenAI Chat 兼容" value="openai-chat" /><el-option label="图片 · OpenAI Images 兼容" value="openai-image" /></el-select></el-form-item>
         </div>
-        <el-form-item label="Base URL"><el-input v-model="connectionForm.baseUrl" placeholder="https://ark.cn-beijing.volces.com" /><small class="field-tip">可填写官方域名、中转站根地址、以 /api/v3 结尾的地址，或完整任务接口地址。</small></el-form-item>
+        <el-form-item label="Base URL"><el-input v-model="connectionForm.baseUrl" placeholder="https://ark.cn-beijing.volces.com" /><small class="field-tip">可填写官方域名、兼容服务根地址、以 /api/v3 结尾的地址，或完整任务接口地址。</small></el-form-item>
         <el-form-item label="API Key"><el-input v-model="connectionForm.apiKey" type="password" show-password autocomplete="new-password" :placeholder="connectionForm.id ? '留空表示保留原 Key' : '粘贴你的 API Key'" /><small v-if="connectionForm.id" class="field-tip">当前：{{ editingKeyPreview || '已配置' }}；只有填写新值时才会替换。</small></el-form-item>
         <el-form-item label="模型 ID"><el-input v-model="connectionForm.modelsText" type="textarea" :rows="4" placeholder="每行一个模型 ID，例如：&#10;doubao-seedance-1-5-pro-251215" /><small class="field-tip">可配置多个方舟 Endpoint/模型 ID，创作时会出现在模型下拉框中。</small></el-form-item>
         <div class="connection-form-grid">

@@ -113,7 +113,7 @@
             </div>
             <footer>
               <dl class="market-meta"><div><dt>模型类型 / 能力</dt><dd>{{ model.categoryLabel }} · {{ model.capabilityLabel }}</dd></div></dl>
-              <ModelSalePricing :model="model.raw" compact class="market-sale-pricing" />
+              <ModelSalePricing :model="model.raw" :rebate-bps="customerRebateBps" compact class="market-sale-pricing" />
               <div class="market-card-actions">
                 <el-button @click="copyModel(model.publicName)">复制模型名</el-button>
                 <el-button type="primary" @click="callModel(model)">立即调用 →</el-button>
@@ -156,6 +156,7 @@ import { useRouter } from 'vue-router'
 import http from '@/utils/http'
 import ModelSalePricing from '@/components/ModelSalePricing.vue'
 import ModelCallDialog from '@/components/ModelCallDialog.vue'
+import { getToken } from '@/utils/auth'
 import { clampPage, classifyModel, modelCategoryOptions, pageItems, type ModelCategory } from '@/utils/modelMarket'
 
 type PublicUpstream = { code: string; name: string }
@@ -211,6 +212,7 @@ const pageSize = ref(10)
 const resultsElement = ref<HTMLElement | null>(null)
 const callVisible = ref(false)
 const callTarget = ref<MarketModel | null>(null)
+const customerRebateBps = ref(0)
 const filters = reactive({ query: '', source: '', publisher: '', category: '' as ModelCategory | '', tag: '', sort: 'name' })
 
 const publishers: Publisher[] = [
@@ -344,6 +346,14 @@ async function fetchModels() {
   }
 }
 
+async function fetchRebate() {
+  if (!getToken()) return
+  try {
+    const { data } = await http.get('/api/user/agent')
+    customerRebateBps.value = Number(data?.customerBinding?.customer_rebate_bps || 0)
+  } catch { customerRebateBps.value = 0 }
+}
+
 function choose(field: 'source' | 'publisher' | 'category' | 'tag', value: string) {
   const record = filters as unknown as Record<string, string>
   record[field] = record[field] === value ? '' : value
@@ -364,5 +374,5 @@ function callModel(model: MarketModel) { callTarget.value = model; callVisible.v
 
 watch(() => [filters.query, filters.source, filters.publisher, filters.category, filters.tag, filters.sort], () => { page.value = 1 })
 watch(() => filteredModels.value.length, total => { page.value = clampPage(page.value, total, pageSize.value) })
-onMounted(fetchModels)
+onMounted(() => { void Promise.all([fetchModels(), fetchRebate()]) })
 </script>

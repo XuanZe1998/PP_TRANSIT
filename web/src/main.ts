@@ -3,11 +3,13 @@ import './style.css'
 import App from './App.vue'
 import router from './router'
 import { initInactivityGuard } from './utils/auth'
+import { loadSiteConfig } from './config/site'
 
 const app = createApp(App)
 
 app.use(router)
 app.mount('#app')
+void loadSiteConfig()
 
 const configuredIdleTimeout = Number(import.meta.env.VITE_AUTH_IDLE_TIMEOUT_MS)
 const idleTimeoutMs = Number.isFinite(configuredIdleTimeout) && configuredIdleTimeout >= 5 * 60 * 1000

@@ -34,6 +34,7 @@ import java.time.Duration;
 @RequestMapping("/public")
 @RequiredArgsConstructor
 public class PublicController {
+    private static final String SITE_DESCRIPTION = "面向开发者与团队的一站式 AI 能力平台，统一连接主流模型，提供智能路由、用量治理、创作工具与企业协作。";
     private final ModelMappingMapper modelMappingMapper;
     private final OtherServiceCatalogService otherServiceCatalogService;
     private final OtherServiceImageStorageService otherServiceImageStorageService;
@@ -45,6 +46,21 @@ public class PublicController {
 
     @Value("${billing.amount-scale:10000}")
     private long amountScale;
+
+    @Value("${site.name:Linknux}")
+    private String siteName;
+
+    @Value("${site.description:" + SITE_DESCRIPTION + "}")
+    private String siteDescription;
+
+    @GetMapping("/site-config")
+    public Mono<java.util.Map<String, String>> siteConfig() {
+        return Mono.just(java.util.Map.of(
+                "name", siteName,
+                "description", siteDescription,
+                "logoUrl", "/brand/linknux-mark-192.png",
+                "faviconUrl", "/favicon.png"));
+    }
 
     @GetMapping("/models")
     public Mono<PageResponse<PublicModel>> models(@RequestParam(value = "page", required = false, defaultValue = "1") int page,
