@@ -22,6 +22,7 @@ public class AdminUserService {
     private final JdbcTemplate jdbcTemplate;
     private final UserMapper userMapper;
     private final PersonalDataCryptoService personalDataCrypto;
+    private final WalletBalanceService walletBalanceService;
 
     @Value("${billing.max-admin-adjustment:1000000000000}")
     private long maxAdminAdjustment;
@@ -30,6 +31,12 @@ public class AdminUserService {
         List<Map<String,Object>> rows = jdbcTemplate.queryForList("""
                 SELECT u.id, u.username, u.email, u.phone, u.role, COALESCE(u.status, 'ACTIVE') AS status,
                        u.balance, u.created_at, u.group_id, COALESCE(u.account_type,'PERSONAL') account_type,
+                       u.default_organization_id, o.name AS organization_name,
+                       o.organization_type, om.member_role AS organization_role,
+                       wa.account_type AS wallet_account_type, wa.balance AS wallet_balance,
+                       wa.held_balance AS wallet_held_balance,
+                       (SELECT COUNT(*) FROM organization_members omc
+                         WHERE omc.user_id=u.id AND omc.status='ACTIVE') AS organization_count,
                        COALESCE(g.display_name, 'Default users') AS group_name,
                        COALESCE(g.price_ratio, 1) AS price_ratio,
                        (SELECT COUNT(*) FROM tokens t WHERE t.user_id = u.id) AS token_count,
@@ -40,6 +47,9 @@ public class AdminUserService {
                        (SELECT COUNT(*) FROM login_ip_history h WHERE h.user_id=u.id) login_ip_count
                 FROM users u
                 LEFT JOIN user_groups g ON g.id = u.group_id
+                LEFT JOIN organizations o ON o.id=u.default_organization_id
+                LEFT JOIN organization_members om ON om.organization_id=o.id AND om.user_id=u.id
+                LEFT JOIN wallet_accounts wa ON wa.organization_id=o.id AND wa.user_id=u.id AND wa.status='ACTIVE'
                 ORDER BY u.created_at DESC
                 LIMIT 500
                 """);
@@ -121,22 +131,8 @@ public class AdminUserService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "调账原因必须为 3–500 个字符");
         }
-        int updated = jdbcTemplate.update("""
-                UPDATE users SET balance = balance + ?
-                WHERE id = ? AND balance + ? >= 0
-                """, amount, userId, amount);
-        if (updated != 1) {
-            Long exists = jdbcTemplate.queryForObject(
-                    "SELECT COUNT(*) FROM users WHERE id = ?", Long.class, userId);
-            if (exists == null || exists == 0) {
-                throw new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found");
-            }
-            throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    "Adjustment would make the account balance negative");
-        }
-        Long balanceValue = jdbcTemplate.queryForObject(
-                "SELECT balance FROM users WHERE id = ?", Long.class, userId);
-        long balanceAfter = balanceValue == null ? 0 : balanceValue;
+        long balanceAfter = walletBalanceService.adjust(userId, amount,
+                "Adjustment would make the account balance negative").balance();
         jdbcTemplate.update(
                 "INSERT INTO wallet_transactions(user_id, type, amount, balance_after, channel, remark, created_at) VALUES (?, 'ADJUSTMENT', ?, ?, 'admin', ?, ?)",
                 userId, amount, balanceAfter, safeReason, LocalDateTime.now()

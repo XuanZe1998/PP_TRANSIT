@@ -187,25 +187,37 @@ public class OrganizationService {
             requireRole(memberId, organizationId, "ORG_ADMIN", "BILLING", "MEMBER");
             Map<String, Object> ownerWallet = lockWallet(organizationId, owner.getId());
             Map<String, Object> memberWallet = lockWallet(organizationId, memberId);
-            Map<String, Object> debit = reclaim ? memberWallet : ownerWallet;
-            Map<String, Object> credit = reclaim ? ownerWallet : memberWallet;
-            long debitBalance = ((Number) debit.get("balance")).longValue();
-            if (debitBalance < amount) throw new ResponseStatusException(HttpStatus.PAYMENT_REQUIRED, "Insufficient wallet balance");
-            long debitAfter = debitBalance - amount;
-            long creditAfter = ((Number) credit.get("balance")).longValue() + amount;
+            long ownerBalance = ((Number) ownerWallet.get("balance")).longValue();
+            long memberBalance = ((Number) memberWallet.get("balance")).longValue();
+            long memberAfter;
+            if (reclaim) {
+                if (memberBalance < amount) {
+                    throw new ResponseStatusException(HttpStatus.PAYMENT_REQUIRED,
+                            "Employee allocation is insufficient for this reclaim");
+                }
+                memberAfter = memberBalance - amount;
+            } else {
+                Long allocated = jdbcTemplate.queryForObject("""
+                        SELECT COALESCE(SUM(wa.balance),0) FROM wallet_accounts wa
+                        JOIN organization_members om ON om.organization_id=wa.organization_id
+                          AND om.user_id=wa.user_id AND om.status='ACTIVE' AND om.member_role<>'OWNER'
+                        WHERE wa.organization_id=? AND wa.status='ACTIVE'
+                        """, Long.class, organizationId);
+                long allocatedAfter = Math.addExact(allocated == null ? 0 : allocated, amount);
+                if (allocatedAfter > ownerBalance) {
+                    throw new ResponseStatusException(HttpStatus.PAYMENT_REQUIRED,
+                            "Total employee allocations cannot exceed the enterprise treasury balance");
+                }
+                memberAfter = Math.addExact(memberBalance, amount);
+            }
             jdbcTemplate.update("UPDATE wallet_accounts SET balance=?,version=version+1,updated_at=? WHERE id=?",
-                    debitAfter, LocalDateTime.now(), debit.get("id"));
-            jdbcTemplate.update("UPDATE wallet_accounts SET balance=?,version=version+1,updated_at=? WHERE id=?",
-                    creditAfter, LocalDateTime.now(), credit.get("id"));
-            jdbcTemplate.update("UPDATE users SET balance=? WHERE id=?", debitAfter, debit.get("user_id"));
-            jdbcTemplate.update("UPDATE users SET balance=? WHERE id=?", creditAfter, credit.get("user_id"));
+                    memberAfter, LocalDateTime.now(), memberWallet.get("id"));
             String tx = "wtx_" + UUID.randomUUID().toString().replace("-", "");
-            ledger(tx, organizationId, debit, "DEBIT", amount, debitAfter, reclaim ? "RECLAIM" : "ALLOCATION");
-            ledger(tx, organizationId, credit, "CREDIT", amount, creditAfter, reclaim ? "RECLAIM" : "ALLOCATION");
+            ledger(tx, organizationId, memberWallet, reclaim ? "DEBIT" : "CREDIT", amount, memberAfter,
+                    reclaim ? "RECLAIM" : "ALLOCATION");
             Map<String, Object> result = Map.of("transactionId", tx, "organizationId", organizationId,
                     "userId", memberId, "amount", amount, "reclaimed", reclaim,
-                    "ownerBalance", reclaim ? creditAfter : debitAfter,
-                    "memberBalance", reclaim ? debitAfter : creditAfter);
+                    "ownerBalance", ownerBalance, "memberBalance", memberAfter);
             idempotency.complete(claim, 200, result, "WALLET_TRANSFER", tx);
             return result;
         } catch (RuntimeException error) {

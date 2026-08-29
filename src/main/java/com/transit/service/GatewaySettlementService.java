@@ -74,42 +74,27 @@ public class GatewaySettlementService {
                     "API Key does not have enough remaining token quota for this request");
         }
 
-        Long walletAccountId = activeWalletAccount(token, user);
-        if (reservedAmount > 0) {
-            int balanceUpdated = walletAccountId == null
-                    ? jdbcTemplate.update("""
-                            UPDATE users SET balance = balance - ?
-                            WHERE id = ? AND status = 'ACTIVE' AND balance >= ?
-                            """, reservedAmount, user.getId(), reservedAmount)
-                    : jdbcTemplate.update("""
-                            UPDATE wallet_accounts
-                            SET balance=balance-?, held_balance=held_balance+?, version=version+1, updated_at=?
-                            WHERE id=? AND status='ACTIVE' AND balance>=?
-                            """, reservedAmount, reservedAmount, LocalDateTime.now(), walletAccountId, reservedAmount);
-            if (balanceUpdated != 1) {
-                throw new ResponseStatusException(HttpStatus.PAYMENT_REQUIRED,
-                        "Insufficient balance for the maximum estimated request cost");
-            }
-        }
-        if (reservedAmount > 0 && walletAccountId != null) {
-            jdbcTemplate.update("UPDATE users SET balance=balance-? WHERE id=?", reservedAmount, user.getId());
-        }
+        BillingWallets wallets = billingWallets(token, user);
+        reserveFunds(wallets, user.getId(), reservedAmount);
 
         LocalDateTime now = LocalDateTime.now();
         try {
             jdbcTemplate.update("""
                     INSERT INTO gateway_reservations
-                    (reservation_id, token_id, user_id, wallet_account_id, model, reserved_tokens, reserved_amount,
+                    (reservation_id, token_id, user_id, wallet_account_id, funding_wallet_account_id,
+                     model, reserved_tokens, reserved_amount,
                      source_amount,source_currency,source_scale,settlement_currency,exchange_rate,
                      status, expires_at, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'USD', ?, 'CNY', ?, 'RESERVED', ?, ?)
-                    """, reservationId, token.getId(), user.getId(), walletAccountId, model, reservedTokens,
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'USD', ?, 'CNY', ?, 'RESERVED', ?, ?)
+                    """, reservationId, token.getId(), user.getId(), wallets.accountWalletId(),
+                    wallets.fundingWalletId(), model, reservedTokens,
                     reservedAmount, Math.max(0, sourceAmount), Math.max(1, sourceScale), exchangeRate,
                     now.plusSeconds(Math.max(60, reservationExpirySeconds)), now);
         } catch (org.springframework.dao.DuplicateKeyException duplicate) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Duplicate request reservation");
         }
-        return new Reservation(reservationId, token.getId(), user.getId(), walletAccountId, reservedTokens, reservedAmount);
+        return new Reservation(reservationId, token.getId(), user.getId(), wallets.accountWalletId(),
+                wallets.fundingWalletId(), reservedTokens, reservedAmount);
     }
 
     /** Reconciles the conservative reservation with provider-reported or
@@ -138,13 +123,13 @@ public class GatewaySettlementService {
         }
 
         if (safeAmount > 0) {
-            Long balanceAfter = jdbcTemplate.queryForObject(
-                    "SELECT balance FROM users WHERE id = ?", Long.class, reservation.userId());
+            long balanceAfter = reservation.walletAccountId() == null
+                    ? userBalance(reservation.userId()) : walletBalance(reservation.walletAccountId());
             jdbcTemplate.update("""
                     INSERT INTO wallet_transactions
                     (user_id, type, amount, balance_after, channel, remark, created_at)
                     VALUES (?, 'CONSUME', ?, ?, 'api', ?, ?)
-                    """, reservation.userId(), -safeAmount, balanceAfter == null ? 0 : balanceAfter,
+                    """, reservation.userId(), -safeAmount, balanceAfter,
                     remark, LocalDateTime.now());
         }
     }
@@ -173,6 +158,8 @@ public class GatewaySettlementService {
         long reservedAmount = ((Number) row.get("reserved_amount")).longValue();
         Long walletAccountId = row.get("wallet_account_id") == null ? null
                 : ((Number) row.get("wallet_account_id")).longValue();
+        Long fundingWalletAccountId = row.get("funding_wallet_account_id") == null ? null
+                : ((Number) row.get("funding_wallet_account_id")).longValue();
         jdbcTemplate.update("""
                 UPDATE tokens
                 SET used_quota = CASE WHEN used_quota >= ? THEN used_quota - ? ELSE 0 END
@@ -182,12 +169,13 @@ public class GatewaySettlementService {
             if (walletAccountId == null) {
                 jdbcTemplate.update("UPDATE users SET balance = balance + ? WHERE id = ?", reservedAmount, userId);
             } else {
-                jdbcTemplate.update("""
-                        UPDATE wallet_accounts
-                        SET balance=balance+?, held_balance=CASE WHEN held_balance>=? THEN held_balance-? ELSE 0 END,
-                            version=version+1, updated_at=? WHERE id=?
-                        """, reservedAmount, reservedAmount, reservedAmount, LocalDateTime.now(), walletAccountId);
-                jdbcTemplate.update("UPDATE users SET balance=balance+? WHERE id=?", reservedAmount, userId);
+                releaseWalletReservation(walletAccountId, reservedAmount);
+                if (fundingWalletAccountId != null && !fundingWalletAccountId.equals(walletAccountId)) {
+                    releaseWalletReservation(fundingWalletAccountId, reservedAmount);
+                    syncWalletOwnerBalance(fundingWalletAccountId);
+                } else {
+                    syncWalletOwnerBalance(walletAccountId);
+                }
             }
         }
         jdbcTemplate.update("""
@@ -238,26 +226,15 @@ public class GatewaySettlementService {
     private void reconcileBalance(Reservation reservation, long actualAmount) {
         long delta = actualAmount - reservation.reservedAmount();
         if (reservation.walletAccountId() != null) {
-            if (delta > 0) {
-                int updated = jdbcTemplate.update("""
-                        UPDATE wallet_accounts
-                        SET balance=balance-?, held_balance=CASE WHEN held_balance>=? THEN held_balance-? ELSE 0 END,
-                            version=version+1, updated_at=?
-                        WHERE id=? AND status='ACTIVE' AND balance>=?
-                        """, delta, reservation.reservedAmount(), reservation.reservedAmount(), LocalDateTime.now(),
-                        reservation.walletAccountId(), delta);
-                if (updated != 1) throw new ResponseStatusException(HttpStatus.PAYMENT_REQUIRED,
-                        "Actual usage exceeded the reserved account balance");
-                jdbcTemplate.update("UPDATE users SET balance=balance-? WHERE id=?", delta, reservation.userId());
+            reconcileWallet(reservation.walletAccountId(), reservation.reservedAmount(), delta,
+                    "Actual usage exceeded the reserved employee/account balance");
+            if (reservation.fundingWalletAccountId() != null
+                    && !reservation.fundingWalletAccountId().equals(reservation.walletAccountId())) {
+                reconcileWallet(reservation.fundingWalletAccountId(), reservation.reservedAmount(), delta,
+                        "Actual usage exceeded the enterprise treasury balance");
+                syncWalletOwnerBalance(reservation.fundingWalletAccountId());
             } else {
-                long refund = -delta;
-                jdbcTemplate.update("""
-                        UPDATE wallet_accounts
-                        SET balance=balance+?, held_balance=CASE WHEN held_balance>=? THEN held_balance-? ELSE 0 END,
-                            version=version+1, updated_at=? WHERE id=?
-                        """, refund, reservation.reservedAmount(), reservation.reservedAmount(), LocalDateTime.now(),
-                        reservation.walletAccountId());
-                if (refund > 0) jdbcTemplate.update("UPDATE users SET balance=balance+? WHERE id=?", refund, reservation.userId());
+                syncWalletOwnerBalance(reservation.walletAccountId());
             }
             return;
         }
@@ -278,7 +255,8 @@ public class GatewaySettlementService {
 
     private Map<String, Object> lock(String reservationId) {
         return jdbcTemplate.queryForList("""
-                SELECT reservation_id, token_id, user_id, wallet_account_id, reserved_tokens, reserved_amount, status
+                SELECT reservation_id, token_id, user_id, wallet_account_id, funding_wallet_account_id,
+                       reserved_tokens, reserved_amount, status
                 FROM gateway_reservations WHERE reservation_id = ? FOR UPDATE
                 """, reservationId).stream().findFirst()
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
@@ -290,31 +268,141 @@ public class GatewaySettlementService {
         return value.substring(0, Math.min(max, value.length()));
     }
 
-    private Long activeWalletAccount(Token token, User user) {
+    private BillingWallets billingWallets(Token token, User user) {
         Long organizationId = token.getOrganizationId() != null
                 ? token.getOrganizationId() : user.getDefaultOrganizationId();
-        if (organizationId == null) return null;
-        return jdbcTemplate.queryForList("""
-                SELECT id FROM wallet_accounts
-                WHERE organization_id=? AND user_id=? AND status='ACTIVE'
-                """, Long.class, organizationId, user.getId()).stream().findFirst().orElse(null);
+        if (organizationId == null) return new BillingWallets(null, null);
+        List<Map<String, Object>> accounts = jdbcTemplate.queryForList("""
+                SELECT wa.id,o.organization_type,om.member_role
+                FROM wallet_accounts wa
+                JOIN organizations o ON o.id=wa.organization_id AND o.status='ACTIVE'
+                JOIN organization_members om ON om.organization_id=wa.organization_id
+                  AND om.user_id=wa.user_id AND om.status='ACTIVE'
+                WHERE wa.organization_id=? AND wa.user_id=? AND wa.status='ACTIVE'
+                """, organizationId, user.getId());
+        if (accounts.isEmpty()) return new BillingWallets(null, null);
+        Map<String, Object> account = accounts.get(0);
+        long accountWalletId = ((Number) account.get("id")).longValue();
+        if (!"COMPANY".equalsIgnoreCase(String.valueOf(account.get("organization_type")))
+                || "OWNER".equalsIgnoreCase(String.valueOf(account.get("member_role")))) {
+            return new BillingWallets(accountWalletId, null);
+        }
+        Long fundingWalletId = jdbcTemplate.queryForList("""
+                SELECT wa.id FROM wallet_accounts wa
+                JOIN organization_members om ON om.organization_id=wa.organization_id
+                  AND om.user_id=wa.user_id AND om.status='ACTIVE' AND om.member_role='OWNER'
+                WHERE wa.organization_id=? AND wa.status='ACTIVE' AND wa.account_type='TREASURY'
+                ORDER BY wa.id LIMIT 1
+                """, Long.class, organizationId).stream().findFirst().orElseThrow(() ->
+                new ResponseStatusException(HttpStatus.CONFLICT, "Enterprise treasury wallet is unavailable"));
+        return new BillingWallets(accountWalletId, fundingWalletId);
     }
 
     public Reservation restore(String reservationId) {
         Map<String, Object> row = jdbcTemplate.queryForMap("""
-                SELECT reservation_id, token_id, user_id, wallet_account_id, reserved_tokens, reserved_amount
+                SELECT reservation_id, token_id, user_id, wallet_account_id, funding_wallet_account_id,
+                       reserved_tokens, reserved_amount
                 FROM gateway_reservations WHERE reservation_id=?
                 """, reservationId);
         return new Reservation(String.valueOf(row.get("reservation_id")),
                 ((Number) row.get("token_id")).longValue(), ((Number) row.get("user_id")).longValue(),
                 row.get("wallet_account_id") == null ? null : ((Number) row.get("wallet_account_id")).longValue(),
+                row.get("funding_wallet_account_id") == null ? null
+                        : ((Number) row.get("funding_wallet_account_id")).longValue(),
                 ((Number) row.get("reserved_tokens")).intValue(), ((Number) row.get("reserved_amount")).longValue());
     }
 
     public record Reservation(String id, Long tokenId, Long userId, Long walletAccountId,
+                              Long fundingWalletAccountId,
                               int reservedTokens, long reservedAmount) {
         public Reservation(String id, Long tokenId, Long userId, int reservedTokens, long reservedAmount) {
-            this(id, tokenId, userId, null, reservedTokens, reservedAmount);
+            this(id, tokenId, userId, null, null, reservedTokens, reservedAmount);
         }
+
+        public Reservation(String id, Long tokenId, Long userId, Long walletAccountId,
+                           int reservedTokens, long reservedAmount) {
+            this(id, tokenId, userId, walletAccountId, null, reservedTokens, reservedAmount);
+        }
+    }
+
+    private void reserveFunds(BillingWallets wallets, Long userId, long amount) {
+        if (amount <= 0) return;
+        if (wallets.accountWalletId() == null) {
+            int updated = jdbcTemplate.update("""
+                    UPDATE users SET balance=balance-?
+                    WHERE id=? AND status='ACTIVE' AND balance>=?
+                    """, amount, userId, amount);
+            if (updated != 1) throw new ResponseStatusException(HttpStatus.PAYMENT_REQUIRED,
+                    "Insufficient balance for the maximum estimated request cost");
+            return;
+        }
+        reserveWallet(wallets.accountWalletId(), amount,
+                wallets.fundingWalletId() == null
+                        ? "Insufficient balance for the maximum estimated request cost"
+                        : "Employee allocation is insufficient for the maximum estimated request cost");
+        if (wallets.fundingWalletId() != null
+                && !wallets.fundingWalletId().equals(wallets.accountWalletId())) {
+            reserveWallet(wallets.fundingWalletId(), amount,
+                    "Enterprise treasury balance is insufficient for the maximum estimated request cost");
+            syncWalletOwnerBalance(wallets.fundingWalletId());
+        } else {
+            syncWalletOwnerBalance(wallets.accountWalletId());
+        }
+    }
+
+    private void reserveWallet(Long walletId, long amount, String message) {
+        int updated = jdbcTemplate.update("""
+                UPDATE wallet_accounts
+                SET balance=balance-?,held_balance=held_balance+?,version=version+1,updated_at=?
+                WHERE id=? AND status='ACTIVE' AND balance>=?
+                """, amount, amount, LocalDateTime.now(), walletId, amount);
+        if (updated != 1) throw new ResponseStatusException(HttpStatus.PAYMENT_REQUIRED, message);
+    }
+
+    private void releaseWalletReservation(Long walletId, long amount) {
+        jdbcTemplate.update("""
+                UPDATE wallet_accounts
+                SET balance=balance+?,held_balance=CASE WHEN held_balance>=? THEN held_balance-? ELSE 0 END,
+                    version=version+1,updated_at=? WHERE id=?
+                """, amount, amount, amount, LocalDateTime.now(), walletId);
+    }
+
+    private void reconcileWallet(Long walletId, long reservedAmount, long delta, String insufficientMessage) {
+        if (delta > 0) {
+            int updated = jdbcTemplate.update("""
+                    UPDATE wallet_accounts
+                    SET balance=balance-?,held_balance=CASE WHEN held_balance>=? THEN held_balance-? ELSE 0 END,
+                        version=version+1,updated_at=?
+                    WHERE id=? AND status='ACTIVE' AND balance>=?
+                    """, delta, reservedAmount, reservedAmount, LocalDateTime.now(), walletId, delta);
+            if (updated != 1) throw new ResponseStatusException(HttpStatus.PAYMENT_REQUIRED, insufficientMessage);
+        } else {
+            long refund = -delta;
+            jdbcTemplate.update("""
+                    UPDATE wallet_accounts
+                    SET balance=balance+?,held_balance=CASE WHEN held_balance>=? THEN held_balance-? ELSE 0 END,
+                        version=version+1,updated_at=? WHERE id=?
+                    """, refund, reservedAmount, reservedAmount, LocalDateTime.now(), walletId);
+        }
+    }
+
+    private void syncWalletOwnerBalance(Long walletId) {
+        jdbcTemplate.update("""
+                UPDATE users SET balance=(SELECT balance FROM wallet_accounts WHERE id=?)
+                WHERE id=(SELECT user_id FROM wallet_accounts WHERE id=? )
+                """, walletId, walletId);
+    }
+
+    private long walletBalance(Long walletId) {
+        Long value = jdbcTemplate.queryForObject("SELECT balance FROM wallet_accounts WHERE id=?", Long.class, walletId);
+        return value == null ? 0 : value;
+    }
+
+    private long userBalance(Long userId) {
+        Long value = jdbcTemplate.queryForObject("SELECT balance FROM users WHERE id=?", Long.class, userId);
+        return value == null ? 0 : value;
+    }
+
+    private record BillingWallets(Long accountWalletId, Long fundingWalletId) {
     }
 }
