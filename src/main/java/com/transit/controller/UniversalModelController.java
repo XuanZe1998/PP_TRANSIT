@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.transit.service.UniversalModelService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -18,10 +19,19 @@ public class UniversalModelController {
     private final UniversalModelService service;
 
     @PostMapping(value="/responses", consumes=MediaType.APPLICATION_JSON_VALUE)
-    public Mono<ResponseEntity<JsonNode>> responses(@RequestHeader(HttpHeaders.AUTHORIZATION) String auth,
+    public Mono<ResponseEntity<?>> responses(
+            @RequestHeader(value=HttpHeaders.AUTHORIZATION, required=false) String auth,
             @RequestHeader(value="Idempotency-Key",required=false) String key,
             @RequestBody JsonNode body, HttpServletRequest request) {
-        return invoke(auth, key, body, request, "responses", "/v1/responses");
+        if (body != null && body.path("stream").asBoolean(false)) {
+            return Mono.just((ResponseEntity<?>) ResponseEntity.ok()
+                    .contentType(MediaType.TEXT_EVENT_STREAM)
+                    .cacheControl(CacheControl.noCache())
+                    .header("X-Accel-Buffering", "no")
+                    .body(service.streamResponses(auth, request.getRemoteAddr(), body)));
+        }
+        return service.invoke(auth, request.getRemoteAddr(), "responses", "/v1/responses", body, key)
+                .map(response -> (ResponseEntity<?>) ResponseEntity.ok(response));
     }
 
     @PostMapping(value="/embeddings", consumes=MediaType.APPLICATION_JSON_VALUE)

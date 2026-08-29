@@ -41,9 +41,7 @@ public class OpenAiCompatibleGateway implements ProviderGateway {
             "deepseek-ai/deepseek-v4-flash-0731",
             "google/diffusiongemma-26b-a4b-it",
             "google/gemma-4-31b-it",
-            "minimaxai/minimax-m3",
-            "mistralai/mistral-nemotron",
-            "stepfun-ai/step-3.7-flash"
+            "minimaxai/minimax-m3"
     );
 
     private final WebClient webClient;

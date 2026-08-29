@@ -22,6 +22,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.Flux;
 import reactor.core.scheduler.Schedulers;
 
 import java.math.BigDecimal;
@@ -57,6 +58,8 @@ public class UniversalModelService {
 
     public Mono<JsonNode> invoke(String authorization, String clientIp, String protocol,
                                  String defaultPath, JsonNode request, String idempotencyKey) {
+        requireObjectRequest(request);
+        rejectUnsupportedResponsesLifecycle(protocol, request);
         AuthContext auth = authorize(authorization, clientIp, request);
         IdempotencyService.Claim claim = idempotency.claim("API_KEY", auth.token().getId(),
                 "model.invoke:" + protocol, idempotencyKey, request, false);
@@ -65,9 +68,6 @@ public class UniversalModelService {
         sensitiveWords.scanJson(traceId, auth.token().getOrganizationId(), auth.user().getId(),
                 auth.token().getId(), auth.model(), request);
         Route route = route(auth.model(), protocol);
-        if (request == null || !request.isObject()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "JSON object body is required");
-        }
         ObjectNode payload = (ObjectNode) request.deepCopy();
         payload.put("model", route.mapping().getChannelModelName());
         int estimatedInput = estimateInput(payload);
@@ -82,6 +82,9 @@ public class UniversalModelService {
         return haoee.invoke(route.channel(), route.mapping().getChannelModelName(), path, HttpMethod.POST, payload)
                 .publishOn(Schedulers.boundedElastic())
                 .map(response -> {
+                    if ("responses".equals(protocol) && "failed".equalsIgnoreCase(response.path("status").asText())) {
+                        throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, responseFailureMessage(response));
+                    }
                     Usage usage = usage(response, estimatedInput);
                     PricingQuote actualQuote = quote(route.mapping(), payload, usage.input(), usage.output(), usage.cacheRead());
                     long actualAmount = actualQuote.saleAmount();
@@ -102,6 +105,90 @@ public class UniversalModelService {
                     if (unknown) credentials.releaseUnknown(route.credentialId());
                     else credentials.recordFailure(route.credentialId(), error);
                     return Mono.error(error);
+                });
+    }
+
+    /**
+     * Streams OpenAI Responses SSE frames without rewriting their event names or data.
+     * Terminal accounting is intentionally driven by response.completed/incomplete/failed,
+     * not by transport completion, because a broken connection may already have incurred cost.
+     */
+    public Flux<ServerSentEvent<String>> streamResponses(
+            String authorization, String clientIp, JsonNode request) {
+        requireObjectRequest(request);
+        rejectUnsupportedResponsesLifecycle("responses", request);
+        AuthContext auth = authorize(authorization, clientIp, request);
+        String traceId = "req_" + UUID.randomUUID().toString().replace("-", "").substring(0, 16);
+        sensitiveWords.scanJson(traceId, auth.token().getOrganizationId(), auth.user().getId(),
+                auth.token().getId(), auth.model(), request);
+        Route route = route(auth.model(), "responses");
+        ObjectNode payload = (ObjectNode) request.deepCopy();
+        payload.put("model", route.mapping().getChannelModelName());
+        payload.put("stream", true);
+        int estimatedInput = estimateInput(payload);
+        int estimatedOutput = estimatedOutput(payload, "responses");
+        PricingQuote reservedQuote = quote(route.mapping(), payload, estimatedInput, estimatedOutput, 0);
+        GatewaySettlementService.Reservation reservation = settlement.reserve(auth.token(), auth.user(),
+                Math.max(1, estimatedInput + estimatedOutput), reservedQuote.saleAmount(), traceId, auth.model());
+        String path = route.mapping().getEndpointPath() == null || route.mapping().getEndpointPath().isBlank()
+                ? "/v1/responses" : route.mapping().getEndpointPath();
+        long started = System.currentTimeMillis();
+        AtomicBoolean finalized = new AtomicBoolean();
+        AtomicBoolean receivedEvent = new AtomicBoolean();
+
+        return haoee.streamEvents(route.channel(), route.mapping().getChannelModelName(), path, payload)
+                .publishOn(Schedulers.boundedElastic())
+                .doOnNext(event -> {
+                    receivedEvent.set(true);
+                    String type = responseEventType(event);
+                    if ("response.completed".equals(type) || "response.incomplete".equals(type)) {
+                        if (!finalized.compareAndSet(false, true)) return;
+                        JsonNode eventData = responseEventData(event);
+                        Usage actual = responseUsage(eventData, estimatedInput);
+                        PricingQuote actualQuote = quote(route.mapping(), payload,
+                                actual.input(), actual.output(), actual.cacheRead());
+                        try {
+                            settlement.settle(reservation, Math.max(1, actual.input() + actual.output()),
+                                    actualQuote.saleAmount(), "Responses streaming API usage " + auth.model()
+                                            + " (" + traceId + ")");
+                            writeLog(auth, route, actual, actualQuote, traceId, started,
+                                    "SUCCESS", "response.incomplete".equals(type)
+                                            ? "Upstream response completed with incomplete status" : null);
+                            credentials.recordSuccess(route.credentialId(), System.currentTimeMillis() - started);
+                        } catch (RuntimeException settlementError) {
+                            settlement.markUnknown(reservation, safe(settlementError));
+                            writeLog(auth, route, actual, reservedQuote, traceId, started,
+                                    "UNKNOWN", safe(settlementError));
+                            credentials.releaseUnknown(route.credentialId());
+                            throw settlementError;
+                        }
+                    } else if ("response.failed".equals(type) && finalized.compareAndSet(false, true)) {
+                        String reason = responseFailureMessage(responseEventData(event));
+                        settlement.release(reservation, reason);
+                        writeLog(auth, route, Usage.zero(), PricingQuote.zero(route.mapping()), traceId,
+                                started, "FAILED", reason);
+                        credentials.recordFailure(route.credentialId(), new IllegalStateException(reason));
+                    }
+                })
+                .doOnError(error -> {
+                    if (!finalized.compareAndSet(false, true)) return;
+                    boolean unknown = receivedEvent.get() || ambiguousTimeout(error);
+                    if (unknown) settlement.markUnknown(reservation, safe(error));
+                    else settlement.release(reservation, safe(error));
+                    writeLog(auth, route, Usage.zero(), unknown ? reservedQuote : PricingQuote.zero(route.mapping()),
+                            traceId, started, unknown ? "UNKNOWN" : "FAILED", safe(error));
+                    if (unknown) credentials.releaseUnknown(route.credentialId());
+                    else credentials.recordFailure(route.credentialId(), error);
+                })
+                .doFinally(signal -> {
+                    if (!finalized.compareAndSet(false, true)) return;
+                    Schedulers.boundedElastic().schedule(() -> {
+                        String reason = "Responses stream ended without a terminal event: " + signal;
+                        settlement.markUnknown(reservation, reason);
+                        writeLog(auth, route, Usage.zero(), reservedQuote, traceId, started,
+                                "UNKNOWN", reason);
+                        credentials.releaseUnknown(route.credentialId());
+                    });
                 });
     }
 
@@ -226,6 +313,43 @@ public class UniversalModelService {
         catch (Exception ignored) { return Usage.zero(); }
     }
 
+    private String responseEventType(ServerSentEvent<String> event) {
+        if (event != null && event.event() != null && !event.event().isBlank()) return event.event().trim();
+        return responseEventData(event).path("type").asText("").trim();
+    }
+
+    private JsonNode responseEventData(ServerSentEvent<String> event) {
+        if (event == null || event.data() == null || event.data().isBlank()) return objectMapper.createObjectNode();
+        try { return objectMapper.readTree(event.data()); }
+        catch (Exception ignored) { return objectMapper.createObjectNode(); }
+    }
+
+    private Usage responseUsage(JsonNode eventData, int estimatedInput) {
+        JsonNode response = eventData.path("response");
+        return usage(response.isObject() ? response : eventData, estimatedInput);
+    }
+
+    private String responseFailureMessage(JsonNode node) {
+        JsonNode response = node.path("response");
+        JsonNode error = response.isObject() ? response.path("error") : node.path("error");
+        String message = error.path("message").asText("").trim();
+        if (message.isBlank()) message = node.path("message").asText("").trim();
+        return message.isBlank() ? "Upstream Responses request failed" : message;
+    }
+
+    private void requireObjectRequest(JsonNode request) {
+        if (request == null || !request.isObject()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "JSON object body is required");
+        }
+    }
+
+    private void rejectUnsupportedResponsesLifecycle(String protocol, JsonNode request) {
+        if ("responses".equals(protocol) && request.path("background").asBoolean(false)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "background Responses are not supported; use a synchronous or streaming request");
+        }
+    }
+
     public long estimateAmount(ModelMapping mapping, JsonNode request) {
         return quote(mapping, request, estimateInput(request), estimatedOutput(request,
                 Objects.toString(mapping.getProtocols(), "tasks")), 0).saleAmount();
@@ -311,7 +435,8 @@ public class UniversalModelService {
         int input = integer(usage, "prompt_tokens", integer(usage, "input_tokens", estimatedInput));
         int output = integer(usage, "completion_tokens", integer(usage, "output_tokens", 0));
         int cacheRead = integer(usage.path("prompt_tokens_details"), "cached_tokens",
-                integer(usage, "cache_read_input_tokens", 0));
+                integer(usage.path("input_tokens_details"), "cached_tokens",
+                        integer(usage, "cache_read_input_tokens", 0)));
         int cacheWrite = integer(usage, "cache_creation_input_tokens", 0);
         return new Usage(Math.max(0, input), Math.max(0, output), Math.max(0, cacheRead), Math.max(0, cacheWrite));
     }
