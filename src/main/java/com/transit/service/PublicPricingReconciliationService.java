@@ -38,20 +38,32 @@ public class PublicPricingReconciliationService {
 
     @Transactional(readOnly = true)
     public ReconciliationReport preview() {
-        return reconcile(false);
+        return reconcile(false, null);
     }
 
     @Transactional
     public ReconciliationReport apply() {
-        return reconcile(true);
+        return reconcile(true, null);
     }
 
-    private ReconciliationReport reconcile(boolean apply) {
+    @Transactional
+    public ReconciliationReport applyModels(Set<String> publicModelNames) {
+        Set<String> selected = publicModelNames == null ? Set.of() : publicModelNames.stream()
+                .filter(Objects::nonNull).map(String::trim).filter(name -> !name.isEmpty())
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        if (selected.isEmpty()) {
+            return new ReconciliationReport("APPLIED", null, null, null, null, 0, 0, 0, List.of());
+        }
+        return reconcile(true, selected);
+    }
+
+    private ReconciliationReport reconcile(boolean apply, Set<String> selectedModels) {
         PriceManifest manifest = loadManifest();
-        List<ModelMapping> mappings = mappingMapper.selectList(new LambdaQueryWrapper<ModelMapping>()
-                .eq(ModelMapping::isEnabled, true)
-                .orderByAsc(ModelMapping::getPublicModelName)
-                .orderByAsc(ModelMapping::getId));
+        LambdaQueryWrapper<ModelMapping> query = new LambdaQueryWrapper<ModelMapping>()
+                .eq(ModelMapping::isEnabled, true);
+        if (selectedModels != null) query.in(ModelMapping::getPublicModelName, selectedModels);
+        List<ModelMapping> mappings = mappingMapper.selectList(query
+                .orderByAsc(ModelMapping::getPublicModelName).orderByAsc(ModelMapping::getId));
         tierService.attach(mappings);
 
         Map<String, List<RoutePlan>> grouped = new LinkedHashMap<>();

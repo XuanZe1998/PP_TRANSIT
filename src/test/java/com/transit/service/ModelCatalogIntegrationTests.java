@@ -119,6 +119,50 @@ class ModelCatalogIntegrationTests {
     }
 
     @Test
+    void managedHaoeeCatalogAddsNewReviewedModelsToTheVerificationPipeline() {
+        jdbcTemplate.update("""
+                INSERT INTO channels(name,type,source_code,source_name,protocol_type,base_url,api_key,models,
+                                     enabled,group_name,health_status)
+                VALUES ('managed-haoee','haoee','haoee','好易智算','multi','https://maas.haoee.com',
+                        'plaintext-test-key','gpt-5.4',TRUE,'haoee','HEALTHY')
+                """);
+        Long channelId = jdbcTemplate.queryForObject(
+                "SELECT id FROM channels WHERE name='managed-haoee'", Long.class);
+
+        providerModelCatalogService.synchronizeHaoee(channelId);
+
+        assertThat(jdbcTemplate.queryForObject("SELECT models FROM channels WHERE id=?", String.class, channelId))
+                .contains("gpt-5.6-sol", "gpt-5.6-terra");
+        assertThat(jdbcTemplate.queryForList("""
+                SELECT channel_model_name FROM model_mappings
+                WHERE channel_id=? AND channel_model_name LIKE 'gpt-5.6-%'
+                ORDER BY channel_model_name
+                """, String.class, channelId))
+                .containsExactly("gpt-5.6-sol", "gpt-5.6-terra");
+        assertThat(jdbcTemplate.queryForList("""
+                SELECT enabled FROM model_mappings
+                WHERE channel_id=? AND channel_model_name LIKE 'gpt-5.6-%'
+                ORDER BY channel_model_name
+                """, Boolean.class, channelId))
+                .containsExactly(true, true);
+
+        assertThat(jdbcTemplate.queryForList("""
+                SELECT verification_status FROM provider_models
+                WHERE source_code='haoee' AND upstream_model_name LIKE 'gpt-5.6-%'
+                ORDER BY upstream_model_name
+                """, String.class)).containsExactly("AVAILABLE", "AVAILABLE");
+        assertThat(jdbcTemplate.queryForList("""
+                SELECT pricing_status FROM model_mappings
+                WHERE channel_id=? AND channel_model_name LIKE 'gpt-5.6-%'
+                ORDER BY channel_model_name
+                """, String.class, channelId)).containsExactly("VERIFIED", "VERIFIED");
+        assertThat(jdbcTemplate.queryForList("""
+                SELECT input_price_per_million FROM model_mappings
+                WHERE channel_id=? AND channel_model_name='gpt-5.6-sol'
+                """, java.math.BigDecimal.class, channelId)).allMatch(price -> price.signum() > 0);
+    }
+
+    @Test
     void mapsTheRetiredClaude47PublicIdToTheLiveClaude48UpstreamId() {
         jdbcTemplate.update("""
                 INSERT INTO channels(name,type,source_code,source_name,protocol_type,base_url,api_key,models,
