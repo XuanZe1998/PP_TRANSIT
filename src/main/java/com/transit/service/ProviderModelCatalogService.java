@@ -58,6 +58,7 @@ public class ProviderModelCatalogService implements ApplicationRunner {
     private final ObjectMapper objectMapper;
     private final ChannelSecretService channelSecretService;
     private final JdbcTemplate jdbcTemplate;
+    private final PublicPricingReconciliationService publicPricingReconciliationService;
 
     @Override
     @Transactional
@@ -69,7 +70,7 @@ public class ProviderModelCatalogService implements ApplicationRunner {
             String source = Objects.toString(channel.getSourceCode(), channel.getType()).toLowerCase(Locale.ROOT);
             CatalogSeed seed = new CatalogSeed(mapping.getChannelModelName(), mapping.getVendor(),
                     mapping.getCapability(), mapping.getProtocols(), mapping.getPricingUnit(),
-                    mapping.getEndpointPath(), mapping.getTaskQueryPath(), mapping.getTaskQueryMethod());
+                    mapping.getEndpointPath(), mapping.getTaskQueryPath(), mapping.getTaskQueryMethod(), false);
             upsert(source, Objects.toString(channel.getSourceName(), channel.getName()), channel.getId(), seed, now, null);
         }
     }
@@ -79,14 +80,26 @@ public class ProviderModelCatalogService implements ApplicationRunner {
         Channel channel = channelMapper.selectById(channelId);
         List<CatalogSeed> manifest = loadHaoeeManifest();
         List<CatalogSeed> seeds = liveHaoeeCatalog(channel, manifest);
+        Map<String, String> aliases = loadHaoeeAliases();
+        boolean managedCatalogChannel = channel != null
+                && "haoee".equalsIgnoreCase(Objects.toString(channel.getGroupName(), ""));
         boolean initializeChannelSelection = channel != null && channel.getModels() == null;
+        if (managedCatalogChannel) {
+            // The bootstrap/consolidation runner owns this channel. Keep its selection in
+            // lockstep with the reviewed live catalog so newly introduced upstream models
+            // receive disabled mappings and can proceed through verification and pricing.
+            Set<String> selected = seeds.stream().filter(seed -> supported(seed.protocols()))
+                    .map(CatalogSeed::name).collect(java.util.stream.Collectors.toCollection(java.util.TreeSet::new));
+            selected.addAll(aliases.keySet());
+            channel.setModels(String.join("\n", selected));
+            channelMapper.updateById(channel);
+        }
         LocalDateTime now = LocalDateTime.now();
         for (CatalogSeed seed : seeds) {
             upsert("haoee", "好易智算", channelId, seed, now, null);
         }
         // Alias seeds are kept in the reviewed manifest so a fresh installation can
         // create the public route even after the upstream has retired the old id.
-        Map<String, String> aliases = loadHaoeeAliases();
         Map<String, CatalogSeed> manifestByName = manifest.stream()
                 .collect(java.util.stream.Collectors.toMap(CatalogSeed::name, seed -> seed));
         for (String publicName : aliases.keySet()) {
@@ -97,7 +110,12 @@ public class ProviderModelCatalogService implements ApplicationRunner {
         }
         markMissing("haoee", seeds.stream().map(CatalogSeed::name).collect(java.util.stream.Collectors.toSet()), now);
         applyHaoeeAliases(channelId, aliases, manifestByName, now);
-        if (initializeChannelSelection) {
+        Set<String> releaseVerified = seeds.stream().filter(CatalogSeed::releaseVerified)
+                .map(CatalogSeed::name).collect(java.util.stream.Collectors.toSet());
+        if (!releaseVerified.isEmpty()) {
+            publicPricingReconciliationService.applyModels(releaseVerified);
+        }
+        if (initializeChannelSelection && !managedCatalogChannel) {
             List<String> routedModels = modelMappingMapper.selectList(new LambdaQueryWrapper<ModelMapping>()
                             .eq(ModelMapping::getChannelId, channelId)
                             .orderByAsc(ModelMapping::getChannelModelName))
@@ -149,7 +167,7 @@ public class ProviderModelCatalogService implements ApplicationRunner {
                 : lower.startsWith("gemini") ? "google" : "haoee";
         String capability = lower.contains("image") ? "image"
                 : lower.contains("reason") || lower.contains("deepseek") ? "reasoning" : "text";
-        return new CatalogSeed(id, vendor, capability, "chat-completions", "TOKEN", null, null, "POST");
+        return new CatalogSeed(id, vendor, capability, "chat-completions", "TOKEN", null, null, "POST", false);
     }
 
     private void applyHaoeeAliases(long channelId, Map<String, String> aliases,
@@ -445,8 +463,12 @@ public class ProviderModelCatalogService implements ApplicationRunner {
         ProviderModel existing = providerModelMapper.selectOne(new LambdaQueryWrapper<ProviderModel>()
                 .eq(ProviderModel::getSourceCode, source)
                 .eq(ProviderModel::getUpstreamModelName, seed.name()).last("LIMIT 1"));
-        String status = existing == null || "RETIRED".equals(existing.getVerificationStatus())
-                ? "DISCOVERED" : existing.getVerificationStatus();
+        String previousStatus = existing == null ? null : existing.getVerificationStatus();
+        boolean promoteReviewedRelease = seed.releaseVerified()
+                && (existing == null || Set.of("DISCOVERED", "FAILED", "RETIRED").contains(previousStatus));
+        String status = existing == null || "RETIRED".equals(previousStatus)
+                ? (seed.releaseVerified() ? "AVAILABLE" : "DISCOVERED") : previousStatus;
+        if (promoteReviewedRelease) status = "AVAILABLE";
         if (!supported(seed.protocols())) status = "UNSUPPORTED";
         if (existing == null) {
             existing = ProviderModel.builder().sourceCode(source).sourceName(sourceName)
@@ -465,12 +487,22 @@ public class ProviderModelCatalogService implements ApplicationRunner {
         existing.setTaskQueryPath(seed.taskQueryPath());
         existing.setTaskQueryMethod(seed.taskQueryMethod());
         existing.setVerificationStatus(status);
-        existing.setVerificationMessage("UNSUPPORTED".equals(status) ? "当前网关尚未实现该协议" : existing.getVerificationMessage());
+        existing.setVerificationMessage("UNSUPPORTED".equals(status) ? "当前网关尚未实现该协议"
+                : promoteReviewedRelease ? "发布前已完成真实上游低成本验证" : existing.getVerificationMessage());
+        if (promoteReviewedRelease) existing.setVerifiedAt(now);
         existing.setLastSeenAt(now);
         existing.setMissingSyncCount(0);
         existing.setRawMetadata(rawMetadata);
         existing.setUpdatedAt(now);
         if (existing.getId() == null) providerModelMapper.insert(existing); else providerModelMapper.updateById(existing);
+        if (promoteReviewedRelease) {
+            jdbcTemplate.update("""
+                    INSERT INTO provider_model_verifications
+                    (provider_model_id,source_code,upstream_model_name,status,message,started_at,completed_at)
+                    VALUES (?,?,?,?,?,?,?)
+                    """, existing.getId(), source, seed.name(), "AVAILABLE",
+                    "发布前已完成真实上游低成本验证", now, now);
+        }
         if (supported(seed.protocols())) ensureMapping(channelId, seed, "AVAILABLE".equals(status));
     }
 
@@ -608,7 +640,8 @@ public class ProviderModelCatalogService implements ApplicationRunner {
                 result.add(new CatalogSeed(name, string(row, "vendor", "unknown"),
                         string(row, "capability", "text"), string(row, "protocols", "chat-completions"),
                         string(row, "pricingUnit", "TOKEN"), nullable(row.get("endpointPath")),
-                        nullable(row.get("taskQueryPath")), string(row, "taskQueryMethod", "POST")));
+                        nullable(row.get("taskQueryPath")), string(row, "taskQueryMethod", "POST"),
+                        Boolean.TRUE.equals(row.get("releaseVerified"))));
             }
             return result;
         } catch (Exception error) {
@@ -663,7 +696,7 @@ public class ProviderModelCatalogService implements ApplicationRunner {
         String protocol = capability.equals("embedding") ? "embeddings" : capability.equals("rerank") ? "reranks" : "chat-completions";
         int slash = id.indexOf('/');
         return new CatalogSeed(id, slash > 0 ? id.substring(0, slash) : "nvidia", capability, protocol,
-                "TOKEN", null, null, "POST");
+                "TOKEN", null, null, "POST", false);
     }
 
     private boolean supported(String protocols) {
@@ -742,5 +775,5 @@ public class ProviderModelCatalogService implements ApplicationRunner {
 
     public record CatalogSeed(String name, String vendor, String capability, String protocols,
                               String pricingUnit, String endpointPath, String taskQueryPath,
-                              String taskQueryMethod) { }
+                              String taskQueryMethod, boolean releaseVerified) { }
 }
