@@ -54,6 +54,18 @@ public class Channel {
     @TableField(exist = false)
     private Long selectedCredentialId;
 
+    @Builder.Default
+    private boolean managed = false;
+
+    @TableField("managed_platform")
+    private String managedPlatform;
+
+    @TableField("managed_auth_type")
+    private String managedAuthType;
+
+    @TableField(exist = false)
+    private ProviderAuthContext authContext;
+
     private String models; // Comma separated list of models supported by this channel
 
     /**

@@ -15,7 +15,14 @@ public interface ModelMappingMapper extends BaseMapper<ModelMapping> {
     String UPSTREAM_AVAILABLE = """
             mm.enabled = TRUE
             AND c.enabled = TRUE
-            AND c.api_key IS NOT NULL AND c.api_key <> ''
+            AND (
+              (c.api_key IS NOT NULL AND c.api_key <> '')
+              OR (c.managed = TRUE AND EXISTS (
+                SELECT 1 FROM provider_credentials pc
+                WHERE pc.channel_id=c.id AND pc.enabled=TRUE AND pc.health_status IN ('HEALTHY','DEGRADED')
+                  AND pc.auth_type='OAUTH' AND pc.entitlement_status='ACTIVE' AND pc.cost_reliable=TRUE
+              ))
+            )
             AND (
                 UPPER(COALESCE(c.health_status, 'UNTESTED')) IN ('HEALTHY', 'DEGRADED')
                 OR (
@@ -45,6 +52,7 @@ public interface ModelMappingMapper extends BaseMapper<ModelMapping> {
 
     String PUBLIC_COLUMNS = """
             mm.public_model_name AS publicName,
+            COALESCE(MAX(mds.display_priority), 0) AS displayPriority,
             CASE WHEN COUNT(DISTINCT LOWER(c.type)) > 1 THEN 'multi' ELSE MAX(LOWER(c.type)) END AS type,
             CASE WHEN COUNT(DISTINCT LOWER(c.source_code)) > 1 THEN 'multi' ELSE MAX(LOWER(c.source_code)) END AS source,
             CASE WHEN COUNT(DISTINCT c.source_name) > 1 THEN '多个来源' ELSE MAX(c.source_name) END AS sourceName,
@@ -106,6 +114,7 @@ public interface ModelMappingMapper extends BaseMapper<ModelMapping> {
             FROM model_mappings mm
             JOIN channels c ON mm.channel_id = c.id
             LEFT JOIN model_price_tiers pt ON pt.model_mapping_id = mm.id
+            LEFT JOIN model_market_display_settings mds ON mds.public_model_name = mm.public_model_name
             WHERE
             """ + UPSTREAM_AVAILABLE + " GROUP BY mm.public_model_name ORDER BY mm.public_model_name")
     List<PublicModel> findPublicModels();
@@ -132,6 +141,7 @@ public interface ModelMappingMapper extends BaseMapper<ModelMapping> {
             FROM model_mappings mm
             JOIN channels c ON mm.channel_id = c.id
             LEFT JOIN model_price_tiers pt ON pt.model_mapping_id = mm.id
+            LEFT JOIN model_market_display_settings mds ON mds.public_model_name = mm.public_model_name
             WHERE
             """ + UPSTREAM_AVAILABLE + """
               AND (#{query} IS NULL OR LOWER(mm.public_model_name) LIKE CONCAT('%', LOWER(#{query}), '%'))
@@ -148,6 +158,7 @@ public interface ModelMappingMapper extends BaseMapper<ModelMapping> {
             FROM model_mappings mm
             JOIN channels c ON mm.channel_id = c.id
             LEFT JOIN model_price_tiers pt ON pt.model_mapping_id = mm.id
+            LEFT JOIN model_market_display_settings mds ON mds.public_model_name = mm.public_model_name
             LEFT JOIN (
               SELECT model, COUNT(*) AS logs_count
               FROM logs WHERE status LIKE 'SUCCESS%' GROUP BY model
@@ -174,6 +185,7 @@ public interface ModelMappingMapper extends BaseMapper<ModelMapping> {
             FROM model_mappings mm
             JOIN channels c ON mm.channel_id = c.id
             LEFT JOIN model_price_tiers pt ON pt.model_mapping_id = mm.id
+            LEFT JOIN model_market_display_settings mds ON mds.public_model_name = mm.public_model_name
             LEFT JOIN (
               SELECT model, MAX(created_at) AS last_used
               FROM logs WHERE status LIKE 'SUCCESS%' GROUP BY model
@@ -199,6 +211,7 @@ public interface ModelMappingMapper extends BaseMapper<ModelMapping> {
             FROM model_mappings mm
             JOIN channels c ON mm.channel_id = c.id
             LEFT JOIN model_price_tiers pt ON pt.model_mapping_id = mm.id
+            LEFT JOIN model_market_display_settings mds ON mds.public_model_name = mm.public_model_name
             WHERE
             """ + UPSTREAM_AVAILABLE + """
               AND (#{type} IS NULL
@@ -215,4 +228,49 @@ public interface ModelMappingMapper extends BaseMapper<ModelMapping> {
                                                   @Param("type") String type,
                                                   @Param("limit") Integer limit,
                                                   @Param("offset") Integer offset);
+
+    @Select("SELECT " + PUBLIC_COLUMNS + """
+            FROM model_mappings mm
+            JOIN channels c ON mm.channel_id = c.id
+            LEFT JOIN model_price_tiers pt ON pt.model_mapping_id = mm.id
+            LEFT JOIN model_market_display_settings mds ON mds.public_model_name = mm.public_model_name
+            WHERE
+            """ + UPSTREAM_AVAILABLE + """
+              AND (#{type} IS NULL
+                   OR LOWER(c.type) = LOWER(#{type})
+                   OR LOWER(c.source_code) = LOWER(#{type})
+                   OR (LOWER(#{type}) = 'other'
+                       AND COALESCE(LOWER(c.source_code), LOWER(c.type), 'other') NOT IN ('haoee', 'nvidia')))
+              AND (#{query} IS NULL OR LOWER(mm.public_model_name) LIKE CONCAT('%', LOWER(#{query}), '%'))
+            GROUP BY mm.public_model_name
+            ORDER BY COALESCE(MAX(mds.display_priority), 0) DESC,
+                     LOWER(mm.public_model_name) ASC, mm.public_model_name ASC
+            LIMIT #{limit} OFFSET #{offset}
+            """)
+    List<PublicModel> findPublicModelsPagedByPriority(@Param("query") String query,
+                                                      @Param("type") String type,
+                                                      @Param("limit") Integer limit,
+                                                      @Param("offset") Integer offset);
+
+    @Select("SELECT " + PUBLIC_COLUMNS + """
+            FROM model_mappings mm
+            JOIN channels c ON mm.channel_id = c.id
+            LEFT JOIN model_price_tiers pt ON pt.model_mapping_id = mm.id
+            LEFT JOIN model_market_display_settings mds ON mds.public_model_name = mm.public_model_name
+            WHERE
+            """ + UPSTREAM_AVAILABLE + """
+              AND (#{type} IS NULL
+                   OR LOWER(c.type) = LOWER(#{type})
+                   OR LOWER(c.source_code) = LOWER(#{type})
+                   OR (LOWER(#{type}) = 'other'
+                       AND COALESCE(LOWER(c.source_code), LOWER(c.type), 'other') NOT IN ('haoee', 'nvidia')))
+              AND (#{query} IS NULL OR LOWER(mm.public_model_name) LIKE CONCAT('%', LOWER(#{query}), '%'))
+            GROUP BY mm.public_model_name
+            ORDER BY mm.public_model_name DESC
+            LIMIT #{limit} OFFSET #{offset}
+            """)
+    List<PublicModel> findPublicModelsPagedByNameDesc(@Param("query") String query,
+                                                      @Param("type") String type,
+                                                      @Param("limit") Integer limit,
+                                                      @Param("offset") Integer offset);
 }

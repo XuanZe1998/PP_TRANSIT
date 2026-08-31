@@ -4,6 +4,11 @@ import com.transit.dto.ChatRequest;
 import com.transit.dto.ChatResponse;
 import com.transit.service.ClientIpResolver;
 import com.transit.service.TransitService;
+import com.transit.service.UniversalModelService;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.springframework.beans.factory.annotation.Autowired;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.*;
@@ -21,6 +26,8 @@ import java.util.*;
 public class AnthropicMessagesController {
     private final TransitService transit;
     private final ClientIpResolver clientIps;
+    @Autowired(required = false) private UniversalModelService universal;
+    @Autowired(required = false) private ObjectMapper json;
 
     @PostMapping(value = "/v1/messages")
     public Mono<ResponseEntity<?>> create(@RequestHeader(value="x-api-key", required=false) String apiKey,
@@ -28,10 +35,28 @@ public class AnthropicMessagesController {
                                            @RequestBody Map<String,Object> body, HttpServletRequest servletRequest) {
         if (apiKey == null || apiKey.isBlank()) throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "缺少 x-api-key");
         if (!"2023-06-01".equals(version)) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "anthropic-version 必须为 2023-06-01");
-        ChatRequest request = convert(body); boolean stream = Boolean.TRUE.equals(body.get("stream"));
+        boolean stream = Boolean.TRUE.equals(body.get("stream"));
+        if (universal != null && universal.hasHaoeeRoute(Objects.toString(body.get("model"), ""), "messages")) {
+            ObjectNode raw = json.valueToTree(body);
+            if (stream) return Mono.just(ResponseEntity.ok().contentType(MediaType.TEXT_EVENT_STREAM)
+                    .cacheControl(CacheControl.noCache()).body(universal.streamProtocol("Bearer " + apiKey.trim(),
+                            clientIps.resolve(servletRequest), "messages", "/v1/messages", raw)));
+            return universal.invoke("Bearer " + apiKey.trim(), clientIps.resolve(servletRequest), "messages", "/v1/messages", raw, servletRequest.getHeader("Idempotency-Key"))
+                    .map(value -> (ResponseEntity<?>) ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON).body(value));
+        }
+        ChatRequest request = convert(body);
         return transit.chatCompletions("Bearer " + apiKey.trim(), request, clientIps.resolve(servletRequest))
                 .map(response -> stream ? ResponseEntity.ok().contentType(MediaType.TEXT_EVENT_STREAM).body(events(response))
                         : ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON).body(message(response)));
+    }
+
+    @PostMapping(value = "/v1/messages/count_tokens")
+    public Mono<ResponseEntity<JsonNode>> countTokens(@RequestHeader(value="x-api-key", required=false) String apiKey,
+            @RequestHeader(value="anthropic-version", required=false) String version, @RequestBody ObjectNode body, HttpServletRequest request) {
+        if (apiKey == null || apiKey.isBlank()) throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "缺少 x-api-key");
+        if (!"2023-06-01".equals(version)) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "anthropic-version 必须为 2023-06-01");
+        return universal.invoke("Bearer " + apiKey.trim(), clientIps.resolve(request), "count-tokens", "/v1/messages/count_tokens", body,
+                request.getHeader("Idempotency-Key")).map(ResponseEntity::ok);
     }
 
     private ChatRequest convert(Map<String,Object> body) {

@@ -116,6 +116,68 @@ class AuthFlowIntegrationTests {
                 .jsonPath("$.error.code").exists();
     }
 
+    @Test
+    void passwordResetRevokesExistingSessionsAndRequiresTheNewPassword() {
+        String identifier = uniqueEmail();
+        Map<String, Object> registration = register(identifier, "StrongPass123");
+        String oldAccessToken = registration.get("access_token").toString();
+
+        Map<String, Object> resetRequest = client.post()
+                .uri("/auth/password-reset/request")
+                .bodyValue(Map.of("email", identifier))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(Map.class)
+                .returnResult().getResponseBody();
+        assertThat(resetRequest).isNotNull();
+        assertThat(resetRequest.get("accepted")).isEqualTo(true);
+
+        client.post()
+                .uri("/auth/password-reset/confirm")
+                .bodyValue(Map.of("email", identifier, "code", resetRequest.get("debugCode"),
+                        "password", "NewStrongPass456", "confirmPassword", "NewStrongPass456"))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody().jsonPath("$.reset").isEqualTo(true);
+
+        client.post()
+                .uri("/auth/password-reset/confirm")
+                .bodyValue(Map.of("email", identifier, "code", resetRequest.get("debugCode"),
+                        "password", "AnotherPass789", "confirmPassword", "AnotherPass789"))
+                .exchange().expectStatus().isBadRequest();
+
+        client.get().uri("/user/profile")
+                .header("Authorization", "Bearer " + oldAccessToken)
+                .exchange().expectStatus().isUnauthorized();
+        client.post().uri("/auth/login")
+                .bodyValue(Map.of("identifier", identifier, "password", "StrongPass123"))
+                .exchange().expectStatus().isUnauthorized();
+        client.post().uri("/auth/login")
+                .bodyValue(Map.of("identifier", identifier, "password", "NewStrongPass456"))
+                .exchange().expectStatus().isOk().expectBody().jsonPath("$.access_token").isNotEmpty();
+    }
+
+    @Test
+    void genericVerificationEndpointCannotSendPasswordResetCodes() {
+        client.post().uri("/auth/verification/email/send")
+                .bodyValue(Map.of("recipient", uniqueEmail(), "purpose", "PASSWORD_RESET"))
+                .exchange().expectStatus().isBadRequest();
+        client.post().uri("/auth/verification/phone/send")
+                .bodyValue(Map.of("recipient", "+8613800138000", "purpose", "PASSWORD_RESET"))
+                .exchange().expectStatus().isBadRequest();
+    }
+
+    @Test
+    void unknownPasswordResetEmailGetsTheSameGenericAcknowledgement() {
+        client.post().uri("/auth/password-reset/request")
+                .bodyValue(Map.of("email", uniqueEmail()))
+                .exchange().expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.accepted").isEqualTo(true)
+                .jsonPath("$.message").isEqualTo("如果该邮箱已注册，验证码将发送到对应邮箱")
+                .jsonPath("$.debugCode").doesNotExist();
+    }
+
     @SuppressWarnings("unchecked")
     private Map<String, Object> register(String identifier, String password) {
         Map<String, Object> verification = client.post()

@@ -350,6 +350,12 @@ public class TransitService {
 
     private Mono<RoutedResponse> attemptRoute(List<Route> routes, int index, ChatRequest request,
                                               String publicModel, String traceId, boolean requireReliableCost) {
+        return attemptRoute(routes, index, request, publicModel, traceId, requireReliableCost, false);
+    }
+
+    private Mono<RoutedResponse> attemptRoute(List<Route> routes, int index, ChatRequest request,
+                                              String publicModel, String traceId, boolean requireReliableCost,
+                                              boolean oauthAuthRetried) {
         if (index >= routes.size()) {
             return Mono.error(new ResponseStatusException(HttpStatus.BAD_GATEWAY,
                     "All upstream channels failed for model: " + publicModel));
@@ -365,6 +371,7 @@ public class TransitService {
                                 ? request.getSessionId() : request.getPreviousResponseId();
                         credential = providerCredentialService.select(route.channel(), publicModel, stickySession, requireReliableCost);
                         route.channel().setApiKey(credential.secret());
+                        route.channel().setAuthContext(credential.authContext());
                         route.channel().setSelectedCredentialId(credential.id());
                     }
                     ProviderCredentialService.SelectedCredential selectedCredential = credential;
@@ -383,15 +390,24 @@ public class TransitService {
                                                     route.mapping().getChannelModelName());
                                         }
                                         if (providerCredentialService != null && selectedCredential != null) {
-                                            providerCredentialService.recordSuccess(selectedCredential.id(), latency);
+                                            long tokens = response.getUsage() == null || response.getUsage().getTotalTokens() == null ? 0 : response.getUsage().getTotalTokens();
+                                            providerCredentialService.recordSuccess(selectedCredential.id(), latency, tokens);
                                         }
                                     })
                                     .thenReturn(response))
                             .map(response -> new RoutedResponse(route, response));
                 })
                 .onErrorResume(error -> {
+                    Long failedCredential = route.channel().getSelectedCredentialId();
                     if (providerCredentialService != null) {
-                        providerCredentialService.recordFailure(route.channel().getSelectedCredentialId(), error);
+                        providerCredentialService.recordFailure(failedCredential, error);
+                    }
+                    if (!oauthAuthRetried && failedCredential != null && route.channel().getAuthContext() != null
+                            && route.channel().getAuthContext().oauth() && error instanceof WebClientResponseException response
+                            && response.getStatusCode().value() == 401) {
+                        return Mono.fromRunnable(() -> providerCredentialService.refreshOAuth(failedCredential))
+                                .subscribeOn(Schedulers.boundedElastic())
+                                .then(attemptRoute(routes, index, request, publicModel, traceId, requireReliableCost, true));
                     }
                     boolean retryable = isRetryableUpstreamError(error);
                     Mono<Void> health = isChannelFault(error)
@@ -403,7 +419,7 @@ public class TransitService {
                         }
                         log.warn("Channel {} failed for request {}; trying fallback channel: {}",
                                 route.channel().getName(), traceId, safeMessage(error));
-                        return attemptRoute(routes, index + 1, request, publicModel, traceId, requireReliableCost);
+                        return attemptRoute(routes, index + 1, request, publicModel, traceId, requireReliableCost, false);
                     }));
                 });
     }

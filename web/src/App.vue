@@ -11,6 +11,6 @@ import { useRoute } from 'vue-router'
 const route = useRoute()
 const AuthDialog = defineAsyncComponent(() => import('@/components/AuthDialog.vue'))
 const AgreementGate = defineAsyncComponent(() => import('@/components/AgreementGate.vue'))
-const showAuthDialog = computed(() => route.query.auth === 'login' || route.query.auth === 'register')
+const showAuthDialog = computed(() => route.query.auth === 'login' || route.query.auth === 'register' || route.query.auth === 'reset')
 const showAgreementGate = computed(() => route.meta.role === 'user')
 </script>

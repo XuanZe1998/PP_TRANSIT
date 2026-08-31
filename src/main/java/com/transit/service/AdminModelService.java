@@ -6,6 +6,7 @@ import com.transit.model.ModelMapping;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -23,6 +24,7 @@ public class AdminModelService {
     private final ChannelMapper channelMapper;
     private final ChannelSecretService channelSecretService;
     private final ModelPriceTierService priceTierService;
+    @Autowired(required = false) private ProviderCredentialService providerCredentials;
 
     public List<ModelMapping> list() {
         List<ModelMapping> mappings = modelMappingMapper.selectList(null);
@@ -224,8 +226,8 @@ public class AdminModelService {
             unavailable(mapping, "CHANNEL_DISABLED", "渠道已停用");
             return mapping;
         }
-        if (!channel.isApiKeyConfigured()) {
-            unavailable(mapping, "CREDENTIAL_MISSING", "渠道未配置 API Key");
+        if (!channel.isApiKeyConfigured() && !(channel.isManaged() && providerCredentials != null && providerCredentials.hasAvailable(channel))) {
+            unavailable(mapping, "CREDENTIAL_MISSING", channel.isManaged() ? "托管渠道没有可调度 OAuth 账号" : "渠道未配置 API Key");
             return mapping;
         }
 

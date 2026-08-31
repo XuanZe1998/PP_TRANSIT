@@ -28,7 +28,7 @@ public class OperationsService {
                 SELECT DISTINCT LOWER(type)
                 FROM channels
                 WHERE enabled = TRUE AND health_status = 'HEALTHY'
-                  AND api_key IS NOT NULL AND api_key <> ''
+                  AND ((api_key IS NOT NULL AND api_key <> '') OR (managed=TRUE AND EXISTS (SELECT 1 FROM provider_credentials pc WHERE pc.channel_id=channels.id AND pc.enabled=TRUE AND pc.entitlement_status='ACTIVE' AND pc.cost_reliable=TRUE)))
                   AND (cooldown_until IS NULL OR cooldown_until < CURRENT_TIMESTAMP)
                 ORDER BY LOWER(type)
                 """, String.class);
@@ -37,7 +37,7 @@ public class OperationsService {
                 .enabledChannels(count("""
                         SELECT COUNT(*) FROM channels
                         WHERE enabled = TRUE AND health_status = 'HEALTHY'
-                          AND api_key IS NOT NULL AND api_key <> ''
+                          AND ((api_key IS NOT NULL AND api_key <> '') OR (managed=TRUE AND EXISTS (SELECT 1 FROM provider_credentials pc WHERE pc.channel_id=channels.id AND pc.enabled=TRUE AND pc.entitlement_status='ACTIVE' AND pc.cost_reliable=TRUE)))
                           AND (cooldown_until IS NULL OR cooldown_until < CURRENT_TIMESTAMP)
                         """))
                 .totalMappings(count("SELECT COUNT(*) FROM model_mappings WHERE enabled = TRUE"))
@@ -62,7 +62,7 @@ public class OperationsService {
                 FROM channels c
                 JOIN model_mappings mm ON mm.channel_id = c.id AND mm.enabled = TRUE
                 WHERE c.enabled = TRUE AND c.health_status = 'HEALTHY'
-                  AND c.api_key IS NOT NULL AND c.api_key <> ''
+                  AND ((c.api_key IS NOT NULL AND c.api_key <> '') OR (c.managed=TRUE AND EXISTS (SELECT 1 FROM provider_credentials pc WHERE pc.channel_id=c.id AND pc.enabled=TRUE AND pc.entitlement_status='ACTIVE' AND pc.cost_reliable=TRUE)))
                   AND (c.cooldown_until IS NULL OR c.cooldown_until < CURRENT_TIMESTAMP)
                 GROUP BY LOWER(c.type)
                 ORDER BY LOWER(c.type)
@@ -77,7 +77,7 @@ public class OperationsService {
                     FROM model_mappings mm
                     JOIN channels c ON c.id = mm.channel_id
                     WHERE mm.enabled = TRUE AND c.enabled = TRUE AND c.health_status = 'HEALTHY'
-                      AND LOWER(c.type) = ? AND c.api_key IS NOT NULL AND c.api_key <> ''
+                      AND LOWER(c.type) = ? AND ((c.api_key IS NOT NULL AND c.api_key <> '') OR (c.managed=TRUE AND EXISTS (SELECT 1 FROM provider_credentials pc WHERE pc.channel_id=c.id AND pc.enabled=TRUE AND pc.entitlement_status='ACTIVE' AND pc.cost_reliable=TRUE)))
                       AND (c.cooldown_until IS NULL OR c.cooldown_until < CURRENT_TIMESTAMP)
                     ORDER BY mm.public_model_name LIMIT 8
                     """, String.class, type);

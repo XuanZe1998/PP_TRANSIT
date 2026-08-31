@@ -1,6 +1,7 @@
 package com.transit.controller;
 
 import com.transit.model.ProviderCredential;
+import com.transit.model.User;
 import com.transit.service.CurrentUserService;
 import com.transit.service.ProviderAccountAdminService;
 import lombok.RequiredArgsConstructor;
@@ -27,5 +28,11 @@ public class ProviderAccountAdminController {
     @PostMapping("/{id}/routes") public Map<String, Object> bind(@RequestHeader(HttpHeaders.AUTHORIZATION) String auth, @PathVariable long id, @RequestBody Map<String, Object> body) { admin(auth); accounts.bindRoute(id, body); return Map.of("status", "BOUND"); }
     @PostMapping("/{id}/quota-snapshots") public Map<String, Object> quota(@RequestHeader(HttpHeaders.AUTHORIZATION) String auth, @PathVariable long id, @RequestBody Map<String, Object> body) { admin(auth); accounts.snapshotQuota(id, body); return Map.of("status", "CAPTURED"); }
     @PostMapping("/{id}/test") public Map<String, Object> test(@RequestHeader(HttpHeaders.AUTHORIZATION) String auth, @PathVariable long id) { admin(auth); return accounts.test(id); }
-    @PostMapping("/oauth/{platform}/authorize") public Map<String, Object> oauth(@RequestHeader(HttpHeaders.AUTHORIZATION) String auth, @PathVariable String platform) { admin(auth); return accounts.oauthAuthorization(platform); }
+    @PostMapping("/oauth/{platform}/authorize") public Map<String, Object> oauth(@RequestHeader(HttpHeaders.AUTHORIZATION) String auth, @PathVariable String platform, @RequestBody Map<String, Object> body) { User user = currentUsers.requireAdmin(auth); return accounts.oauthAuthorization(platform, user.getId(), body); }
+    @PostMapping("/oauth/{platform}/exchange") public Map<String, Object> exchange(@RequestHeader(HttpHeaders.AUTHORIZATION) String auth, @PathVariable String platform, @RequestBody Map<String, Object> body) { admin(auth); return accounts.oauthExchange(platform, body); }
+    @PostMapping("/{id}/refresh") public ProviderCredential refresh(@RequestHeader(HttpHeaders.AUTHORIZATION) String auth, @PathVariable long id) { admin(auth); return accounts.refresh(id); }
+    @PostMapping("/{id}/sync-models") public Map<String, Object> syncModels(@RequestHeader(HttpHeaders.AUTHORIZATION) String auth, @PathVariable long id) { admin(auth); return accounts.syncModels(id); }
+    @PostMapping("/{id}/sync-quota") public Map<String, Object> syncQuota(@RequestHeader(HttpHeaders.AUTHORIZATION) String auth, @PathVariable long id) { admin(auth); return accounts.syncQuota(id); }
+    @PostMapping("/{id}/reauthorize") public Map<String, Object> reauthorize(@RequestHeader(HttpHeaders.AUTHORIZATION) String auth, @PathVariable long id, @RequestBody Map<String, Object> body) { User user = currentUsers.requireAdmin(auth); return accounts.reauthorize(id, user.getId(), body); }
+    @GetMapping("/{id}/events") public List<Map<String, Object>> events(@RequestHeader(HttpHeaders.AUTHORIZATION) String auth, @PathVariable long id) { admin(auth); return accounts.events(id); }
 }

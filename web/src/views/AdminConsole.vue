@@ -6,7 +6,7 @@
         <p>{{ config.description }}</p>
       </div>
       <div class="toolbar-actions">
-        <el-input v-model="query" clearable :placeholder="module === 'audit' ? '搜索 Trace、用户或模型' : '搜索当前列表'" :prefix-icon="Search" @keyup.enter="module === 'audit' ? loadAuditLogs() : undefined" />
+        <el-input v-model="query" clearable :placeholder="module === 'audit' ? '搜索 Trace、用户或模型' : '搜索当前列表'" :prefix-icon="Search" @keyup.enter="handleToolbarSearch" @clear="handleToolbarSearch" />
         <el-button :icon="Refresh" @click="load">刷新</el-button>
         <el-button v-if="config.createLabel" type="primary" :icon="Plus" @click="openCreate">
           {{ config.createLabel }}
@@ -80,7 +80,7 @@
             <span>{{ financeErrors.transactions }}</span>
             <el-button link type="primary" @click="loadFinanceSection('transactions')">重试</el-button>
           </div>
-          <el-table :data="filteredRows" v-loading="loading">
+          <el-table :data="rows" v-loading="loading">
             <el-table-column prop="username" label="用户" min-width="120" />
             <el-table-column prop="type" label="类型" width="120" />
             <el-table-column label="金额(CNY)" width="150">
@@ -93,6 +93,16 @@
             <el-table-column prop="remark" label="备注" min-width="180" />
             <el-table-column prop="created_at" label="时间" min-width="180" />
           </el-table>
+          <el-pagination
+            v-model:current-page="financePage"
+            v-model:page-size="financePageSize"
+            class="admin-pagination"
+            layout="total, sizes, prev, pager, next, jumper"
+            :page-sizes="[10, 20, 50, 100]"
+            :total="financeTotal"
+            @current-change="loadFinanceTransactions"
+            @size-change="handleFinancePageSizeChange"
+          />
         </article>
         <article class="panel">
           <div class="panel-head">
@@ -275,6 +285,7 @@
           </el-select>
           <el-tag type="success">{{ callablePublicModelCount }} 个前台可用模型</el-tag>
           <el-tag>{{ callableRouteCount }} / {{ filteredRows.length }} 条路由可调用</el-tag>
+          <el-button type="primary" plain @click="openModelMarketDisplay">广场排序</el-button>
         </div>
         <el-alert
           v-if="module === 'models' && rows.length > 0 && callableRouteCount === 0"
@@ -370,6 +381,25 @@
         </el-collapse>
       </section>
     </template>
+
+    <el-drawer v-model="modelMarketDisplayVisible" title="模型广场排序" size="min(720px, 94vw)">
+      <div class="model-market-priority-toolbar">
+        <el-input v-model="modelMarketDisplayQuery" clearable placeholder="搜索公开模型名称" :prefix-icon="Search" />
+        <span>数值越大越靠前，同优先级按名称升序。</span>
+      </div>
+      <el-table v-loading="modelMarketDisplayLoading" :data="filteredModelMarketDisplayItems" height="calc(100vh - 230px)">
+        <el-table-column prop="publicName" label="公开模型" min-width="330" />
+        <el-table-column label="展示优先级" width="190">
+          <template #default="{ row }">
+            <el-input-number v-model="row.displayPriority" :min="0" :max="1000000" :step="10" controls-position="right" />
+          </template>
+        </el-table-column>
+      </el-table>
+      <template #footer>
+        <el-button @click="modelMarketDisplayVisible = false">取消</el-button>
+        <el-button type="primary" :loading="modelMarketDisplaySaving" @click="saveModelMarketDisplay">批量保存</el-button>
+      </template>
+    </el-drawer>
 
     <el-drawer v-model="drawerVisible" :title="drawerTitle" :size="module === 'channels' ? 'min(1320px, 96vw)' : '520px'">
       <el-alert
@@ -823,6 +853,9 @@ const secondaryRows = ref<any[]>([])
 const rechargePlans = ref<any[]>([])
 type FinanceSection = 'summary' | 'transactions' | 'codes' | 'plans'
 const financeErrors = reactive<Record<FinanceSection, string>>({ summary: '', transactions: '', codes: '', plans: '' })
+const financePage = ref(1)
+const financePageSize = ref(20)
+const financeTotal = ref(0)
 const rechargePlanVisible = ref(false)
 const rechargePlanSaving = ref(false)
 const rechargePlanForm = reactive({ id: null as number | null, name: '', amount: 500000, bonusPercent: 0, sortOrder: 100, enabled: true })
@@ -877,6 +910,11 @@ const providerCatalog = ref<any[]>([])
 const modelProviderFilter = ref('')
 const modelPage = ref(1)
 const modelPageSize = ref(20)
+const modelMarketDisplayVisible = ref(false)
+const modelMarketDisplayLoading = ref(false)
+const modelMarketDisplaySaving = ref(false)
+const modelMarketDisplayQuery = ref('')
+const modelMarketDisplayItems = ref<Array<{ publicName: string; displayPriority: number }>>([])
 const issuedSecretVisible = ref(false)
 const issuedSecret = ref('')
 const securityTab = ref('policies')
@@ -1198,6 +1236,12 @@ const callablePublicModelCount = computed(() => new Set(rows.value
   .filter(row => row.callable && row.publicModelName)
   .map(row => row.publicModelName)).size)
 
+const filteredModelMarketDisplayItems = computed(() => {
+  const needle = modelMarketDisplayQuery.value.trim().toLowerCase()
+  if (!needle) return modelMarketDisplayItems.value
+  return modelMarketDisplayItems.value.filter(item => item.publicName.toLowerCase().includes(needle))
+})
+
 const metrics = computed(() => {
   if (module.value === 'dashboard') {
     const m = dashboard.value.metrics || {}
@@ -1211,10 +1255,10 @@ const metrics = computed(() => {
   if (module.value === 'finance') {
     const m = dashboard.value.finance || {}
     return [
-      { label: '入账', value: money(m.income), badge: '充值/兑换/调账', tone: 'green' },
-      { label: '消费', value: money(m.spending), badge: 'API 扣费', tone: 'orange' },
       { label: '用户余额', value: money(m.userBalance), badge: '全站余额', tone: 'blue' },
-      { label: '兑换码', value: number(m.activeRedeemCodes), badge: '启用中', tone: 'purple' }
+      { label: '充值金额', value: money(m.rechargeAmount), badge: '充值与兑换，不含调账', tone: 'green' },
+      { label: '消费', value: money(m.spending), badge: 'API 扣费', tone: 'orange' },
+      { label: '启用兑换码', value: number(m.activeRedeemCodes), badge: '当前可用', tone: 'purple' }
     ]
   }
   return []
@@ -1224,6 +1268,7 @@ watch(module, () => {
   query.value = ''
   modelProviderFilter.value = ''
   modelPage.value = 1
+  financePage.value = 1
   channelLedgerSections.value = []
   load()
 })
@@ -1254,7 +1299,7 @@ async function loadFinanceSection(section: FinanceSection) {
   financeErrors[section] = ''
   const endpoints: Record<FinanceSection, string> = {
     summary: '/api/admin/api/finance/summary',
-    transactions: '/api/admin/api/finance/transactions',
+    transactions: '/api/admin/api/finance/transactions/page',
     codes: '/api/admin/api/finance/redeem-codes',
     plans: '/api/admin/api/finance/recharge-plans'
   }
@@ -1262,13 +1307,65 @@ async function loadFinanceSection(section: FinanceSection) {
     summary: '财务汇总', transactions: '钱包流水', codes: '兑换码', plans: '充值套餐'
   }
   try {
-    const response = await http.get(endpoints[section])
+    const response = await http.get(endpoints[section], section === 'transactions' ? {
+      params: { page: financePage.value, size: financePageSize.value, query: query.value.trim() || undefined }
+    } : undefined)
     if (section === 'summary') dashboard.value.finance = response.data || {}
-    else if (section === 'transactions') rows.value = response.data || []
+    else if (section === 'transactions') {
+      rows.value = response.data?.items || []
+      financeTotal.value = Number(response.data?.total || 0)
+    }
     else if (section === 'codes') secondaryRows.value = response.data || []
     else rechargePlans.value = response.data || []
   } catch (error: unknown) {
     financeErrors[section] = getHttpErrorNotice(error, `${labels[section]}加载失败`)
+  }
+}
+
+function loadFinanceTransactions() {
+  return loadFinanceSection('transactions')
+}
+
+function handleFinancePageSizeChange() {
+  financePage.value = 1
+  void loadFinanceTransactions()
+}
+
+function handleToolbarSearch() {
+  if (module.value === 'audit') return loadAuditLogs()
+  if (module.value === 'finance') {
+    financePage.value = 1
+    return loadFinanceTransactions()
+  }
+}
+
+async function openModelMarketDisplay() {
+  modelMarketDisplayVisible.value = true
+  modelMarketDisplayLoading.value = true
+  modelMarketDisplayQuery.value = ''
+  try {
+    const response = await http.get('/api/admin/api/model-market/display-settings')
+    modelMarketDisplayItems.value = (response.data || []).map((item: any) => ({
+      publicName: String(item.publicName || ''),
+      displayPriority: Number(item.displayPriority || 0)
+    }))
+  } catch (error: unknown) {
+    ElMessage.error(getHttpErrorMessage(error, '广场排序加载失败'))
+  } finally {
+    modelMarketDisplayLoading.value = false
+  }
+}
+
+async function saveModelMarketDisplay() {
+  modelMarketDisplaySaving.value = true
+  try {
+    await http.put('/api/admin/api/model-market/display-settings', { items: modelMarketDisplayItems.value })
+    ElMessage.success('模型广场排序已保存')
+    modelMarketDisplayVisible.value = false
+  } catch (error: unknown) {
+    ElMessage.error(getHttpErrorMessage(error, '广场排序保存失败'))
+  } finally {
+    modelMarketDisplaySaving.value = false
   }
 }
 
@@ -3117,6 +3214,17 @@ function healthType(value: string) {
 .tier-table-cell span + span {
   padding-top: 8px;
   border-top: 1px dashed #e2e8f0;
+}
+
+.model-market-priority-toolbar {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.model-market-priority-toolbar span {
+  color: #64748b;
+  font-size: 12px;
 }
 
 @media (max-width: 1200px) {

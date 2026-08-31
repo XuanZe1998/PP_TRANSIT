@@ -135,12 +135,74 @@ features:
       enabled: ${LINKNUX_PROVIDER_ACCOUNTS_ENABLED:false}
     provider-oauth:
       enabled: ${LINKNUX_PROVIDER_OAUTH_ENABLED:false}
+      platforms:
+        codex: ${LINKNUX_PROVIDER_OAUTH_CODEX_ENABLED:false}
+        claude: ${LINKNUX_PROVIDER_OAUTH_CLAUDE_ENABLED:false}
+        gemini: ${LINKNUX_PROVIDER_OAUTH_GEMINI_ENABLED:false}
+        antigravity: ${LINKNUX_PROVIDER_OAUTH_ANTIGRAVITY_ENABLED:false}
+        grok: ${LINKNUX_PROVIDER_OAUTH_GROK_ENABLED:false}
     ops:
       enabled: ${LINKNUX_OPS_ENABLED:false}
 
 site:
   name: ${SITE_NAME:Linknux}
   description: ${SITE_DESCRIPTION:面向开发者与团队的一站式 AI 能力平台，统一连接主流模型，提供智能路由、用量治理、创作工具与企业协作。}
+
+# Provider OAuth endpoints and client credentials are deployment secrets. No
+# vendor client identifier or secret is shipped in the repository.
+upstream-oauth:
+  callback-base-url: ${UPSTREAM_OAUTH_CALLBACK_BASE_URL:}
+  providers:
+    codex:
+      client-id: ${CODEX_OAUTH_CLIENT_ID:}
+      client-secret: ${CODEX_OAUTH_CLIENT_SECRET:}
+      authorization-uri: ${CODEX_OAUTH_AUTHORIZATION_URI:}
+      token-uri: ${CODEX_OAUTH_TOKEN_URI:}
+      userinfo-uri: ${CODEX_OAUTH_USERINFO_URI:}
+      models-uri: ${CODEX_OAUTH_MODELS_URI:}
+      probe-uri: ${CODEX_OAUTH_PROBE_URI:}
+      upstream-base-url: ${CODEX_OAUTH_UPSTREAM_BASE_URL:}
+      scopes: ${CODEX_OAUTH_SCOPES:}
+    claude:
+      client-id: ${CLAUDE_OAUTH_CLIENT_ID:}
+      client-secret: ${CLAUDE_OAUTH_CLIENT_SECRET:}
+      authorization-uri: ${CLAUDE_OAUTH_AUTHORIZATION_URI:}
+      token-uri: ${CLAUDE_OAUTH_TOKEN_URI:}
+      userinfo-uri: ${CLAUDE_OAUTH_USERINFO_URI:}
+      models-uri: ${CLAUDE_OAUTH_MODELS_URI:}
+      probe-uri: ${CLAUDE_OAUTH_PROBE_URI:}
+      upstream-base-url: ${CLAUDE_OAUTH_UPSTREAM_BASE_URL:}
+      scopes: ${CLAUDE_OAUTH_SCOPES:}
+    gemini:
+      client-id: ${GEMINI_OAUTH_CLIENT_ID:}
+      client-secret: ${GEMINI_OAUTH_CLIENT_SECRET:}
+      authorization-uri: ${GEMINI_OAUTH_AUTHORIZATION_URI:}
+      token-uri: ${GEMINI_OAUTH_TOKEN_URI:}
+      userinfo-uri: ${GEMINI_OAUTH_USERINFO_URI:}
+      models-uri: ${GEMINI_OAUTH_MODELS_URI:}
+      probe-uri: ${GEMINI_OAUTH_PROBE_URI:}
+      upstream-base-url: ${GEMINI_OAUTH_UPSTREAM_BASE_URL:}
+      scopes: ${GEMINI_OAUTH_SCOPES:}
+    antigravity:
+      client-id: ${ANTIGRAVITY_OAUTH_CLIENT_ID:}
+      client-secret: ${ANTIGRAVITY_OAUTH_CLIENT_SECRET:}
+      authorization-uri: ${ANTIGRAVITY_OAUTH_AUTHORIZATION_URI:}
+      token-uri: ${ANTIGRAVITY_OAUTH_TOKEN_URI:}
+      userinfo-uri: ${ANTIGRAVITY_OAUTH_USERINFO_URI:}
+      models-uri: ${ANTIGRAVITY_OAUTH_MODELS_URI:}
+      probe-uri: ${ANTIGRAVITY_OAUTH_PROBE_URI:}
+      upstream-base-url: ${ANTIGRAVITY_OAUTH_UPSTREAM_BASE_URL:}
+      scopes: ${ANTIGRAVITY_OAUTH_SCOPES:}
+    grok:
+      client-id: ${GROK_OAUTH_CLIENT_ID:}
+      client-secret: ${GROK_OAUTH_CLIENT_SECRET:}
+      authorization-uri: ${GROK_OAUTH_AUTHORIZATION_URI:}
+      token-uri: ${GROK_OAUTH_TOKEN_URI:}
+      userinfo-uri: ${GROK_OAUTH_USERINFO_URI:}
+      models-uri: ${GROK_OAUTH_MODELS_URI:}
+      probe-uri: ${GROK_OAUTH_PROBE_URI:}
+      upstream-base-url: ${GROK_OAUTH_UPSTREAM_BASE_URL:}
+      scopes: ${GROK_OAUTH_SCOPES:}
 
 shopgpt:
   base-url: ${SHOPGPT_BASE_URL:}

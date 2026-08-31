@@ -262,6 +262,7 @@ public class AdminChannelService {
         if (channel == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Channel not found");
         ProviderCredentialService.SelectedCredential selected = providerCredentialService.select(channel, credentialId);
         channel.setApiKey(selected.secret());
+        channel.setAuthContext(selected.authContext());
         String model = resolveProviderModel(channel, Map.of());
         if (model == null || model.isBlank()) {
             providerCredentialService.releaseUnknown(credentialId);

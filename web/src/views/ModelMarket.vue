@@ -80,7 +80,9 @@
           <div class="market-result-count"><strong>{{ filteredModels.length }}</strong><span> 个模型</span></div>
           <el-input v-model="filters.query" clearable placeholder="搜索模型名称、发布方或能力" class="market-search" />
           <el-select v-model="filters.sort" class="market-select" aria-label="排序方式">
-            <el-option label="名称排序" value="name" />
+            <el-option label="优先级（高到低）" value="priority" />
+            <el-option label="名称升序" value="name_asc" />
+            <el-option label="名称降序" value="name_desc" />
             <el-option label="热度优先" value="popular" />
             <el-option label="发布方排序" value="provider" />
           </el-select>
@@ -162,6 +164,7 @@ import { clampPage, classifyModel, modelCategoryOptions, pageItems, type ModelCa
 type PublicUpstream = { code: string; name: string }
 type PublicModel = {
   publicName: string
+  displayPriority?: number
   source?: string
   sources?: string
   sourceName?: string
@@ -200,6 +203,7 @@ type MarketModel = {
   tags: string[]
   upstreams: Array<{ value: string; label: string }>
   popularity: number
+  displayPriority: number
 }
 
 const router = useRouter()
@@ -213,7 +217,7 @@ const resultsElement = ref<HTMLElement | null>(null)
 const callVisible = ref(false)
 const callTarget = ref<MarketModel | null>(null)
 const customerRebateBps = ref(0)
-const filters = reactive({ query: '', source: '', publisher: '', category: '' as ModelCategory | '', tag: '', sort: 'name' })
+const filters = reactive({ query: '', source: '', publisher: '', category: '' as ModelCategory | '', tag: '', sort: 'priority' })
 
 const publishers: Publisher[] = [
   { label: 'NVIDIA', value: 'nvidia', icon: '/model-icons/nvidia.svg' },
@@ -277,7 +281,8 @@ function enrich(model: PublicModel, index: number): MarketModel {
     description: `${publisher.label} 提供的${categoryLabels[category]}，通过本站统一网关接入；可用性与价格以当前公开目录为准。`,
     tags,
     upstreams,
-    popularity: Math.max(1, 1000 - index)
+    popularity: Math.max(1, 1000 - index),
+    displayPriority: Number(model.displayPriority || 0)
   }
 }
 
@@ -294,11 +299,13 @@ const filteredModels = computed(() => {
   })
   if (filters.sort === 'popular') return [...rows].sort((a, b) => b.popularity - a.popularity)
   if (filters.sort === 'provider') return [...rows].sort((a, b) => a.publisher.label.localeCompare(b.publisher.label) || a.publicName.localeCompare(b.publicName))
+  if (filters.sort === 'name_desc') return [...rows].sort((a, b) => b.publicName.localeCompare(a.publicName))
+  if (filters.sort === 'priority') return [...rows].sort((a, b) => b.displayPriority - a.displayPriority || a.publicName.localeCompare(b.publicName))
   return [...rows].sort((a, b) => a.publicName.localeCompare(b.publicName))
 })
 const displayModels = computed(() => pageItems(filteredModels.value, page.value, pageSize.value))
 const connectedCount = computed(() => models.value.filter(model => model.raw.available !== false).length)
-const hasFilters = computed(() => Boolean(filters.query || filters.source || filters.publisher || filters.category || filters.tag || filters.sort !== 'name'))
+const hasFilters = computed(() => Boolean(filters.query || filters.source || filters.publisher || filters.category || filters.tag || filters.sort !== 'priority'))
 
 function countedOptions<T extends { value: string; label: string }>(options: T[], values: string[]) {
   const counts = new Map<string, number>()
@@ -330,7 +337,7 @@ async function fetchModels() {
     let total = 0
     do {
       const response = await http.get<PageResponse<PublicModel>>('/api/public/models', {
-        params: { page: catalogPage, size: 100, sort: 'name', availability: 'available' }
+        params: { page: catalogPage, size: 100, sort: 'priority', availability: 'available' }
       })
       catalog.push(...(response.data?.items || []))
       total = Number(response.data?.total || catalog.length)
@@ -359,7 +366,7 @@ function choose(field: 'source' | 'publisher' | 'category' | 'tag', value: strin
   record[field] = record[field] === value ? '' : value
 }
 function clearFilters() {
-  filters.query = ''; filters.source = ''; filters.publisher = ''; filters.category = ''; filters.tag = ''; filters.sort = 'name'; page.value = 1
+  filters.query = ''; filters.source = ''; filters.publisher = ''; filters.category = ''; filters.tag = ''; filters.sort = 'priority'; page.value = 1
 }
 function handlePageSizeChange() { page.value = 1; scrollToResults() }
 function scrollToResults() {

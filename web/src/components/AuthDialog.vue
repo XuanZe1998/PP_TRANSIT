@@ -2,9 +2,9 @@
   <el-dialog v-model="visible" class="auth-dialog" width="min(520px, 92vw)" :show-close="true" :close-on-click-modal="!loading" @closed="closeDialog">
     <div class="auth-dialog-head">
       <span class="auth-dialog-mark"><img :src="siteConfig.logoUrl" alt="" /></span>
-      <div><p>SECURE ACCESS</p><h2>{{ mode === 'register' ? `创建 ${siteConfig.name} 账号` : `登录 ${siteConfig.name}` }}</h2></div>
+      <div><p>SECURE ACCESS</p><h2>{{ authTitle }}</h2></div>
     </div>
-    <el-radio-group v-if="!ipChallengeId" v-model="mode" class="auth-mode" @change="changeMode">
+    <el-radio-group v-if="!ipChallengeId && mode !== 'reset'" v-model="mode" class="auth-mode" @change="changeMode">
       <el-radio-button value="login">登录</el-radio-button><el-radio-button value="register">注册</el-radio-button>
     </el-radio-group>
     <el-form v-if="ipChallengeId" label-position="top" @submit.prevent="verifyLoginIp">
@@ -12,6 +12,22 @@
       <el-form-item label="邮箱验证码"><el-input v-model="ipVerifyCode" maxlength="6" inputmode="numeric" autocomplete="one-time-code" /></el-form-item>
       <el-button native-type="submit" class="auth-submit" type="primary" size="large" :loading="loading">验证并登录</el-button>
       <el-button class="auth-submit secondary" @click="ipChallengeId=''">返回登录</el-button>
+    </el-form>
+    <el-form v-else-if="mode === 'reset'" :model="resetForm" label-position="top" @submit.prevent="confirmPasswordReset">
+      <el-alert title="使用注册邮箱接收验证码并设置新密码。为保护账号，无论邮箱是否存在都会显示相同提示。" type="info" :closable="false" />
+      <el-form-item label="注册邮箱">
+        <el-input v-model="resetForm.email" size="large" autocomplete="email" placeholder="team@example.com" />
+      </el-form-item>
+      <el-form-item label="邮箱验证码">
+        <div class="verify-row">
+          <el-input v-model="resetForm.code" size="large" maxlength="6" inputmode="numeric" autocomplete="one-time-code" />
+          <el-button :disabled="resetCountdown > 0 || loading" @click="requestPasswordReset">{{ resetCountdown ? `${resetCountdown}s` : '发送验证码' }}</el-button>
+        </div>
+      </el-form-item>
+      <el-form-item label="新密码"><el-input v-model="resetForm.password" size="large" type="password" show-password autocomplete="new-password" placeholder="10–72 字节，包含字母和数字" /></el-form-item>
+      <el-form-item label="确认新密码"><el-input v-model="resetForm.confirmPassword" size="large" type="password" show-password autocomplete="new-password" /></el-form-item>
+      <el-button native-type="submit" class="auth-submit" type="primary" size="large" :loading="loading">重置密码</el-button>
+      <el-button class="auth-submit secondary" @click="changeMode('login')">返回登录</el-button>
     </el-form>
     <el-form v-else :model="form" label-position="top" @submit.prevent="submit">
       <el-form-item v-if="mode === 'login'" label="账号"><el-input v-model="form.identifier" size="large" autofocus autocomplete="username" placeholder="邮箱 / 手机号" /></el-form-item>
@@ -26,13 +42,16 @@
         <el-form-item v-if="requiresPhone && form.accountType==='PERSONAL'" label="短信验证码"><div class="verify-row"><el-input v-model="form.phoneCode" size="large" maxlength="6" inputmode="numeric" /><el-button :disabled="phoneCountdown>0" @click="sendCode('phone')">{{ phoneCountdown ? `${phoneCountdown}s` : '发送验证码' }}</el-button></div></el-form-item>
       </template>
       <el-form-item label="密码"><el-input v-model="form.password" size="large" type="password" show-password :autocomplete="mode==='login'?'current-password':'new-password'" placeholder="10–72 字节，包含字母和数字" /></el-form-item>
+      <div v-if="mode === 'login'" class="forgot-password-row"><el-button link type="primary" @click="changeMode('reset')">忘记密码？</el-button></div>
       <el-form-item v-if="mode === 'register'" label="确认密码"><el-input v-model="form.confirmPassword" size="large" type="password" show-password autocomplete="new-password" /></el-form-item>
       <el-checkbox v-if="mode==='register'" v-model="form.acceptedAgreements" class="agreement-check">我已阅读并接受 <router-link target="_blank" to="/terms">用户协议</router-link> 和 <router-link target="_blank" to="/privacy">隐私政策</router-link></el-checkbox>
       <el-button native-type="submit" class="auth-submit" type="primary" size="large" :loading="loading" :disabled="loading">{{ mode === 'register' ? '注册并进入控制台' : '登录控制台' }}</el-button>
     </el-form>
-    <el-divider>或使用第三方账号</el-divider>
-    <div class="oauth-actions"><el-button :disabled="loading" @click="startOAuth('github')">GitHub</el-button><el-button :disabled="loading" @click="startOAuth('google')">Google</el-button></div>
-    <p class="auth-security-note">登录信息通过 HTTPS 发送；连续失败会触发短时锁定。第三方授权会离开本站并在完成后返回。</p>
+    <template v-if="mode !== 'reset'">
+      <el-divider>或使用第三方账号</el-divider>
+      <div class="oauth-actions"><el-button :disabled="loading" @click="startOAuth('github')">GitHub</el-button><el-button :disabled="loading" @click="startOAuth('google')">Google</el-button></div>
+      <p class="auth-security-note">登录信息通过 HTTPS 发送；连续失败会触发短时锁定。第三方授权会离开本站并在完成后返回。</p>
+    </template>
   </el-dialog>
 </template>
 
@@ -47,21 +66,24 @@ import { siteConfig } from '@/config/site'
 
 const route = useRoute(), router = useRouter()
 const visible = computed({
-  get: () => route.query.auth === 'login' || route.query.auth === 'register',
+  get: () => route.query.auth === 'login' || route.query.auth === 'register' || route.query.auth === 'reset',
   set: value => { if (!value) closeDialog() }
 })
-const mode = ref<'login' | 'register'>(route.query.auth === 'register' ? 'register' : 'login')
+type AuthMode = 'login' | 'register' | 'reset'
+const mode = ref<AuthMode>(route.query.auth === 'register' ? 'register' : route.query.auth === 'reset' ? 'reset' : 'login')
+const authTitle = computed(() => mode.value === 'register' ? `创建 ${siteConfig.name} 账号` : mode.value === 'reset' ? '找回密码' : `登录 ${siteConfig.name}`)
 const loading = ref(false)
 const verificationMode = ref<'EMAIL_ONLY'|'EMAIL_AND_PHONE'>('EMAIL_AND_PHONE')
 const requiresPhone = computed(() => verificationMode.value === 'EMAIL_AND_PHONE')
 const phoneRequired = computed(() => form.accountType === 'ENTERPRISE' || requiresPhone.value)
 const identifierStatus = ref<{ valid: boolean; available: boolean; type: string } | null>(null)
 const form = reactive({ identifier: '', accountType:'PERSONAL' as 'PERSONAL'|'ENTERPRISE',companyName:'',contactName:'',email:'', emailCode:'', phone:'', phoneCode:'', password: '', confirmPassword: '',acceptedAgreements:false,inviteCode:String(route.query.aff || '').trim().slice(0,32) })
+const resetForm = reactive({ email: '', code: '', password: '', confirmPassword: '' })
 const legal=ref<any>(null),ipChallengeId=ref(''),maskedEmail=ref(''),ipVerifyCode=ref('')
-const emailCountdown=ref(0),phoneCountdown=ref(0)
+const emailCountdown=ref(0),phoneCountdown=ref(0),resetCountdown=ref(0)
 let timer: number | undefined, requestId = 0
 
-watch(() => route.query.auth, value => { if (value === 'login' || value === 'register') mode.value = value })
+watch(() => route.query.auth, value => { if (value === 'login' || value === 'register' || value === 'reset') mode.value = value })
 watch(() => form.identifier, value => {
   window.clearTimeout(timer); const current = ++requestId; identifierStatus.value = null
   if (mode.value !== 'register' || (!isEmail(value) && !isPhone(value))) return
@@ -94,8 +116,44 @@ function safeRedirect(value: unknown) {
     : ''
 }
 function changeMode(value: string | number | boolean | undefined) {
-  mode.value = value === 'register' ? 'register' : 'login'; form.confirmPassword = ''; identifierStatus.value = null
+  mode.value = value === 'register' ? 'register' : value === 'reset' ? 'reset' : 'login'; form.confirmPassword = ''; identifierStatus.value = null
   router.replace({ path: route.path, query: { ...route.query, auth: mode.value } })
+}
+
+async function requestPasswordReset() {
+  if (!isEmail(resetForm.email)) return ElMessage.warning('请先填写有效邮箱')
+  loading.value = true
+  try {
+    const response = await http.post('/api/auth/password-reset/request', { email: resetForm.email.trim() })
+    if (response.data?.debugCode) ElMessage.info(`本地调试验证码：${response.data.debugCode}`)
+    ElMessage.success(response.data?.message || '如邮箱已注册，验证码将发送至该邮箱')
+    let left = 60
+    resetCountdown.value = left
+    const id = window.setInterval(() => { resetCountdown.value = --left; if (left <= 0) window.clearInterval(id) }, 1000)
+  } catch (error: unknown) {
+    ElMessage.error(getHttpErrorMessage(error, '密码重置申请失败'))
+  } finally {
+    loading.value = false
+  }
+}
+
+async function confirmPasswordReset() {
+  if (!isEmail(resetForm.email) || !/^\d{6}$/.test(resetForm.code)) return ElMessage.warning('请填写有效邮箱和 6 位验证码')
+  if (!/^(?=.*[A-Za-z])(?=.*\d).{10,}$/.test(resetForm.password) || new TextEncoder().encode(resetForm.password).length > 72) return ElMessage.warning('密码需为 10–72 字节，且包含字母和数字')
+  if (resetForm.password !== resetForm.confirmPassword) return ElMessage.warning('两次输入的密码不一致')
+  loading.value = true
+  try {
+    await http.post('/api/auth/password-reset/confirm', resetForm)
+    ElMessage.success('密码已重置，请使用新密码登录')
+    form.identifier = resetForm.email.trim()
+    form.password = ''
+    resetForm.code = ''; resetForm.password = ''; resetForm.confirmPassword = ''
+    await changeMode('login')
+  } catch (error: unknown) {
+    ElMessage.error(getHttpErrorMessage(error, '验证码无效或已过期'))
+  } finally {
+    loading.value = false
+  }
 }
 async function sendCode(channel:'email'|'phone'){
   const recipient=channel==='email'?form.email.trim():form.phone.trim()
@@ -161,4 +219,5 @@ const isPhone = (value: string) => /^(1[3-9]\d{9}|\+[1-9]\d{7,14})$/.test(value.
 .auth-dialog-head{display:flex;align-items:center;gap:14px;margin-bottom:18px}.auth-dialog-mark{display:grid;width:48px;height:48px;place-items:center;border-radius:14px;background:#eef6ff;box-shadow:0 10px 24px rgba(23,105,255,.18)}.auth-dialog-mark img{width:42px;height:42px;object-fit:contain}.auth-dialog-head p{margin:0;color:#0b91b5;font-size:11px;font-weight:800;letter-spacing:.16em}.auth-dialog-head h2{margin:3px 0 0;color:#132846;font-size:24px}.auth-mode{width:100%;margin-bottom:18px}.auth-mode :deep(.el-radio-button){width:50%}.auth-mode :deep(.el-radio-button__inner){width:100%}.auth-submit{width:100%}.oauth-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}.auth-security-note{margin:16px 0 0;color:#71829b;font-size:12px;line-height:1.65}.ok{color:#149260}.bad{color:#d73d5b}
 .verify-row{display:grid;width:100%;grid-template-columns:minmax(0,1fr) auto;gap:8px}
 .agreement-check{margin:0 0 16px;white-space:normal}.agreement-check a{color:#2563eb}.auth-submit.secondary{margin:10px 0 0;width:100%}
+.forgot-password-row{display:flex;justify-content:flex-end;margin:-12px 0 10px}
 </style>

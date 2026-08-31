@@ -71,7 +71,7 @@ public class PublicController {
                                                   @RequestParam(value = "availability", required = false, defaultValue = "available") String availability,
                                                   @RequestParam(value = "capability", required = false) String capability,
                                                   @RequestParam(value = "vendor", required = false) String vendor,
-                                                  @RequestParam(value = "sort", required = false, defaultValue = "name") String sort) {
+                                                  @RequestParam(value = "sort", required = false, defaultValue = "priority") String sort) {
         if (page < 1 || page > 1_000_000) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "page must be between 1 and 1000000");
         }
@@ -103,7 +103,7 @@ public class PublicController {
                             || (item.getSources() != null && List.of(item.getSources().split(",")).stream().anyMatch(normalizedType::equalsIgnoreCase)))
                     .filter(item -> normalizeBlank(capability) == null || normalizeBlank(capability).equalsIgnoreCase(item.getCapability()))
                     .filter(item -> normalizeBlank(vendor) == null || normalizeBlank(vendor).equalsIgnoreCase(item.getVendor()))
-                    .sorted(java.util.Comparator.comparing(PublicModel::getPublicName, String.CASE_INSENSITIVE_ORDER))
+                    .sorted(publicModelComparator(sort))
                     .toList();
             int from = Math.min(offset, filtered.size());
             int to = Math.min(from + size, filtered.size());
@@ -120,6 +120,10 @@ public class PublicController {
             items = modelMappingMapper.findPublicModelsPagedHot(normalizedQuery, normalizedType, size, offset);
         } else if ("recent".equalsIgnoreCase(sort)) {
             items = modelMappingMapper.findPublicModelsPagedRecent(normalizedQuery, normalizedType, size, offset);
+        } else if ("priority".equalsIgnoreCase(sort)) {
+            items = modelMappingMapper.findPublicModelsPagedByPriority(normalizedQuery, normalizedType, size, offset);
+        } else if ("name_desc".equalsIgnoreCase(sort)) {
+            items = modelMappingMapper.findPublicModelsPagedByNameDesc(normalizedQuery, normalizedType, size, offset);
         } else {
             items = modelMappingMapper.findPublicModelsPagedByName(normalizedQuery, normalizedType, size, offset);
         }
@@ -208,5 +212,15 @@ public class PublicController {
         }
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private java.util.Comparator<PublicModel> publicModelComparator(String sort) {
+        java.util.Comparator<PublicModel> byName = java.util.Comparator.comparing(
+                PublicModel::getPublicName, String.CASE_INSENSITIVE_ORDER);
+        if ("name_desc".equalsIgnoreCase(sort)) return byName.reversed();
+        if ("priority".equalsIgnoreCase(sort)) {
+            return java.util.Comparator.comparingInt(PublicModel::getDisplayPriority).reversed().thenComparing(byName);
+        }
+        return byName;
     }
 }

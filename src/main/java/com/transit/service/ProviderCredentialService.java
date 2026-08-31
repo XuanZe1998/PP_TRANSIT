@@ -5,6 +5,7 @@ import com.transit.mapper.ChannelMapper;
 import com.transit.mapper.ProviderCredentialMapper;
 import com.transit.model.Channel;
 import com.transit.model.ProviderCredential;
+import com.transit.model.ProviderAuthContext;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -17,6 +18,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.time.Duration;
@@ -32,6 +34,8 @@ public class ProviderCredentialService {
     private final ConcurrentHashMap<Long, AtomicInteger> inFlight = new ConcurrentHashMap<>();
     @Autowired(required = false)
     private StringRedisTemplate redis;
+    @Autowired(required = false)
+    private ProviderOAuthTokenService oauthTokens;
     @Value("${features.linknux.provider-accounts.enabled:false}")
     private boolean providerAccountsEnabled;
 
@@ -45,11 +49,15 @@ public class ProviderCredentialService {
 
     public boolean hasAvailable(Channel channel) {
         if (channel == null || channel.getId() == null) return false;
-        long count = mapper.selectCount(new LambdaQueryWrapper<ProviderCredential>()
+        LambdaQueryWrapper<ProviderCredential> query = new LambdaQueryWrapper<ProviderCredential>()
                 .eq(ProviderCredential::getChannelId, channel.getId())
                 .eq(ProviderCredential::isEnabled, true)
                 .and(q -> q.isNull(ProviderCredential::getCooldownUntil)
-                        .or().lt(ProviderCredential::getCooldownUntil, LocalDateTime.now())));
+                        .or().lt(ProviderCredential::getCooldownUntil, LocalDateTime.now()));
+        if (channel.isManaged()) query.eq(ProviderCredential::getAuthType, "OAUTH")
+                .eq(ProviderCredential::getEntitlementStatus, "ACTIVE").eq(ProviderCredential::isCostReliable, true)
+                .in(ProviderCredential::getHealthStatus, List.of("HEALTHY", "DEGRADED"));
+        long count = mapper.selectCount(query);
         return count > 0 || (channel.getApiKey() != null && !channel.getApiKey().isBlank());
     }
 
@@ -114,7 +122,7 @@ public class ProviderCredentialService {
 
     /** Selects one healthy credential while preserving the legacy channel key as a fallback. */
     public SelectedCredential select(Channel channel) {
-        return providerAccountsEnabled ? selectEnhanced(channel, null, null, false) : selectLegacy(channel);
+        return providerAccountsEnabled || channel.isManaged() ? selectEnhanced(channel, null, null, false) : selectLegacy(channel);
     }
 
     /** Selects an account with optional model compatibility and session stickiness. */
@@ -123,7 +131,7 @@ public class ProviderCredentialService {
     }
 
     public SelectedCredential select(Channel channel, String model, String sessionId, boolean requireReliableCost) {
-        if (!providerAccountsEnabled && !requireReliableCost) return selectLegacy(channel);
+        if (!providerAccountsEnabled && !channel.isManaged() && !requireReliableCost) return selectLegacy(channel);
         return selectEnhanced(channel, model, sessionId, requireReliableCost);
     }
 
@@ -134,7 +142,7 @@ public class ProviderCredentialService {
                 ProviderCredential sticky = mapper.selectById(stickyId);
                 if (eligible(sticky, channel, model) && (!requireReliableCost || sticky.isCostReliable())) {
                     acquire(sticky.getId());
-                    return new SelectedCredential(sticky.getId(), secrets.decrypt(sticky.getSecret()));
+                    return selected(sticky, channel);
                 }
             }
         }
@@ -163,8 +171,12 @@ public class ProviderCredentialService {
         int topPriority = candidates.get(0).getPriority();
         long minimumActive = candidates.stream().filter(item -> item.getPriority() == topPriority)
                 .mapToLong(item -> active(item.getId())).min().orElse(0);
-        List<ProviderCredential> tier = candidates.stream()
+        List<ProviderCredential> concurrencyTier = candidates.stream()
                 .filter(item -> item.getPriority() == topPriority && active(item.getId()) == minimumActive).toList();
+        long minimumLatency = concurrencyTier.stream().mapToLong(ProviderCredential::getAverageLatencyMs).min().orElse(0);
+        List<ProviderCredential> latencyTier = concurrencyTier.stream().filter(item -> item.getAverageLatencyMs() == minimumLatency).toList();
+        LocalDateTime oldestUse = latencyTier.stream().map(item -> item.getLastUsedAt() == null ? LocalDateTime.MIN : item.getLastUsedAt()).min(LocalDateTime::compareTo).orElse(LocalDateTime.MIN);
+        List<ProviderCredential> tier = latencyTier.stream().filter(item -> Objects.equals(item.getLastUsedAt() == null ? LocalDateTime.MIN : item.getLastUsedAt(), oldestUse)).toList();
         int totalWeight = tier.stream().mapToInt(item -> Math.max(1, item.getWeight())).sum();
         int cursor = Math.floorMod(roundRobin.computeIfAbsent(channel.getId(), ignored -> new AtomicInteger())
                 .getAndIncrement(), totalWeight);
@@ -175,7 +187,7 @@ public class ProviderCredentialService {
         }
         acquire(selected.getId());
         if (sessionId != null && !sessionId.isBlank()) rememberSticky(channel.getId(), sessionId, selected.getId());
-        return new SelectedCredential(selected.getId(), secrets.decrypt(selected.getSecret()));
+        return selected(selected, channel);
     }
 
     /** Exact pre-Linknux selection semantics used while the rollout flag is disabled. */
@@ -208,7 +220,7 @@ public class ProviderCredentialService {
                 .getAndIncrement(), tier.size());
         ProviderCredential selected = tier.get(cursor);
         acquire(selected.getId());
-        return new SelectedCredential(selected.getId(), secrets.decrypt(selected.getSecret()));
+        return selected(selected, channel);
     }
 
     public SelectedCredential select(Channel channel, Long credentialId) {
@@ -217,7 +229,7 @@ public class ProviderCredentialService {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Credential is disabled");
         }
         acquire(selected.getId());
-        return new SelectedCredential(selected.getId(), secrets.decrypt(selected.getSecret()));
+        return selected(selected, channel);
     }
 
     public void recordSuccess(Long credentialId, long latencyMs) {
@@ -236,17 +248,36 @@ public class ProviderCredentialService {
         }
     }
 
+    public void recordSuccess(Long credentialId, long latencyMs, long tokens) {
+        recordSuccess(credentialId, latencyMs);
+        if (credentialId == null || tokens <= 0 || redis == null) return;
+        try {
+            String key = "gateway:credential:" + credentialId + ":tpm:" + LocalDateTime.now().withSecond(0).withNano(0);
+            redis.opsForValue().increment(key, tokens); redis.expire(key, Duration.ofMinutes(2));
+        } catch (RuntimeException ignored) { }
+    }
+
     public void recordFailure(Long credentialId, Throwable error) {
         if (credentialId == null) return;
         String message = error == null ? "Unknown error" : String.valueOf(error.getMessage());
         try {
-            mapper.update(null, new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<ProviderCredential>()
+            var update = new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<ProviderCredential>()
                     .eq(ProviderCredential::getId, credentialId)
                     .set(ProviderCredential::getHealthStatus, "DEGRADED")
                     .setSql("consecutive_failures = consecutive_failures + 1")
                     .setSql("total_failures = total_failures + 1")
                     .set(ProviderCredential::getLastErrorClass, UpstreamErrorClassifier.classify(error).name())
-                    .set(ProviderCredential::getLastError, message.substring(0, Math.min(1000, message.length()))));
+                    .set(ProviderCredential::getLastError, message.substring(0, Math.min(1000, message.length())));
+            if (error instanceof org.springframework.web.reactive.function.client.WebClientResponseException response) {
+                if (response.getStatusCode().value() == 403) update.set(ProviderCredential::getEntitlementStatus, "INVALID")
+                        .set(ProviderCredential::isEnabled, false).set(ProviderCredential::getHealthStatus, "DISABLED");
+                if (response.getStatusCode().value() == 429) {
+                    long seconds = 60;
+                    try { seconds = Math.max(1, Long.parseLong(response.getHeaders().getFirst("Retry-After"))); } catch (Exception ignored) { }
+                    update.set(ProviderCredential::getCooldownUntil, LocalDateTime.now().plusSeconds(Math.min(seconds, 86400)));
+                }
+            }
+            mapper.update(null, update);
         } finally {
             release(credentialId);
         }
@@ -304,13 +335,15 @@ public class ProviderCredentialService {
         if (item.getCooldownUntil() != null && item.getCooldownUntil().isAfter(now)) return false;
         if (item.getTemporaryUnschedulableUntil() != null && item.getTemporaryUnschedulableUntil().isAfter(now)) return false;
         if ("DISABLED".equalsIgnoreCase(item.getHealthStatus())) return false;
-        if (item.getOauthExpiresAt() != null && item.getOauthExpiresAt().isBefore(now)
-                && !"API_KEY".equalsIgnoreCase(item.getAuthType())) return false;
+        if ("OAUTH".equalsIgnoreCase(item.getAuthType())) {
+            if (item.getCredentialBundle() == null || item.getCredentialBundle().isBlank()
+                    || !"ACTIVE".equalsIgnoreCase(item.getEntitlementStatus())) return false;
+        }
         if (item.getConcurrencyLimit() > 0 && active(item.getId()) >= item.getConcurrencyLimit()) return false;
         if (model != null && item.getModelScope() != null && !item.getModelScope().isBlank()
                 && java.util.Arrays.stream(item.getModelScope().split(",")).map(String::trim)
-                .noneMatch(scope -> "*".equals(scope) || scope.equalsIgnoreCase(model))) return false;
-        return !rpmExhausted(item);
+                .noneMatch(scope -> glob(scope, model))) return false;
+        return !rpmExhausted(item) && !tpmExhausted(item);
     }
 
     private boolean rpmExhausted(ProviderCredential item) {
@@ -325,7 +358,7 @@ public class ProviderCredentialService {
     private Long stickyCredential(Long channelId, String sessionId) {
         if (redis == null || sessionId.length() > 256) return null;
         try {
-            String value = redis.opsForValue().get("gateway:sticky:" + channelId + ":" + Integer.toHexString(sessionId.hashCode()));
+            String value = redis.opsForValue().get(stickyKey(channelId, sessionId));
             return value == null ? null : Long.valueOf(value);
         } catch (RuntimeException ignored) { return null; }
     }
@@ -333,7 +366,7 @@ public class ProviderCredentialService {
     private void rememberSticky(Long channelId, String sessionId, Long credentialId) {
         if (redis == null || sessionId.length() > 256) return;
         try {
-            redis.opsForValue().set("gateway:sticky:" + channelId + ":" + Integer.toHexString(sessionId.hashCode()),
+            redis.opsForValue().set(stickyKey(channelId, sessionId),
                     String.valueOf(credentialId), Duration.ofHours(2));
         } catch (RuntimeException ignored) { /* sticky routing is best effort */ }
     }
@@ -353,6 +386,9 @@ public class ProviderCredentialService {
         }
         if (secretRequired && (value.getSecret() == null || value.getSecret().isBlank())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Credential secret is required");
+        }
+        if (value.getAuthType() != null && !value.getAuthType().isBlank() && !"API_KEY".equalsIgnoreCase(value.getAuthType())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "OAuth/Token/Cookie 凭证不能手工导入，请使用管理员 OAuth 授权向导");
         }
         if (value.getWeight() < 0 || value.getRpmLimit() < 0 || value.getTpmLimit() < 0
                 || value.getConcurrencyLimit() < 0) {
@@ -379,5 +415,50 @@ public class ProviderCredentialService {
         return value.substring(0, 4) + "****" + value.substring(value.length() - 4);
     }
 
-    public record SelectedCredential(Long id, String secret) {}
+    private boolean tpmExhausted(ProviderCredential item) {
+        if (item.getTpmLimit() <= 0 || redis == null) return false;
+        try {
+            String value = redis.opsForValue().get("gateway:credential:" + item.getId() + ":tpm:" + LocalDateTime.now().withSecond(0).withNano(0));
+            return value != null && Long.parseLong(value) >= item.getTpmLimit();
+        } catch (RuntimeException ignored) { return false; }
+    }
+
+    private String stickyKey(Long channelId, String sessionId) {
+        return "gateway:sticky:" + channelId + ":" + UpstreamOAuthStateService.sha256(sessionId).substring(0, 32);
+    }
+
+    public void refreshOAuth(Long credentialId) {
+        if (oauthTokens == null) throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "OAuth token service is unavailable");
+        oauthTokens.forceRefresh(credentialId);
+    }
+
+    private boolean glob(String pattern, String value) {
+        StringBuilder regex = new StringBuilder("^");
+        for (char current : pattern.toCharArray()) {
+            if (current == '*') regex.append(".*"); else if (current == '?') regex.append('.');
+            else regex.append(java.util.regex.Pattern.quote(String.valueOf(current)));
+        }
+        return value.matches("(?i)" + regex.append('$'));
+    }
+
+    private SelectedCredential selected(ProviderCredential account, Channel channel) {
+        if ("OAUTH".equalsIgnoreCase(account.getAuthType())) {
+            if (oauthTokens == null) throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "OAuth token service is unavailable");
+            try {
+                ProviderAuthContext context = oauthTokens.context(account, channel);
+                return new SelectedCredential(account.getId(), null, context);
+            } catch (RuntimeException error) {
+                release(account.getId());
+                throw error;
+            }
+        }
+        String secret = secrets.decrypt(account.getSecret());
+        return new SelectedCredential(account.getId(), secret,
+                new ProviderAuthContext(account.getId(), account.getPlatform(), "API_KEY", secret, null,
+                        channel.getBaseUrl(), account.getUpstreamProxyId(), account.getEntitlementStatus(), Map.of()));
+    }
+
+    public record SelectedCredential(Long id, String secret, ProviderAuthContext authContext) {
+        public SelectedCredential(Long id, String secret) { this(id, secret, null); }
+    }
 }

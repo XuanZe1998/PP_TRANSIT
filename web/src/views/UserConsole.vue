@@ -66,7 +66,7 @@
             <div class="panel-head">
               <div>
                 <h2>Token 消耗趋势</h2>
-                <p>近 14 天输入、输出及缓存 Token 汇总。</p>
+                <p>近 90 天输入、输出及缓存 Token；默认显示最后 14 天，可拖动时间轴。</p>
               </div>
               <el-button size="small" @click="go('/console/logs')">查看日志</el-button>
             </div>
@@ -74,12 +74,8 @@
               <span>{{ overviewUsageError }}</span>
               <el-button link type="primary" @click="loadOverviewUsage">重试</el-button>
             </div>
-            <div v-if="overviewUsageDays.length" class="usage-chart enhanced overview-usage-chart">
-              <span v-for="day in overviewUsageDays" :key="day.date" :title="`${day.date} · ${number(day.total)} Token`" :style="{ height: `${day.height}%` }">
-                <i>{{ day.date.slice(5) }}</i>
-              </span>
-            </div>
-            <el-empty v-else-if="!overviewUsageError" description="近 14 天暂无调用记录" :image-size="68" />
+            <UsageTimelineChart v-if="overviewUsageAnalytics.daily?.length" :daily="overviewUsageAnalytics.daily" :days="90" :visible-days="14" />
+            <el-empty v-else-if="!overviewUsageError" description="近 90 天暂无调用记录" :image-size="68" />
           </section>
 
           <section class="console-panel account-panel">
@@ -181,7 +177,7 @@
         </section>
 
         <section v-else-if="current.key === 'playground'" class="playground-layout">
-          <section class="console-panel">
+          <section class="console-panel playground-request-panel">
             <div class="panel-head">
               <div>
                 <h2>在线调试</h2>
@@ -233,7 +229,7 @@
                 <el-input
                   v-model="playground.prompt"
                   type="textarea"
-                  :rows="8"
+                  :rows="6"
                   maxlength="20000"
                   show-word-limit
                   placeholder="输入需要发送给模型的内容"
@@ -276,16 +272,17 @@
             </el-collapse>
           </section>
 
-          <section v-if="playgroundUsage" class="console-panel playground-billing-panel">
+          <section class="console-panel playground-billing-panel">
             <div class="playground-result-head">
               <div>
                 <h2>本次用量与费用</h2>
                 <p>Token、单价与扣费均由服务端计算。</p>
               </div>
-              <el-tag v-if="playgroundUsage.estimated" type="warning">Token 为服务端估算</el-tag>
-              <el-tag v-else type="success">服务端已结算</el-tag>
+              <el-tag v-if="playgroundUsage?.estimated" type="warning">Token 为服务端估算</el-tag>
+              <el-tag v-else-if="playgroundUsage" type="success">服务端已结算</el-tag>
             </div>
-            <section class="playground-usage-summary">
+            <el-empty v-if="!playgroundUsage" description="请求完成后显示 Token、单价与费用" :image-size="76" />
+            <section v-else class="playground-usage-summary">
               <div class="playground-usage-grid">
                 <article>
                   <span>输入 Token</span>
@@ -346,8 +343,8 @@
             <el-button @click="loadBilling">刷新</el-button>
           </div>
           <div class="usage-filter-row">
-            <el-date-picker v-model="usageRange" type="daterange" value-format="YYYY-MM-DD" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" @change="loadBilling" />
-            <el-select v-model="usageModel" clearable placeholder="全部模型" @change="loadBilling">
+            <el-date-picker v-model="usageRange" type="daterange" value-format="YYYY-MM-DD" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" @change="applyBillingFilters" />
+            <el-select v-model="usageModel" clearable placeholder="全部模型" @change="applyBillingFilters">
               <el-option v-for="model in dashboard.models || []" :key="model" :label="model" :value="model" />
             </el-select>
           </div>
@@ -379,7 +376,8 @@
               <footer>模型消费总额 <strong>{{ formatUsd(usageMetric(usageAnalytics.totals, 'total_amount')) }}</strong></footer>
             </article>
           </div>
-          <el-table :data="billingSummary" border>
+          <div class="usage-table-scroll" tabindex="0" aria-label="账单汇总横向滚动区域">
+          <el-table :data="billingSummary" border scrollbar-always-on style="min-width: 1260px">
             <el-table-column prop="model" label="模型" min-width="180" />
             <el-table-column prop="request_count" label="请求" width="90" />
             <el-table-column prop="prompt_tokens" label="输入 Token" width="130" />
@@ -398,8 +396,10 @@
               <template #default="{ row }">{{ formatUsd(row.total_amount) }}</template>
             </el-table-column>
           </el-table>
+          </div>
 
-          <el-table :data="billingRows" border class="billing-detail-table">
+          <div class="usage-table-scroll billing-detail-table" tabindex="0" aria-label="用量明细横向滚动区域">
+          <el-table :data="billingRows" border scrollbar-always-on style="min-width: 1390px">
             <el-table-column prop="created_at" label="时间" min-width="170" />
             <el-table-column prop="trace_id" label="Trace ID" min-width="150" />
             <el-table-column prop="token_name" label="Key" min-width="140" />
@@ -413,6 +413,17 @@
             <el-table-column prop="status" label="状态" width="110" />
             <el-table-column prop="error_message" label="错误" min-width="220" />
           </el-table>
+          </div>
+          <el-pagination
+            v-model:current-page="billingPage"
+            v-model:page-size="billingPageSize"
+            class="billing-pagination"
+            layout="total, sizes, prev, pager, next, jumper"
+            :page-sizes="[10, 20, 50, 100]"
+            :total="billingTotal"
+            @current-change="loadBilling"
+            @size-change="handleBillingPageSizeChange"
+          />
         </section>
 
         <section v-else-if="current.key === 'wallet'" class="wallet-layout" v-loading="walletLoading">
@@ -640,6 +651,7 @@ import ModelSalePricing from '@/components/ModelSalePricing.vue'
 import DeveloperDocs from '@/components/DeveloperDocs.vue'
 import ProfileCenter from '@/components/ProfileCenter.vue'
 import AccountMenu from '@/components/AccountMenu.vue'
+import UsageTimelineChart from '@/components/UsageTimelineChart.vue'
 import {
   modelScopeLabel,
   modelsAllowedForToken,
@@ -653,6 +665,9 @@ const currentUser = computed(() => getUser())
 const dashboard = ref<any>({ stats: {}, tokens: [], recentLogs: [], models: [], modelCatalog: [] as CallableModel[] })
 const billingRows = ref<any[]>([])
 const billingSummary = ref<any[]>([])
+const billingPage = ref(1)
+const billingPageSize = ref(20)
+const billingTotal = ref(0)
 const usageAnalytics = ref<any>({ daily: [], totals: {}, tokenComposition: [] })
 const billingLoading = ref(false)
 const billingDataError = ref('')
@@ -662,7 +677,7 @@ const overviewUsageAnalytics = ref<any>({ daily: [] })
 const overviewUsageError = ref('')
 const today = new Date()
 const monthAgo = new Date(today); monthAgo.setDate(today.getDate() - 29)
-const twoWeeksAgo = new Date(today); twoWeeksAgo.setDate(today.getDate() - 13)
+const ninetyDaysAgo = new Date(today); ninetyDaysAgo.setDate(today.getDate() - 89)
 const usageRange = ref<[string, string]>([monthAgo.toISOString().slice(0, 10), today.toISOString().slice(0, 10)])
 const usageModel = ref('')
 const playgroundLoading = ref(false)
@@ -1023,14 +1038,17 @@ async function loadBilling() {
   billingDataError.value = ''
   usageAnalyticsError.value = ''
   const [summaryResult, logsResult, analyticsResult] = await Promise.allSettled([
-    http.get('/api/user/billing/summary'),
-    http.get('/api/user/billing/logs'),
+    http.get('/api/user/billing/summary', { params: { model: usageModel.value || undefined, startDate: usageRange.value?.[0], endDate: usageRange.value?.[1] } }),
+    http.get('/api/user/billing/logs/page', { params: { page: billingPage.value, size: billingPageSize.value, model: usageModel.value || undefined, startDate: usageRange.value?.[0], endDate: usageRange.value?.[1] } }),
     http.get('/api/user/usage/analytics', { params: { from: usageRange.value?.[0], to: usageRange.value?.[1], model: usageModel.value || undefined } })
   ])
   const dataErrors: string[] = []
   if (summaryResult.status === 'fulfilled') billingSummary.value = summaryResult.value.data || []
   else dataErrors.push(`账单汇总：${getHttpErrorNotice(summaryResult.reason, '加载失败')}`)
-  if (logsResult.status === 'fulfilled') billingRows.value = logsResult.value.data || []
+  if (logsResult.status === 'fulfilled') {
+    billingRows.value = logsResult.value.data?.items || []
+    billingTotal.value = Number(logsResult.value.data?.total || 0)
+  }
   else dataErrors.push(`用量明细：${getHttpErrorNotice(logsResult.reason, '加载失败')}`)
   billingDataError.value = dataErrors.join('；')
   if (analyticsResult.status === 'fulfilled') {
@@ -1039,6 +1057,16 @@ async function loadBilling() {
     usageAnalyticsError.value = getHttpErrorNotice(analyticsResult.reason, '用量图表加载失败')
   }
   billingLoading.value = false
+}
+
+function applyBillingFilters() {
+  billingPage.value = 1
+  void loadBilling()
+}
+
+function handleBillingPageSizeChange() {
+  billingPage.value = 1
+  void loadBilling()
 }
 
 async function loadUsageAnalytics() {
@@ -1062,11 +1090,11 @@ async function loadOverviewUsage() {
   overviewUsageError.value = ''
   try {
     const response = await http.get('/api/user/usage/analytics', {
-      params: { from: twoWeeksAgo.toISOString().slice(0, 10), to: today.toISOString().slice(0, 10) }
+      params: { from: ninetyDaysAgo.toISOString().slice(0, 10), to: today.toISOString().slice(0, 10) }
     })
     overviewUsageAnalytics.value = response.data || { daily: [] }
   } catch (error: unknown) {
-    overviewUsageError.value = getHttpErrorNotice(error, '近 14 天用量加载失败')
+    overviewUsageError.value = getHttpErrorNotice(error, '近 90 天用量加载失败')
   }
 }
 
@@ -1287,23 +1315,6 @@ const metrics = computed(() => [
   { label: 'Token 消耗', value: compactNumber(totalTokensUsed.value), badge: '累计', tone: 'orange' },
   { label: '可用 Key', value: number(enabledTokenCount.value), badge: `${number(tokenCount.value)} 总数`, tone: 'purple' }
 ])
-
-const overviewUsageDays = computed(() => {
-  const valuesByDay = new Map<string, number>()
-  for (const row of overviewUsageAnalytics.value.daily || []) {
-    const date = String(row.usage_day ?? row.USAGE_DAY ?? '')
-    valuesByDay.set(date, usageMetric(row, 'total_tokens'))
-  }
-  const days = Array.from({ length: 14 }, (_, index) => {
-    const date = new Date(today)
-    date.setDate(today.getDate() - (13 - index))
-    const key = date.toISOString().slice(0, 10)
-    return { date: key, total: valuesByDay.get(key) || 0 }
-  })
-  const max = Math.max(0, ...days.map(day => day.total))
-  if (max === 0) return []
-  return days.map(day => ({ ...day, height: day.total ? Math.max(8, Math.round(day.total / max * 92)) : 2 }))
-})
 
 const quickActions = [
   { label: '创建 Key', desc: '为新项目分配调用凭证', path: '/console/keys', icon: Key },

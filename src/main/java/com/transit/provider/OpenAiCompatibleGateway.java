@@ -10,6 +10,8 @@ import com.transit.model.Channel;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Autowired;
+import com.transit.service.UpstreamProxyHttpClientFactory;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
@@ -46,6 +48,7 @@ public class OpenAiCompatibleGateway implements ProviderGateway {
 
     private final WebClient webClient;
     private final ObjectMapper objectMapper;
+    @Autowired(required = false) private UpstreamProxyHttpClientFactory proxyClients;
 
     public OpenAiCompatibleGateway(WebClient webClient, ObjectMapper objectMapper) {
         this.webClient = webClient;
@@ -69,9 +72,9 @@ public class OpenAiCompatibleGateway implements ProviderGateway {
             }
             return nvidiaStreamingCompletion(channel, request, providerModel);
         }
-        return webClient.post()
+        return client(channel).post()
                 .uri(chatCompletionsUrl(channel))
-                .header(HttpHeaders.AUTHORIZATION, "Bearer " + channel.getApiKey())
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + ProviderAuthentication.secret(channel))
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(request)
                 .retrieve()
@@ -83,9 +86,9 @@ public class OpenAiCompatibleGateway implements ProviderGateway {
         ObjectNode payload = objectMapper.valueToTree(request);
         removeNullFields(payload);
         payload.put("stream", false);
-        return webClient.post()
+        return client(channel).post()
                 .uri(chatCompletionsUrl(channel))
-                .header(HttpHeaders.AUTHORIZATION, "Bearer " + channel.getApiKey())
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + ProviderAuthentication.secret(channel))
                 .contentType(MediaType.APPLICATION_JSON)
                 .accept(MediaType.APPLICATION_JSON)
                 .bodyValue(payload)
@@ -117,9 +120,9 @@ public class OpenAiCompatibleGateway implements ProviderGateway {
             payload.put("seed", 42);
         }
 
-        return webClient.post()
+        return client(channel).post()
                 .uri(chatCompletionsUrl(channel))
-                .header(HttpHeaders.AUTHORIZATION, "Bearer " + channel.getApiKey())
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + ProviderAuthentication.secret(channel))
                 .contentType(MediaType.APPLICATION_JSON)
                 .accept(MediaType.TEXT_EVENT_STREAM)
                 .bodyValue(payload)
@@ -174,6 +177,10 @@ public class OpenAiCompatibleGateway implements ProviderGateway {
             return baseUrl + "/chat/completions";
         }
         return baseUrl + "/v1/chat/completions";
+    }
+
+    private WebClient client(Channel channel) {
+        return proxyClients == null || channel.getAuthContext() == null ? webClient : proxyClients.client(channel.getAuthContext().upstreamProxyId());
     }
 
     private final class NvidiaStreamAccumulator {

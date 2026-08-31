@@ -15,6 +15,7 @@ import com.transit.service.AdminDashboardService;
 import com.transit.service.AdminModelService;
 import com.transit.service.NvidiaCatalogService;
 import com.transit.service.ModelDiscoveryService;
+import com.transit.service.ModelMarketDisplayService;
 import com.transit.service.ProviderModelCatalogService;
 import com.transit.service.ProviderModelVerificationService;
 import com.transit.service.PublicPricingReconciliationService;
@@ -63,6 +64,7 @@ public class AdminApiController {
     private final AdminUserService userService;
     private final AdminChannelService channelService;
     private final AdminModelService modelService;
+    private final ModelMarketDisplayService modelMarketDisplayService;
     private final NvidiaCatalogService nvidiaCatalogService;
     private final ModelDiscoveryService modelDiscoveryService;
     private final ProviderModelCatalogService providerModelCatalogService;
@@ -346,6 +348,27 @@ public class AdminApiController {
         return Flux.fromIterable(modelService.list());
     }
 
+    @GetMapping("/model-market/display-settings")
+    public Flux<Map<String, Object>> modelMarketDisplaySettings(
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+        requireAdmin(authHeader);
+        return Flux.fromIterable(modelMarketDisplayService.list());
+    }
+
+    @PutMapping("/model-market/display-settings")
+    public Mono<Map<String, Object>> updateModelMarketDisplaySettings(
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+            @RequestBody Map<String, Object> request,
+            HttpServletRequest servletRequest) {
+        User admin = requireAdmin(authHeader);
+        return Mono.fromCallable(() -> {
+            Map<String, Object> result = modelMarketDisplayService.update(request);
+            audit(admin, "UPDATE_MODEL_MARKET_DISPLAY", "MODEL_MARKET", "PUBLIC",
+                    null, Map.of("updated", result.getOrDefault("updated", 0)), servletRequest);
+            return result;
+        });
+    }
+
     @GetMapping("/model-catalog")
     public Flux<com.transit.model.ProviderModel> providerModelCatalog(
             @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
@@ -608,6 +631,16 @@ public class AdminApiController {
     public Flux<Map<String, Object>> financeTransactions(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
         requireAdmin(authHeader);
         return Flux.fromIterable(billingService.transactions());
+    }
+
+    @GetMapping("/finance/transactions/page")
+    public Mono<com.transit.dto.PageResponse<Map<String, Object>>> financeTransactionsPage(
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+            @RequestParam(value = "page", defaultValue = "1") int page,
+            @RequestParam(value = "size", defaultValue = "20") int size,
+            @RequestParam(value = "query", required = false) String query) {
+        requireAdmin(authHeader);
+        return Mono.fromCallable(() -> billingService.transactionsPage(page, size, query));
     }
 
     @GetMapping("/finance/redeem-codes")

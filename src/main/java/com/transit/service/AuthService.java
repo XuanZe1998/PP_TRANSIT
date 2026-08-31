@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.transit.mapper.UserMapper;
 import com.transit.model.User;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -27,6 +28,7 @@ import java.sql.Statement;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class AuthService {
 
     private final UserMapper userMapper;
@@ -220,6 +222,51 @@ public class AuthService {
             result.put("available", false);
         }
         return result;
+    }
+
+    public Mono<Map<String, Object>> requestPasswordReset(String email) {
+        return Mono.fromCallable(() -> {
+            String normalizedEmail = normalizeIdentifier(email);
+            if (!isEmail(normalizedEmail)) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "请输入有效邮箱地址");
+            }
+            User user = findUserByIdentifier(normalizedEmail);
+            Map<String, Object> response = new HashMap<>();
+            response.put("accepted", true);
+            response.put("message", "如果该邮箱已注册，验证码将发送到对应邮箱");
+            if (user != null && normalizedEmail.equalsIgnoreCase(Objects.toString(user.getEmail(), ""))
+                    && "ACTIVE".equalsIgnoreCase(Objects.toString(user.getStatus(), "ACTIVE"))) {
+                try {
+                    Map<String, Object> delivery = verificationCodeService.send("EMAIL", normalizedEmail, "PASSWORD_RESET");
+                    if (delivery.containsKey("debugCode")) response.put("debugCode", delivery.get("debugCode"));
+                } catch (RuntimeException error) {
+                    log.warn("Password reset delivery could not be completed: {}", error.getClass().getSimpleName());
+                }
+            }
+            return response;
+        }).subscribeOn(Schedulers.boundedElastic());
+    }
+
+    public Mono<Map<String, Object>> confirmPasswordReset(String email, String code,
+                                                           String password, String confirmPassword) {
+        return Mono.fromCallable(() -> transactionTemplate.execute(status -> {
+            String normalizedEmail = normalizeIdentifier(email);
+            if (!isEmail(normalizedEmail)) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "请输入有效邮箱地址");
+            validatePassword(password);
+            if (!Objects.equals(password, confirmPassword)) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "两次输入的密码不一致");
+            }
+            User user = findUserByIdentifier(normalizedEmail);
+            if (user == null || !normalizedEmail.equalsIgnoreCase(Objects.toString(user.getEmail(), ""))) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "验证码无效或已过期");
+            }
+            verificationCodeService.consume("EMAIL", normalizedEmail, "PASSWORD_RESET", code);
+            user.setPassword(passwordEncoder.encode(password));
+            userMapper.updateById(user);
+            oauthService.revokeAllSessions(user.getId());
+            authenticationThrottle.success(normalizedEmail);
+            return Map.<String, Object>of("reset", true, "message", "密码已重置，请重新登录");
+        })).subscribeOn(Schedulers.boundedElastic());
     }
 
     private String normalizeIdentifier(String identifier) {

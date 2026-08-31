@@ -7,6 +7,8 @@ import com.transit.model.Channel;
 import lombok.Data;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Autowired;
+import com.transit.service.UpstreamProxyHttpClientFactory;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.util.UriComponentsBuilder;
 import reactor.core.publisher.Mono;
@@ -19,6 +21,7 @@ import java.util.Locale;
 public class GeminiGateway implements ProviderGateway {
 
     private final WebClient webClient;
+    @Autowired(required = false) private UpstreamProxyHttpClientFactory proxyClients;
 
     public GeminiGateway(WebClient webClient) {
         this.webClient = webClient;
@@ -32,13 +35,13 @@ public class GeminiGateway implements ProviderGateway {
     @Override
     public Mono<ChatResponse> chatCompletions(Channel channel, ChatRequest request, String publicModel, String providerModel) {
         GeminiRequest payload = toGeminiRequest(request);
-        return webClient.post()
+        WebClient.RequestBodySpec call = client(channel).post()
                 .uri(UriComponentsBuilder.fromUriString(channel.getBaseUrl())
                         .pathSegment("v1beta", "models", providerModel + ":generateContent")
-                        .build().encode().toUri())
+                        .build().encode().toUri());
+        return ProviderAuthentication.apply(call, channel, "x-goog-api-key")
                 // Keeping credentials out of the URL prevents them from leaking
                 // through access logs, proxies, browser history, and traces.
-                .header("x-goog-api-key", channel.getApiKey())
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(payload)
                 .retrieve()
@@ -73,6 +76,8 @@ public class GeminiGateway implements ProviderGateway {
         payload.setGenerationConfig(config);
         return payload;
     }
+
+    private WebClient client(Channel channel) { return proxyClients == null || channel.getAuthContext() == null ? webClient : proxyClients.client(channel.getAuthContext().upstreamProxyId()); }
 
     private ChatResponse toChatResponse(GeminiResponse response, String providerModel) {
         ChatResponse result = new ChatResponse();

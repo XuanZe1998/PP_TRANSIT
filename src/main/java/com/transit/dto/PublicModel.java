@@ -7,6 +7,7 @@ import java.math.BigDecimal;
 @Data
 public class PublicModel {
     private String publicName;
+    private int displayPriority;
     private String type;
     private String source;
     private String sourceName;
