@@ -75,6 +75,7 @@ declare module 'vue' {
     ProfileCenter: typeof import('./components/ProfileCenter.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
+    UsageTimelineChart: typeof import('./components/UsageTimelineChart.vue')['default']
   }
   export interface GlobalDirectives {
     vLoading: typeof import('element-plus/es')['ElLoadingDirective']

@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 import java.util.Map;
 import com.transit.dto.MoneyAmount;
+import com.transit.dto.PageResponse;
 import java.util.LinkedHashMap;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
@@ -32,6 +33,40 @@ public class AdminBillingService {
         return rows;
     }
 
+    public PageResponse<Map<String, Object>> transactionsPage(int page, int size, String query) {
+        if (page < 1 || page > 1_000_000) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "page is out of range");
+        if (size < 1 || size > 100) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "size must be between 1 and 100");
+        String needle = query == null ? "" : query.trim().toLowerCase();
+        if (needle.length() > 160) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "query is too long");
+        String filter = needle.isBlank() ? "" : """
+                 WHERE LOWER(COALESCE(u.username,'')) LIKE ?
+                    OR LOWER(COALESCE(wt.type,'')) LIKE ?
+                    OR LOWER(COALESCE(wt.channel,'')) LIKE ?
+                    OR LOWER(COALESCE(wt.remark,'')) LIKE ?
+                """;
+        List<Object> params = new java.util.ArrayList<>();
+        if (!needle.isBlank()) {
+            String like = "%" + needle + "%";
+            params.add(like); params.add(like); params.add(like); params.add(like);
+        }
+        Number count = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM wallet_transactions wt LEFT JOIN users u ON u.id=wt.user_id
+                """ + filter, Number.class, params.toArray());
+        List<Object> itemParams = new java.util.ArrayList<>(params);
+        itemParams.add(size);
+        itemParams.add((page - 1) * size);
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+                SELECT wt.id, wt.user_id, u.username, wt.type, wt.amount, wt.balance_after,
+                       wt.channel, wt.remark, wt.created_at
+                  FROM wallet_transactions wt
+                  LEFT JOIN users u ON u.id=wt.user_id
+                """ + filter + " ORDER BY wt.created_at DESC, wt.id DESC LIMIT ? OFFSET ?", itemParams.toArray());
+        rows.forEach(this::addTransactionMoney);
+        PageResponse<Map<String, Object>> response = new PageResponse<>();
+        response.setPage(page); response.setSize(size); response.setTotal(count == null ? 0 : count.longValue()); response.setItems(rows);
+        return response;
+    }
+
     public List<Map<String, Object>> redeemCodes() {
         return redeemCodeService.list();
     }
@@ -44,14 +79,19 @@ public class AdminBillingService {
     }
 
     public Map<String, Object> financeSummary() {
-        long income = queryLong("SELECT COALESCE(SUM(amount), 0) FROM wallet_transactions WHERE type IN ('RECHARGE', 'REDEEM', 'ADJUSTMENT') AND amount > 0");
+        long rechargeAmount = queryLong("SELECT COALESCE(SUM(amount), 0) FROM wallet_transactions WHERE type IN ('RECHARGE', 'REDEEM') AND amount > 0");
         long spending = queryLong("SELECT ABS(COALESCE(SUM(amount), 0)) FROM wallet_transactions WHERE type = 'CONSUME'");
         long balance = queryLong("SELECT COALESCE(SUM(balance), 0) FROM users");
         long codes = queryLong("SELECT COUNT(*) FROM redeem_codes WHERE enabled = TRUE");
         Map<String,Object> result=new LinkedHashMap<>();
-        result.put("income",income);result.put("spending",spending);result.put("userBalance",balance);result.put("activeRedeemCodes",codes);
-        result.put("incomeMoney",new MoneyAmount(income,"CNY",10000));result.put("spendingMoney",new MoneyAmount(spending,"CNY",10000));result.put("userBalanceMoney",new MoneyAmount(balance,"CNY",10000));
+        result.put("rechargeAmount",rechargeAmount);result.put("spending",spending);result.put("userBalance",balance);result.put("activeRedeemCodes",codes);
+        result.put("rechargeAmountMoney",new MoneyAmount(rechargeAmount,"CNY",10000));result.put("spendingMoney",new MoneyAmount(spending,"CNY",10000));result.put("userBalanceMoney",new MoneyAmount(balance,"CNY",10000));
         return result;
+    }
+
+    private void addTransactionMoney(Map<String, Object> row) {
+        row.put("amountMoney", new MoneyAmount(((Number) row.get("amount")).longValue(), "CNY", 10000));
+        row.put("balanceAfterMoney", new MoneyAmount(((Number) row.get("balance_after")).longValue(), "CNY", 10000));
     }
 
     public List<Map<String, Object>> rechargePlans() {

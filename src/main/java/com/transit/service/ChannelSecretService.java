@@ -20,6 +20,7 @@ import java.util.Base64;
 @Component
 public class ChannelSecretService {
     private static final String PREFIX = "enc:v1:";
+    private static final String PURPOSE_PREFIX = "enc:v2:";
     private static final int NONCE_BYTES = 12;
     private static final int TAG_BITS = 128;
     private static final byte[] AAD = "api-transit/channel-key/v1".getBytes(StandardCharsets.UTF_8);
@@ -98,6 +99,66 @@ public class ChannelSecretService {
         } catch (GeneralSecurityException | IllegalArgumentException exception) {
             throw new IllegalStateException("Unable to decrypt channel credential; verify the configured master key", exception);
         }
+    }
+
+    /** Purpose-bound encryption prevents ciphertext copied from another secret column from being accepted here. */
+    public String encryptForPurpose(String purpose, String plaintext) {
+        if (plaintext == null || plaintext.isBlank()) return plaintext;
+        String prefix = purposePrefix(purpose);
+        if (plaintext.startsWith(prefix)) return plaintext;
+        if (plaintext.startsWith(PREFIX) || plaintext.startsWith(PURPOSE_PREFIX)) {
+            throw new IllegalArgumentException("Encrypted value belongs to a different secret purpose");
+        }
+        requireKey();
+        byte[] nonce = new byte[NONCE_BYTES];
+        secureRandom.nextBytes(nonce);
+        try {
+            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+            cipher.init(Cipher.ENCRYPT_MODE, key, new GCMParameterSpec(TAG_BITS, nonce));
+            cipher.updateAAD(purposeAad(purpose));
+            byte[] ciphertext = cipher.doFinal(plaintext.getBytes(StandardCharsets.UTF_8));
+            byte[] envelope = new byte[nonce.length + ciphertext.length];
+            System.arraycopy(nonce, 0, envelope, 0, nonce.length);
+            System.arraycopy(ciphertext, 0, envelope, nonce.length, ciphertext.length);
+            return prefix + Base64.getEncoder().encodeToString(envelope);
+        } catch (GeneralSecurityException exception) {
+            throw new IllegalStateException("Unable to encrypt purpose-bound credential", exception);
+        }
+    }
+
+    public String decryptForPurpose(String purpose, String stored) {
+        if (stored == null || stored.isBlank()) return stored;
+        String prefix = purposePrefix(purpose);
+        if (!stored.startsWith(prefix)) throw new IllegalStateException("Encrypted value does not match the required secret purpose");
+        requireKey();
+        try {
+            byte[] envelope = Base64.getDecoder().decode(stored.substring(prefix.length()));
+            if (envelope.length <= NONCE_BYTES + 16) throw new GeneralSecurityException("Encrypted value is truncated");
+            byte[] nonce = new byte[NONCE_BYTES];
+            byte[] ciphertext = new byte[envelope.length - NONCE_BYTES];
+            System.arraycopy(envelope, 0, nonce, 0, NONCE_BYTES);
+            System.arraycopy(envelope, NONCE_BYTES, ciphertext, 0, ciphertext.length);
+            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+            cipher.init(Cipher.DECRYPT_MODE, key, new GCMParameterSpec(TAG_BITS, nonce));
+            cipher.updateAAD(purposeAad(purpose));
+            return new String(cipher.doFinal(ciphertext), StandardCharsets.UTF_8);
+        } catch (GeneralSecurityException | IllegalArgumentException exception) {
+            throw new IllegalStateException("Unable to decrypt purpose-bound credential; verify the configured master key", exception);
+        }
+    }
+
+    public boolean isEncryptedForPurpose(String purpose, String stored) {
+        return stored != null && stored.startsWith(purposePrefix(purpose));
+    }
+
+    private String purposePrefix(String purpose) {
+        if (purpose == null || !purpose.matches("[a-z0-9-]{1,40}")) throw new IllegalArgumentException("Invalid secret purpose");
+        return PURPOSE_PREFIX + purpose + ":";
+    }
+
+    private byte[] purposeAad(String purpose) {
+        purposePrefix(purpose);
+        return ("api-transit/" + purpose + "/v1").getBytes(StandardCharsets.UTF_8);
     }
 
     public Channel reveal(Channel channel) {

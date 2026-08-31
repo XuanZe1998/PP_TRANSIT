@@ -46,7 +46,7 @@ public class SecurityConfig {
                         // through an ASYNC redispatch after controller work.
                         .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                        .requestMatchers("/auth/register", "/auth/login", "/auth/login/ip-verify", "/auth/refresh", "/auth/validate-identifier", "/auth/verification/**").permitAll()
+                        .requestMatchers("/auth/register", "/auth/login", "/auth/login/ip-verify", "/auth/refresh", "/auth/validate-identifier", "/auth/verification/**", "/auth/password-reset/**").permitAll()
                         .requestMatchers("/oauth/authorize", "/oauth/callback/**", "/oauth/token", "/oauth/refresh", "/upstream/oauth/callback/**").permitAll()
                         .requestMatchers("/admin/auth/login").permitAll()
                         .requestMatchers("/webhooks/vmcard/**").permitAll()
@@ -54,7 +54,7 @@ public class SecurityConfig {
                         .requestMatchers("/public/**", "/ops/catalog", "/platform/user/docs",
                                 "/creative/catalog", "/creative/templates", "/creative/auto-movie/catalog",
                                 "/public/creative-assets/**").permitAll()
-                        .requestMatchers("/v1", "/v1/**", "/models", "/chat/completions").permitAll()
+                        .requestMatchers("/v1", "/v1/**", "/v1beta/**", "/antigravity/**", "/backend-api/codex/**", "/models", "/chat/completions").permitAll()
                         .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info").permitAll()
                         .requestMatchers("/admin/api/**", "/platform/admin/**", "/admin/payment/**",
                                 "/service-orders/admin/**",

@@ -42,11 +42,19 @@ public class AuthController {
 
     @PostMapping("/verification/email/send")
     public Mono<Map<String, Object>> sendEmailCode(@RequestBody VerificationRequest request) {
+        if ("PASSWORD_RESET".equalsIgnoreCase(request.getPurpose())) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.BAD_REQUEST, "请使用密码找回接口");
+        }
         return Mono.fromCallable(() -> verificationCodeService.send("EMAIL", request.getRecipient(), request.getPurpose()));
     }
 
     @PostMapping("/verification/phone/send")
     public Mono<Map<String, Object>> sendPhoneCode(@RequestBody VerificationRequest request) {
+        if ("PASSWORD_RESET".equalsIgnoreCase(request.getPurpose())) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.BAD_REQUEST, "请使用密码找回接口");
+        }
         return Mono.fromCallable(() -> verificationCodeService.send("PHONE", request.getRecipient(), request.getPurpose()));
     }
 
@@ -63,6 +71,17 @@ public class AuthController {
     @PostMapping("/login/ip-verify")
     public Mono<Map<String,Object>> verifyIp(@RequestBody IpVerifyRequest request, HttpServletRequest servletRequest) {
         return authService.verifyLoginIp(request.getChallengeId(), request.getCode(), clientIps.resolve(servletRequest));
+    }
+
+    @PostMapping("/password-reset/request")
+    public Mono<Map<String, Object>> requestPasswordReset(@RequestBody PasswordResetRequest request) {
+        return authService.requestPasswordReset(request.getEmail());
+    }
+
+    @PostMapping("/password-reset/confirm")
+    public Mono<Map<String, Object>> confirmPasswordReset(@RequestBody PasswordResetConfirmRequest request) {
+        return authService.confirmPasswordReset(request.getEmail(), request.getCode(),
+                request.getPassword(), request.getConfirmPassword());
     }
 
     @PostMapping("/logout")
@@ -129,4 +148,15 @@ public class AuthController {
 
     @Data
     public static class IpVerifyRequest { private String challengeId; private String code; }
+
+    @Data
+    public static class PasswordResetRequest { private String email; }
+
+    @Data
+    public static class PasswordResetConfirmRequest {
+        private String email;
+        private String code;
+        private String password;
+        private String confirmPassword;
+    }
 }

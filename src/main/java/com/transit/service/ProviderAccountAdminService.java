@@ -20,14 +20,18 @@ public class ProviderAccountAdminService {
     private final JdbcTemplate jdbc;
     private final ProviderCredentialService credentials;
     private final AdminChannelService channelService;
+    private final ProviderOAuthAccountService oauthAccounts;
+    private final ProviderOAuthTokenService oauthTokens;
+    private final UpstreamOAuthClientConfigService oauthClientConfigs;
     @Value("${features.linknux.provider-accounts.enabled:false}") private boolean enabled;
     @Value("${features.linknux.provider-oauth.enabled:false}") private boolean oauthEnabled;
 
-    public Map<String, Object> status() { return Map.of("enabled", enabled, "oauthEnabled", oauthEnabled,
-            "platforms", List.of("OPENAI", "CODEX", "CLAUDE", "GEMINI", "ANTIGRAVITY", "GROK", "COMPATIBLE")); }
+    public Map<String, Object> status() { boolean databaseEnabled = oauthClientConfigs.anyDatabaseConfigEnabled(); return Map.of("enabled", enabled || databaseEnabled, "oauthEnabled", oauthEnabled || databaseEnabled,
+            "platforms", List.of("OPENAI", "CODEX", "CLAUDE", "GEMINI", "ANTIGRAVITY", "GROK", "COMPATIBLE"),
+            "oauthPlatforms", oauthAccounts.status()); }
 
     public List<Map<String, Object>> list(Long channelId) {
-        String base = "SELECT id,channel_id,name,platform,auth_type,secret_preview,priority,weight,rpm_limit,tpm_limit,concurrency_limit,enabled,health_status,cooldown_until,oauth_expires_at,account_group,upstream_proxy_id,cost_mode,period_cost_amount,cost_reliable,model_scope,temporary_unschedulable_until,last_error_class,last_error,average_latency_ms,last_used_at,created_at,updated_at FROM provider_credentials";
+        String base = "SELECT id,channel_id,name,platform,auth_type,secret_preview,external_account_id,email_preview,subscription_tier,authorization_scope,entitlement_status,token_version,last_refreshed_at,refresh_failure_count,price_template_id,priority,weight,rpm_limit,tpm_limit,concurrency_limit,enabled,health_status,cooldown_until,oauth_expires_at,account_group,upstream_proxy_id,cost_mode,period_cost_amount,cost_reliable,model_scope,temporary_unschedulable_until,last_error_class,last_error,average_latency_ms,last_used_at,created_at,updated_at FROM provider_credentials";
         return channelId == null ? jdbc.queryForList(base + " ORDER BY id DESC") : jdbc.queryForList(base + " WHERE channel_id=? ORDER BY id DESC", channelId);
     }
 
@@ -86,12 +90,26 @@ public class ProviderAccountAdminService {
         return channelService.testCredential(channelId, id);
     }
 
-    public Map<String, Object> oauthAuthorization(String platform) {
-        if (!oauthEnabled) throw new ResponseStatusException(HttpStatus.CONFLICT, "上游 OAuth 号池默认关闭；请先完成授权账号合规确认并启用功能开关");
-        String normalized = text(platform).toUpperCase(Locale.ROOT);
-        if (!List.of("OPENAI", "CODEX", "CLAUDE", "GEMINI", "ANTIGRAVITY", "GROK").contains(normalized)) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "暂不支持该平台的 OAuth");
-        return Map.of("platform", normalized, "status", "CONFIG_REQUIRED", "message", "需要为该平台配置标准 OAuth 客户端与回调地址后才能授权");
+    public Map<String, Object> oauthAuthorization(String platform, long adminId, Map<String, Object> body) {
+        if (!oauthEnabled && !oauthClientConfigs.anyDatabaseConfigEnabled()) throw new ResponseStatusException(HttpStatus.CONFLICT, "上游 OAuth 号池尚未在管理后台启用");
+        return oauthAccounts.authorize(platform, adminId, body);
     }
+
+    public Map<String, Object> oauthExchange(String platform, Map<String, Object> body) { return oauthAccounts.exchangeManual(platform, body); }
+    public Map<String, Object> oauthCallback(String platform, String code, String state) { return oauthAccounts.complete(platform, code, state); }
+    public ProviderCredential refresh(long id) { requireEnabled(); return oauthTokens.forceRefresh(id); }
+    public Map<String, Object> syncModels(long id) { requireEnabled(); return oauthAccounts.synchronizeModels(id); }
+    public Map<String, Object> syncQuota(long id) { requireEnabled(); return oauthAccounts.synchronizeQuota(id); }
+    public Map<String, Object> reauthorize(long id, long adminId, Map<String, Object> body) {
+        requireEnabled(); List<Map<String, Object>> rows = jdbc.queryForList("SELECT platform,price_template_id,account_group,upstream_proxy_id,model_scope FROM provider_credentials WHERE id=? AND auth_type='OAUTH'", id);
+        if (rows.isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "OAuth 上游账号不存在");
+        Map<String, Object> row = rows.get(0), request = new java.util.LinkedHashMap<>(body);
+        request.putIfAbsent("priceTemplateId", row.get("price_template_id")); request.putIfAbsent("accountGroup", row.get("account_group"));
+        request.putIfAbsent("upstreamProxyId", row.get("upstream_proxy_id")); request.putIfAbsent("modelScope", row.get("model_scope"));
+        request.put("reauthorizeCredentialId", id);
+        return oauthAccounts.authorize(String.valueOf(row.get("platform")), adminId, request);
+    }
+    public List<Map<String, Object>> events(long id) { requireEnabled(); return jdbc.queryForList("SELECT id,event_type,error_class,retryable,detail_masked,created_at FROM provider_account_events WHERE credential_id=? ORDER BY id DESC LIMIT 200", id); }
 
     private ProviderCredential input(Map<String, Object> body) {
         return ProviderCredential.builder().name(text(body.get("name"))).secret(text(body.get("secret")))
@@ -103,7 +121,7 @@ public class ProviderAccountAdminService {
                 .rpmLimit(intNumber(body.get("rpmLimit"), 0)).tpmLimit(intNumber(body.get("tpmLimit"), 0))
                 .concurrencyLimit(intNumber(body.get("concurrencyLimit"), 0)).enabled(!Boolean.FALSE.equals(body.get("enabled"))).build();
     }
-    private void requireEnabled() { if (!enabled) throw new ResponseStatusException(HttpStatus.CONFLICT, "新账号池功能尚未启用"); }
+    private void requireEnabled() { if (!enabled && !oauthClientConfigs.anyDatabaseConfigEnabled()) throw new ResponseStatusException(HttpStatus.CONFLICT, "新账号池功能尚未启用"); }
     private String text(Object value) { return value == null ? "" : String.valueOf(value).trim(); }
     private Long number(Object value) { return value instanceof Number n ? n.longValue() : null; }
     private int intNumber(Object value, int fallback) { return value instanceof Number n ? n.intValue() : fallback; }

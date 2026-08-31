@@ -19,6 +19,7 @@ import com.transit.service.AccountVerificationPolicy;
 import com.transit.dto.ChatRequest;
 import com.transit.dto.ChatResponse;
 import com.transit.dto.PublicModel;
+import com.transit.dto.PageResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
@@ -30,6 +31,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.time.LocalDateTime;
+import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -215,6 +217,19 @@ public class UserController {
                                                  @RequestParam(value = "endDate", required = false) String endDate) {
         User user = currentUserService.requireUser(authHeader);
         return Flux.fromIterable(queryBillingLogs(user.getId(), model, tokenId, startDate, endDate));
+    }
+
+    @GetMapping("/billing/logs/page")
+    public Mono<PageResponse<Map<String, Object>>> billingLogsPage(
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+            @RequestParam(value = "model", required = false) String model,
+            @RequestParam(value = "tokenId", required = false) Long tokenId,
+            @RequestParam(value = "startDate", required = false) String startDate,
+            @RequestParam(value = "endDate", required = false) String endDate,
+            @RequestParam(value = "page", defaultValue = "1") int page,
+            @RequestParam(value = "size", defaultValue = "20") int size) {
+        User user = currentUserService.requireUser(authHeader);
+        return Mono.fromCallable(() -> queryBillingLogsPage(user.getId(), model, tokenId, startDate, endDate, page, size));
     }
 
     @GetMapping("/billing/summary")
@@ -471,6 +486,38 @@ public class UserController {
         return jdbcTemplate.queryForList(sql.toString(), params.toArray());
     }
 
+    private PageResponse<Map<String, Object>> queryBillingLogsPage(Long userId, String model, Long tokenId,
+                                                                   String startDate, String endDate,
+                                                                   int page, int size) {
+        if (page < 1 || page > 1_000_000) throw new org.springframework.web.server.ResponseStatusException(
+                org.springframework.http.HttpStatus.BAD_REQUEST, "page is out of range");
+        if (size < 1 || size > 100) throw new org.springframework.web.server.ResponseStatusException(
+                org.springframework.http.HttpStatus.BAD_REQUEST, "size must be between 1 and 100");
+        List<Object> params = new ArrayList<>();
+        params.add(userId);
+        StringBuilder from = new StringBuilder("""
+                FROM logs l
+                LEFT JOIN tokens t ON t.id = l.token_id OR (l.token_id IS NULL AND t.`key` = l.token_key)
+                WHERE l.user_id = ?
+                """);
+        appendBillingFilters(from, params, model, tokenId, startDate, endDate);
+        Number total = jdbcTemplate.queryForObject("SELECT COUNT(*) " + from, Number.class, params.toArray());
+        List<Object> itemParams = new ArrayList<>(params);
+        itemParams.add(size); itemParams.add((page - 1) * size);
+        List<Map<String, Object>> items = jdbcTemplate.queryForList("""
+                SELECT l.id, l.trace_id, l.token_key, t.id AS token_id, t.name AS token_name,
+                       l.model, l.channel_id, l.prompt_tokens, l.completion_tokens, l.cached_tokens,
+                       l.cache_read_tokens, l.cache_write_tokens, l.cache_miss_tokens,
+                       l.input_amount, l.output_amount, l.cached_amount,
+                       l.cache_read_amount, l.cache_write_amount, l.total_amount,
+                       l.model_currency,l.model_amount_scale,l.settlement_amount,l.settlement_currency,l.exchange_rate,
+                       l.latency_ms, l.status, l.error_message, l.created_at
+                """ + from + " ORDER BY l.created_at DESC, l.id DESC LIMIT ? OFFSET ?", itemParams.toArray());
+        PageResponse<Map<String, Object>> response = new PageResponse<>();
+        response.setPage(page); response.setSize(size); response.setTotal(total == null ? 0 : total.longValue()); response.setItems(items);
+        return response;
+    }
+
     private List<Map<String, Object>> queryBillingSummary(Long userId, String model, Long tokenId, String startDate, String endDate) {
         List<Object> params = new ArrayList<>();
         params.add(userId);
@@ -511,11 +558,19 @@ public class UserController {
         }
         if (startDate != null && !startDate.isBlank()) {
             sql.append(" AND l.created_at >= ?");
-            params.add(startDate);
+            params.add(parseBillingDate(startDate, "startDate").atStartOfDay());
         }
         if (endDate != null && !endDate.isBlank()) {
-            sql.append(" AND l.created_at <= ?");
-            params.add(endDate);
+            sql.append(" AND l.created_at < ?");
+            params.add(parseBillingDate(endDate, "endDate").plusDays(1).atStartOfDay());
+        }
+    }
+
+    private LocalDate parseBillingDate(String value, String field) {
+        try { return LocalDate.parse(value.trim()); }
+        catch (RuntimeException error) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.BAD_REQUEST, field + " must use YYYY-MM-DD");
         }
     }
 

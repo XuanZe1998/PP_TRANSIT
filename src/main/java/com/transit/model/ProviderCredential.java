@@ -34,6 +34,15 @@ public class ProviderCredential {
     @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     private String credentialBundle;
     @TableField("oauth_expires_at") private LocalDateTime oauthExpiresAt;
+    @TableField("external_account_id") private String externalAccountId;
+    @TableField("email_preview") private String emailPreview;
+    @TableField("subscription_tier") private String subscriptionTier;
+    @TableField("authorization_scope") private String authorizationScope;
+    @TableField("entitlement_status") @Builder.Default private String entitlementStatus = "UNKNOWN";
+    @TableField("token_version") private long tokenVersion;
+    @TableField("last_refreshed_at") private LocalDateTime lastRefreshedAt;
+    @TableField("refresh_failure_count") private int refreshFailureCount;
+    @TableField("price_template_id") private Long priceTemplateId;
     @TableField("account_group") @Builder.Default private String accountGroup = "default";
     @TableField("upstream_proxy_id") private Long upstreamProxyId;
     @TableField("cost_mode") @Builder.Default private String costMode = "MODEL_MAPPING";

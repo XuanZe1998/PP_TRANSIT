@@ -34,6 +34,8 @@ public class ChatResponse {
         @JsonProperty("reasoning_content")
         private String reasoningContent;
         private String reasoning;
+        @JsonProperty("tool_calls")
+        private Object toolCalls;
     }
 
     @Data

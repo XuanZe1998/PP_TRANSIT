@@ -224,7 +224,7 @@ public class EnterpriseSchemaService {
                     id BIGINT PRIMARY KEY AUTO_INCREMENT,
                     channel_id BIGINT NOT NULL,
                     name VARCHAR(160) NOT NULL,
-                    encrypted_secret VARCHAR(1200) NOT NULL,
+                    encrypted_secret VARCHAR(1200) NULL,
                     secret_preview VARCHAR(32) NULL,
                     priority INT NOT NULL DEFAULT 0,
                     weight INT NOT NULL DEFAULT 100,

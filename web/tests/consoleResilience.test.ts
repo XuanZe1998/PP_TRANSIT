@@ -34,6 +34,26 @@ describe('console partial-loading resilience', () => {
 })
 
 describe('console layout contracts', () => {
+  it('uses a draggable 90-day token timeline and three persistent playground columns', () => {
+    const userConsole = source('src/views/UserConsole.vue')
+    const timeline = source('src/components/UsageTimelineChart.vue')
+    const css = source('src/style.css')
+    expect(userConsole).toContain(':days="90"')
+    expect(timeline).toContain("type: 'inside'")
+    expect(timeline).toContain("type: 'slider'")
+    expect(timeline).toContain("stack: 'tokens'")
+    expect(userConsole).not.toContain('v-if="playgroundUsage" class="console-panel playground-billing-panel"')
+    expect(css).toMatch(/\.playground-layout\s*\{[\s\S]*?repeat\(3, minmax\(0, 1fr\)\)/)
+  })
+
+  it('keeps usage tables paged and horizontally draggable', () => {
+    const userConsole = source('src/views/UserConsole.vue')
+    expect(userConsole).toContain('/api/user/billing/logs/page')
+    expect(userConsole).toContain(':page-sizes="[10, 20, 50, 100]"')
+    expect(userConsole).toContain('usage-table-scroll')
+    expect(userConsole).toContain('scrollbar-always-on')
+  })
+
   it('keeps the user console stable when browser developer tools narrow the viewport', () => {
     const userConsole = source('src/views/UserConsole.vue')
     const css = source('src/style.css')

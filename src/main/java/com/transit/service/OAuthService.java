@@ -560,6 +560,15 @@ public class OAuthService {
         if(current!=null)update.ne(OAuthToken::getId,current.getId());tokenMapper.update(null,update);
     }
 
+    public void revokeAllSessions(Long userId) {
+        if (userId == null) return;
+        tokenMapper.update(null, new LambdaUpdateWrapper<OAuthToken>()
+                .set(OAuthToken::getRevoked, true)
+                .set(OAuthToken::getRevokedAt, LocalDateTime.now())
+                .eq(OAuthToken::getUserId, userId)
+                .eq(OAuthToken::getRevoked, false));
+    }
+
     public Map<String, Object> validateToken(String rawAccessToken) {
         User user = getUserFromToken(rawAccessToken);
         return Map.of("userId", user.getId(), "username", user.getUsername(), "role", user.getRole());

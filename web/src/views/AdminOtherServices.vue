@@ -99,7 +99,7 @@
                   移除图片
                 </el-button>
               </div>
-              <span class="form-tip">支持 JPG、PNG、WebP，文件不超过 5 MB。</span>
+              <span class="form-tip">支持 JPG、PNG、WebP；上传前自动缩小至 1600×900 内并转为 WebP，尽量控制在 1.5 MB。</span>
             </div>
           </div>
         </el-form-item>
@@ -180,6 +180,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import http, { getHttpErrorMessage, resolveApiResourceUrl } from '@/utils/http'
+import { compressServiceImage } from '@/utils/serviceImage'
 import AdminServiceOrders from '@/views/AdminServiceOrders.vue'
 import AdminProductCommerce from '@/views/AdminProductCommerce.vue'
 
@@ -326,20 +327,22 @@ async function uploadLocalImage(event: Event) {
     input.value = ''
     return
   }
-  if (file.size > 5 * 1024 * 1024) {
-    ElMessage.warning('图片文件不能超过 5 MB')
+  if (file.size > 30 * 1024 * 1024) {
+    ElMessage.warning('原始图片不能超过 30 MB')
     input.value = ''
     return
   }
   uploadingImage.value = true
   try {
+    const uploadFile = await compressServiceImage(file)
+    if (uploadFile.size > 5 * 1024 * 1024) throw new Error('图片压缩后仍超过 5 MB')
     const body = new FormData()
-    body.append('file', file)
+    body.append('file', uploadFile)
     const response = await http.post<{ url: string }>('/api/admin/api/other-services/image', body, {
       timeout: 180_000
     })
     form.imageUrl = response.data.url
-    ElMessage.success('图片上传成功')
+    ElMessage.success(uploadFile === file ? '图片上传成功' : '图片已自动适配并上传')
   } catch (error: unknown) {
     ElMessage.error(getHttpErrorMessage(error, '图片上传失败'))
   } finally {
@@ -472,7 +475,7 @@ onMounted(load)
 .admin-service-thumb img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
 }
 
 .form-tip {
@@ -510,7 +513,7 @@ onMounted(load)
 .service-image-preview img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
 }
 
 .service-image-actions {

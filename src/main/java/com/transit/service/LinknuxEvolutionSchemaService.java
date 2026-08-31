@@ -28,6 +28,8 @@ public class LinknuxEvolutionSchemaService {
             createProviderAccountTables();
             createOperationsTables();
             extendProviderCredentials();
+            ensureColumn("upstream_oauth_states", "oauth_client_config_version",
+                    "ALTER TABLE upstream_oauth_states ADD COLUMN oauth_client_config_version BIGINT NOT NULL DEFAULT 0");
             extendServiceCommerce();
             extendOAuthLoginState();
             seedDefaults();
@@ -136,6 +138,47 @@ public class LinknuxEvolutionSchemaService {
     }
 
     private void createProviderAccountTables() {
+        jdbc.execute("""
+                CREATE TABLE IF NOT EXISTS upstream_oauth_client_configs (
+                    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+                    platform VARCHAR(32) NOT NULL UNIQUE,
+                    encrypted_config_bundle TEXT NOT NULL,
+                    client_id_preview VARCHAR(160) NULL,
+                    has_client_secret BOOLEAN NOT NULL DEFAULT FALSE,
+                    enabled BOOLEAN NOT NULL DEFAULT FALSE,
+                    config_version BIGINT NOT NULL DEFAULT 1,
+                    last_test_status VARCHAR(32) NOT NULL DEFAULT 'UNTESTED',
+                    last_tested_at DATETIME NULL,
+                    last_error_masked VARCHAR(500) NULL,
+                    created_by BIGINT NULL,
+                    updated_by BIGINT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+                """);
+        jdbc.execute("""
+                CREATE TABLE IF NOT EXISTS upstream_oauth_states (
+                    id BIGINT PRIMARY KEY AUTO_INCREMENT, flow_id VARCHAR(64) NOT NULL UNIQUE,
+                    state_hash VARCHAR(64) NOT NULL UNIQUE, platform VARCHAR(32) NOT NULL,
+                    encrypted_code_verifier TEXT NOT NULL, encrypted_nonce TEXT NOT NULL,
+                    admin_user_id BIGINT NOT NULL, reauthorize_credential_id BIGINT NULL, upstream_proxy_id BIGINT NULL,
+                    price_template_id BIGINT NOT NULL, account_group VARCHAR(80) NOT NULL DEFAULT 'default',
+                    model_scope TEXT NULL, redirect_uri VARCHAR(1000) NOT NULL,
+                    callback_mode VARCHAR(24) NOT NULL DEFAULT 'POPUP', expires_at DATETIME NOT NULL,
+                    consumed_at DATETIME NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+                """);
+        jdbc.execute("""
+                CREATE TABLE IF NOT EXISTS provider_price_templates (
+                    id BIGINT PRIMARY KEY AUTO_INCREMENT, name VARCHAR(160) NOT NULL,
+                    platform VARCHAR(32) NOT NULL, model_pattern VARCHAR(160) NOT NULL,
+                    priority INT NOT NULL DEFAULT 0, pricing_unit VARCHAR(32) NOT NULL DEFAULT 'TOKEN',
+                    official_price_json TEXT NOT NULL, cost_price_json TEXT NOT NULL,
+                    sale_price_json TEXT NOT NULL, source_url VARCHAR(1000) NULL,
+                    source_note VARCHAR(500) NULL, enabled BOOLEAN NOT NULL DEFAULT TRUE,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+                """);
         jdbc.execute("""
                 CREATE TABLE IF NOT EXISTS upstream_proxies (
                     id BIGINT PRIMARY KEY AUTO_INCREMENT,
@@ -321,6 +364,19 @@ public class LinknuxEvolutionSchemaService {
         ensureColumn("provider_credentials", "temporary_unschedulable_until", "ALTER TABLE provider_credentials ADD COLUMN temporary_unschedulable_until DATETIME NULL");
         ensureColumn("provider_credentials", "last_error_class", "ALTER TABLE provider_credentials ADD COLUMN last_error_class VARCHAR(32) NULL");
         ensureColumn("provider_credentials", "last_used_at", "ALTER TABLE provider_credentials ADD COLUMN last_used_at DATETIME NULL");
+        ensureColumn("provider_credentials", "external_account_id", "ALTER TABLE provider_credentials ADD COLUMN external_account_id VARCHAR(255) NULL");
+        ensureColumn("provider_credentials", "email_preview", "ALTER TABLE provider_credentials ADD COLUMN email_preview VARCHAR(255) NULL");
+        ensureColumn("provider_credentials", "subscription_tier", "ALTER TABLE provider_credentials ADD COLUMN subscription_tier VARCHAR(80) NULL");
+        ensureColumn("provider_credentials", "authorization_scope", "ALTER TABLE provider_credentials ADD COLUMN authorization_scope TEXT NULL");
+        ensureColumn("provider_credentials", "entitlement_status", "ALTER TABLE provider_credentials ADD COLUMN entitlement_status VARCHAR(32) NOT NULL DEFAULT 'UNKNOWN'");
+        ensureColumn("provider_credentials", "token_version", "ALTER TABLE provider_credentials ADD COLUMN token_version BIGINT NOT NULL DEFAULT 0");
+        ensureColumn("provider_credentials", "last_refreshed_at", "ALTER TABLE provider_credentials ADD COLUMN last_refreshed_at DATETIME NULL");
+        ensureColumn("provider_credentials", "refresh_failure_count", "ALTER TABLE provider_credentials ADD COLUMN refresh_failure_count INT NOT NULL DEFAULT 0");
+        ensureColumn("provider_credentials", "price_template_id", "ALTER TABLE provider_credentials ADD COLUMN price_template_id BIGINT NULL");
+        ensureColumn("channels", "managed", "ALTER TABLE channels ADD COLUMN managed BOOLEAN NOT NULL DEFAULT FALSE");
+        ensureColumn("channels", "managed_platform", "ALTER TABLE channels ADD COLUMN managed_platform VARCHAR(32) NULL");
+        ensureColumn("channels", "managed_auth_type", "ALTER TABLE channels ADD COLUMN managed_auth_type VARCHAR(32) NULL");
+        ensureColumn("upstream_oauth_states", "reauthorize_credential_id", "ALTER TABLE upstream_oauth_states ADD COLUMN reauthorize_credential_id BIGINT NULL");
     }
 
     private void extendServiceCommerce() {
@@ -352,6 +408,9 @@ public class LinknuxEvolutionSchemaService {
         ensureIndex("agent_withdrawals", "idx_agent_withdrawal_status", "CREATE INDEX idx_agent_withdrawal_status ON agent_withdrawals(status,created_at)");
         ensureIndex("provider_account_quota_snapshots", "idx_provider_quota_latest", "CREATE INDEX idx_provider_quota_latest ON provider_account_quota_snapshots(credential_id,captured_at)");
         ensureIndex("provider_account_events", "idx_provider_events_account", "CREATE INDEX idx_provider_events_account ON provider_account_events(credential_id,created_at)");
+        ensureIndex("provider_credentials", "uk_provider_oauth_external", "CREATE UNIQUE INDEX uk_provider_oauth_external ON provider_credentials(platform,external_account_id)");
+        ensureIndex("channels", "uk_channels_managed_platform", "CREATE UNIQUE INDEX uk_channels_managed_platform ON channels(managed_platform)");
+        ensureIndex("upstream_oauth_states", "idx_upstream_oauth_expiry", "CREATE INDEX idx_upstream_oauth_expiry ON upstream_oauth_states(expires_at,consumed_at)");
         ensureIndex("channel_monitor_history", "idx_channel_monitor_time", "CREATE INDEX idx_channel_monitor_time ON channel_monitor_history(channel_id,checked_at)");
         ensureIndex("alert_events", "idx_alert_events_opened", "CREATE INDEX idx_alert_events_opened ON alert_events(status,opened_at)");
     }

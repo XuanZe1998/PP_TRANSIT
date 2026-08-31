@@ -198,15 +198,22 @@ public class UniversalModelService {
     public Mono<JsonNode> transcribe(String authorization, String clientIp, String model,
                                      byte[] file, String fileName, String contentType,
                                      java.util.Map<String, String> fields, String idempotencyKey) {
+        return multipartInvoke(authorization, clientIp, model, "audio-transcriptions", "/v1/audio/transcriptions",
+                "file", file, fileName, contentType, fields, idempotencyKey);
+    }
+
+    public Mono<JsonNode> multipartInvoke(String authorization, String clientIp, String model, String protocol,
+                                     String defaultPath, String partName, byte[] file, String fileName, String contentType,
+                                     java.util.Map<String, String> fields, String idempotencyKey) {
         ObjectNode authBody = objectMapper.createObjectNode().put("model", model);
         authBody.put("file_name", fileName == null ? "audio.bin" : fileName);
         authBody.put("file_size", file == null ? 0 : file.length);
         authBody.put("file_sha256", sha256(file == null ? new byte[0] : file));
         AuthContext auth = authorize(authorization, clientIp, authBody);
         IdempotencyService.Claim claim = idempotency.claim("API_KEY", auth.token().getId(),
-                "model.invoke:audio-transcriptions", idempotencyKey, authBody, false);
+                "model.invoke:" + protocol, idempotencyKey, authBody, false);
         if (claim.replay()) return Mono.just(claim.response());
-        Route route = route(model, "audio-transcriptions", sessionKey(authBody), reliableCostRequired(auth.user().getId()));
+        Route route = route(model, protocol, sessionKey(authBody), reliableCostRequired(auth.user().getId()));
         int estimatedInput = Math.max(1, (file == null ? 0 : file.length) / 3);
         ObjectNode billingPayload = authBody.deepCopy();
         fields.forEach(billingPayload::put);
@@ -216,11 +223,11 @@ public class UniversalModelService {
         GatewaySettlementService.Reservation reservation = settlement.reserve(auth.token(), auth.user(),
                 estimatedInput, reservedAmount, traceId, model);
         String path = route.mapping().getEndpointPath() == null || route.mapping().getEndpointPath().isBlank()
-                ? "/compatible-mode/v1/audio/transcriptions" : route.mapping().getEndpointPath();
+                ? defaultPath : route.mapping().getEndpointPath();
         long started = System.currentTimeMillis();
         java.util.Map<String, String> upstreamFields = new java.util.HashMap<>(fields);
         upstreamFields.put("model", route.mapping().getChannelModelName());
-        return haoee.multipart(route.channel(), route.mapping().getChannelModelName(), path,
+        return haoee.multipart(route.channel(), route.mapping().getChannelModelName(), path, partName,
                         fileName, contentType, file, upstreamFields)
                 .publishOn(Schedulers.boundedElastic())
                 .map(response -> {
@@ -228,7 +235,7 @@ public class UniversalModelService {
                     PricingQuote actualQuote = quote(route.mapping(), billingPayload, usage.input(), usage.output(), usage.cacheRead());
                     long actual = actualQuote.saleAmount();
                     settleUsage(reservation, Math.max(1, usage.input() + usage.output()), actual,
-                            actualQuote.costAmount(), "Audio transcription " + model + " (" + traceId + ")", auth.user().getId());
+                            actualQuote.costAmount(), protocol + " " + model + " (" + traceId + ")", auth.user().getId());
                     writeLog(auth, route, usage, actualQuote, traceId, started, "SUCCESS", null);
                     idempotency.complete(claim, 200, response, "MODEL_RESPONSE", traceId);
                     credentials.recordSuccess(route.credentialId(), System.currentTimeMillis() - started);
@@ -250,7 +257,7 @@ public class UniversalModelService {
         if (publicModel == null || publicModel.isBlank()) return false;
         return candidateMappings(publicModel, protocol).stream().anyMatch(mapping -> {
             Channel channel = channels.selectById(mapping.getChannelId());
-            return isHaoee(channel);
+            return isUniversalChannel(channel);
         });
     }
 
@@ -305,6 +312,36 @@ public class UniversalModelService {
                     if (complete) credentials.recordSuccess(route.credentialId(), System.currentTimeMillis() - started);
                     else credentials.releaseUnknown(route.credentialId());
                 }));
+    }
+
+    /** Raw SSE bridge for managed provider-native protocols (Messages, Gemini and Codex aliases). */
+    public Flux<ServerSentEvent<String>> streamProtocol(String authorization, String clientIp, String protocol,
+                                                         String path, JsonNode request) {
+        requireObjectRequest(request);
+        AuthContext auth = authorize(authorization, clientIp, request);
+        String traceId = "req_" + UUID.randomUUID().toString().replace("-", "").substring(0, 16);
+        sensitiveWords.scanJson(traceId, auth.token().getOrganizationId(), auth.user().getId(), auth.token().getId(), auth.model(), request);
+        Route route = route(auth.model(), protocol, sessionKey(request), reliableCostRequired(auth.user().getId()));
+        ObjectNode payload = (ObjectNode) request.deepCopy(); payload.put("model", route.mapping().getChannelModelName());
+        int input = estimateInput(payload), output = estimatedOutput(payload, protocol);
+        PricingQuote quote = quote(route.mapping(), payload, input, output, 0);
+        GatewaySettlementService.Reservation reservation = settlement.reserve(auth.token(), auth.user(), Math.max(1, input + output), quote.saleAmount(), traceId, auth.model());
+        long started = System.currentTimeMillis();
+        AtomicBoolean completed = new AtomicBoolean(false);
+        return haoee.streamEvents(route.channel(), route.mapping().getChannelModelName(), path, payload)
+                .doOnComplete(() -> {
+                    if (completed.compareAndSet(false, true)) {
+                        settleUsage(reservation, Math.max(1, input + output), quote.saleAmount(), quote.costAmount(), "Streaming " + protocol + " " + auth.model(), auth.user().getId());
+                        writeLog(auth, route, new Usage(input, output, 0, 0), quote, traceId, started, "SUCCESS", null);
+                        credentials.recordSuccess(route.credentialId(), System.currentTimeMillis() - started);
+                    }
+                }).doOnError(error -> {
+                    if (completed.compareAndSet(false, true)) {
+                        boolean unknown = ambiguousTimeout(error);
+                        if (unknown) settlement.markUnknown(reservation, safe(error)); else settlement.release(reservation, safe(error));
+                        if (unknown) credentials.releaseUnknown(route.credentialId()); else credentials.recordFailure(route.credentialId(), error);
+                    }
+                });
     }
 
     private Usage streamUsage(String data) {
@@ -395,7 +432,7 @@ public class UniversalModelService {
         List<ModelMapping> candidates = candidateMappings(publicModel, protocol);
         for (ModelMapping mapping : candidates) {
             Channel channel = channels.selectById(mapping.getChannelId());
-            if (!isHaoee(channel)) continue;
+            if (!isUniversalChannel(channel)) continue;
             ProviderCredentialService.SelectedCredential selected = null;
             try {
                 selected = credentials.select(channel, publicModel, sessionId, requireReliableCost);
@@ -403,6 +440,7 @@ public class UniversalModelService {
                 // all production implementations use the richer selector above.
                 if (selected == null && !requireReliableCost) selected = credentials.select(channel);
                 channel.setApiKey(selected.secret());
+                channel.setAuthContext(selected.authContext());
                 channel.setSelectedCredentialId(selected.id());
                 rateLimiter.checkChannel(channel);
                 return new Route(mapping, channel, selected.id());
@@ -412,7 +450,7 @@ public class UniversalModelService {
             }
         }
         throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
-                "No compatible Haoee route for model: " + publicModel);
+                "No compatible Haoee route or managed OAuth route for model: " + publicModel);
     }
 
     private List<ModelMapping> candidateMappings(String publicModel, String protocol) {
@@ -425,14 +463,14 @@ public class UniversalModelService {
                 .filter(mapping -> supports(mapping, protocol)).toList();
     }
 
-    private boolean isHaoee(Channel channel) {
+    private boolean isUniversalChannel(Channel channel) {
         if (channel == null || !channel.isEnabled()) return false;
         String health = Objects.toString(channel.getHealthStatus(), "UNTESTED").toUpperCase(Locale.ROOT);
         boolean healthy = List.of("HEALTHY", "DEGRADED").contains(health)
                 || ("COOLDOWN".equals(health) && channel.getCooldownUntil() != null
                 && channel.getCooldownUntil().isBefore(LocalDateTime.now()));
-        return healthy
-                && ("haoee".equalsIgnoreCase(channel.getType())
+        return healthy && (channel.isManaged()
+                || "haoee".equalsIgnoreCase(channel.getType())
                 || "haoee-openai".equalsIgnoreCase(channel.getType()));
     }
 

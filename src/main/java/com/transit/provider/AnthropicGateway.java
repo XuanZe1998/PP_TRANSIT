@@ -7,6 +7,8 @@ import com.transit.model.Channel;
 import lombok.Data;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Autowired;
+import com.transit.service.UpstreamProxyHttpClientFactory;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
@@ -18,6 +20,7 @@ import java.util.Locale;
 public class AnthropicGateway implements ProviderGateway {
 
     private final WebClient webClient;
+    @Autowired(required = false) private UpstreamProxyHttpClientFactory proxyClients;
 
     public AnthropicGateway(WebClient webClient) {
         this.webClient = webClient;
@@ -33,10 +36,10 @@ public class AnthropicGateway implements ProviderGateway {
     @Override
     public Mono<ChatResponse> chatCompletions(Channel channel, ChatRequest request, String publicModel, String providerModel) {
         AnthropicRequest payload = toAnthropicRequest(request, providerModel);
-        return webClient.post()
+        WebClient.RequestBodySpec call = client(channel).post()
                 .uri(channel.getBaseUrl() + "/v1/messages")
-                .header("x-api-key", channel.getApiKey())
-                .header("anthropic-version", "2023-06-01")
+                .header("anthropic-version", "2023-06-01");
+        return ProviderAuthentication.apply(call, channel, "x-api-key")
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(payload)
                 .retrieve()
@@ -66,6 +69,8 @@ public class AnthropicGateway implements ProviderGateway {
                 .toList());
         return payload;
     }
+
+    private WebClient client(Channel channel) { return proxyClients == null || channel.getAuthContext() == null ? webClient : proxyClients.client(channel.getAuthContext().upstreamProxyId()); }
 
     private ChatResponse toChatResponse(AnthropicResponse response, String providerModel) {
         ChatResponse result = new ChatResponse();
