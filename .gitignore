@@ -43,6 +43,10 @@ web/playwright-report/
 .wrangler/
 *~
 
+### Load testing (credentials and generated reports) ###
+scripts/k6/user-token-pool.csv
+scripts/k6/results/
+
 ### Runtime data and logs ###
 data/
 output/pdf/

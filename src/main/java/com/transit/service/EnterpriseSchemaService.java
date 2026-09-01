@@ -323,6 +323,8 @@ public class EnterpriseSchemaService {
     private void addColumns() {
         ensureColumn("users", "account_type",
                 "ALTER TABLE users ADD COLUMN account_type VARCHAR(24) NOT NULL DEFAULT 'PERSONAL'");
+        ensureColumn("users", "invoice_enabled",
+                "ALTER TABLE users ADD COLUMN invoice_enabled BOOLEAN NOT NULL DEFAULT FALSE");
         ensureColumn("organization_members", "removed_at",
                 "ALTER TABLE organization_members ADD COLUMN removed_at DATETIME NULL");
         ensureColumn("organization_members", "updated_at",

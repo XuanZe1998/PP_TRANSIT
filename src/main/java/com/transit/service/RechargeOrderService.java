@@ -51,12 +51,36 @@ public class RechargeOrderService {
     public WalletRechargeOrder create(User user, RechargeOrderRequest request) {
         requireUser(user);
         verificationPolicy.requireComplete(user, "充值");
-        if (request == null || request.getPlanId() == null) throw badRequest("planId is required");
-        List<Map<String,Object>> rows = jdbcTemplate.queryForList("SELECT id,name,amount,bonus_percent FROM recharge_plans WHERE id=? AND enabled=TRUE", request.getPlanId());
-        if (rows.isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Recharge plan not found or unavailable");
-        Map<String,Object> plan = rows.get(0);
-        long base = ((Number)plan.get("amount")).longValue();
-        BigDecimal bonusPercent = new BigDecimal(plan.get("bonus_percent").toString()).setScale(3, RoundingMode.UNNECESSARY);
+        if (request == null) throw badRequest("Recharge request is required");
+        boolean custom = request.getCustomAmount() != null;
+        if (custom && request.getPlanId() != null) throw badRequest("Choose either planId or customAmount");
+        if (!custom && request.getPlanId() == null) throw badRequest("planId or customAmount is required");
+
+        long base;
+        BigDecimal bonusPercent;
+        String planName;
+        Long planId;
+        if (custom) {
+            BigDecimal amount;
+            try {
+                amount = request.getCustomAmount().setScale(2, RoundingMode.UNNECESSARY);
+                base = amount.multiply(BigDecimal.valueOf(WALLET_SCALE)).longValueExact();
+            } catch (ArithmeticException exception) {
+                throw badRequest("customAmount must have at most 2 decimal places and be within the supported range");
+            }
+            if (amount.signum() <= 0 || base <= 0) throw badRequest("customAmount must be greater than 0");
+            bonusPercent = BigDecimal.ZERO.setScale(3);
+            planName = "自定义充值";
+            planId = 0L;
+        } else {
+            List<Map<String,Object>> rows = jdbcTemplate.queryForList("SELECT id,name,amount,bonus_percent FROM recharge_plans WHERE id=? AND enabled=TRUE", request.getPlanId());
+            if (rows.isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Recharge plan not found or unavailable");
+            Map<String,Object> plan = rows.get(0);
+            base = ((Number)plan.get("amount")).longValue();
+            bonusPercent = new BigDecimal(plan.get("bonus_percent").toString()).setScale(3, RoundingMode.UNNECESSARY);
+            planName = String.valueOf(plan.get("name"));
+            planId = request.getPlanId();
+        }
         if (base <= 0 || bonusPercent.signum() < 0) throw conflict("Recharge plan amount is invalid");
         long bonus = BigDecimal.valueOf(base).multiply(bonusPercent)
                 .divide(BigDecimal.valueOf(100), 0, RoundingMode.HALF_UP).longValueExact();
@@ -65,12 +89,15 @@ public class RechargeOrderService {
         LocalDateTime now = now();
         String orderNo = "RCG-" + UUID.randomUUID().toString().replace("-", "").substring(0, 20).toUpperCase(Locale.ROOT);
         WalletRechargeOrder order = new WalletRechargeOrder();
-        order.setOrderNo(orderNo); order.setUserId(user.getId()); order.setPlanId(request.getPlanId());
-        order.setPlanName(String.valueOf(plan.get("name"))); order.setPaymentAmountUnits(base); order.setBaseCreditUnits(base);
+        order.setOrderNo(orderNo); order.setUserId(user.getId()); order.setPlanId(planId);
+        order.setPlanName(planName); order.setPaymentAmountUnits(base); order.setBaseCreditUnits(base);
         order.setBonusPercent(bonusPercent); order.setBonusCreditUnits(bonus); order.setTotalCreditUnits(total);
         order.setStatus("PENDING"); order.setPaymentMethod(paymentMethod(request.getPaymentMethod()));
         boolean invoiceRequested = Boolean.TRUE.equals(request.getNeedInvoice())
                 || (request.getNeedInvoice() == null && request.getBillingName() != null && !request.getBillingName().isBlank());
+        if (invoiceRequested && !user.isInvoiceEnabled()) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Invoice access has not been enabled for this user");
+        }
         order.setInvoiceRequested(invoiceRequested);
         order.setInvoiceNumber(orderNo); order.setReceiptNumber(receiptNumber());
         String fallbackEmail = user.getEmail() != null && !user.getEmail().isBlank()

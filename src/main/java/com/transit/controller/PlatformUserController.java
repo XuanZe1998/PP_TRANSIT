@@ -25,9 +25,11 @@ public class PlatformUserController {
     private final PlatformOperationsService platformOperationsService;
 
     @GetMapping("/wallet")
-    public Mono<Map<String, Object>> wallet(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+    public Mono<Map<String, Object>> wallet(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+                                            @RequestParam(value = "page", defaultValue = "1") int page,
+                                            @RequestParam(value = "pageSize", defaultValue = "10") int pageSize) {
         User user = currentUserService.requireUser(authHeader);
-        return Mono.fromCallable(() -> platformOperationsService.userWallet(user));
+        return Mono.fromCallable(() -> platformOperationsService.userWallet(user, page, pageSize));
     }
 
     @PostMapping("/wallet/recharge")

@@ -22,6 +22,49 @@ class WalletBalanceSynchronizationIntegrationTests {
     @Autowired WalletBalanceReconciliationService reconciliationService;
     @Autowired OrganizationService organizationService;
     @Autowired GatewaySettlementService gatewaySettlementService;
+    @Autowired PlatformOperationsService platformOperationsService;
+
+    @Test
+    void walletTransactionsSupportSelectableServerSidePagination() {
+        PersonalAccount account = personalAccount(100, 100);
+        for (int index = 0; index < 25; index++) {
+            jdbcTemplate.update("INSERT INTO wallet_transactions(user_id,type,amount,balance_after,channel,remark,created_at) VALUES (?,'ADJUSTMENT',1,?,'test',?,?)",
+                    account.userId(), 101 + index, "entry-" + index, LocalDateTime.now().plusSeconds(index));
+        }
+        User user = User.builder().id(account.userId()).balance(100).status("ACTIVE").build();
+
+        Map<String, Object> secondPage = platformOperationsService.userWallet(user, 2, 10);
+        assertThat(((Number) secondPage.get("transactionTotal")).longValue()).isEqualTo(25);
+        assertThat((java.util.List<?>) secondPage.get("transactions")).hasSize(10);
+
+        Map<String, Object> lastPage = platformOperationsService.userWallet(user, 3, 10);
+        assertThat((java.util.List<?>) lastPage.get("transactions")).hasSize(5);
+        assertThat(((Number) lastPage.get("transactionTotal")).longValue()).isEqualTo(25);
+
+        assertThat((Number) secondPage.get("transactionPage")).isNotNull().extracting(Number::longValue).isEqualTo(2L);
+        assertThat((Number) secondPage.get("transactionPageSize")).isNotNull().extracting(Number::longValue).isEqualTo(10L);
+        assertThat((Number) lastPage.get("transactionPageSize")).isNotNull().extracting(Number::longValue).isEqualTo(10L);
+    }
+
+    @Test
+    void walletPaginationRejectsUnsupportedPageSizeAndKeepsTotalStable() {
+        PersonalAccount account = personalAccount(100, 100);
+        for (int index = 0; index < 7; index++) {
+            jdbcTemplate.update("INSERT INTO wallet_transactions(user_id,type,amount,balance_after,channel,remark,created_at) VALUES (?,'ADJUSTMENT',1,?,'test',?,?)",
+                    account.userId(), 101 + index, "entry-" + index, LocalDateTime.now().plusSeconds(index));
+        }
+        User user = User.builder().id(account.userId()).balance(100).status("ACTIVE").build();
+
+        Map<String, Object> invalidSize = platformOperationsService.userWallet(user, 1, 7);
+        assertThat((Number) invalidSize.get("transactionPageSize")).isNotNull().extracting(Number::longValue).isEqualTo(10L);
+        assertThat(((java.util.List<?>) invalidSize.get("transactions")).size()).isEqualTo(7);
+        assertThat(((Number) invalidSize.get("transactionTotal")).longValue()).isEqualTo(7);
+
+        Map<String, Object> fallbackToTen = platformOperationsService.userWallet(user, 1, 10);
+        assertThat((Number) fallbackToTen.get("transactionPage")).isNotNull().extracting(Number::longValue).isEqualTo(1L);
+        assertThat((Number) fallbackToTen.get("transactionPageSize")).isNotNull().extracting(Number::longValue).isEqualTo(10L);
+        assertThat(((java.util.List<?>) fallbackToTen.get("transactions")).size()).isEqualTo(7);
+    }
 
     @Test
     void adminAdjustmentAndRedeemCodeKeepPersonalWalletSynchronized() {
