@@ -81,6 +81,10 @@ public class User {
     @Builder.Default
     private long balance = 0; // Credits in tokens
 
+    @TableField("invoice_enabled")
+    @Builder.Default
+    private boolean invoiceEnabled = false;
+
     @TableField("created_at")
     private LocalDateTime createdAt;
 }

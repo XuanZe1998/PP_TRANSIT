@@ -41,3 +41,33 @@ curl -sI -H 'Accept-Encoding: gzip' https://linknux.com/assets/<current-entry-fi
 ```
 
 The response must include `Content-Encoding: gzip`, `Vary: Accept-Encoding`, and the immutable cache header.
+
+## Post-deployment smoke and release validation
+
+After a production release, run these quick checks:
+
+```bash
+curl -sS -I https://linknux.com/
+curl -sS -H "Authorization: Bearer <admin-or-user-token>" \
+  "https://api.linknux.com/platform/user/wallet?page=1&pageSize=10"
+curl -sS -H "Authorization: Bearer <admin-or-user-token>" \
+  https://api.linknux.com/platform/user/recharge-orders
+```
+
+For wallet/recharge-specific quality checks, use:
+
+- `POST /platform/user/recharge-orders` with `customAmount > 0` (expect success).
+- `customAmount <= 0` (expect 400).
+- `needInvoice=true` denied when user invoice access is disabled.
+- `needInvoice=true` works after admin sets user `invoiceEnabled=true`.
+- wallet pagination query `page=1,pageSize=10/20/50/100` and unsupported `pageSize` fallback.
+
+## Load test execution
+
+Use the load test package in:
+
+- `scripts/k6/wallet-load.js`
+- `scripts/k6/run-wallet-load.ps1`
+- `scripts/k6/user-token-pool.sample.csv`
+
+See [线上压测与上线核验方案](../docs/线上压测与上线核验方案.md) for the full concurrency methodology and interpretation.

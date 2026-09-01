@@ -1035,13 +1035,15 @@ const configs: Record<ModuleKey, Config> = {
       { prop: 'status', label: '状态', width: 110, kind: 'status' },
       { prop: 'group_name', label: '分组', minWidth: 130 },
       { prop: 'balance', label: '余额', width: 120, kind: 'money' },
+      { prop: 'invoice_enabled', label: '账单 / 发票', width: 110, kind: 'bool' },
       { prop: 'token_count', label: 'Key', width: 90 },
       { prop: 'request_count', label: '请求', width: 100 }
     ],
     fields: [
       { prop: 'role', label: '角色', type: 'select', options: [{ label: 'USER', value: 'USER' }, { label: 'ADMIN', value: 'ADMIN' }] },
       { prop: 'status', label: '状态', type: 'select', options: [{ label: 'ACTIVE', value: 'ACTIVE' }, { label: 'SUSPENDED', value: 'SUSPENDED' }] },
-      { prop: 'groupId', label: '分组 ID', type: 'number' }
+      { prop: 'groupId', label: '分组 ID', type: 'number' },
+      { prop: 'invoiceEnabled', label: '开放账单 / 发票申请', type: 'switch' }
     ],
     editable: true
   },
@@ -1713,7 +1715,10 @@ function openEdit(row: any) {
     const sourceKey = field.prop === 'key' ? 'setting_key' : field.prop === 'value' ? 'setting_value' : field.prop
     form[field.prop] = row[sourceKey] ?? row[field.prop] ?? ''
   }
-  if (module.value === 'users') form.groupId = row.group_id ?? row.groupId ?? null
+  if (module.value === 'users') {
+    form.groupId = row.group_id ?? row.groupId ?? null
+    form.invoiceEnabled = Boolean(row.invoice_enabled ?? row.invoiceEnabled)
+  }
   if (module.value === 'channels') {
     channelModelPricing.value = (row.modelPricing || []).map((item: any) => normalizePricing(item.channelModelName, item))
     const mappedModels = channelModelPricing.value.map(item => item.channelModelName)

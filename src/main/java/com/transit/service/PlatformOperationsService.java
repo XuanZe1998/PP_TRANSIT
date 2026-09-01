@@ -34,10 +34,15 @@ public class PlatformOperationsService {
     private final ChannelMapper channelMapper;
     private final RedeemCodeService redeemCodeService;
 
-    public Map<String, Object> userWallet(User user) {
+    public Map<String, Object> userWallet(User user, int requestedPage, int requestedPageSize) {
+        int page = Math.max(1, requestedPage);
+        int pageSize = List.of(10, 20, 50, 100).contains(requestedPageSize) ? requestedPageSize : 10;
+        long transactionTotal = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM wallet_transactions WHERE user_id = ?", Long.class, user.getId());
+        long offset = (long) (page - 1) * pageSize;
         List<Map<String, Object>> transactions = jdbcTemplate.queryForList(
-                "SELECT id, type, amount, balance_after, channel, remark, created_at FROM wallet_transactions WHERE user_id = ? ORDER BY created_at DESC LIMIT 50",
-                user.getId()
+                "SELECT id, type, amount, balance_after, channel, remark, created_at FROM wallet_transactions WHERE user_id = ? ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?",
+                user.getId(), pageSize, offset
         );
         for (Map<String,Object> transaction : transactions) {
             transaction.put("amountMoney",new MoneyAmount(((Number)transaction.get("amount")).longValue(),"CNY",10000));
@@ -49,10 +54,14 @@ public class PlatformOperationsService {
         payload.put("monthSpend", sumUserCost(user.getId()));
         payload.put("giftBalance", sumWalletType(user.getId(), "GIFT"));
         payload.put("invoiceableAmount", Math.max(0, sumWalletType(user.getId(), "RECHARGE") - sumUserCost(user.getId())));
+        payload.put("invoiceEnabled", user.isInvoiceEnabled());
         payload.put("monthSpendMoney",new MoneyAmount(((Number)payload.get("monthSpend")).longValue(),"CNY",10000));
         payload.put("giftBalanceMoney",new MoneyAmount(((Number)payload.get("giftBalance")).longValue(),"CNY",10000));
         payload.put("invoiceableMoney",new MoneyAmount(((Number)payload.get("invoiceableAmount")).longValue(),"CNY",10000));
         payload.put("transactions", transactions);
+        payload.put("transactionTotal", transactionTotal);
+        payload.put("transactionPage", page);
+        payload.put("transactionPageSize", pageSize);
         List<Map<String,Object>> plans = jdbcTemplate.queryForList("""
                 SELECT id, name, amount, bonus_percent AS bonus
                 FROM recharge_plans WHERE enabled = TRUE ORDER BY sort_order, id

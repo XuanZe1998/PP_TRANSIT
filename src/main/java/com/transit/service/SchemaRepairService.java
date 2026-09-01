@@ -308,6 +308,7 @@ public class SchemaRepairService {
                     status VARCHAR(40) NOT NULL DEFAULT 'ACTIVE',
                     group_id BIGINT NULL,
                     balance BIGINT NOT NULL DEFAULT 0,
+                    invoice_enabled BOOLEAN NOT NULL DEFAULT FALSE,
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
                 """);
@@ -1186,6 +1187,7 @@ public class SchemaRepairService {
         ensureColumn("users", "locale", "ALTER TABLE users ADD COLUMN locale VARCHAR(20) NOT NULL DEFAULT 'zh-CN'");
         ensureColumn("users", "timezone", "ALTER TABLE users ADD COLUMN timezone VARCHAR(80) NOT NULL DEFAULT 'Asia/Shanghai'");
         ensureColumn("users", "last_login_at", "ALTER TABLE users ADD COLUMN last_login_at DATETIME NULL");
+        ensureColumn("users", "invoice_enabled", "ALTER TABLE users ADD COLUMN invoice_enabled BOOLEAN NOT NULL DEFAULT FALSE");
         ensureColumn("oauth_tokens", "access_expires_at", "ALTER TABLE oauth_tokens ADD COLUMN access_expires_at DATETIME NULL");
         ensureColumn("oauth_tokens", "device_name", "ALTER TABLE oauth_tokens ADD COLUMN device_name VARCHAR(160) NULL");
         ensureColumn("oauth_tokens", "ip_digest", "ALTER TABLE oauth_tokens ADD COLUMN ip_digest VARCHAR(128) NULL");

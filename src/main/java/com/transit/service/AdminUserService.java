@@ -30,7 +30,7 @@ public class AdminUserService {
     public List<Map<String, Object>> users() {
         List<Map<String,Object>> rows = jdbcTemplate.queryForList("""
                 SELECT u.id, u.username, u.email, u.phone, u.role, COALESCE(u.status, 'ACTIVE') AS status,
-                       u.balance, u.created_at, u.group_id, COALESCE(u.account_type,'PERSONAL') account_type,
+                       u.balance, u.invoice_enabled, u.created_at, u.group_id, COALESCE(u.account_type,'PERSONAL') account_type,
                        u.default_organization_id, o.name AS organization_name,
                        o.organization_type, om.member_role AS organization_role,
                        wa.account_type AS wallet_account_type, wa.balance AS wallet_balance,
@@ -114,6 +114,9 @@ public class AdminUserService {
             }
             user.setGroupId(groupId);
         }
+        if (request.containsKey("invoiceEnabled")) {
+            user.setInvoiceEnabled(booleanValue(request.get("invoiceEnabled")));
+        }
         // Balance mutations are intentionally forbidden here. They must use
         // adjustBalance so every change is atomic and receives a ledger entry.
         userMapper.updateById(user);
@@ -188,5 +191,14 @@ public class AdminUserService {
         if (value == null || value.toString().isBlank()) return null;
         if (value instanceof Number number) return number.longValue();
         return Long.parseLong(value.toString());
+    }
+
+    private boolean booleanValue(Object value) {
+        if (value instanceof Boolean bool) return bool;
+        if (value == null) return false;
+        String text = value.toString().trim();
+        if ("true".equalsIgnoreCase(text) || "1".equals(text)) return true;
+        if ("false".equalsIgnoreCase(text) || "0".equals(text)) return false;
+        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invoiceEnabled must be a boolean");
     }
 }

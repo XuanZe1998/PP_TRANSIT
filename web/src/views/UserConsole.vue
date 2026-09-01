@@ -478,13 +478,18 @@
                 <p>以下金额均按 CNY 展示；支付购买尚未开放时不会创建虚假充值。</p>
               </div>
             </div>
-            <el-empty v-if="!wallet.plans.length" description="暂无可购买额度方案" />
-            <div v-else class="wallet-plan-grid">
+            <div class="wallet-plan-grid">
               <article v-for="plan in wallet.plans" :key="plan.id">
                 <strong>{{ plan.name }}</strong>
                 <span>{{ formatMoneyDto(plan.paymentMoney) }}</span>
                 <small>赠送 {{ Number(plan.bonus || 0).toFixed(2) }}% · 到账 {{ formatMoneyDto(plan.totalCreditMoney) }}</small>
                 <el-button type="primary" :loading="rechargeSubmitting" @click="openRecharge(plan)">购买</el-button>
+              </article>
+              <article>
+                <strong>自定义充值</strong>
+                <span>任意金额</span>
+                <small>充值金额必须大于 ¥0.00，不参与套餐赠送</small>
+                <el-button type="primary" :loading="rechargeSubmitting" @click="openCustomRecharge">自定义金额</el-button>
               </article>
             </div>
           </section>
@@ -524,22 +529,41 @@
               <el-table-column prop="channel" label="渠道" width="130" />
               <el-table-column prop="remark" label="备注" min-width="220" />
             </el-table>
+            <el-pagination
+              v-model:current-page="walletTransactionPage"
+              v-model:page-size="walletTransactionPageSize"
+              class="billing-pagination"
+              layout="total, sizes, prev, pager, next, jumper"
+              :page-sizes="[10, 20, 50, 100]"
+              :total="walletTransactionTotal"
+              @current-change="loadWallet"
+              @size-change="handleWalletTransactionPageSizeChange"
+            />
           </section>
 
           <el-drawer v-model="rechargeVisible" title="充值方案" size="min(680px, 94vw)" destroy-on-close>
             <div class="recharge-drawer-plans">
               <button v-for="plan in wallet.plans" :key="plan.id" type="button"
-                :class="{ selected: selectedRechargePlan?.id === plan.id }" @click="selectedRechargePlan = plan">
+                :class="{ selected: !customRecharge && selectedRechargePlan?.id === plan.id }" @click="selectRechargePlan(plan)">
                 <span><strong>{{ plan.name }}</strong><small>赠送 {{ Number(plan.bonus || 0).toFixed(2) }}%</small></span>
                 <b>{{ formatMoneyDto(plan.paymentMoney) }}</b>
                 <small class="recharge-credit-note">到账 {{ formatMoneyDto(plan.totalCreditMoney) }}</small>
               </button>
+              <button type="button" :class="{ selected: customRecharge }" @click="selectCustomRecharge">
+                <span><strong>自定义充值</strong><small>无赠送</small></span>
+                <b>自定义金额</b>
+                <small class="recharge-credit-note">充值多少，到账多少</small>
+              </button>
             </div>
             <el-form label-position="top">
               <el-alert v-if="selectedRechargePlan" type="info" :closable="false" :title="`实付 ${formatMoneyDto(selectedRechargePlan.paymentMoney)}，到账 ${formatMoneyDto(selectedRechargePlan.totalCreditMoney)}`" />
+              <el-form-item v-if="customRecharge" label="充值金额（CNY）" required>
+                <el-input-number v-model="customRechargeAmount" :min="0.01" :precision="2" :step="10" controls-position="right" style="width:100%" />
+                <div class="form-hint">金额必须大于 0，最多保留两位小数。</div>
+              </el-form-item>
               <el-form-item label="支付方式"><el-radio-group v-model="rechargeForm.paymentMethod"><el-radio value="alipay">支付宝</el-radio><el-radio value="wxpay">微信支付</el-radio></el-radio-group></el-form-item>
-              <el-form-item label="需要开具账单 / 发票"><el-switch v-model="rechargeForm.needInvoice" /></el-form-item>
-              <template v-if="rechargeForm.needInvoice">
+              <el-form-item v-if="wallet.invoiceEnabled" label="需要开具账单 / 发票"><el-switch v-model="rechargeForm.needInvoice" /></el-form-item>
+              <template v-if="wallet.invoiceEnabled && rechargeForm.needInvoice">
                 <el-form-item label="姓名或公司名称"><el-input v-model="rechargeForm.billingName" /></el-form-item>
                 <el-form-item label="接收邮箱"><el-input v-model="rechargeForm.contactEmail" /></el-form-item>
                 <el-form-item label="详细地址"><el-input v-model="rechargeForm.billingAddressLine1" placeholder="省/市以下的街道、门牌、小区等" /></el-form-item>
@@ -548,7 +572,7 @@
                 <el-form-item label="国家/地区"><el-input v-model="rechargeForm.billingCountry" /></el-form-item>
               </template>
             </el-form>
-            <template #footer><el-button @click="rechargeVisible=false">取消</el-button><el-button type="primary" :disabled="!selectedRechargePlan" :loading="rechargeSubmitting" @click="submitRecharge">立即支付</el-button></template>
+            <template #footer><el-button @click="rechargeVisible=false">取消</el-button><el-button type="primary" :disabled="customRecharge ? customRechargeAmount <= 0 : !selectedRechargePlan" :loading="rechargeSubmitting" @click="submitRecharge">立即支付</el-button></template>
           </el-drawer>
         </section>
 
@@ -748,6 +772,9 @@ const modelGrantOptions = computed(() => {
   })) }))
 })
 const walletLoading = ref(false)
+const walletTransactionPage = ref(1)
+const walletTransactionPageSize = ref(10)
+const walletTransactionTotal = ref(0)
 const redeeming = ref(false)
 const redeemCode = ref('')
 type MoneyDto = { amount: number | string; currency: string; scale: number }
@@ -755,6 +782,8 @@ type RechargePlan = { id: number | string; name: string; amount: AmountUnits; bo
 const rechargeVisible = ref(false)
 const rechargeSubmitting = ref(false)
 const selectedRechargePlan = ref<RechargePlan | null>(null)
+const customRecharge = ref(false)
+const customRechargeAmount = ref(1)
 const rechargeOrders = ref<Array<Record<string, any>>>([])
 const rechargeForm = ref({ needInvoice: false, billingName: '', contactEmail: '', billingAddressLine1: '', billingDistrict: '', billingCity: '', billingProvince: '', billingPostalCode: '', billingCountry: 'China', paymentMethod: 'alipay' })
 let paymentPollTimer: number | null = null
@@ -763,6 +792,7 @@ const wallet = ref({
   monthSpend: 0 as AmountUnits,
   giftBalance: 0 as AmountUnits,
   invoiceableAmount: 0 as AmountUnits,
+  invoiceEnabled: false,
   transactions: [] as Array<Record<string, any>>,
   plans: [] as RechargePlan[]
 })
@@ -1142,7 +1172,7 @@ async function loadWallet() {
   walletLoading.value = true
   try {
     const [response, ordersResponse] = await Promise.all([
-      http.get('/api/platform/user/wallet'),
+      http.get('/api/platform/user/wallet', { params: { page: walletTransactionPage.value, pageSize: walletTransactionPageSize.value } }),
       http.get('/api/platform/user/recharge-orders')
     ])
     wallet.value = {
@@ -1150,9 +1180,12 @@ async function loadWallet() {
       monthSpend: amountValue(response.data?.monthSpend),
       giftBalance: amountValue(response.data?.giftBalance),
       invoiceableAmount: amountValue(response.data?.invoiceableAmount),
+      invoiceEnabled: Boolean(response.data?.invoiceEnabled),
       transactions: Array.isArray(response.data?.transactions) ? response.data.transactions : [],
       plans: Array.isArray(response.data?.plans) ? response.data.plans : []
     }
+    if (!wallet.value.invoiceEnabled) rechargeForm.value.needInvoice = false
+    walletTransactionTotal.value = Number(response.data?.transactionTotal || 0)
     rechargeOrders.value = Array.isArray(ordersResponse.data) ? ordersResponse.data : []
   } catch (error: unknown) {
     ElMessage.error(getHttpErrorMessage(error, '钱包数据加载失败'))
@@ -1167,20 +1200,48 @@ function formatMoneyDto(money?: MoneyDto | null) {
 }
 
 function openRecharge(plan: RechargePlan) {
+  customRecharge.value = false
   selectedRechargePlan.value = plan
   rechargeForm.value.contactEmail = String(dashboard.value?.profile?.email || dashboard.value?.user?.email || '')
   rechargeVisible.value = true
+}
+
+async function handleWalletTransactionPageSizeChange() {
+  walletTransactionPage.value = 1
+  await loadWallet()
+}
+
+function openCustomRecharge() {
+  selectCustomRecharge()
+  rechargeForm.value.contactEmail = String(dashboard.value?.profile?.email || dashboard.value?.user?.email || '')
+  rechargeVisible.value = true
+}
+
+function selectRechargePlan(plan: RechargePlan) {
+  customRecharge.value = false
+  selectedRechargePlan.value = plan
+}
+
+function selectCustomRecharge() {
+  customRecharge.value = true
+  selectedRechargePlan.value = null
 }
 
 async function openRechargePanel() {
   if (route.path !== '/console/wallet') await router.push('/console/wallet')
   if (!wallet.value.plans.length) await loadWallet()
   selectedRechargePlan.value = wallet.value.plans[0] || null
+  customRecharge.value = !selectedRechargePlan.value
   rechargeVisible.value = true
 }
 
 async function submitRecharge() {
-  if (!selectedRechargePlan.value) return
+  if (customRecharge.value) {
+    if (!Number.isFinite(customRechargeAmount.value) || customRechargeAmount.value <= 0) {
+      ElMessage.warning('自定义充值金额必须大于 0')
+      return
+    }
+  } else if (!selectedRechargePlan.value) return
   if (rechargeForm.value.needInvoice && Object.entries(rechargeForm.value)
     .some(([key, value]) => !['paymentMethod', 'needInvoice'].includes(key) && !String(value).trim())) {
     ElMessage.warning('请完整填写账单信息')
@@ -1189,8 +1250,11 @@ async function submitRecharge() {
   rechargeSubmitting.value = true
   const paymentWindow = window.open('', '_blank')
   try {
+    const rechargeTarget = customRecharge.value
+      ? { customAmount: customRechargeAmount.value }
+      : { planId: selectedRechargePlan.value!.id }
     const created = await http.post('/api/platform/user/recharge-orders',
-      { planId: selectedRechargePlan.value.id, ...rechargeForm.value },
+      { ...rechargeTarget, ...rechargeForm.value, needInvoice: wallet.value.invoiceEnabled && rechargeForm.value.needInvoice },
       { headers: { 'Idempotency-Key': createIdempotencyKey('wallet-recharge-order') } })
     const intentId = created.data?.paymentIntent?.id
     if (!intentId) throw new Error('支付意图创建失败')

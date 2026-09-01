@@ -13,22 +13,25 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.math.BigDecimal;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest(properties="payment.local-test-mode=true")
 @Transactional
 class RechargePaymentIntegrationTests {
     @Autowired RechargeOrderService rechargeOrderService;
     @Autowired PaymentIntentService paymentIntentService;
+    @Autowired AdminUserService adminUserService;
     @Autowired UserMapper userMapper;
     @Autowired JdbcTemplate jdbcTemplate;
 
     @Test void fixedPlanCreditsBaseAndGiftOnceAndFullRefundReversesBoth(){
         User user=User.builder().username("recharge-"+UUID.randomUUID()).password("test").email("buyer@example.com")
                 .emailVerifiedAt(LocalDateTime.now(ZoneOffset.UTC))
-                .role("USER").status("ACTIVE").balance(0).createdAt(LocalDateTime.now(ZoneOffset.UTC)).build();
+                .role("USER").status("ACTIVE").balance(0).invoiceEnabled(true).createdAt(LocalDateTime.now(ZoneOffset.UTC)).build();
         userMapper.insert(user);
         Long organizationId=createPersonalOrganization(user);
         Long planId=jdbcTemplate.queryForObject("SELECT id FROM recharge_plans WHERE bonus_percent>0 ORDER BY id LIMIT 1",Long.class);
@@ -48,6 +51,50 @@ class RechargePaymentIntegrationTests {
         assertThat(userMapper.selectById(user.getId()).getBalance()).isZero();
         assertThat(walletBalance(organizationId,user.getId())).isZero();
         assertThat(rechargeOrderService.get(user,order.getId()).getStatus()).isEqualTo("REFUNDED");
+    }
+
+    @Test void customRechargeRequiresPositiveAmountAndDoesNotGrantBonus(){
+        User user=verifiedUser(false);
+        RechargeOrderRequest request=new RechargeOrderRequest();
+        request.setCustomAmount(new BigDecimal("12.34")); request.setPaymentMethod("wxpay");
+        WalletRechargeOrder order=rechargeOrderService.create(user,request);
+        assertThat(order.getPlanId()).isZero();
+        assertThat(order.getPlanName()).isEqualTo("自定义充值");
+        assertThat(order.getPaymentAmountUnits()).isEqualTo(123400L);
+        assertThat(order.getBaseCreditUnits()).isEqualTo(123400L);
+        assertThat(order.getBonusCreditUnits()).isZero();
+        assertThat(order.getTotalCreditUnits()).isEqualTo(123400L);
+
+        RechargeOrderRequest invalid=new RechargeOrderRequest();
+        invalid.setCustomAmount(BigDecimal.ZERO); invalid.setPaymentMethod("alipay");
+        assertThatThrownBy(() -> rechargeOrderService.create(user,invalid))
+                .isInstanceOf(org.springframework.web.server.ResponseStatusException.class)
+                .hasMessageContaining("greater than 0");
+    }
+
+    @Test void invoiceRequestRequiresAdministratorAccess(){
+        User user=verifiedUser(false);
+        Long planId=jdbcTemplate.queryForObject("SELECT id FROM recharge_plans ORDER BY id LIMIT 1",Long.class);
+        RechargeOrderRequest request=new RechargeOrderRequest(); request.setPlanId(planId); request.setPaymentMethod("alipay");
+        request.setNeedInvoice(true); request.setContactEmail(user.getEmail()); request.setBillingName("Invoice Buyer");
+        request.setBillingAddressLine1("1 Main St"); request.setBillingDistrict("District"); request.setBillingCity("City");
+        request.setBillingProvince("Province"); request.setBillingPostalCode("100000"); request.setBillingCountry("China");
+        assertThatThrownBy(() -> rechargeOrderService.create(user,request))
+                .isInstanceOf(org.springframework.web.server.ResponseStatusException.class)
+                .hasMessageContaining("Invoice access has not been enabled");
+
+        User enabled=adminUserService.updateUser(user.getId(),java.util.Map.of("invoiceEnabled",true));
+        assertThat(enabled.isInvoiceEnabled()).isTrue();
+        assertThat(rechargeOrderService.create(enabled,request).getInvoiceRequested()).isTrue();
+    }
+
+    private User verifiedUser(boolean invoiceEnabled){
+        User user=User.builder().username("recharge-"+UUID.randomUUID()).password("test").email("buyer@example.com")
+                .emailVerifiedAt(LocalDateTime.now(ZoneOffset.UTC)).role("USER").status("ACTIVE").balance(0)
+                .invoiceEnabled(invoiceEnabled).createdAt(LocalDateTime.now(ZoneOffset.UTC)).build();
+        userMapper.insert(user);
+        createPersonalOrganization(user);
+        return user;
     }
 
     private Long createPersonalOrganization(User user){
