@@ -47,6 +47,27 @@
           </div>
         </div>
 
+        <div v-if="groupOptions.length" class="market-filter-group">
+          <h3>AiAPIBank 分组</h3>
+          <div class="market-filter-options text-only">
+            <button v-for="option in groupOptions" :key="option.value" type="button"
+              :class="{ active: filters.group === option.value }" :aria-pressed="filters.group === option.value"
+              @click="choose('group', option.value)">
+              <span><em>{{ option.label }}</em></span><b>{{ option.count }}</b>
+            </button>
+          </div>
+        </div>
+
+        <div v-if="platformOptions.length" class="market-filter-group">
+          <h3>平台与倍率</h3>
+          <el-select v-model="filters.platform" clearable placeholder="全部平台" style="width:100%">
+            <el-option v-for="option in platformOptions" :key="option.value" :label="`${option.label} (${option.count})`" :value="option.value" />
+          </el-select>
+          <el-select v-model="filters.multiplier" clearable placeholder="全部倍率" style="width:100%;margin-top:8px">
+            <el-option v-for="option in multiplierOptions" :key="option.value" :label="`${option.label} (${option.count})`" :value="option.value" />
+          </el-select>
+        </div>
+
         <div class="market-filter-group">
           <h3>模型发布方</h3>
           <div class="market-filter-options">
@@ -109,12 +130,16 @@
                   <span class="market-badge available">已验证可调用</span>
                 </div>
               </header>
-              <h3>{{ model.publicName }}</h3>
+              <h3>{{ model.raw.displayName || model.publicName }}</h3>
+              <p v-if="model.raw.displayName" class="market-public-id">{{ model.publicName }}</p>
               <p class="market-card-desc">{{ model.description }}</p>
               <div class="market-tags"><span v-for="tag in model.tags.slice(0, 4)" :key="tag">{{ tag }}</span></div>
             </div>
             <footer>
-              <dl class="market-meta"><div><dt>模型类型 / 能力</dt><dd>{{ model.categoryLabel }} · {{ model.capabilityLabel }}</dd></div></dl>
+              <dl class="market-meta">
+                <div><dt>模型类型 / 能力</dt><dd>{{ model.categoryLabel }} · {{ model.capabilityLabel }}</dd></div>
+                <div v-if="model.raw.providerGroup"><dt>分组 / 平台 / 倍率</dt><dd>{{ model.raw.providerGroup.name }} · {{ model.raw.providerGroup.platform }} · {{ model.raw.providerGroup.resolvedRateMultiplier }}x</dd></div>
+              </dl>
               <ModelSalePricing :model="model.raw" :rebate-bps="customerRebateBps" compact class="market-sale-pricing" />
               <div class="market-card-actions">
                 <el-button @click="copyModel(model.publicName)">复制模型名</el-button>
@@ -164,6 +189,8 @@ import { clampPage, classifyModel, modelCategoryOptions, pageItems, type ModelCa
 type PublicUpstream = { code: string; name: string }
 type PublicModel = {
   publicName: string
+  displayName?: string
+  upstreamModelName?: string
   displayPriority?: number
   source?: string
   sources?: string
@@ -189,6 +216,9 @@ type PublicModel = {
   saleUnitPrice?: number
   pricing?: Record<string, unknown>
   contextPricing?: Record<string, unknown>
+  providerGroup?: Record<string, any>
+  priceTiers?: Array<Record<string, any>>
+  unitPriceVariants?: Array<Record<string, any>>
 }
 type PageResponse<T> = { total: number; page: number; size: number; items: T[] }
 type Publisher = { value: string; label: string; icon: string }
@@ -217,7 +247,7 @@ const resultsElement = ref<HTMLElement | null>(null)
 const callVisible = ref(false)
 const callTarget = ref<MarketModel | null>(null)
 const customerRebateBps = ref(0)
-const filters = reactive({ query: '', source: '', publisher: '', category: '' as ModelCategory | '', tag: '', sort: 'priority' })
+const filters = reactive({ query: '', source: '', group: '', platform: '', multiplier: '', publisher: '', category: '' as ModelCategory | '', tag: '', sort: 'priority' })
 
 const publishers: Publisher[] = [
   { label: 'NVIDIA', value: 'nvidia', icon: '/model-icons/nvidia.svg' },
@@ -244,8 +274,11 @@ const capabilityLabels: Record<string, string> = {
 }
 
 function publisherFor(model: PublicModel) {
-  const name = model.publicName.toLowerCase()
-  let key = String(model.vendor || '').toLowerCase()
+  const name = String(model.upstreamModelName || model.publicName).toLowerCase()
+  let key = String(model.providerGroup?.platform || model.vendor || '').toLowerCase()
+  if (key === 'grok') key = 'xai'
+  if (key === 'zhipu' || key === 'glm') key = 'zai'
+  if (key === 'moonshot') key = 'kimi'
   if (name.includes('claude')) key = 'anthropic'
   else if (name.includes('deepseek')) key = 'deepseek'
   else if (name.includes('llama') || name.startsWith('meta/')) key = 'meta'
@@ -270,7 +303,9 @@ function enrich(model: PublicModel, index: number): MarketModel {
   const upstreams = model.upstreams?.length
     ? model.upstreams.map(item => ({ value: item.code, label: item.name }))
     : [{ value: String(model.source || 'platform-route'), label: model.sourceName || '平台智能路由' }]
-  const tags = Array.from(new Set([categoryLabels[category], capabilityLabel, publisher.label]))
+  const group = model.providerGroup
+  const tags = Array.from(new Set([categoryLabels[category], capabilityLabel, publisher.label,
+    group?.name, group?.platform, group ? `${group.resolvedRateMultiplier}x` : ''].filter(Boolean)))
   return {
     publicName: model.publicName,
     raw: model,
@@ -278,7 +313,7 @@ function enrich(model: PublicModel, index: number): MarketModel {
     category,
     categoryLabel: categoryLabels[category],
     capabilityLabel,
-    description: `${publisher.label} 提供的${categoryLabels[category]}，通过本站统一网关接入；可用性与价格以当前公开目录为准。`,
+    description: group?.description || `${publisher.label} 提供的${categoryLabels[category]}，通过本站统一网关接入；可用性与价格以当前公开目录为准。`,
     tags,
     upstreams,
     popularity: Math.max(1, 1000 - index),
@@ -293,6 +328,9 @@ const filteredModels = computed(() => {
       || model.publisher.label.toLowerCase().includes(keyword) || model.tags.some(tag => tag.toLowerCase().includes(keyword))
     return keywordMatched
       && (!filters.source || model.upstreams.some(item => item.value === filters.source))
+      && (!filters.group || model.raw.providerGroup?.slug === filters.group)
+      && (!filters.platform || model.raw.providerGroup?.platform === filters.platform)
+      && (!filters.multiplier || String(model.raw.providerGroup?.resolvedRateMultiplier) === filters.multiplier)
       && (!filters.publisher || model.publisher.value === filters.publisher)
       && (!filters.category || model.category === filters.category)
       && (!filters.tag || model.tags.includes(filters.tag))
@@ -305,7 +343,7 @@ const filteredModels = computed(() => {
 })
 const displayModels = computed(() => pageItems(filteredModels.value, page.value, pageSize.value))
 const connectedCount = computed(() => models.value.filter(model => model.raw.available !== false).length)
-const hasFilters = computed(() => Boolean(filters.query || filters.source || filters.publisher || filters.category || filters.tag || filters.sort !== 'priority'))
+const hasFilters = computed(() => Boolean(filters.query || filters.source || filters.group || filters.platform || filters.multiplier || filters.publisher || filters.category || filters.tag || filters.sort !== 'priority'))
 
 function countedOptions<T extends { value: string; label: string }>(options: T[], values: string[]) {
   const counts = new Map<string, number>()
@@ -319,6 +357,20 @@ const upstreamOptions = computed(() => {
   const values: string[] = []
   models.value.forEach(model => model.upstreams.forEach(item => { labels.set(item.value, item.label); values.push(item.value) }))
   return countedOptions([...labels].map(([value, label]) => ({ value, label })), values)
+})
+const groupOptions = computed(() => {
+  const labels = new Map<string, string>(); const values: string[] = []
+  models.value.forEach(model => { const group = model.raw.providerGroup; if (group?.slug) { labels.set(group.slug, group.name); values.push(group.slug) } })
+  return countedOptions([...labels].map(([value, label]) => ({ value, label })), values)
+})
+const platformOptions = computed(() => {
+  const values = models.value.map(model => String(model.raw.providerGroup?.platform || '')).filter(Boolean)
+  return countedOptions(Array.from(new Set(values)).map(value => ({ value, label: value })), values)
+})
+const multiplierOptions = computed(() => {
+  const values = models.value.map(model => model.raw.providerGroup?.resolvedRateMultiplier)
+    .filter(value => value !== undefined && value !== null).map(value => String(value))
+  return countedOptions(Array.from(new Set(values)).map(value => ({ value, label: `${value}x` })), values)
 })
 const tagOptions = computed(() => {
   const values = models.value.flatMap(model => model.tags.filter(tag => tag !== model.publisher.label && tag !== model.categoryLabel))
@@ -361,12 +413,12 @@ async function fetchRebate() {
   } catch { customerRebateBps.value = 0 }
 }
 
-function choose(field: 'source' | 'publisher' | 'category' | 'tag', value: string) {
+function choose(field: 'source' | 'group' | 'platform' | 'multiplier' | 'publisher' | 'category' | 'tag', value: string) {
   const record = filters as unknown as Record<string, string>
   record[field] = record[field] === value ? '' : value
 }
 function clearFilters() {
-  filters.query = ''; filters.source = ''; filters.publisher = ''; filters.category = ''; filters.tag = ''; filters.sort = 'priority'; page.value = 1
+  filters.query = ''; filters.source = ''; filters.group = ''; filters.platform = ''; filters.multiplier = ''; filters.publisher = ''; filters.category = ''; filters.tag = ''; filters.sort = 'priority'; page.value = 1
 }
 function handlePageSizeChange() { page.value = 1; scrollToResults() }
 function scrollToResults() {
@@ -379,7 +431,7 @@ async function copyModel(name: string) {
 }
 function callModel(model: MarketModel) { callTarget.value = model; callVisible.value = true }
 
-watch(() => [filters.query, filters.source, filters.publisher, filters.category, filters.tag, filters.sort], () => { page.value = 1 })
+watch(() => [filters.query, filters.source, filters.group, filters.platform, filters.multiplier, filters.publisher, filters.category, filters.tag, filters.sort], () => { page.value = 1 })
 watch(() => filteredModels.value.length, total => { page.value = clampPage(page.value, total, pageSize.value) })
 onMounted(() => { void Promise.all([fetchModels(), fetchRebate()]) })
 </script>

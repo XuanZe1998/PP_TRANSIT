@@ -11,6 +11,7 @@ import com.transit.mapper.UserMapper;
 import com.transit.model.Channel;
 import com.transit.model.Log;
 import com.transit.model.ModelMapping;
+import com.transit.model.ModelPriceTier;
 import com.transit.model.Token;
 import com.transit.model.User;
 import com.transit.provider.HaoeeProtocolClient;
@@ -55,6 +56,10 @@ public class UniversalModelService {
     private final SensitiveWordService sensitiveWords;
     @Autowired(required = false)
     private AgentDistributionService agentDistribution;
+    @Autowired(required = false)
+    private ModelPriceTierService modelPriceTierService;
+    @Autowired(required = false)
+    private AiApiBankPricingService aiApiBankPricingService;
 
     @Value("${billing.amount-scale:10000}") private long amountScale;
     @Value("${billing.default-max-output-tokens:4096}") private int defaultMaxOutputTokens;
@@ -75,7 +80,7 @@ public class UniversalModelService {
         payload.put("model", route.mapping().getChannelModelName());
         int estimatedInput = estimateInput(payload);
         int estimatedOutput = estimatedOutput(payload, protocol);
-        PricingQuote reservedQuote = quote(route.mapping(), payload, estimatedInput, estimatedOutput, 0);
+        PricingQuote reservedQuote = quote(route.mapping(), payload, estimatedInput, estimatedOutput, 0, 0);
         long reservedAmount = reservedQuote.saleAmount();
         GatewaySettlementService.Reservation reservation = settlement.reserve(auth.token(), auth.user(),
                 Math.max(1, estimatedInput + estimatedOutput), reservedAmount, traceId, auth.model());
@@ -89,7 +94,7 @@ public class UniversalModelService {
                         throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, responseFailureMessage(response));
                     }
                     Usage usage = usage(response, estimatedInput);
-                    PricingQuote actualQuote = quote(route.mapping(), payload, usage.input(), usage.output(), usage.cacheRead());
+                    PricingQuote actualQuote = quote(route.mapping(), payload, usage.input(), usage.output(), usage.cacheRead(), usage.cacheWrite());
                     long actualAmount = actualQuote.saleAmount();
                     settleUsage(reservation, Math.max(1, usage.input() + usage.output()), actualAmount,
                             actualQuote.costAmount(), "API usage " + auth.model() + " (" + traceId + ")", auth.user().getId());
@@ -130,7 +135,7 @@ public class UniversalModelService {
         payload.put("stream", true);
         int estimatedInput = estimateInput(payload);
         int estimatedOutput = estimatedOutput(payload, "responses");
-        PricingQuote reservedQuote = quote(route.mapping(), payload, estimatedInput, estimatedOutput, 0);
+        PricingQuote reservedQuote = quote(route.mapping(), payload, estimatedInput, estimatedOutput, 0, 0);
         GatewaySettlementService.Reservation reservation = settlement.reserve(auth.token(), auth.user(),
                 Math.max(1, estimatedInput + estimatedOutput), reservedQuote.saleAmount(), traceId, auth.model());
         String path = route.mapping().getEndpointPath() == null || route.mapping().getEndpointPath().isBlank()
@@ -149,7 +154,7 @@ public class UniversalModelService {
                         JsonNode eventData = responseEventData(event);
                         Usage actual = responseUsage(eventData, estimatedInput);
                         PricingQuote actualQuote = quote(route.mapping(), payload,
-                                actual.input(), actual.output(), actual.cacheRead());
+                                actual.input(), actual.output(), actual.cacheRead(), actual.cacheWrite());
                         try {
                             settleUsage(reservation, Math.max(1, actual.input() + actual.output()),
                                     actualQuote.saleAmount(), actualQuote.costAmount(), "Responses streaming API usage " + auth.model()
@@ -217,7 +222,7 @@ public class UniversalModelService {
         int estimatedInput = Math.max(1, (file == null ? 0 : file.length) / 3);
         ObjectNode billingPayload = authBody.deepCopy();
         fields.forEach(billingPayload::put);
-        PricingQuote reservedQuote = quote(route.mapping(), billingPayload, estimatedInput, 0, 0);
+        PricingQuote reservedQuote = quote(route.mapping(), billingPayload, estimatedInput, 0, 0, 0);
         long reservedAmount = reservedQuote.saleAmount();
         String traceId = "req_" + UUID.randomUUID().toString().replace("-", "").substring(0, 16);
         GatewaySettlementService.Reservation reservation = settlement.reserve(auth.token(), auth.user(),
@@ -232,7 +237,7 @@ public class UniversalModelService {
                 .publishOn(Schedulers.boundedElastic())
                 .map(response -> {
                     Usage usage = usage(response, estimatedInput);
-                    PricingQuote actualQuote = quote(route.mapping(), billingPayload, usage.input(), usage.output(), usage.cacheRead());
+                    PricingQuote actualQuote = quote(route.mapping(), billingPayload, usage.input(), usage.output(), usage.cacheRead(), usage.cacheWrite());
                     long actual = actualQuote.saleAmount();
                     settleUsage(reservation, Math.max(1, usage.input() + usage.output()), actual,
                             actualQuote.costAmount(), protocol + " " + model + " (" + traceId + ")", auth.user().getId());
@@ -276,7 +281,7 @@ public class UniversalModelService {
         streamOptions.put("include_usage", true);
         int estimatedInput = estimateInput(payload);
         int estimatedOutput = estimatedOutput(payload, "chat-completions");
-        PricingQuote reservedQuote = quote(route.mapping(), payload, estimatedInput, estimatedOutput, 0);
+        PricingQuote reservedQuote = quote(route.mapping(), payload, estimatedInput, estimatedOutput, 0, 0);
         long reservedAmount = reservedQuote.saleAmount();
         GatewaySettlementService.Reservation reservation = settlement.reserve(auth.token(), auth.user(),
                 estimatedInput + estimatedOutput, reservedAmount, traceId, auth.model());
@@ -302,7 +307,7 @@ public class UniversalModelService {
                                 complete ? Math.max(1, streamedBytes.get() / 3) : 0, 0, 0);
                     }
                     PricingQuote finalQuote = complete
-                            ? quote(route.mapping(), payload, actual.input(), actual.output(), actual.cacheRead())
+                            ? quote(route.mapping(), payload, actual.input(), actual.output(), actual.cacheRead(), actual.cacheWrite())
                             : reservedQuote;
                     long charge = finalQuote.saleAmount();
                     settleUsage(reservation, Math.max(1, actual.input() + actual.output()), charge,
@@ -324,7 +329,7 @@ public class UniversalModelService {
         Route route = route(auth.model(), protocol, sessionKey(request), reliableCostRequired(auth.user().getId()));
         ObjectNode payload = (ObjectNode) request.deepCopy(); payload.put("model", route.mapping().getChannelModelName());
         int input = estimateInput(payload), output = estimatedOutput(payload, protocol);
-        PricingQuote quote = quote(route.mapping(), payload, input, output, 0);
+        PricingQuote quote = quote(route.mapping(), payload, input, output, 0, 0);
         GatewaySettlementService.Reservation reservation = settlement.reserve(auth.token(), auth.user(), Math.max(1, input + output), quote.saleAmount(), traceId, auth.model());
         long started = System.currentTimeMillis();
         AtomicBoolean completed = new AtomicBoolean(false);
@@ -390,12 +395,12 @@ public class UniversalModelService {
 
     public long estimateAmount(ModelMapping mapping, JsonNode request) {
         return quote(mapping, request, estimateInput(request), estimatedOutput(request,
-                Objects.toString(mapping.getProtocols(), "tasks")), 0).saleAmount();
+                Objects.toString(mapping.getProtocols(), "tasks")), 0, 0).saleAmount();
     }
 
     public PricingQuote estimateQuote(ModelMapping mapping, JsonNode request) {
         return quote(mapping, request, estimateInput(request), estimatedOutput(request,
-                Objects.toString(mapping.getProtocols(), "tasks")), 0);
+                Objects.toString(mapping.getProtocols(), "tasks")), 0, 0);
     }
 
     public AuthContext authorize(String authorization, String clientIp, JsonNode request) {
@@ -450,7 +455,7 @@ public class UniversalModelService {
             }
         }
         throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
-                "No compatible Haoee route or managed OAuth route for model: " + publicModel);
+                "No compatible Haoee route, AiAPIBank route or managed OAuth route for model: " + publicModel);
     }
 
     private List<ModelMapping> candidateMappings(String publicModel, String protocol) {
@@ -471,7 +476,8 @@ public class UniversalModelService {
                 && channel.getCooldownUntil().isBefore(LocalDateTime.now()));
         return healthy && (channel.isManaged()
                 || "haoee".equalsIgnoreCase(channel.getType())
-                || "haoee-openai".equalsIgnoreCase(channel.getType()));
+                || "haoee-openai".equalsIgnoreCase(channel.getType())
+                || "aiapibank".equalsIgnoreCase(channel.getSourceCode()));
     }
 
     private boolean supports(ModelMapping mapping, String protocol) {
@@ -482,12 +488,12 @@ public class UniversalModelService {
 
     private Usage usage(JsonNode response, int estimatedInput) {
         JsonNode usage = response.path("usage");
-        int input = integer(usage, "prompt_tokens", integer(usage, "input_tokens", estimatedInput));
         int output = integer(usage, "completion_tokens", integer(usage, "output_tokens", 0));
         int cacheRead = integer(usage.path("prompt_tokens_details"), "cached_tokens",
                 integer(usage.path("input_tokens_details"), "cached_tokens",
                         integer(usage, "cache_read_input_tokens", 0)));
         int cacheWrite = integer(usage, "cache_creation_input_tokens", 0);
+        int input = integer(usage, "prompt_tokens", integer(usage, "input_tokens", estimatedInput));
         return new Usage(Math.max(0, input), Math.max(0, output), Math.max(0, cacheRead), Math.max(0, cacheWrite));
     }
 
@@ -506,7 +512,7 @@ public class UniversalModelService {
         return Math.max(1, Math.min(131_072, configured));
     }
 
-    private PricingQuote quote(ModelMapping mapping, JsonNode request, int input, int output, int cacheRead) {
+    private PricingQuote quote(ModelMapping mapping, JsonNode request, int input, int output, int cacheRead, int cacheWrite) {
         String unit = Objects.toString(mapping.getPricingUnit(), "TOKEN").toUpperCase(Locale.ROOT);
         if ("FREE_PREVIEW".equalsIgnoreCase(mapping.getBillingMode())) {
             return new PricingQuote(unit, billableQuantity(unit, request), BigDecimal.ZERO, BigDecimal.ZERO, 0, 0);
@@ -516,16 +522,39 @@ public class UniversalModelService {
             BigDecimal quantity = billableQuantity(unit, request);
             BigDecimal salePrice = nonNegative(mapping.getSaleUnitPrice());
             BigDecimal costPrice = nonNegative(mapping.getCostUnitPrice());
+            if ("IMAGE".equals(unit) && aiApiBankPricingService != null) {
+                AiApiBankPricingService.UnitQuote variant = aiApiBankPricingService.imageQuote(mapping, request);
+                if (variant != null) {
+                    salePrice = variant.salePrice();
+                    costPrice = variant.sourcePrice();
+                }
+            }
             return new PricingQuote(unit, quantity, salePrice, costPrice,
                     scaled(salePrice.multiply(quantity)), scaled(costPrice.multiply(quantity)));
         }
-        int uncached = Math.max(0, input - cacheRead);
-        BigDecimal sale = mapping.getInputPricePerMillion().multiply(BigDecimal.valueOf(uncached))
-                .add(mapping.getOutputPricePerMillion().multiply(BigDecimal.valueOf(output)))
-                .add(mapping.getCachedPricePerMillion().multiply(BigDecimal.valueOf(cacheRead)));
-        BigDecimal cost = nonNegative(mapping.getInputCostPerMillion()).multiply(BigDecimal.valueOf(uncached))
-                .add(nonNegative(mapping.getOutputCostPerMillion()).multiply(BigDecimal.valueOf(output)))
-                .add(nonNegative(mapping.getCachedCostPerMillion()).multiply(BigDecimal.valueOf(cacheRead)));
+        ModelPriceTier tier = modelPriceTierService == null ? null : modelPriceTierService.select(mapping, input);
+        if (tier != null && aiApiBankPricingService != null) tier = aiApiBankPricingService.applyActivePeak(mapping, tier);
+        int uncached = Math.max(0, input - cacheRead - cacheWrite);
+        BigDecimal saleInput = tier == null ? nonNegative(mapping.getInputPricePerMillion()) : nonNegative(tier.getSaleInputPrice());
+        BigDecimal saleOutput = tier == null ? nonNegative(mapping.getOutputPricePerMillion()) : nonNegative(tier.getSaleOutputPrice());
+        BigDecimal saleRead = tier == null ? nonNegative(mapping.getCachedPricePerMillion()) : nonNegative(tier.getSaleCacheReadPrice());
+        BigDecimal saleWrite = tier == null ? BigDecimal.ZERO : cacheWriteSalePrice(tier, request);
+        BigDecimal salePerRequest = tier == null ? BigDecimal.ZERO : nonNegative(tier.getSalePerRequestPrice());
+        BigDecimal costInput = tier == null ? nonNegative(mapping.getInputCostPerMillion()) : nonNegative(tier.getCostInputPrice());
+        BigDecimal costOutput = tier == null ? nonNegative(mapping.getOutputCostPerMillion()) : nonNegative(tier.getCostOutputPrice());
+        BigDecimal costRead = tier == null ? nonNegative(mapping.getCachedCostPerMillion()) : nonNegative(tier.getCostCacheReadPrice());
+        BigDecimal costWrite = tier == null ? BigDecimal.ZERO : cacheWriteCostPrice(tier, request);
+        BigDecimal costPerRequest = tier == null ? BigDecimal.ZERO : nonNegative(tier.getCostPerRequestPrice());
+        BigDecimal sale = saleInput.multiply(BigDecimal.valueOf(uncached))
+                .add(saleOutput.multiply(BigDecimal.valueOf(output)))
+                .add(saleRead.multiply(BigDecimal.valueOf(cacheRead)))
+                .add(saleWrite.multiply(BigDecimal.valueOf(cacheWrite)))
+                .add(salePerRequest);
+        BigDecimal cost = costInput.multiply(BigDecimal.valueOf(uncached))
+                .add(costOutput.multiply(BigDecimal.valueOf(output)))
+                .add(costRead.multiply(BigDecimal.valueOf(cacheRead)))
+                .add(costWrite.multiply(BigDecimal.valueOf(cacheWrite)))
+                .add(costPerRequest);
         return new PricingQuote(unit, BigDecimal.valueOf(Math.max(0, input + output)), BigDecimal.ZERO, BigDecimal.ZERO,
                 scaled(sale.divide(BigDecimal.valueOf(1_000_000), 18, RoundingMode.HALF_UP)),
                 scaled(cost.divide(BigDecimal.valueOf(1_000_000), 18, RoundingMode.HALF_UP)));
@@ -547,6 +576,39 @@ public class UniversalModelService {
             case "TASK" -> BigDecimal.ONE;
             default -> BigDecimal.ZERO;
         };
+    }
+
+    private BigDecimal cacheWriteSalePrice(ModelPriceTier tier, JsonNode request) {
+        if (hasOneHourCacheTtl(request) && nonNegative(tier.getSaleCacheWrite1hPrice()).signum() > 0) {
+            return nonNegative(tier.getSaleCacheWrite1hPrice());
+        }
+        return nonNegative(tier.getSaleCacheWritePrice());
+    }
+
+    private BigDecimal cacheWriteCostPrice(ModelPriceTier tier, JsonNode request) {
+        if (hasOneHourCacheTtl(request) && nonNegative(tier.getCostCacheWrite1hPrice()).signum() > 0) {
+            return nonNegative(tier.getCostCacheWrite1hPrice());
+        }
+        return nonNegative(tier.getCostCacheWritePrice());
+    }
+
+    /** Accept the cache TTL spellings used by OpenAI and Anthropic clients. */
+    private boolean hasOneHourCacheTtl(JsonNode node) {
+        if (node == null || node.isNull()) return false;
+        if (node.isObject()) {
+            var fields = node.fields();
+            while (fields.hasNext()) {
+                var entry = fields.next();
+                String name = entry.getKey().toLowerCase(Locale.ROOT);
+                JsonNode value = entry.getValue();
+                if (name.contains("ttl") && ("1h".equalsIgnoreCase(value.asText())
+                        || "3600".equals(value.asText()) || "3600s".equalsIgnoreCase(value.asText()))) return true;
+                if (hasOneHourCacheTtl(value)) return true;
+            }
+        } else if (node.isArray()) {
+            for (JsonNode child : node) if (hasOneHourCacheTtl(child)) return true;
+        }
+        return false;
     }
 
     private BigDecimal requiredPositive(JsonNode body, String primary, String fallback) {

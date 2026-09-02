@@ -53,6 +53,7 @@ public class V16__add_upstream_oauth_pool extends BaseJavaMigration {
                 )
                 """);
         if (tableExists(connection, "provider_credentials")) {
+            addColumn(connection, "provider_credentials", "platform", "VARCHAR(32) NULL");
             addColumn(connection, "provider_credentials", "external_account_id", "VARCHAR(255) NULL");
             addColumn(connection, "provider_credentials", "email_preview", "VARCHAR(255) NULL");
             addColumn(connection, "provider_credentials", "subscription_tier", "VARCHAR(80) NULL");

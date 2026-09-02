@@ -1,5 +1,7 @@
 export type CallableModel = {
   publicName: string
+  displayName?: string
+  upstreamModelName?: string
   type: string
   source: string
   sourceName: string
@@ -37,6 +39,9 @@ export type CallableModel = {
   priceVariesByRoute?: boolean
   upstreams?: Array<{ code: string; name: string; badgeText?: string; badgeColor?: string }>
   contextPricing?: Record<string, unknown>
+  providerGroup?: Record<string, unknown>
+  priceTiers?: Array<Record<string, unknown>>
+  unitPriceVariants?: Array<Record<string, unknown>>
 }
 
 export type TokenModelScope = {
@@ -100,6 +105,8 @@ function normalizeCatalogItem(value: unknown): CallableModel | null {
   const primary=upstreams[0]||{code:'platform-route',name:'平台智能路由'}
   return {
     publicName,
+    displayName: typeof item.displayName === 'string' ? item.displayName : publicName,
+    upstreamModelName: typeof item.upstreamModelName === 'string' ? item.upstreamModelName : publicName,
     type: primary.code,
     source: primary.code,
     sourceName: primary.name,
@@ -137,12 +144,17 @@ function normalizeCatalogItem(value: unknown): CallableModel | null {
     priceVariesByRoute: item.priceVariesByRoute === true,
     upstreams:upstreams.length?upstreams:[primary],
     contextPricing:item.contextPricing&&typeof item.contextPricing==='object'?item.contextPricing as Record<string,unknown>:undefined,
+    providerGroup:item.providerGroup&&typeof item.providerGroup==='object'?item.providerGroup as Record<string,unknown>:undefined,
+    priceTiers:Array.isArray(item.priceTiers)?item.priceTiers.filter((entry):entry is Record<string,unknown>=>Boolean(entry&&typeof entry==='object')):undefined,
+    unitPriceVariants:Array.isArray(item.unitPriceVariants)?item.unitPriceVariants.filter((entry):entry is Record<string,unknown>=>Boolean(entry&&typeof entry==='object')):undefined,
   }
 }
 
 function fallbackModel(publicName: string): CallableModel {
   return {
     publicName,
+    displayName: publicName,
+    upstreamModelName: publicName,
     type: 'platform-route',
     source: 'platform-route',
     sourceName: '平台智能路由',

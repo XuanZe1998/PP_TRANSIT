@@ -83,6 +83,8 @@ public class TransitService {
     private ProviderModelCatalogService providerModelCatalogService;
     @Autowired(required = false)
     private AgentDistributionService agentDistributionService;
+    @Autowired(required = false)
+    private AiApiBankPricingService aiApiBankPricingService;
 
     @Value("${billing.amount-scale:10000}")
     private long amountScale;
@@ -819,23 +821,25 @@ public class TransitService {
 
     private ModelPriceTier priceTier(ModelMapping mapping, int contextTokens) {
         ModelPriceTier tier = priceTierService.select(mapping, contextTokens);
-        if (tier != null) return tier;
-        return ModelPriceTier.builder()
-                .tierName("默认挡位")
-                .saleGroupName("本站售价")
-                .saleInputPrice(coalesce(mapping.getInputPricePerMillion(), mapping.getPriceRatio(), BigDecimal.ONE))
-                .saleOutputPrice(coalesce(mapping.getOutputPricePerMillion(), mapping.getPriceRatio(), BigDecimal.ONE))
-                .saleCacheReadPrice(coalesce(mapping.getCachedPricePerMillion(), BigDecimal.ZERO))
-                .saleCacheWritePrice(BigDecimal.ZERO)
-                .salePriceUnit("M")
-                .salePriceSuffix("USD / 1M Token")
-                .costInputPrice(coalesce(mapping.getInputCostPerMillion(), mapping.getCostPerMillion(), BigDecimal.ZERO))
-                .costOutputPrice(coalesce(mapping.getOutputCostPerMillion(), mapping.getCostPerMillion(), BigDecimal.ZERO))
-                .costCacheReadPrice(coalesce(mapping.getCachedCostPerMillion(), BigDecimal.ZERO))
-                .costCacheWritePrice(BigDecimal.ZERO)
-                .costPriceUnit("M")
-                .costPriceSuffix("USD / 1M Token")
-                .build();
+        if (tier == null) {
+            tier = ModelPriceTier.builder()
+                    .tierName("默认挡位")
+                    .saleGroupName("本站售价")
+                    .saleInputPrice(coalesce(mapping.getInputPricePerMillion(), mapping.getPriceRatio(), BigDecimal.ONE))
+                    .saleOutputPrice(coalesce(mapping.getOutputPricePerMillion(), mapping.getPriceRatio(), BigDecimal.ONE))
+                    .saleCacheReadPrice(coalesce(mapping.getCachedPricePerMillion(), BigDecimal.ZERO))
+                    .saleCacheWritePrice(BigDecimal.ZERO)
+                    .salePriceUnit("M")
+                    .salePriceSuffix("USD / 1M Token")
+                    .costInputPrice(coalesce(mapping.getInputCostPerMillion(), mapping.getCostPerMillion(), BigDecimal.ZERO))
+                    .costOutputPrice(coalesce(mapping.getOutputCostPerMillion(), mapping.getCostPerMillion(), BigDecimal.ZERO))
+                    .costCacheReadPrice(coalesce(mapping.getCachedCostPerMillion(), BigDecimal.ZERO))
+                    .costCacheWritePrice(BigDecimal.ZERO)
+                    .costPriceUnit("M")
+                    .costPriceSuffix("USD / 1M Token")
+                    .build();
+        }
+        return aiApiBankPricingService == null ? tier : aiApiBankPricingService.applyActivePeak(mapping, tier);
     }
 
     private BigDecimal userPriceRatio(Long groupId) {

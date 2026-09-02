@@ -318,6 +318,34 @@ public class EnterpriseSchemaService {
                     PRIMARY KEY(bucket_start, organization_id, user_id, token_id, source_code, model)
                 )
                 """);
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS model_probe_tasks (
+                    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+                    idempotency_key VARCHAR(96) NOT NULL,
+                    user_id BIGINT NULL,
+                    base_url VARCHAR(512) NOT NULL,
+                    api_key TEXT NULL,
+                    model_id VARCHAR(255) NOT NULL,
+                    claimed_model VARCHAR(255) NULL,
+                    include_optional BOOLEAN NOT NULL DEFAULT FALSE,
+                    status VARCHAR(24) NOT NULL DEFAULT 'SUBMITTED',
+                    score INT NULL,
+                    score_max INT NULL,
+                    report_json LONGTEXT NULL,
+                    error_message VARCHAR(1000) NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    started_at DATETIME NULL,
+                    completed_at DATETIME NULL,
+                    UNIQUE KEY uk_model_probe_idempotency_key (idempotency_key)
+                )
+                """);
+        try {
+            jdbcTemplate.execute("""
+                    CREATE INDEX idx_model_probe_user_id ON model_probe_tasks (user_id)
+                    """);
+        } catch (Exception ignored) {
+            // Index already exists
+        }
     }
 
     private void addColumns() {

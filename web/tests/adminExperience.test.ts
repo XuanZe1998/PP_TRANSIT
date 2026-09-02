@@ -61,6 +61,18 @@ describe('admin analytics and security experience', () => {
     expect(studio).toContain("router.push('/')")
   })
 
+  it('drills dashboard operating metrics into auditable request and finance details', () => {
+    const consoleView = source('src/views/AdminConsole.vue')
+    expect(consoleView).toContain("href: auditHref('requests')")
+    expect(consoleView).toContain("href: auditHref('revenue')")
+    expect(consoleView).toContain("href: auditHref('margin')")
+    expect(consoleView).toContain('dashboardPeriod')
+    expect(consoleView).toContain('全部用户')
+    expect(consoleView).toContain('failureReasons')
+    expect(consoleView).toContain('outcome: auditOutcome.value')
+    expect(consoleView).toContain('失败原因 Top 10')
+  })
+
   it('loads managed service images through the API with explicit CORS mode', () => {
     const adminServices = source('src/views/AdminOtherServices.vue')
     const publicServices = source('src/views/OtherServices.vue')

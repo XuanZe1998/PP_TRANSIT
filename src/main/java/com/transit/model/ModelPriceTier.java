@@ -45,6 +45,14 @@ public class ModelPriceTier {
     private BigDecimal officialCacheReadPrice;
     @TableField("official_cache_write_price")
     private BigDecimal officialCacheWritePrice;
+    @TableField("official_cache_write_1h_price")
+    private BigDecimal officialCacheWrite1hPrice;
+    @TableField("official_image_input_price")
+    private BigDecimal officialImageInputPrice;
+    @TableField("official_image_output_price")
+    private BigDecimal officialImageOutputPrice;
+    @TableField("official_per_request_price")
+    private BigDecimal officialPerRequestPrice;
     @TableField("official_price_unit")
     private String officialPriceUnit;
     @TableField("official_price_suffix")
@@ -60,6 +68,14 @@ public class ModelPriceTier {
     private BigDecimal costCacheReadPrice;
     @TableField("cost_cache_write_price")
     private BigDecimal costCacheWritePrice;
+    @TableField("cost_cache_write_1h_price")
+    private BigDecimal costCacheWrite1hPrice;
+    @TableField("cost_image_input_price")
+    private BigDecimal costImageInputPrice;
+    @TableField("cost_image_output_price")
+    private BigDecimal costImageOutputPrice;
+    @TableField("cost_per_request_price")
+    private BigDecimal costPerRequestPrice;
     @TableField("cost_price_unit")
     private String costPriceUnit;
     @TableField("cost_price_suffix")
@@ -75,6 +91,14 @@ public class ModelPriceTier {
     private BigDecimal saleCacheReadPrice;
     @TableField("sale_cache_write_price")
     private BigDecimal saleCacheWritePrice;
+    @TableField("sale_cache_write_1h_price")
+    private BigDecimal saleCacheWrite1hPrice;
+    @TableField("sale_image_input_price")
+    private BigDecimal saleImageInputPrice;
+    @TableField("sale_image_output_price")
+    private BigDecimal saleImageOutputPrice;
+    @TableField("sale_per_request_price")
+    private BigDecimal salePerRequestPrice;
     @TableField("sale_price_unit")
     private String salePriceUnit;
     @TableField("sale_price_suffix")

@@ -26,6 +26,12 @@ public class UsageAnalyticsService {
     public Map<String, Object> analytics(Long ownerUserId, Long filterUserId, String from, String to,
                                          String model, Long tokenId, String status,
                                          String audienceType, Long organizationId) {
+        return analytics(ownerUserId, filterUserId, from, to, model, tokenId, status, null, audienceType, organizationId);
+    }
+
+    public Map<String, Object> analytics(Long ownerUserId, Long filterUserId, String from, String to,
+                                         String model, Long tokenId, String status, String outcome,
+                                         String audienceType, Long organizationId) {
         LocalDate end = date(to, LocalDate.now());
         LocalDate start = date(from, end.minusDays(29));
         if (start.isAfter(end) || start.isBefore(end.minusDays(365))) {
@@ -49,7 +55,11 @@ public class UsageAnalyticsService {
         }
         if (model != null && !model.isBlank()) { where.append(" AND l.model=?"); parameters.add(model.trim()); }
         if (tokenId != null) { where.append(" AND l.token_id=?"); parameters.add(tokenId); }
-        if (status != null && !status.isBlank()) { where.append(" AND UPPER(l.status)=?"); parameters.add(status.trim().toUpperCase()); }
+        if (status != null && !status.isBlank()) {
+            where.append(" AND UPPER(l.status)=?"); parameters.add(status.trim().toUpperCase());
+        } else {
+            appendOutcome(where, outcome);
+        }
 
         String aggregates = """
                 COUNT(*) request_count,
@@ -59,10 +69,10 @@ public class UsageAnalyticsService {
                 COALESCE(SUM(l.cache_write_tokens),0) cache_write_tokens,
                 COALESCE(SUM(l.cache_miss_tokens),0) cache_miss_tokens,
                 COALESCE(SUM(l.total_tokens),0) total_tokens,
-                COALESCE(SUM(l.total_amount),0) total_amount,
-                COALESCE(SUM(l.cost_amount),0) cost_amount,
-                COALESCE(SUM(l.total_amount-l.cost_amount),0) profit_amount,
-                COALESCE(SUM(l.settlement_amount),0) settlement_amount
+                COALESCE(SUM(CASE WHEN UPPER(COALESCE(l.status,'')) IN ('SUCCESS','SUCCESS_ESTIMATED') THEN CASE WHEN COALESCE(l.sale_amount,0)>0 THEN l.sale_amount ELSE COALESCE(l.total_amount,l.cost,0) END ELSE 0 END),0) total_amount,
+                COALESCE(SUM(CASE WHEN UPPER(COALESCE(l.status,'')) IN ('SUCCESS','SUCCESS_ESTIMATED') THEN COALESCE(l.cost_amount,0) ELSE 0 END),0) cost_amount,
+                COALESCE(SUM(CASE WHEN UPPER(COALESCE(l.status,'')) IN ('SUCCESS','SUCCESS_ESTIMATED') THEN (CASE WHEN COALESCE(l.sale_amount,0)>0 THEN l.sale_amount ELSE COALESCE(l.total_amount,l.cost,0) END)-COALESCE(l.cost_amount,0) ELSE 0 END),0) profit_amount,
+                COALESCE(SUM(CASE WHEN UPPER(COALESCE(l.status,'')) IN ('SUCCESS','SUCCESS_ESTIMATED') THEN COALESCE(l.settlement_amount,0) ELSE 0 END),0) settlement_amount
                 """;
         String fromLogs = " FROM logs l LEFT JOIN organizations o ON o.id=l.organization_id";
         List<Map<String, Object>> daily = jdbcTemplate.queryForList(
@@ -103,6 +113,15 @@ public class UsageAnalyticsService {
         double revenue = number(value(row, "total_amount"));
         double profit = number(value(row, "profit_amount"));
         row.put("profit_margin", revenue == 0 ? 0D : profit * 100D / revenue);
+    }
+
+    private void appendOutcome(StringBuilder where, String value) {
+        String outcome = value == null ? "ALL" : value.trim().toUpperCase();
+        if (outcome.isBlank() || "ALL".equals(outcome)) return;
+        if ("SUCCESS".equals(outcome)) where.append(" AND UPPER(COALESCE(l.status,'')) IN ('SUCCESS','SUCCESS_ESTIMATED')");
+        else if ("FAILED".equals(outcome)) where.append(" AND UPPER(COALESCE(l.status,''))='FAILED'");
+        else if ("UNKNOWN".equals(outcome)) where.append(" AND UPPER(COALESCE(l.status,'')) NOT IN ('SUCCESS','SUCCESS_ESTIMATED','FAILED')");
+        else throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "outcome must be ALL, SUCCESS, FAILED or UNKNOWN");
     }
 
     private double number(Object value) {

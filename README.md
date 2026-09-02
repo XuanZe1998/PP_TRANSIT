@@ -1,3 +1,14 @@
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'a6c3ae9a-27a5-45ee-94a3-cdd244ccf140'
+  PropagateID: 'a6c3ae9a-27a5-45ee-94a3-cdd244ccf140'
+  ReservedCode1: 'd80a40c6-64ab-4a35-8173-6cd8eec85154'
+  ReservedCode2: 'd80a40c6-64ab-4a35-8173-6cd8eec85154'
+---
+
 # Linknux
 
 面向开发者与团队的一站式 AI 能力平台，统一连接主流模型，提供智能路由、用量治理、创作工具与企业协作。
@@ -45,6 +56,35 @@
    ```
 
 默认后端端口为 `8089`，前端开发服务器由 Vite 启动。管理员首次启动由 `security.bootstrap-admin.username` / `security.bootstrap-admin.password` 创建；创建成功后应从私有配置中移除这两项。生产环境仍可使用对应环境变量覆盖本地 YAML。
+
+## 模型鉴别（可选）
+
+平台内置独立的模型鉴别能力（基于 BazaarLink LLMprobe-engine，以 Node.js sidecar 进程运行），可对任意 OpenAI 兼容端点执行质量、安全、完整性探针，输出 0-100 评分报告与身份鉴别结论（用于检测模型调包 / 降级）。
+
+该特性默认关闭（fail-closed）。启用步骤：
+
+1. 启动 Node.js sidecar（零依赖，仅需 Node 20+）：
+
+   ```powershell
+   node model-probe/src/server.js
+   ```
+
+   默认监听 `http://127.0.0.1:9891`，可通过 `MODEL_PROBE_PORT` / `MODEL_PROBE_HOST` 覆盖。
+
+2. 在后端配置开启并指向 sidecar（可写回 `config/application-local.yaml` 或环境变量）：
+
+   ```yaml
+   model-probe:
+     enabled: true
+     sidecar-url: http://127.0.0.1:9891
+     timeout-seconds: 900
+     admin-enabled: true
+     user-enabled: true
+   ```
+
+3. 访问入口：管理后台“审计与安全 → 模型鉴别”（`/admin/model-probe`）；用户控制台“模型鉴别”（`/console/model-probe`）。
+
+> 许可提示：LLMprobe-engine 使用 AGPL-3.0 协议，以独立 sidecar 进程运行并与主程序隔离。对外提供该功能（含通过网络）需遵守 AGPL 开源义务，详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
 ## 接入一个模型供应商
 

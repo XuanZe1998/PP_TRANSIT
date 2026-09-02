@@ -15,6 +15,7 @@ const PricingPage=()=>import('@/views/PricingPage.vue')
 const DocsPage=()=>import('@/views/DocsPage.vue')
 const AgentConsole=()=>import('@/views/AgentConsole.vue')
 const AdminAgents=()=>import('@/views/AdminAgents.vue')
+const AdminModelProbe=()=>import('@/views/AdminModelProbe.vue')
 
 export const shopGptEnabled = import.meta.env.VITE_ENABLE_SHOPGPT === 'true'
 const ProductItem = () => import('@/views/ProductItem.vue')
@@ -61,6 +62,7 @@ const routes: RouteRecordRaw[] = [
   { path: '/console/wallet', component: UserConsole, meta: { title: '钱包充值', role: 'user' } },
   { path: '/console/profile', component: UserConsole, meta: { title: '个人中心', role: 'user' } },
   { path: '/console/docs', component: UserConsole, meta: { title: '开发文档', role: 'user' } },
+  { path: '/console/model-probe', component: UserConsole, meta: { title: '模型鉴别', role: 'user' } },
   { path: '/console/organization', component: OrganizationConsole, meta: { title: '企业账户', role: 'user' } },
   { path: '/console/agent', component: AgentConsole, meta: { title: '代理中心', role: 'user' } },
   { path: '/console/orders', redirect: '/services', meta: { role: 'user' } },
@@ -81,6 +83,7 @@ const routes: RouteRecordRaw[] = [
       adminChild('audit-logs', 'audit', '调用审计'),
       adminChild('finance', 'finance', '钱包财务'),
       { path: 'agents', component: AdminAgents, meta: { title: '代理、号池与运维', role: 'admin' } },
+      { path: 'model-probe', component: AdminModelProbe, meta: { title: '模型鉴别', role: 'admin' } },
       { path: 'other-services', component: AdminOtherServices, meta: { title: '服务与订单', role: 'admin' } },
       { path: 'vmcard-test', component: AdminVmCardTest, meta: { title: 'VMCard 接口测试', role: 'admin' } },
       adminChild('security', 'security', '安全策略'),

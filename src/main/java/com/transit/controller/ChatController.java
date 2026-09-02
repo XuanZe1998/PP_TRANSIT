@@ -1,5 +1,7 @@
 package com.transit.controller;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.transit.dto.ChatRequest;
 import com.transit.dto.ChatResponse;
 import com.transit.service.TransitService;
@@ -27,6 +29,8 @@ public class ChatController {
     private final TransitService transitService;
     @Autowired(required = false)
     private UniversalModelService universalModelService;
+    @Autowired(required = false)
+    private ObjectMapper objectMapper;
 
     @Value("${gateway.trust-forwarded-headers:false}")
     private boolean trustForwardedHeaders;
@@ -66,6 +70,18 @@ public class ChatController {
                     .header(HttpHeaders.CACHE_CONTROL, "no-cache")
                     .header("X-Accel-Buffering", "no")
                     .body(transitService.chatCompletionsStream(authorization, request, clientIp)));
+        }
+        // Route non-streaming requests through the universal protocol bridge as
+        // well. AiAPIBank (and managed Haoee-compatible channels) need the
+        // same upstream model rewrite, protocol headers and enhanced pricing
+        // path as streaming requests; the legacy TransitService gateway does
+        // not carry those source-specific semantics.
+        if (universalModelService != null && objectMapper != null
+                && universalModelService.hasHaoeeRoute(request.getModel(), "chat-completions")) {
+            ObjectNode raw = objectMapper.valueToTree(request);
+            return universalModelService.invoke(authorization, clientIp, "chat-completions",
+                            "/v1/chat/completions", raw, idempotencyKey)
+                    .map(response -> ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON).body(response));
         }
         return transitService.chatCompletions(authorization, request, clientIp, idempotencyKey)
                 .map(response -> ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON).body(response));

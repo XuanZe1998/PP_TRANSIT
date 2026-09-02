@@ -33,6 +33,7 @@ public class HaoeeProtocolClient {
                 .header(HttpHeaders.AUTHORIZATION, authorization(channel))
                 .contentType(MediaType.APPLICATION_JSON)
                 .accept(MediaType.APPLICATION_JSON);
+        applyProviderHeaders(request, channel, path);
         if (haoee(channel)) request.header("ModelName", providerModel);
         return request.bodyValue(body).retrieve().bodyToMono(JsonNode.class);
     }
@@ -102,7 +103,7 @@ public class HaoeeProtocolClient {
 
     private String endpoint(Channel channel, String path) {
         if (path == null || !path.startsWith("/") || path.contains("..") || path.contains("://")) {
-            throw new IllegalArgumentException("Invalid Haoee endpoint path");
+            throw new IllegalArgumentException("Invalid upstream endpoint path");
         }
         return HaoeeGateway.endpoint(channel, path);
     }
@@ -115,10 +116,30 @@ public class HaoeeProtocolClient {
     private WebClient client(Channel channel) { return proxyClients == null || channel.getAuthContext() == null ? webClient : proxyClients.client(channel.getAuthContext().upstreamProxyId()); }
 
     private boolean haoee(Channel channel) {
-        return !channel.isManaged() || "haoee".equalsIgnoreCase(channel.getType()) || "haoee-openai".equalsIgnoreCase(channel.getType());
+        if ("aiapibank".equalsIgnoreCase(channel.getSourceCode())) return false;
+        return !channel.isManaged()
+                || "haoee".equalsIgnoreCase(channel.getSourceCode())
+                || "haoee".equalsIgnoreCase(channel.getType())
+                || "haoee-openai".equalsIgnoreCase(channel.getType());
     }
 
     private void modelHeader(HttpHeaders headers, Channel channel, String model) {
         if (haoee(channel)) headers.set("ModelName", model);
+        if (aiApiBankAnthropic(channel)) {
+            headers.set("x-api-key", ProviderAuthentication.secret(channel));
+            headers.set("anthropic-version", "2023-06-01");
+        }
+    }
+
+    private void applyProviderHeaders(WebClient.RequestHeadersSpec<?> request, Channel channel, String path) {
+        if (aiApiBankAnthropic(channel) && path.startsWith("/v1/messages")) {
+            request.header("x-api-key", ProviderAuthentication.secret(channel));
+            request.header("anthropic-version", "2023-06-01");
+        }
+    }
+
+    private boolean aiApiBankAnthropic(Channel channel) {
+        return "aiapibank".equalsIgnoreCase(channel.getSourceCode())
+                && "anthropic".equalsIgnoreCase(channel.getType());
     }
 }

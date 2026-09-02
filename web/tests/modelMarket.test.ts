@@ -30,6 +30,22 @@ describe('model marketplace helpers', () => {
     expect(market).toContain('page.value = clampPage(page.value, total, pageSize.value)')
   })
 
+  it('exposes AiAPIBank group, platform, multiplier and three-column pricing details', () => {
+    const market = source('src/views/ModelMarket.vue')
+    const pricing = source('src/components/ModelSalePricing.vue')
+    const consoleView = source('src/views/UserConsole.vue')
+
+    expect(market).toContain('AiAPIBank 分组')
+    expect(market).toContain("filters.group")
+    expect(market).toContain("filters.platform")
+    expect(market).toContain("filters.multiplier")
+    expect(pricing).toContain('官方参考价')
+    expect(pricing).toContain('折后采购价')
+    expect(pricing).toContain('本站售价')
+    expect(pricing).toContain('图片分辨率价格')
+    expect(consoleView).toContain("model.providerGroup?.channel === 'AiAPIBank'")
+  })
+
   it('keeps only the hero section on the home route and lazy-loads public pages', () => {
     const home = source('src/views/HomePage.vue')
     const router = source('src/router/index.ts')

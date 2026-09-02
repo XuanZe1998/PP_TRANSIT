@@ -10,6 +10,7 @@ import com.transit.service.OtherServiceCatalogService;
 import com.transit.service.OtherServiceImageStorageService;
 import com.transit.service.ModelContextPricingService;
 import com.transit.service.PublicUpstreamMappingService;
+import com.transit.service.AiApiBankPublicCatalogService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
@@ -40,6 +41,7 @@ public class PublicController {
     private final OtherServiceImageStorageService otherServiceImageStorageService;
     private final PublicUpstreamMappingService publicUpstreamMappingService;
     private final ModelContextPricingService modelContextPricingService;
+    private final AiApiBankPublicCatalogService aiApiBankPublicCatalogService;
 
     @Value("${billing.model-currency:USD}")
     private String billingCurrency;
@@ -97,6 +99,7 @@ public class PublicController {
             List<PublicModel> all = modelMappingMapper.findPublicModels();
             publicUpstreamMappingService.sanitize(all);
             modelContextPricingService.enrich(all);
+            aiApiBankPublicCatalogService.enrich(all);
             List<PublicModel> filtered = all.stream()
                     .filter(item -> normalizedQuery == null || item.getPublicName().toLowerCase(Locale.ROOT).contains(normalizedQuery.toLowerCase(Locale.ROOT)))
                     .filter(item -> normalizedType == null || normalizedType.equalsIgnoreCase(item.getSource())
@@ -136,6 +139,7 @@ public class PublicController {
         }
         publicUpstreamMappingService.sanitize(items);
         modelContextPricingService.enrich(items);
+        aiApiBankPublicCatalogService.enrich(items);
 
         PageResponse<PublicModel> resp = new PageResponse<>();
         resp.setTotal(total == null ? 0 : total);

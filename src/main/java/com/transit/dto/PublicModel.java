@@ -7,6 +7,8 @@ import java.math.BigDecimal;
 @Data
 public class PublicModel {
     private String publicName;
+    private String displayName;
+    private String upstreamModelName;
     private int displayPriority;
     private String type;
     private String source;
@@ -67,6 +69,9 @@ public class PublicModel {
     private PublicModelPricing pricing;
     private java.util.List<PublicUpstream> upstreams;
     private PublicContextPricing contextPricing;
+    private AiApiBankProviderGroupView providerGroup;
+    private java.util.List<AiApiBankPriceTierView> priceTiers;
+    private java.util.List<AiApiBankUnitPriceVariant> unitPriceVariants;
 
     public void applyMoney(String currency,long scale){
         this.currency=currency;this.amountScale=scale;

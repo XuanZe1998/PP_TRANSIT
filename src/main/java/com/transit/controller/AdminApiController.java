@@ -83,9 +83,12 @@ public class AdminApiController {
     private final SensitiveWordService sensitiveWordService;
 
     @GetMapping("/dashboard")
-    public Mono<Map<String, Object>> dashboard(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+    public Mono<Map<String, Object>> dashboard(
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+            @RequestParam(value = "from", required = false) String from,
+            @RequestParam(value = "to", required = false) String to) {
         requireAdmin(authHeader);
-        return Mono.fromCallable(dashboardService::overview);
+        return Mono.fromCallable(() -> dashboardService.overview(from, to));
     }
 
     @GetMapping("/usage/analytics")
@@ -97,11 +100,12 @@ public class AdminApiController {
             @RequestParam(value = "model", required = false) String model,
             @RequestParam(value = "tokenId", required = false) Long tokenId,
             @RequestParam(value = "status", required = false) String status,
+            @RequestParam(value = "outcome", required = false) String outcome,
             @RequestParam(value = "audienceType", required = false) String audienceType,
             @RequestParam(value = "organizationId", required = false) Long organizationId) {
         requireAdmin(authHeader);
         return Mono.fromCallable(() -> usageAnalyticsService.analytics(
-                null, userId, from, to, model, tokenId, status, audienceType, organizationId));
+                null, userId, from, to, model, tokenId, status, outcome, audienceType, organizationId));
     }
 
     @GetMapping("/users")
@@ -598,11 +602,12 @@ public class AdminApiController {
             @RequestParam(value = "from", required = false) String from,
             @RequestParam(value = "to", required = false) String to,
             @RequestParam(value = "query", required = false) String query,
+            @RequestParam(value = "outcome", required = false) String outcome,
             @RequestParam(value = "page", defaultValue = "1") int page,
             @RequestParam(value = "pageSize", defaultValue = "50") int pageSize) {
         requireAdmin(authHeader);
         return Mono.fromCallable(() -> auditQueryService.requestLogs(
-                audienceType, organizationId, userId, model, from, to, query, page, pageSize));
+                audienceType, organizationId, userId, model, from, to, query, outcome, page, pageSize));
     }
 
     @GetMapping("/audit/filter-options")
