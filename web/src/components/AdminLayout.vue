@@ -68,7 +68,7 @@ const navItems: NavItem[] = [
     { path: '/admin/finance', label: '钱包财务' }, { path: '/admin/agents', label: '代理、号池与运维' }, { path: '/admin/vmcard-test', label: 'VMCard 测试' }
   ] },
   { path: 'audit-security', label: '审计与安全', icon: Lock, children: [
-    { path: '/admin/audit-logs', label: '调用审计' }, { path: '/admin/security', label: '安全策略' }
+    { path: '/admin/audit-logs', label: '调用审计' }, { path: '/admin/security', label: '安全策略' }, { path: '/admin/model-probe', label: '模型鉴别' }
   ] },
   { path: '/admin/settings', label: '系统配置与报表', icon: Setting }
 ]

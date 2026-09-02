@@ -49,6 +49,7 @@ scripts/k6/results/
 
 ### Runtime data and logs ###
 data/
+.temp/
 output/pdf/
 reports/*.sql
 reports/model-validation-*.md

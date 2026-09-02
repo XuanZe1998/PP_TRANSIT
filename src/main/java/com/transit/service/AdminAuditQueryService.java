@@ -19,25 +19,28 @@ public class AdminAuditQueryService {
     public List<Map<String, Object>> requestLogs() {
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> items = (List<Map<String, Object>>) requestLogs(
-                null, null, null, null, null, null, null, 1, 500).get("items");
+                null, null, null, null, null, null, null, null, 1, 500).get("items");
         return items;
     }
 
     public Map<String, Object> requestLogs(String audienceType, Long organizationId, Long userId,
                                             String model, String from, String to, String query,
-                                            int page, int pageSize) {
+                                            String outcome, int page, int pageSize) {
         int safePage = Math.max(1, page);
         int safeSize = Math.max(10, Math.min(200, pageSize));
-        StringBuilder where = new StringBuilder(" WHERE 1=1");
-        List<Object> args = new ArrayList<>();
-        appendFilters(where, args, audienceType, organizationId, userId, model, from, to);
+        StringBuilder baseWhere = new StringBuilder(" WHERE 1=1");
+        List<Object> baseArgs = new ArrayList<>();
+        appendFilters(baseWhere, baseArgs, audienceType, organizationId, userId, model, from, to);
         if (query != null && !query.isBlank()) {
-            where.append(" AND (LOWER(l.trace_id) LIKE ? OR LOWER(COALESCE(u.username,'')) LIKE ? OR LOWER(l.model) LIKE ?)");
+            baseWhere.append(" AND (LOWER(l.trace_id) LIKE ? OR LOWER(COALESCE(u.username,'')) LIKE ? OR LOWER(l.model) LIKE ? OR LOWER(COALESCE(l.error_message,'')) LIKE ?)");
             String needle = "%" + query.trim().toLowerCase() + "%";
-            args.add(needle); args.add(needle); args.add(needle);
+            baseArgs.add(needle); baseArgs.add(needle); baseArgs.add(needle); baseArgs.add(needle);
         }
         String fromClause = " FROM logs l LEFT JOIN users u ON u.id=l.user_id"
                 + " LEFT JOIN channels c ON c.id=l.channel_id LEFT JOIN organizations o ON o.id=l.organization_id";
+        StringBuilder where = new StringBuilder(baseWhere);
+        List<Object> args = new ArrayList<>(baseArgs);
+        appendOutcome(where, outcome);
         Long total = jdbcTemplate.queryForObject("SELECT COUNT(*)" + fromClause + where, Long.class, args.toArray());
         List<Object> pageArgs = new ArrayList<>(args);
         pageArgs.add(safeSize);
@@ -53,11 +56,45 @@ public class AdminAuditQueryService {
                        l.model_currency,l.model_amount_scale,l.settlement_amount,l.settlement_currency,l.exchange_rate,
                        l.latency_ms, l.status, l.error_message, l.created_at
                 """ + fromClause + where + " ORDER BY l.created_at DESC LIMIT ? OFFSET ?", pageArgs.toArray());
+        items.forEach(item -> {
+            Object error = value(item, "error_message");
+            if (error == null || error.toString().isBlank()) item.put("error_message", "未记录具体原因");
+            double sale = number(value(item, "sale_amount"));
+            if (sale <= 0D) sale = number(value(item, "total_amount"));
+            if (sale <= 0D) sale = number(value(item, "cost"));
+            double cost = number(value(item, "cost_amount"));
+            double profit = sale - cost;
+            item.put("sale_amount", sale);
+            item.put("gross_profit", profit);
+            item.put("request_margin", sale == 0D ? 0D : profit * 100D / sale);
+        });
+        Map<String, Object> rawSummary = jdbcTemplate.queryForMap("""
+                SELECT COUNT(*) total_requests,
+                       COALESCE(SUM(CASE WHEN UPPER(COALESCE(l.status,'')) IN ('SUCCESS','SUCCESS_ESTIMATED') THEN 1 ELSE 0 END),0) success_requests,
+                       COALESCE(SUM(CASE WHEN UPPER(COALESCE(l.status,''))='FAILED' THEN 1 ELSE 0 END),0) failed_requests
+                """ + fromClause + baseWhere, baseArgs.toArray());
+        long requests = integer(rawSummary, "total_requests");
+        long success = integer(rawSummary, "success_requests");
+        long failed = integer(rawSummary, "failed_requests");
+        long unknown = Math.max(0, requests - success - failed);
+        List<Map<String, Object>> failureReasons = jdbcTemplate.queryForList("""
+                SELECT COALESCE(NULLIF(TRIM(l.error_message),''),'未记录具体原因') reason, COUNT(*) count
+                """ + fromClause + baseWhere
+                + " AND UPPER(COALESCE(l.status,''))='FAILED'"
+                + " GROUP BY COALESCE(NULLIF(TRIM(l.error_message),''),'未记录具体原因') ORDER BY count DESC LIMIT 10",
+                baseArgs.toArray());
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("items", items);
         result.put("total", total == null ? 0 : total);
         result.put("page", safePage);
         result.put("pageSize", safeSize);
+        result.put("summary", Map.of(
+                "requests", requests,
+                "successRequests", success,
+                "failedRequests", failed,
+                "unknownRequests", unknown,
+                "successRate", requests == 0 ? 0D : success * 100D / requests));
+        result.put("failureReasons", failureReasons);
         return result;
     }
 
@@ -119,6 +156,15 @@ public class AdminAuditQueryService {
         if ("PERSONAL".equals(audience)) where.append(" AND COALESCE(o.organization_type,'PERSONAL')='PERSONAL'");
     }
 
+    private void appendOutcome(StringBuilder where, String value) {
+        String outcome = value == null ? "ALL" : value.trim().toUpperCase();
+        if (outcome.isBlank() || "ALL".equals(outcome)) return;
+        if ("SUCCESS".equals(outcome)) where.append(" AND UPPER(COALESCE(l.status,'')) IN ('SUCCESS','SUCCESS_ESTIMATED')");
+        else if ("FAILED".equals(outcome)) where.append(" AND UPPER(COALESCE(l.status,''))='FAILED'");
+        else if ("UNKNOWN".equals(outcome)) where.append(" AND UPPER(COALESCE(l.status,'')) NOT IN ('SUCCESS','SUCCESS_ESTIMATED','FAILED')");
+        else throw new IllegalArgumentException("outcome must be ALL, SUCCESS, FAILED or UNKNOWN");
+    }
+
     private String normalizeAudience(String value) {
         String audience = value == null ? "" : value.trim().toUpperCase();
         if (!audience.isBlank() && !List.of("PERSONAL", "COMPANY").contains(audience)) {
@@ -130,5 +176,19 @@ public class AdminAuditQueryService {
     private LocalDate date(String value) {
         try { return LocalDate.parse(value.trim()); }
         catch (RuntimeException error) { throw new IllegalArgumentException("Date must use YYYY-MM-DD"); }
+    }
+
+    private Object value(Map<String, Object> row, String key) {
+        if (row.containsKey(key)) return row.get(key);
+        return row.get(key.toUpperCase(java.util.Locale.ROOT));
+    }
+
+    private long integer(Map<String, Object> row, String key) {
+        Object value = value(row, key);
+        return value instanceof Number number ? number.longValue() : 0L;
+    }
+
+    private double number(Object value) {
+        return value instanceof Number number ? number.doubleValue() : 0D;
     }
 }

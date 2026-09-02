@@ -6,12 +6,45 @@
         <p>{{ config.description }}</p>
       </div>
       <div class="toolbar-actions">
+        <el-select v-if="module === 'dashboard'" v-model="dashboardPeriod" style="width: 130px" @change="handleDashboardPeriodChange">
+          <el-option label="今天" value="today" /><el-option label="近 7 天" value="7" />
+          <el-option label="近 30 天" value="30" /><el-option label="自定义" value="custom" />
+        </el-select>
+        <el-date-picker v-if="module === 'dashboard' && dashboardPeriod === 'custom'" v-model="dashboardCustomRange" type="daterange" value-format="YYYY-MM-DD" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" @change="handleDashboardCustomRange" />
         <el-input v-model="query" clearable :placeholder="module === 'audit' ? '搜索 Trace、用户或模型' : '搜索当前列表'" :prefix-icon="Search" @keyup.enter="handleToolbarSearch" @clear="handleToolbarSearch" />
         <el-button :icon="Refresh" @click="load">刷新</el-button>
         <el-button v-if="config.createLabel" type="primary" :icon="Plus" @click="openCreate">
           {{ config.createLabel }}
         </el-button>
       </div>
+    </section>
+
+    <section v-if="module === 'channels'" class="panel aiapibank-sync-panel">
+      <div class="panel-head">
+        <div>
+          <h3>AiAPIBank 全分组目录</h3>
+          <p>每日 03:20（Asia/Tokyo）自动同步；采购价按账号倍率计算，本站售价统一加价 10%。</p>
+        </div>
+        <div>
+          <el-button :loading="aiApiBankSyncing" @click="syncAiApiBank(true)">预览同步</el-button>
+          <el-button type="primary" :loading="aiApiBankSyncing" @click="syncAiApiBank(false)">立即同步</el-button>
+        </div>
+      </div>
+      <div class="market-tags">
+        <el-tag>分组 {{ Number(aiApiBankStatus.groupCount || 0) }}/13</el-tag>
+        <el-tag :type="Number(aiApiBankStatus.credentialsMissing || 0) ? 'warning' : 'success'">缺 Key {{ Number(aiApiBankStatus.credentialsMissing || 0) }}</el-tag>
+        <el-tag :type="Number(aiApiBankStatus.disabledModels || 0) ? 'danger' : 'success'">停用模型 {{ Number(aiApiBankStatus.disabledModels || 0) }}</el-tag>
+        <el-tag v-if="aiApiBankStatus.lastRun">最近同步 {{ display(aiApiBankStatus.lastRun.finished_at || aiApiBankStatus.lastRun.finishedAt) }}</el-tag>
+      </div>
+      <el-table v-if="(aiApiBankStatus.groups || []).length" :data="aiApiBankStatus.groups" size="small" max-height="320">
+        <el-table-column prop="group_name" label="分组" min-width="240" />
+        <el-table-column prop="platform" label="平台" width="110" />
+        <el-table-column prop="resolved_rate_multiplier" label="账号倍率" width="110" />
+        <el-table-column prop="model_count" label="模型" width="80" />
+        <el-table-column prop="credential_status" label="Key" width="150" />
+        <el-table-column prop="sync_status" label="同步" width="130" />
+        <el-table-column prop="last_synced_at" label="最近同步" min-width="170" />
+      </el-table>
     </section>
 
     <section v-if="metrics.length" class="metric-grid admin-metrics">
@@ -61,7 +94,7 @@
           <span>{{ dashboardUsageError }}</span>
           <el-button link type="primary" @click="loadDashboardUsage">重试用量图表</el-button>
         </div>
-        <AdminUsageCharts :data="dashboardUsage" :kpi-totals="dashboardTodayUsage.totals" :pie-rows="dashboardTodayUsage.dailyByModel" title="近 7 日模型 Token、成本与收益（上方及饼图为今日）" />
+        <AdminUsageCharts :data="dashboardUsage" :kpi-totals="dashboardTodayUsage.totals" :pie-rows="dashboardTodayUsage.dailyByModel" :title="`${dashboardRangeLabel}模型 Token、成本与收益`" />
       </section>
     </template>
 
@@ -199,10 +232,10 @@
     <template v-else>
       <section class="panel">
         <div v-if="module === 'audit'" class="admin-usage-analytics">
-          <el-alert title="请先选择个人用户或企业用户；企业审计需要继续选择企业后才能搜索成员和模型。" type="info" :closable="false" show-icon />
+          <el-alert title="可查看全平台请求，或进一步按个人、企业、用户、模型、状态和日期筛选。" type="info" :closable="false" show-icon />
           <div class="usage-filter-row">
-            <el-select v-model="adminUsageFilters.audienceType" placeholder="第一步：选择用户类型" @change="handleAudienceChange">
-              <el-option label="个人用户" value="PERSONAL" /><el-option label="企业用户" value="COMPANY" />
+            <el-select v-model="adminUsageFilters.audienceType" placeholder="选择用户类型" @change="handleAudienceChange">
+              <el-option label="全部用户" value="ALL" /><el-option label="个人用户" value="PERSONAL" /><el-option label="企业用户" value="COMPANY" />
             </el-select>
             <el-select v-if="adminUsageFilters.audienceType === 'COMPANY'" v-model="adminUsageFilters.organizationId" clearable filterable remote :remote-method="loadAuditOptions" placeholder="选择或搜索企业" @change="handleOrganizationChange">
               <el-option v-for="item in auditOptions.organizations" :key="item.id" :label="item.name" :value="item.id" />
@@ -214,10 +247,31 @@
               <el-option v-for="item in auditOptions.models" :key="item.model" :label="item.model" :value="item.model" />
             </el-select>
             <el-date-picker v-model="adminUsageFilters.range" type="daterange" value-format="YYYY-MM-DD" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" />
+            <el-select v-model="auditOutcome" style="width: 130px" placeholder="请求状态">
+              <el-option label="全部状态" value="ALL" /><el-option label="成功" value="SUCCESS" />
+              <el-option label="失败" value="FAILED" /><el-option label="未知" value="UNKNOWN" />
+            </el-select>
             <el-button type="primary" :disabled="!auditFilterReady" @click="applyAuditFilters">查询审计</el-button>
           </div>
+          <div class="usage-filter-row">
+            <el-radio-group v-model="auditFocus">
+              <el-radio-button value="requests">请求视角</el-radio-button>
+              <el-radio-button value="revenue">收入视角</el-radio-button>
+              <el-radio-button value="margin">毛利视角</el-radio-button>
+            </el-radio-group>
+          </div>
+          <section class="metric-grid admin-metrics">
+            <article class="metric-card clickable" @click="selectAuditOutcome('ALL')"><span>总请求</span><div><strong>{{ number(auditSummary.requests) }}</strong><em>全部</em></div></article>
+            <article class="metric-card clickable" @click="selectAuditOutcome('SUCCESS')"><span>成功</span><div><strong>{{ number(auditSummary.successRequests) }}</strong><em class="tone-green">{{ percent(auditSummary.successRate) }}</em></div></article>
+            <article class="metric-card clickable" @click="selectAuditOutcome('FAILED')"><span>失败</span><div><strong>{{ number(auditSummary.failedRequests) }}</strong><em class="tone-orange">查看原因</em></div></article>
+            <article class="metric-card clickable" @click="selectAuditOutcome('UNKNOWN')"><span>未知</span><div><strong>{{ number(auditSummary.unknownRequests) }}</strong><em>待确认</em></div></article>
+          </section>
           <div v-if="adminUsageError" class="module-error-state"><span>{{ adminUsageError }}</span><el-button link type="primary" @click="loadAdminUsage">重试统计</el-button></div>
-          <AdminUsageCharts :data="adminUsage" title="筛选范围内的模型用量与收益" show-table />
+          <AdminUsageCharts :data="adminUsage" :title="auditFocus === 'requests' ? '筛选范围内的请求与用量' : '筛选范围内的 API 收入、成本与毛利'" show-table />
+          <article v-if="failureReasons.length" class="panel">
+            <div class="panel-head"><h3>失败原因 Top 10</h3><el-tag type="danger">{{ number(auditSummary.failedRequests) }} 次失败</el-tag></div>
+            <div class="risk-list"><div v-for="reason in failureReasons" :key="getValue(reason, 'reason')"><span></span><p><strong>{{ getValue(reason, 'reason') }}</strong><small>{{ number(getValue(reason, 'count')) }} 次</small></p></div></div>
+          </article>
           <div v-if="auditLogsError" class="module-error-state"><span>{{ auditLogsError }}</span><el-button link type="primary" @click="loadAuditLogs">重试日志</el-button></div>
         </div>
         <div v-if="module === 'security'" class="security-workspace">
@@ -307,6 +361,7 @@
               <span v-else-if="column.kind === 'money'">{{ money(getValue(row, column.prop)) }}</span>
               <span v-else-if="column.kind === 'modelMoney'">{{ formatUsd(getValue(row, column.prop)) }}</span>
               <span v-else-if="column.kind === 'rate'">{{ rateMoney(getValue(row, column.prop)) }}</span>
+              <span v-else-if="column.kind === 'percent'">{{ percent(getValue(row, column.prop)) }}</span>
               <span v-else-if="column.kind === 'profit'" :class="{ 'negative-profit': routeHasLoss(row) }">{{ routeProfitSummary(row) }}</span>
               <div v-else-if="column.kind === 'tierRange'" class="tier-table-cell">
                 <span v-for="(line, index) in tierRangeLines(row)" :key="index">{{ line }}</span>
@@ -813,7 +868,7 @@
 import { computed, defineAsyncComponent, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Refresh, Search } from '@element-plus/icons-vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import http, { getHttpErrorMessage, getHttpErrorNotice } from '@/utils/http'
 import { formatCny, formatPerMillionUsd, formatUsd } from '@/utils/money'
 const AdminUsageCharts = defineAsyncComponent(() => import('@/components/AdminUsageCharts.vue'))
@@ -824,7 +879,7 @@ type Column = {
   label: string
   width?: number
   minWidth?: number
-  kind?: 'status' | 'bool' | 'callable' | 'money' | 'modelMoney' | 'rate' | 'profit'
+  kind?: 'status' | 'bool' | 'callable' | 'money' | 'modelMoney' | 'rate' | 'profit' | 'percent'
     | 'tierRange' | 'tierOfficial' | 'tierCost' | 'tierSale' | 'tierProfit'
 }
 type Field = { prop: string; label: string; type?: 'text' | 'password' | 'textarea' | 'number' | 'switch' | 'select'; min?: number; step?: number; options?: Array<{ label: string; value: any }> }
@@ -840,6 +895,7 @@ type Config = {
 }
 
 const props = defineProps<{ module: ModuleKey }>()
+const route=useRoute()
 const router=useRouter()
 
 const module = computed(() => props.module)
@@ -861,10 +917,16 @@ const rechargePlanSaving = ref(false)
 const rechargePlanForm = reactive({ id: null as number | null, name: '', amount: 500000, bonusPercent: 0, sortOrder: 100, enabled: true })
 const adminToday = new Date()
 const adminMonthAgo = new Date(adminToday); adminMonthAgo.setDate(adminToday.getDate() - 29)
+const dashboardPeriod = ref<'today' | '7' | '30' | 'custom'>('30')
+const dashboardCustomRange = ref<string[]>([])
 const adminUsageFilters = reactive({
-  range: [adminMonthAgo.toISOString().slice(0, 10), adminToday.toISOString().slice(0, 10)] as string[],
-  audienceType: '', organizationId: '' as string | number, userId: '' as string | number, model: ''
+  range: [localDate(adminMonthAgo), localDate(adminToday)] as string[],
+  audienceType: 'ALL', organizationId: '' as string | number, userId: '' as string | number, model: ''
 })
+const auditFocus = ref<'requests' | 'revenue' | 'margin'>('requests')
+const auditOutcome = ref<'ALL' | 'SUCCESS' | 'FAILED' | 'UNKNOWN'>('ALL')
+const auditSummary = ref<any>({ requests: 0, successRequests: 0, failedRequests: 0, unknownRequests: 0, successRate: 0 })
+const failureReasons = ref<any[]>([])
 const adminUsage = ref<any>({ daily: [], dailyByModel: [], totals: {}, tokenComposition: [] })
 const dashboardUsage = ref<any>({ daily: [], dailyByModel: [], totals: {} })
 const dashboardTodayUsage = ref<any>({ totals: {} })
@@ -876,6 +938,8 @@ const auditPage = ref(1)
 const auditPageSize = ref(50)
 const auditTotal = ref(0)
 const testRows = ref<any[]>([])
+const aiApiBankStatus = ref<any>({ groups: [] })
+const aiApiBankSyncing = ref(false)
 const channelLedgerSections = ref<string[]>([])
 const dashboard = ref<Record<string, any>>({})
 const report = ref<Record<string, any>>({})
@@ -1139,11 +1203,15 @@ const configs: Record<ModuleKey, Config> = {
     endpoint: '/admin/api/audit/request-logs',
     columns: [
       { prop: 'trace_id', label: 'Trace ID', minWidth: 140 },
+      { prop: 'created_at', label: '请求时间', minWidth: 170 },
       { prop: 'username', label: '用户', minWidth: 120 },
       { prop: 'model', label: '模型', minWidth: 160 },
       { prop: 'channel_name', label: '渠道', minWidth: 140 },
       { prop: 'total_tokens', label: 'Token', width: 110 },
       { prop: 'sale_amount', label: '模型售价(USD)', width: 140, kind: 'modelMoney' },
+      { prop: 'cost_amount', label: '成本(USD)', width: 125, kind: 'modelMoney' },
+      { prop: 'gross_profit', label: '毛利(USD)', width: 125, kind: 'modelMoney' },
+      { prop: 'request_margin', label: '毛利率', width: 100, kind: 'percent' },
       { prop: 'latency_ms', label: '延迟', width: 100 },
       { prop: 'status', label: '状态', width: 110, kind: 'status' },
       { prop: 'error_message', label: '错误', minWidth: 220 }
@@ -1244,13 +1312,13 @@ const filteredModelMarketDisplayItems = computed(() => {
   return modelMarketDisplayItems.value.filter(item => item.publicName.toLowerCase().includes(needle))
 })
 
-const metrics = computed(() => {
+const metrics = computed<Array<{ label: string; value: string; badge: string; tone: string; href?: any }>>(() => {
   if (module.value === 'dashboard') {
     const m = dashboard.value.metrics || {}
     return [
-      { label: '总请求', value: number(m.requests), badge: `${percent(m.successRate)} 成功`, tone: 'green' },
-      { label: '收入', value: money(m.revenue), badge: `成本 ${money(m.cost)}`, tone: 'blue' },
-      { label: '毛利率', value: percent(m.grossMargin), badge: '实时估算', tone: 'orange' },
+      { label: '总请求', value: number(m.requests), badge: `${percent(m.successRate)} 成功`, tone: 'green', href: auditHref('requests') },
+      { label: '收入', value: money(m.revenue), badge: `成本 ${money(m.cost)}`, tone: 'blue', href: auditHref('revenue') },
+      { label: '毛利率', value: percent(m.grossMargin), badge: dashboardRangeLabel.value, tone: 'orange', href: auditHref('margin') },
       { label: '待处理订单', value: number(m.pendingOrders), badge: `${number(m.activeUsers)} 用户 · 点击查看`, tone: 'purple', href: '/admin/other-services?tab=orders&status=pending' }
     ]
   }
@@ -1272,6 +1340,7 @@ watch(module, () => {
   modelPage.value = 1
   financePage.value = 1
   channelLedgerSections.value = []
+  hydrateAuditRoute()
   load()
 })
 
@@ -1295,7 +1364,7 @@ watch([() => testForm.prompt, () => testForm.timeoutSeconds], () => {
   if (testTarget.value) refreshTestPython()
 })
 
-onMounted(load)
+onMounted(() => { hydrateAuditRoute(); void load() })
 
 async function loadFinanceSection(section: FinanceSection) {
   financeErrors[section] = ''
@@ -1384,7 +1453,7 @@ async function load() {
     testRows.value = []
     if (module.value === 'dashboard') {
       const [dashboardResult] = await Promise.allSettled([
-        http.get('/api/admin/api/dashboard'),
+        http.get('/api/admin/api/dashboard', { params: dashboardParams() }),
         loadDashboardUsage()
       ])
       if (dashboardResult.status === 'rejected') throw dashboardResult.reason
@@ -1437,12 +1506,14 @@ async function load() {
       const res = await http.get(`/api${config.value.endpoint}`)
       rows.value = res.data
       if (module.value === 'channels') {
-        const [testLogRes, providerRes] = await Promise.all([
+        const [testLogRes, providerRes, aiApiBankRes] = await Promise.all([
           http.get('/api/admin/api/channels/test-logs'),
-          http.get('/api/admin/api/channels/providers')
+          http.get('/api/admin/api/channels/providers'),
+          http.get('/api/admin/api/aiapibank/status')
         ])
         testRows.value = testLogRes.data
         providerCatalog.value = providerRes.data || []
+        aiApiBankStatus.value = aiApiBankRes.data || { groups: [] }
         const providerField = configs.channels.fields.find(field => field.prop === 'type')
         if (providerField) {
           providerField.options = providerCatalog.value.map(item => ({
@@ -1461,18 +1532,13 @@ async function load() {
 
 async function loadDashboardUsage() {
   dashboardUsageError.value = ''
-  const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 6)
-  const today = localDate(new Date())
-  const [rangeResult, todayResult] = await Promise.allSettled([
-    http.get('/api/admin/api/usage/analytics', { params: { from: localDate(weekAgo), to: today } }),
-    http.get('/api/admin/api/usage/analytics', { params: { from: today, to: today } })
-  ])
-  const errors: string[] = []
-  if (rangeResult.status === 'fulfilled') dashboardUsage.value = rangeResult.value.data || { daily: [], dailyByModel: [], totals: {} }
-  else errors.push(getHttpErrorNotice(rangeResult.reason, '近 7 日趋势加载失败'))
-  if (todayResult.status === 'fulfilled') dashboardTodayUsage.value = todayResult.value.data || { totals: {}, dailyByModel: [] }
-  else errors.push(getHttpErrorNotice(todayResult.reason, '今日收益加载失败'))
-  dashboardUsageError.value = errors.join('；')
+  try {
+    const response = await http.get('/api/admin/api/usage/analytics', { params: dashboardParams() })
+    dashboardUsage.value = response.data || { daily: [], dailyByModel: [], totals: {} }
+    dashboardTodayUsage.value = response.data || { totals: {}, dailyByModel: [] }
+  } catch (error: unknown) {
+    dashboardUsageError.value = getHttpErrorNotice(error, '运营趋势加载失败')
+  }
 }
 
 async function loadAdminUsage() {
@@ -1481,9 +1547,10 @@ async function loadAdminUsage() {
   try {
     const response = await http.get('/api/admin/api/usage/analytics', { params: {
       from: adminUsageFilters.range?.[0], to: adminUsageFilters.range?.[1],
-      audienceType: adminUsageFilters.audienceType,
+      audienceType: adminUsageFilters.audienceType === 'ALL' ? undefined : adminUsageFilters.audienceType,
       organizationId: adminUsageFilters.organizationId || undefined,
-      userId: adminUsageFilters.userId || undefined, model: adminUsageFilters.model || undefined
+      userId: adminUsageFilters.userId || undefined, model: adminUsageFilters.model || undefined,
+      outcome: auditOutcome.value
     } })
     adminUsage.value = response.data || { daily: [], dailyByModel: [], totals: {}, tokenComposition: [] }
   } catch (error: unknown) {
@@ -1497,13 +1564,15 @@ async function loadAuditLogs() {
   try {
     const response = await http.get('/api/admin/api/audit/request-logs', { params: {
       from: adminUsageFilters.range?.[0], to: adminUsageFilters.range?.[1],
-      audienceType: adminUsageFilters.audienceType,
+      audienceType: adminUsageFilters.audienceType === 'ALL' ? undefined : adminUsageFilters.audienceType,
       organizationId: adminUsageFilters.organizationId || undefined,
       userId: adminUsageFilters.userId || undefined, model: adminUsageFilters.model || undefined,
-      query: query.value || undefined, page: auditPage.value, pageSize: auditPageSize.value
+      query: query.value || undefined, outcome: auditOutcome.value, page: auditPage.value, pageSize: auditPageSize.value
     } })
     rows.value = response.data?.items || []
     auditTotal.value = Number(response.data?.total || 0)
+    auditSummary.value = response.data?.summary || { requests: 0, successRequests: 0, failedRequests: 0, unknownRequests: 0, successRate: 0 }
+    failureReasons.value = response.data?.failureReasons || []
   } catch (error: unknown) {
     auditLogsError.value = getHttpErrorNotice(error, '调用日志加载失败')
   }
@@ -1511,7 +1580,7 @@ async function loadAuditLogs() {
 
 async function loadAuditOptions(search = '') {
   const response = await http.get('/api/admin/api/audit/filter-options', { params: {
-    audienceType: adminUsageFilters.audienceType || undefined,
+    audienceType: adminUsageFilters.audienceType === 'ALL' ? undefined : adminUsageFilters.audienceType || undefined,
     organizationId: adminUsageFilters.organizationId || undefined,
     query: search || undefined
   } })
@@ -1526,6 +1595,8 @@ async function handleAudienceChange() {
   adminUsageFilters.model = ''
   rows.value = []
   auditTotal.value = 0
+  auditSummary.value = { requests: 0, successRequests: 0, failedRequests: 0, unknownRequests: 0, successRate: 0 }
+  failureReasons.value = []
   adminUsage.value = { daily: [], dailyByModel: [], totals: {}, tokenComposition: [] }
   adminUsageError.value = ''
   auditLogsError.value = ''
@@ -1543,7 +1614,7 @@ async function handleOrganizationChange() {
 
 async function applyAuditFilters() {
   if (!auditFilterReady.value) {
-    ElMessage.warning(adminUsageFilters.audienceType === 'COMPANY' ? '请先选择企业' : '请先选择个人用户或企业用户')
+    ElMessage.warning(adminUsageFilters.audienceType === 'COMPANY' ? '请先选择企业' : '请选择用户范围')
     return
   }
   auditPage.value = 1
@@ -1553,6 +1624,55 @@ async function applyAuditFilters() {
 function localDate(date: Date) {
   const year = date.getFullYear(), month = String(date.getMonth() + 1).padStart(2, '0'), day = String(date.getDate()).padStart(2, '0')
   return `${year}-${month}-${day}`
+}
+
+function dashboardRange() {
+  if (dashboardPeriod.value === 'custom' && dashboardCustomRange.value?.length === 2) return dashboardCustomRange.value
+  const end = new Date()
+  const start = new Date(end)
+  const days = dashboardPeriod.value === 'today' ? 1 : dashboardPeriod.value === '7' ? 7 : 30
+  start.setDate(end.getDate() - days + 1)
+  return [localDate(start), localDate(end)]
+}
+
+function dashboardParams() {
+  const [from, to] = dashboardRange()
+  return { from, to }
+}
+
+const dashboardRangeLabel = computed(() => {
+  if (dashboardPeriod.value === 'today') return '今日'
+  if (dashboardPeriod.value === '7') return '近 7 日'
+  if (dashboardPeriod.value === '30') return '近 30 日'
+  const [from, to] = dashboardRange()
+  return `${from} 至 ${to}`
+})
+
+function auditHref(focus: 'requests' | 'revenue' | 'margin') {
+  return { path: '/admin/audit-logs', query: { scope: 'all', focus, ...dashboardParams() } }
+}
+
+function handleDashboardPeriodChange() {
+  if (dashboardPeriod.value !== 'custom' || dashboardCustomRange.value?.length === 2) void load()
+}
+
+function handleDashboardCustomRange() {
+  if (dashboardCustomRange.value?.length === 2) void load()
+}
+
+function hydrateAuditRoute() {
+  if (module.value !== 'audit') return
+  if (route.query.scope === 'all') adminUsageFilters.audienceType = 'ALL'
+  const focus = String(route.query.focus || '')
+  if (['requests', 'revenue', 'margin'].includes(focus)) auditFocus.value = focus as 'requests' | 'revenue' | 'margin'
+  const from = String(route.query.from || ''), to = String(route.query.to || '')
+  if (/^\d{4}-\d{2}-\d{2}$/.test(from) && /^\d{4}-\d{2}-\d{2}$/.test(to)) adminUsageFilters.range = [from, to]
+}
+
+async function selectAuditOutcome(outcome: 'ALL' | 'SUCCESS' | 'FAILED' | 'UNKNOWN') {
+  auditOutcome.value = outcome
+  auditPage.value = 1
+  await Promise.allSettled([loadAdminUsage(), loadAuditLogs()])
 }
 
 const sensitiveCategories = ['违法交易', '凭证泄露', '隐私与个人信息', '暴力与威胁', '色情及未成年人', '业务自定义']
@@ -2289,6 +2409,22 @@ async function removeRow(row: any) {
   await http.delete(url)
   ElMessage.success('删除成功')
   await load()
+}
+
+async function syncAiApiBank(dryRun: boolean) {
+  aiApiBankSyncing.value = true
+  try {
+    const { data } = await http.post('/api/admin/api/aiapibank/sync', { dryRun }, { timeout: 180_000 })
+    const errors = Array.isArray(data?.errors) ? data.errors.length : 0
+    ElMessage.success(`${dryRun ? '预览' : '同步'}完成：${Number(data?.groupsSeen || 0)} 个分组、${Number(data?.modelsSeen || 0)} 个模型${errors ? `，${errors} 个分组保留旧目录` : ''}`)
+    const status = await http.get('/api/admin/api/aiapibank/status')
+    aiApiBankStatus.value = status.data || { groups: [] }
+    if (!dryRun) await load()
+  } catch (error: unknown) {
+    ElMessage.error(getHttpErrorNotice(error, `${dryRun ? '预览' : '同步'} AiAPIBank 目录失败`))
+  } finally {
+    aiApiBankSyncing.value = false
+  }
 }
 
 async function testChannel(row: any) {

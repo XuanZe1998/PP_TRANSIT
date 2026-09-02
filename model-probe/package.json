@@ -1,0 +1,16 @@
+{
+  "name": "model-probe-sidecar",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Zero-dependency HTTP sidecar wrapping the BazaarLink LLMprobe-engine for model identity/quality/security probes.",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "vendor:build": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/vendor-build.ps1",
+    "test": "node src/smoke.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "SEE LICENSE IN THIRD_PARTY_NOTICES.md"
+}

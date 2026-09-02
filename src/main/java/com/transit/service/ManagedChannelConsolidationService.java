@@ -85,7 +85,13 @@ public class ManagedChannelConsolidationService {
         for (Map<String, Object> row : rows) {
             long id = ((Number) row.get("id")).longValue();
             String stored = Objects.toString(row.get("encrypted_secret"), "");
-            String plain = secrets.decrypt(stored);
+            String plain;
+            try {
+                plain = secrets.decrypt(stored);
+            } catch (Exception e) {
+                log.warn("Skipping credential id={} on channel {}: unable to decrypt (key mismatch?)", id, channelId);
+                continue;
+            }
             Long keeper = keepers.putIfAbsent(plain, id);
             if (keeper == null) continue;
             jdbcTemplate.update("UPDATE logs SET credential_id=? WHERE credential_id=?", keeper, id);

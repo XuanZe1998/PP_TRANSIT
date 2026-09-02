@@ -115,4 +115,27 @@ class HaoeeProtocolClientTests {
         assertThat(captured.get().headers().getFirst("ModelName")).isEqualTo("gpt-5.4-pro");
         assertThat(captured.get().headers().getAccept()).contains(MediaType.TEXT_EVENT_STREAM);
     }
+
+    @Test
+    void aiApiBankUsesNativeAnthropicHeadersWithoutHaoeeModelName() {
+        AtomicReference<ClientRequest> captured = new AtomicReference<>();
+        WebClient client = WebClient.builder().exchangeFunction(request -> {
+            captured.set(request);
+            return Mono.just(ClientResponse.create(HttpStatus.OK)
+                    .header("Content-Type", MediaType.APPLICATION_JSON_VALUE)
+                    .body("{\"id\":\"msg_1\",\"content\":[]}").build());
+        }).build();
+        HaoeeProtocolClient gateway = new HaoeeProtocolClient(client);
+        Channel channel = Channel.builder().type("anthropic").sourceCode("aiapibank")
+                .baseUrl("https://aiapibank.com").apiKey("bank-secret").build();
+
+        StepVerifier.create(gateway.invoke(channel, "claude-sonnet-5", "/v1/messages",
+                        HttpMethod.POST, JsonNodeFactory.instance.objectNode().put("model", "claude-sonnet-5")))
+                .expectNextCount(1).verifyComplete();
+
+        assertThat(captured.get().headers().getFirst("Authorization")).isEqualTo("Bearer bank-secret");
+        assertThat(captured.get().headers().getFirst("x-api-key")).isEqualTo("bank-secret");
+        assertThat(captured.get().headers().getFirst("anthropic-version")).isEqualTo("2023-06-01");
+        assertThat(captured.get().headers().getFirst("ModelName")).isNull();
+    }
 }

@@ -24,7 +24,7 @@ class UsageAnalyticsServiceTests {
                 CREATE TABLE logs(id BIGINT AUTO_INCREMENT PRIMARY KEY,created_at DATETIME,user_id BIGINT,organization_id BIGINT,
                 model VARCHAR(160),token_id BIGINT,status VARCHAR(24),prompt_tokens BIGINT,completion_tokens BIGINT,
                 cache_read_tokens BIGINT,cache_write_tokens BIGINT,cache_miss_tokens BIGINT,total_tokens BIGINT,
-                total_amount BIGINT,cost_amount BIGINT,settlement_amount BIGINT)
+                total_amount BIGINT,sale_amount BIGINT,cost BIGINT,cost_amount BIGINT,settlement_amount BIGINT)
                 """);
         jdbc.update("INSERT INTO organizations VALUES (1,'PERSONAL'),(2,'COMPANY')");
         insert(1, 1, "model-a", 100, 20, 1000, 400);

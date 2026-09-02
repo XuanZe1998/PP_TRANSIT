@@ -115,11 +115,30 @@ haoee:
   base-url: ${HAOEE_BASE_URL:https://maas.haoee.com}
   api-key: ${HAOEE_API_KEY:}
   verify-on-startup: ${HAOEE_VERIFY_ON_STARTUP:false}
-  startup-verification-limit: ${HAOEE_STARTUP_VERIFICATION_LIMIT:10}
+
+# AiAPIBank catalog synchronization never stores credentials in configuration.
+# Each group key lives in the existing encrypted channels.api_key column.
+aiapibank:
+  enabled: ${AIAPIBANK_ENABLED:true}
+  base-url: ${AIAPIBANK_BASE_URL:https://aiapibank.com}
+  sale-markup: ${AIAPIBANK_SALE_MARKUP:1.10}
+  sync-cron: ${AIAPIBANK_SYNC_CRON:0 20 3 * * *}
+  sync-zone: ${AIAPIBANK_SYNC_ZONE:Asia/Tokyo}
+  request-timeout-seconds: ${AIAPIBANK_REQUEST_TIMEOUT_SECONDS:30}
 
 model-catalog:
   manual-verification-only: ${MODEL_CATALOG_MANUAL_VERIFICATION_ONLY:true}
   verification-retry-cron: ${MODEL_CATALOG_VERIFICATION_RETRY_CRON:0 37 3 * * *}
+
+model-probe:
+  # Model identity / quality / security probing via the Node.js sidecar
+  # (BazaarLink LLMprobe-engine). Fail-closed until enabled and pointed at a
+  # reachable sidecar on the loopback interface.
+  enabled: ${MODEL_PROBE_ENABLED:false}
+  sidecar-url: ${MODEL_PROBE_SIDECAR_URL:http://127.0.0.1:9891}
+  timeout-seconds: ${MODEL_PROBE_TIMEOUT_SECONDS:900}
+  admin-enabled: ${MODEL_PROBE_ADMIN_ENABLED:true}
+  user-enabled: ${MODEL_PROBE_USER_ENABLED:false}
 
 features:
   # External purchasing is fail-closed until explicitly enabled and configured.
