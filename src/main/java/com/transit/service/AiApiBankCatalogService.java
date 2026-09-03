@@ -15,9 +15,14 @@ import com.transit.model.ModelPriceTier;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.http.HttpHeaders;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.reactive.function.client.WebClient;
 
@@ -80,6 +85,69 @@ public class AiApiBankCatalogService {
         }
     }
 
+    @Async
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void syncAfterCredentialConfigured(AiApiBankCredentialConfiguredEvent event) {
+        if (!enabled || event == null || event.channelId() == null) return;
+        try {
+            ChannelSyncResult result = syncChannel(event.channelId());
+            log.info("AiAPIBank channel catalog auto-sync completed: channelId={}, group={}, models={}",
+                    event.channelId(), result.groupSlug(), result.modelsApplied());
+        } catch (RuntimeException error) {
+            log.error("AiAPIBank channel catalog auto-sync failed: channelId={}, error={}",
+                    event.channelId(), safe(error));
+        }
+    }
+
+    /**
+     * Repairs the first-run workflow after a deployment. The initial catalog
+     * import creates disabled group placeholders; administrators then attach
+     * their encrypted keys. Only configured groups that still have no valid
+     * catalog are synchronized here, so normal restarts do not refresh all
+     * AiAPIBank routes repeatedly.
+     */
+    @Async
+    @EventListener(ApplicationReadyEvent.class)
+    public void syncConfiguredPendingGroupsAfterStartup() {
+        if (!enabled) return;
+        List<Long> channelIds = jdbc.queryForList("""
+                SELECT c.id FROM channels c
+                LEFT JOIN aiapibank_provider_groups g ON g.channel_id=c.id
+                WHERE LOWER(c.source_code)=? AND c.api_key IS NOT NULL AND c.api_key<>''
+                  AND (g.id IS NULL OR g.credential_status='CREDENTIAL_MISSING'
+                       OR g.sync_status<>'SUCCESS' OR COALESCE(g.model_count,0)=0)
+                ORDER BY c.id
+                """, Long.class, SOURCE_CODE);
+        if (channelIds.isEmpty()) return;
+        List<GroupSnapshot> groups;
+        try {
+            groups = catalogGroups();
+        } catch (RuntimeException error) {
+            log.error("AiAPIBank pending channel startup sync could not load the catalog: {}", safe(error));
+            return;
+        }
+        int modelsApplied = 0;
+        int failures = 0;
+        for (Long channelId : channelIds) {
+            try {
+                Channel channel = requireAiApiBankChannel(channelId);
+                modelsApplied += syncChannel(channel, groups).modelsApplied();
+            } catch (RuntimeException error) {
+                failures++;
+                log.error("AiAPIBank pending channel startup sync failed: channelId={}, error={}",
+                        channelId, safe(error));
+            }
+        }
+        log.info("AiAPIBank pending channel startup sync completed: channels={}, models={}, failures={}",
+                channelIds.size(), modelsApplied, failures);
+    }
+
+    public ChannelSyncResult syncChannel(Long channelId) {
+        if (!enabled) throw new IllegalStateException("AiAPIBank catalog synchronization is disabled");
+        Channel channel = requireAiApiBankChannel(channelId);
+        return syncChannel(channel, catalogGroups());
+    }
+
     public SyncResult sync(boolean dryRun) {
         LocalDateTime started = LocalDateTime.now();
         Long runId = dryRun ? null : insertRun(started, false);
@@ -91,18 +159,12 @@ public class AiApiBankCatalogService {
         int disabledRoutes = 0;
         List<GroupSnapshot> groups;
         try {
-            groups = parseCatalog(fetchCatalog());
+            groups = catalogGroups();
         } catch (RuntimeException invalidCatalog) {
             if (runId != null) finishRun(runId, "FAILED", 0, 0, 0, 0, 0, 0,
                     List.of(safe(invalidCatalog)));
             throw invalidCatalog;
         }
-        groups = new ArrayList<>(groups);
-        groups.add(imageGroup(IMAGE_1K_ID, "gpt-image2-1k",
-                "GPT-Image-2 分组 特价0.05一张（只支持1K）", "生图1K分组"));
-        groups.add(imageGroup(IMAGE_ALL_ID, "image2-all-res",
-                "Image-2 生图1K/2K/4K", "3种分辨率全支持 1K/2K-0.1一张 4K-0.2一张"));
-
         Set<Long> seenGroups = groups.stream().map(GroupSnapshot::externalId).collect(Collectors.toSet());
         for (GroupSnapshot group : groups) {
             Channel channel = findChannel(group.slug());
@@ -142,6 +204,51 @@ public class AiApiBankCatalogService {
         if (runId != null) finishRun(runId, errors.isEmpty() ? "SUCCESS" : "PARTIAL",
                 groups.size(), groupsApplied, modelsSeen, modelsApplied, credentialsMissing, disabledRoutes, errors);
         return result;
+    }
+
+    private List<GroupSnapshot> catalogGroups() {
+        List<GroupSnapshot> groups = new ArrayList<>(parseCatalog(fetchCatalog()));
+        groups.add(imageGroup(IMAGE_1K_ID, "gpt-image2-1k",
+                "GPT-Image-2 分组 特价0.05一张（只支持1K）", "生图1K分组"));
+        groups.add(imageGroup(IMAGE_ALL_ID, "image2-all-res",
+                "Image-2 生图1K/2K/4K", "3种分辨率全支持 1K/2K-0.1一张 4K-0.2一张"));
+        return groups;
+    }
+
+    private Channel requireAiApiBankChannel(Long channelId) {
+        Channel channel = channelId == null ? null : channelMapper.selectById(channelId);
+        if (channel == null) throw new IllegalArgumentException("AiAPIBank channel not found");
+        if (!SOURCE_CODE.equalsIgnoreCase(channel.getSourceCode())) {
+            throw new IllegalArgumentException("Channel does not belong to AiAPIBank");
+        }
+        if (channel.getApiKey() == null || channel.getApiKey().isBlank()) {
+            throw new IllegalStateException("AiAPIBank channel credential is missing");
+        }
+        return channel;
+    }
+
+    private ChannelSyncResult syncChannel(Channel channel, List<GroupSnapshot> groups) {
+        String slug = Objects.toString(channel.getGroupName(), "").trim();
+        GroupSnapshot group = groups.stream().filter(candidate -> candidate.slug().equals(slug))
+                .findFirst().orElseThrow(() -> new IllegalStateException(
+                        "AiAPIBank catalog no longer contains group " + slug));
+        CredentialSnapshot credential;
+        try {
+            credential = inspectCredential(channel, group);
+        } catch (RuntimeException error) {
+            recordGroupFailure(group, safe(error));
+            throw error;
+        }
+        List<JsonNode> available = availableModels(group, credential.modelNames());
+        if (available.isEmpty()) {
+            String message = "/v1/models 未返回该分组可同步模型";
+            recordGroupFailure(group, message);
+            throw new IllegalStateException(message);
+        }
+        ApplyResult applied = transactions.execute(status -> applyGroup(group, channel, credential, available));
+        if (applied == null) throw new IllegalStateException("AiAPIBank channel synchronization did not commit");
+        return new ChannelSyncResult(channel.getId(), group.slug(), available.size(),
+                applied.modelsApplied(), applied.disabledRoutes(), LocalDateTime.now());
     }
 
     public Map<String, Object> status() {
@@ -671,6 +778,8 @@ public class AiApiBankCatalogService {
     public record SyncResult(boolean dryRun, int groupsSeen, int groupsApplied, int modelsSeen, int modelsApplied,
                              int credentialsMissing, int disabledRoutes, List<String> errors,
                              LocalDateTime startedAt, LocalDateTime finishedAt) {}
+    public record ChannelSyncResult(Long channelId, String groupSlug, int modelsSeen, int modelsApplied,
+                                    int disabledRoutes, LocalDateTime finishedAt) {}
     record GroupSnapshot(long externalId, String slug, String name, String description, String platform,
                          String subscriptionType, BigDecimal baseRate, boolean peakEnabled, String peakStart,
                          String peakEnd, BigDecimal peakRate, boolean exclusive, boolean imageRateIndependent,

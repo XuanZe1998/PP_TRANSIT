@@ -12,6 +12,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -33,13 +34,14 @@ class AdminChannelServiceTests {
     @Mock private ProviderGatewayFactory providerGatewayFactory;
     @Mock private ChannelSecretService channelSecretService;
     @Mock private ModelPriceTierService priceTierService;
+    @Mock private ApplicationEventPublisher events;
 
     private AdminChannelService service;
 
     @BeforeEach
     void setUp() {
         service = new AdminChannelService(channelMapper, modelMappingMapper, jdbcTemplate,
-                channelUrlPolicy, providerGatewayFactory, channelSecretService, priceTierService);
+                channelUrlPolicy, providerGatewayFactory, channelSecretService, priceTierService, events);
         org.mockito.Mockito.lenient().when(channelSecretService.isConfigured()).thenReturn(true);
         org.mockito.Mockito.lenient().when(channelSecretService.encrypt("provider-key")).thenReturn("encrypted-provider-key");
     }
@@ -133,6 +135,25 @@ class AdminChannelServiceTests {
 
         assertThat(updated.getModels()).isEqualTo("model-a\nmodel-b");
         assertThat(updated.getHealthStatus()).isEqualTo("HEALTHY");
+    }
+
+    @Test
+    void savingAiApiBankCredentialSchedulesOnlyThatChannelCatalogSync() {
+        Channel current = channel("");
+        current.setId(9L);
+        current.setSourceCode(AiApiBankCatalogService.SOURCE_CODE);
+        current.setGroupName("gpt-low");
+        current.setApiKey(null);
+        Channel request = channel("");
+        request.setSourceCode(AiApiBankCatalogService.SOURCE_CODE);
+        request.setGroupName("gpt-low");
+        request.setApiKey("provider-key");
+        when(channelMapper.selectById(9L)).thenReturn(current, current);
+        when(modelMappingMapper.selectList(any())).thenReturn(List.of(), List.of());
+
+        service.update(9L, request);
+
+        verify(events).publishEvent(new AiApiBankCredentialConfiguredEvent(9L));
     }
 
     @Test
