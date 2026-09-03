@@ -12,6 +12,7 @@ import com.transit.provider.ProviderGateway;
 import com.transit.provider.ProviderGatewayFactory;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -45,6 +46,7 @@ public class AdminChannelService {
     private final ProviderGatewayFactory providerGatewayFactory;
     private final ChannelSecretService channelSecretService;
     private final ModelPriceTierService priceTierService;
+    private final ApplicationEventPublisher events;
     @Autowired(required = false)
     private ProviderCredentialService providerCredentialService;
 
@@ -98,7 +100,9 @@ public class AdminChannelService {
         current.setBaseUrl(request.getBaseUrl());
         normalizeSourceMetadata(current);
         rejectDuplicateManagedChannel(current, id);
-        if (request.getApiKey() != null && !request.getApiKey().isBlank() && !request.getApiKey().contains("***")) {
+        boolean credentialChanged = request.getApiKey() != null && !request.getApiKey().isBlank()
+                && !request.getApiKey().contains("***");
+        if (credentialChanged) {
             requireCredentialEncryption();
             current.setApiKey(channelSecretService.encrypt(request.getApiKey()));
             routingConfigurationChanged = true;
@@ -118,6 +122,9 @@ public class AdminChannelService {
         validateChannel(current);
         channelMapper.updateById(current);
         synchronizeModelMappings(id, parseModels(current.getModels()), safePricing(request.getModelPricing()));
+        if (credentialChanged && AiApiBankCatalogService.SOURCE_CODE.equalsIgnoreCase(current.getSourceCode())) {
+            events.publishEvent(new AiApiBankCredentialConfiguredEvent(id));
+        }
         return channelView(channelMapper.selectById(id));
     }
 

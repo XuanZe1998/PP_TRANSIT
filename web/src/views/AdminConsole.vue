@@ -23,7 +23,7 @@
       <div class="panel-head">
         <div>
           <h3>AiAPIBank 全分组目录</h3>
-          <p>每日 03:20（Asia/Tokyo）自动同步；采购价按账号倍率计算，本站售价统一加价 10%。</p>
+          <p>首次全量同步创建分组；保存分组 Key 后自动只同步该渠道的模型与定价。每日 03:20（Asia/Tokyo）刷新全量目录。</p>
         </div>
         <div>
           <el-button :loading="aiApiBankSyncing" @click="syncAiApiBank(true)">预览同步</el-button>
@@ -1951,6 +1951,9 @@ async function saveChannelBase() {
     const creating = !editingId.value
     const payload = Object.fromEntries(activeFields.value.map(field => [field.prop, form[field.prop]]))
     const shouldAutoDiscover = creating && splitChannelModels(payload.models).length === 0
+    const shouldAutoSyncAiApiBank = !creating
+      && String(form.sourceCode || '').toLowerCase() === 'aiapibank'
+      && Boolean(String(payload.apiKey || '').trim())
     const response = creating
       ? await http.post('/api/admin/api/channels', payload)
       : await http.put(`/api/admin/api/channels/${editingId.value}`, payload)
@@ -1966,6 +1969,7 @@ async function saveChannelBase() {
         ElMessage.warning(getHttpErrorMessage(error, '渠道基础信息已保存，但自动识别模型失败，可手工添加'))
       }
     }
+    if (shouldAutoSyncAiApiBank) discoveryMessage = '，该分组模型与定价正在后台自动同步'
     await refreshChannelEditor(channelId)
     ElMessage.success(`渠道基础信息已保存${discoveryMessage}`)
   } catch (error: unknown) {
