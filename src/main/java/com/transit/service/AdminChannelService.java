@@ -600,7 +600,16 @@ public class AdminChannelService {
         }
         Integer count = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM aiapibank_provider_groups WHERE channel_id=?", Integer.class, channelId);
-        return count != null && count > 0;
+        if (count != null && count > 0) return true;
+        if (channel == null
+                || !defaultString(channel.getName(), "").toLowerCase(Locale.ROOT).startsWith("aiapibank")
+                || !defaultString(channel.getBaseUrl(), "").toLowerCase(Locale.ROOT).contains("aiapibank.com")) {
+            return false;
+        }
+        Integer legacyGroupCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM aiapibank_provider_groups WHERE group_slug=?",
+                Integer.class, channel.getGroupName());
+        return legacyGroupCount != null && legacyGroupCount > 0;
     }
 
     private void rejectDuplicateManagedChannel(Channel channel, Long currentId) {
