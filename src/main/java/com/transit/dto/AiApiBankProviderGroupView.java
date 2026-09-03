@@ -1,5 +1,6 @@
 package com.transit.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.Builder;
 import lombok.Data;
 
@@ -15,18 +16,17 @@ public class AiApiBankProviderGroupView {
     private String description;
     private String platform;
     private String subscriptionType;
-    private BigDecimal baseRateMultiplier;
-    private BigDecimal groupRateMultiplier;
-    private BigDecimal userRateMultiplier;
-    private BigDecimal resolvedRateMultiplier;
+    @JsonIgnore private BigDecimal baseRateMultiplier;
+    @JsonIgnore private BigDecimal groupRateMultiplier;
+    @JsonIgnore private BigDecimal userRateMultiplier;
+    @JsonIgnore private BigDecimal resolvedRateMultiplier;
     private boolean peakRateEnabled;
     private String peakStart;
     private String peakEnd;
-    private BigDecimal peakRateMultiplier;
+    @JsonIgnore private BigDecimal peakRateMultiplier;
     private String timezone;
     private boolean exclusive;
     private boolean imageRateIndependent;
-    private BigDecimal imageRateMultiplier;
+    @JsonIgnore private BigDecimal imageRateMultiplier;
     private boolean longContextPricingEnabled;
 }
-

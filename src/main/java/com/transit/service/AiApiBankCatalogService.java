@@ -14,6 +14,7 @@ import com.transit.model.ModelMapping;
 import com.transit.model.ModelPriceTier;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
@@ -66,6 +67,7 @@ public class AiApiBankCatalogService {
     private final ModelMappingMapper mappingMapper;
     private final ModelPriceTierMapper tierMapper;
     private final ChannelSecretService secrets;
+    @Autowired(required = false) private ModelIdentityService modelIdentityService;
 
     @Value("${aiapibank.enabled:true}") private boolean enabled;
     @Value("${aiapibank.base-url:https://aiapibank.com}") private String baseUrl;
@@ -487,7 +489,8 @@ public class AiApiBankCatalogService {
         PriceSet primary = group.imageOnly() ? imagePrimary(group) : tokenPrices(pricing, credential.resolvedRate());
         mapping.setPublicModelName(publicName); mapping.setChannelModelName(upstream); mapping.setChannelId(channel.getId());
         mapping.setPriority(100); mapping.setEnabled(true); mapping.setBillingEnabled(true); mapping.setTrafficPercent(100);
-        mapping.setPriceRatio(saleMarkup); mapping.setVendor(SOURCE_NAME);
+        mapping.setPriceRatio(saleMarkup);
+        mapping.setVendor(ModelIdentityService.publisherCode(group.platform(), upstream));
         mapping.setCapability(group.imageOnly() ? "image" : capability(upstream));
         mapping.setInputModalities(group.imageOnly() ? "text,image" : "text,image");
         mapping.setOutputModalities(group.imageOnly() ? "image" : "text");
@@ -530,6 +533,9 @@ public class AiApiBankCatalogService {
                 Long.class, groupId, upstream);
         if (group.imageOnly()) synchronizeImageVariants(offerId, group);
         synchronizeTiers(mapping, model, credential, group);
+        if (modelIdentityService != null) {
+            modelIdentityService.register(channel, mapping, group.platform(), ModelIdentityService.RANK_PROVIDER_CATALOG);
+        }
     }
 
     private void synchronizeTiers(ModelMapping mapping, JsonNode model, CredentialSnapshot credential,

@@ -22,6 +22,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.yaml.snakeyaml.Yaml;
 
@@ -59,6 +60,8 @@ public class ProviderModelCatalogService implements ApplicationRunner {
     private final ChannelSecretService channelSecretService;
     private final JdbcTemplate jdbcTemplate;
     private final PublicPricingReconciliationService publicPricingReconciliationService;
+    @Autowired(required = false)
+    private ModelIdentityService modelIdentityService;
 
     @Override
     @Transactional
@@ -574,6 +577,7 @@ public class ProviderModelCatalogService implements ApplicationRunner {
                 mapping.setPricingVerifiedAt(now());
             }
             modelMappingMapper.updateById(mapping);
+            registerIdentity(channel, mapping, seed.vendor(), enabled);
             return;
         }
         mapping = ModelMapping.builder().publicModelName(seed.name()).channelModelName(seed.name())
@@ -595,6 +599,14 @@ public class ProviderModelCatalogService implements ApplicationRunner {
                 .pricingUnit(seed.pricingUnit()).endpointPath(seed.endpointPath())
                 .taskQueryPath(seed.taskQueryPath()).taskQueryMethod(seed.taskQueryMethod()).build();
         modelMappingMapper.insert(mapping);
+        registerIdentity(channel, mapping, seed.vendor(), enabled);
+    }
+
+    private void registerIdentity(Channel channel, ModelMapping mapping, String publisher, boolean verified) {
+        if (modelIdentityService != null) {
+            modelIdentityService.register(channel, mapping, publisher, verified
+                    ? ModelIdentityService.RANK_VERIFIED_PROVIDER : ModelIdentityService.RANK_PROVIDER_CATALOG);
+        }
     }
 
     private LocalDateTime now() { return LocalDateTime.now(); }

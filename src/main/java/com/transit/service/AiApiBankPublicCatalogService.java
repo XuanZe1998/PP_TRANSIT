@@ -37,13 +37,16 @@ public class AiApiBankPublicCatalogService {
                 WHERE o.enabled=TRUE AND o.public_model_name IN (""" + placeholders + ")", names.toArray());
         Map<String, PublicModel> byName = new HashMap<>();
         models.forEach(model -> byName.put(model.getPublicName(), model));
+        List<Long> mappingIds = offers.stream().map(row -> longValue(row, "model_mapping_id")).distinct().toList();
+        Map<Long, List<AiApiBankPriceTierView>> tiersByMapping = tiers(mappingIds);
+        Map<Long, List<AiApiBankUnitPriceVariant>> variantsByMapping = variants(mappingIds);
         for (Map<String, Object> row : offers) {
             String publicName = text(row, "public_model_name");
             PublicModel model = byName.get(publicName);
             if (model == null) continue;
             String upstream = text(row, "upstream_model_name");
             model.setUpstreamModelName(upstream);
-            model.setDisplayName(upstream + " · " + text(row, "group_name"));
+            model.setDisplayName(upstream);
             model.setProviderGroup(AiApiBankProviderGroupView.builder().channel(AiApiBankCatalogService.SOURCE_NAME)
                     .externalId(longValue(row, "external_group_id")).name(text(row, "group_name"))
                     .slug(text(row, "group_slug")).description(text(row, "description"))
@@ -59,31 +62,34 @@ public class AiApiBankPublicCatalogService {
                     .imageRateMultiplier(decimal(row, "image_rate_multiplier"))
                     .longContextPricingEnabled(bool(row, "long_context_pricing_enabled")).build());
             long mappingId = longValue(row, "model_mapping_id");
-            model.setPriceTiers(tiers(mappingId));
-            model.setUnitPriceVariants(variants(mappingId));
+            model.setPriceTiers(tiersByMapping.getOrDefault(mappingId, List.of()));
+            model.setUnitPriceVariants(variantsByMapping.getOrDefault(mappingId, List.of()));
         }
     }
 
-    private List<AiApiBankPriceTierView> tiers(long mappingId) {
+    private Map<Long, List<AiApiBankPriceTierView>> tiers(List<Long> mappingIds) {
+        if (mappingIds.isEmpty()) return Map.of();
+        String placeholders = String.join(",", java.util.Collections.nCopies(mappingIds.size(), "?"));
         List<Map<String,Object>> rows = jdbc.queryForList("""
-                SELECT tier_name,max_context_tokens,official_input_price,official_output_price,
+                SELECT model_mapping_id,tier_name,max_context_tokens,official_input_price,official_output_price,
                 official_cache_read_price,official_cache_write_price,cost_input_price,cost_output_price,
                 official_cache_write_1h_price,official_image_input_price,official_image_output_price,official_per_request_price,
                 cost_cache_read_price,cost_cache_write_price,cost_cache_write_1h_price,cost_image_input_price,
                 cost_image_output_price,cost_per_request_price,sale_input_price,sale_output_price,
                 sale_cache_read_price,sale_cache_write_price,sale_cache_write_1h_price,sale_image_input_price,
                 sale_image_output_price,sale_per_request_price FROM model_price_tiers
-                WHERE model_mapping_id=? ORDER BY sort_order,id
-                """, mappingId);
-        List<AiApiBankPriceTierView> result = new ArrayList<>();
-        Integer minimum = 0;
+                WHERE model_mapping_id IN (""" + placeholders + ") ORDER BY model_mapping_id,sort_order,id",
+                mappingIds.toArray());
+        Map<Long, List<AiApiBankPriceTierView>> result = new HashMap<>();
+        Map<Long, Integer> minimums = new HashMap<>();
         for (Map<String,Object> row : rows) {
+            long mappingId = longValue(row, "model_mapping_id");
+            Integer minimum = minimums.containsKey(mappingId) ? minimums.get(mappingId) : 0;
             Integer maximum = value(row, "max_context_tokens") instanceof Number n ? n.intValue() : null;
-            result.add(AiApiBankPriceTierView.builder().label(text(row, "tier_name"))
+            result.computeIfAbsent(mappingId, ignored -> new ArrayList<>()).add(AiApiBankPriceTierView.builder().label(text(row, "tier_name"))
                     .minTokens(minimum).maxTokens(maximum)
-                    .official(dimensions(row, "official_")).sourcePrice(dimensions(row, "cost_"))
-                    .sale(dimensions(row, "sale_")).build());
-            minimum = maximum == null ? null : maximum + 1;
+                    .official(null).sourcePrice(null).sale(dimensions(row, "sale_")).build());
+            minimums.put(mappingId, maximum == null ? null : maximum + 1);
         }
         return result;
     }
@@ -100,15 +106,20 @@ public class AiApiBankPublicCatalogService {
                 .unit("USD / 1M Token").build();
     }
 
-    private List<AiApiBankUnitPriceVariant> variants(long mappingId) {
-        return jdbc.queryForList("""
-                SELECT v.resolution_tier,v.max_edge_pixels,v.source_unit_price,v.sale_unit_price,v.unit
+    private Map<Long, List<AiApiBankUnitPriceVariant>> variants(List<Long> mappingIds) {
+        if (mappingIds.isEmpty()) return Map.of();
+        String placeholders = String.join(",", java.util.Collections.nCopies(mappingIds.size(), "?"));
+        Map<Long, List<AiApiBankUnitPriceVariant>> result = new HashMap<>();
+        jdbc.queryForList("""
+                SELECT o.model_mapping_id,v.resolution_tier,v.max_edge_pixels,v.source_unit_price,v.sale_unit_price,v.unit
                 FROM aiapibank_image_price_variants v JOIN aiapibank_model_offers o ON o.id=v.model_offer_id
-                WHERE o.model_mapping_id=? ORDER BY v.max_edge_pixels
-                """, mappingId).stream().map(row -> AiApiBankUnitPriceVariant.builder()
-                .resolution(text(row, "resolution_tier")).maxEdgePixels((int) longValue(row, "max_edge_pixels"))
-                .sourcePrice(decimal(row, "source_unit_price")).sale(decimal(row, "sale_unit_price"))
-                .unit(text(row, "unit")).build()).toList();
+                WHERE o.model_mapping_id IN (""" + placeholders + ") ORDER BY o.model_mapping_id,v.max_edge_pixels",
+                mappingIds.toArray()).forEach(row -> result.computeIfAbsent(longValue(row, "model_mapping_id"), ignored -> new ArrayList<>())
+                        .add(AiApiBankUnitPriceVariant.builder()
+                                .resolution(text(row, "resolution_tier")).maxEdgePixels((int) longValue(row, "max_edge_pixels"))
+                                .sourcePrice(null).sale(decimal(row, "sale_unit_price"))
+                                .unit(text(row, "unit")).build()));
+        return result;
     }
 
     private Object value(Map<String,Object> row,String key){if(row.containsKey(key))return row.get(key);for(var entry:row.entrySet())if(entry.getKey().equalsIgnoreCase(key))return entry.getValue();return null;}

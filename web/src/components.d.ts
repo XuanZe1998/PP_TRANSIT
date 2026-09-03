@@ -72,6 +72,7 @@ declare module 'vue' {
     ElTag: typeof import('element-plus/es')['ElTag']
     ElText: typeof import('element-plus/es')['ElText']
     ModelCallDialog: typeof import('./components/ModelCallDialog.vue')['default']
+    ModelPriceComparisonDialog: typeof import('./components/ModelPriceComparisonDialog.vue')['default']
     ModelProbePanel: typeof import('./components/ModelProbePanel.vue')['default']
     ModelSalePricing: typeof import('./components/ModelSalePricing.vue')['default']
     ProfileCenter: typeof import('./components/ProfileCenter.vue')['default']

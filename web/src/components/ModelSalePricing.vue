@@ -27,21 +27,23 @@
       <span>输入 {{ salePrice(contextPricing.longInputPrice) }} / 输出 {{ salePrice(contextPricing.longOutputPrice) }}；缓存价格不翻倍。</span>
     </div>
     <details v-if="priceTiers.length" class="source-price-details">
-      <summary>查看官方参考价、采购价与本站售价</summary>
+      <summary>{{ publicOnly ? '查看阶梯售价' : '查看官方参考价、采购价与本站售价' }}</summary>
       <article v-for="(tier, index) in priceTiers" :key="`${tier.label || 'tier'}-${index}`" class="price-tier">
         <header><strong>{{ tier.label || `挡位 ${index + 1}` }}</strong><span>{{ tierRange(tier) }}</span></header>
-        <div class="price-matrix matrix-head"><b>维度</b><b>官方参考价</b><b>折后采购价</b><b>本站售价</b></div>
-        <div v-for="dimension in tierDimensions(tier)" :key="dimension.key" class="price-matrix">
-          <span>{{ dimension.label }}</span><span>{{ salePrice(dimension.official) }}</span>
-          <span>{{ salePrice(dimension.source) }}</span><strong>{{ salePrice(dimension.sale) }}</strong>
+        <div :class="['price-matrix', 'matrix-head', { 'public-matrix': publicOnly }]">
+          <b>维度</b><template v-if="!publicOnly"><b>官方参考价</b><b>折后采购价</b></template><b>本站售价</b>
+        </div>
+        <div v-for="dimension in tierDimensions(tier)" :key="dimension.key" :class="['price-matrix', { 'public-matrix': publicOnly }]">
+          <span>{{ dimension.label }}</span><template v-if="!publicOnly"><span>{{ salePrice(dimension.official) }}</span>
+          <span>{{ salePrice(dimension.source) }}</span></template><strong>{{ salePrice(dimension.sale) }}</strong>
         </div>
       </article>
     </details>
     <details v-if="unitPriceVariants.length" class="source-price-details">
       <summary>查看图片分辨率价格</summary>
-      <div class="image-price-row matrix-head"><b>分辨率</b><b>折后采购价</b><b>本站售价</b></div>
-      <div v-for="variant in unitPriceVariants" :key="variant.resolution" class="image-price-row">
-        <span>{{ variant.resolution }}</span><span>{{ salePrice(variant.sourcePrice) }} / 张</span><strong>{{ salePrice(variant.sale) }} / 张</strong>
+      <div :class="['image-price-row', 'matrix-head', { 'public-matrix': publicOnly }]"><b>分辨率</b><b v-if="!publicOnly">折后采购价</b><b>本站售价</b></div>
+      <div v-for="variant in unitPriceVariants" :key="variant.resolution" :class="['image-price-row', { 'public-matrix': publicOnly }]">
+        <span>{{ variant.resolution }}</span><span v-if="!publicOnly">{{ salePrice(variant.sourcePrice) }} / 张</span><strong>{{ salePrice(variant.sale) }} / 张</strong>
       </div>
     </details>
   </section>
@@ -50,7 +52,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-const props = withDefaults(defineProps<{ model: Record<string, any>; compact?: boolean; rebateBps?: number }>(), { compact: false, rebateBps: 0 })
+const props = withDefaults(defineProps<{ model: Record<string, any>; compact?: boolean; rebateBps?: number; publicOnly?: boolean }>(), { compact: false, rebateBps: 0, publicOnly: false })
 const rebateBps = computed(() => Math.max(0, Math.min(10000, Number(props.rebateBps || 0))))
 
 const pricingUnit = computed(() => String(props.model.pricing?.unit || props.model.pricingUnit || 'TOKEN').toUpperCase())
@@ -109,4 +111,5 @@ function tierDimensions(tier: Record<string, any>) {
 .pricing-free{display:grid;gap:4px;padding:10px;border:1px solid #9ddbc4;border-radius:8px;background:#edfff7}.pricing-free strong{color:#08734f;font-size:13px}.pricing-free span{color:#3e7562;font-size:10px;line-height:1.5}.unit-sale-price{display:grid;grid-template-columns:1fr auto;align-items:end;gap:3px 12px;padding:11px;border-radius:8px;background:#f2f7f3}.unit-sale-price span,.unit-sale-price small{color:#6c7c72;font-size:10px}.unit-sale-price strong{color:#173b29;font-family:"JetBrains Mono","Cascadia Code",monospace;font-size:18px}.unit-sale-price small{grid-column:1/-1}
 .context-price-note{display:grid;gap:4px;padding:9px;border:1px solid #bfd4f3;border-radius:8px;background:#f1f7ff}.context-price-note strong{color:#164f97;font-size:11px}.context-price-note span{color:#526f91;font-size:10px;line-height:1.5}
 .source-price-details{border-top:1px solid #e0e8e3;padding-top:8px}.source-price-details summary{cursor:pointer;color:#315d48;font-size:11px;font-weight:700}.price-tier{display:grid;gap:5px;margin-top:8px;padding:8px;border-radius:8px;background:#f7faf8}.price-tier header{display:flex;justify-content:space-between}.price-matrix{display:grid;grid-template-columns:.85fr repeat(3,1fr);gap:5px;align-items:center;font-size:9px}.price-matrix span,.price-matrix strong,.price-matrix b{overflow-wrap:anywhere}.matrix-head{color:#718077}.image-price-row{display:grid;grid-template-columns:.6fr 1fr 1fr;gap:6px;margin-top:7px;font-size:10px}.market-public-id{font-family:"JetBrains Mono","Cascadia Code",monospace}
+.price-matrix.public-matrix,.image-price-row.public-matrix{grid-template-columns:1fr 1fr}
 </style>

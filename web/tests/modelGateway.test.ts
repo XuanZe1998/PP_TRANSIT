@@ -19,11 +19,12 @@ describe('model marketplace layout', () => {
     expect(css).toMatch(/\.site-nav\s*\{[\s\S]*?width:\s*100%/)
   })
 
-  it('offers a dedicated upstream selector independent from model publisher', () => {
+  it('offers independent route and publisher facets from the server', () => {
     const publicSite = source('src/views/ModelMarket.vue')
-    expect(publicSite).toContain('<h3>模型上游</h3>')
-    expect(publicSite).toContain('const upstreamOptions = computed')
-    expect(publicSite).toContain("filters.source")
+    expect(publicSite).toContain("title: '渠道 / 路由'")
+    expect(publicSite).toContain("title: '模型发布方'")
+    expect(publicSite).toContain("routes: []")
+    expect(publicSite).toContain("publishers: []")
     expect(publicSite).not.toContain("{ label: '好易智算', value: 'haoee' }")
   })
 

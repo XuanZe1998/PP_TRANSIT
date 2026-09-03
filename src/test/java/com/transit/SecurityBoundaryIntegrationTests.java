@@ -75,6 +75,7 @@ class SecurityBoundaryIntegrationTests {
     @ParameterizedTest(name = "anonymous caller may use {0}")
     @ValueSource(strings = {
             "/public/models",
+            "/public/models/facets",
             "/public/other-services",
             "/platform/user/docs",
             "/v1",
@@ -373,7 +374,10 @@ class SecurityBoundaryIntegrationTests {
         String publicCatalog = client.get().uri("/public/models")
                 .exchange().expectStatus().isOk()
                 .expectBody(String.class).returnResult().getResponseBody();
-        assertThat(publicCatalog).doesNotContain(upstreamSecret).doesNotContain("apiKey");
+        assertThat(publicCatalog).doesNotContain(upstreamSecret).doesNotContain("apiKey")
+                .doesNotContain("CostMultiplier").doesNotContain("costMultiplier")
+                .doesNotContain("sourcePrice").doesNotContain("officialInputPrice")
+                .doesNotContain("resolvedRateMultiplier").doesNotContain("groupRateMultiplier");
     }
 
     @Test
