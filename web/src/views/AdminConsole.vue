@@ -1840,6 +1840,8 @@ function openEdit(row: any) {
     form.invoiceEnabled = Boolean(row.invoice_enabled ?? row.invoiceEnabled)
   }
   if (module.value === 'channels') {
+    form.sourceCode = row.sourceCode ?? row.source_code ?? ''
+    form.sourceName = row.sourceName ?? row.source_name ?? ''
     channelModelPricing.value = (row.modelPricing || []).map((item: any) => normalizePricing(item.channelModelName, item))
     const mappedModels = channelModelPricing.value.map(item => item.channelModelName)
     const localModels = uniqueStrings([...splitChannelModels(form.models), ...mappedModels])

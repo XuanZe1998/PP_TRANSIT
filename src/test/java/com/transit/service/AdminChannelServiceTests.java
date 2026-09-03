@@ -145,7 +145,6 @@ class AdminChannelServiceTests {
         current.setGroupName("gpt-low");
         current.setApiKey(null);
         Channel request = channel("");
-        request.setSourceCode(AiApiBankCatalogService.SOURCE_CODE);
         request.setGroupName("gpt-low");
         request.setApiKey("provider-key");
         when(channelMapper.selectById(9L)).thenReturn(current, current);
@@ -154,6 +153,31 @@ class AdminChannelServiceTests {
         service.update(9L, request);
 
         verify(events).publishEvent(new AiApiBankCredentialConfiguredEvent(9L));
+        assertThat(current.getSourceCode()).isEqualTo(AiApiBankCatalogService.SOURCE_CODE);
+        assertThat(current.getSourceName()).isEqualTo(AiApiBankCatalogService.SOURCE_NAME);
+    }
+
+    @Test
+    void savingCredentialRepairsLegacyAiApiBankChannelMetadata() {
+        Channel current = channel("");
+        current.setId(10L);
+        current.setSourceCode("other");
+        current.setSourceName("其他兼容服务");
+        current.setGroupName("gpt-pro");
+        Channel request = channel("");
+        request.setGroupName("gpt-pro");
+        request.setApiKey("provider-key");
+        when(channelMapper.selectById(10L)).thenReturn(current, current);
+        when(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM aiapibank_provider_groups WHERE channel_id=?", Integer.class, 10L))
+                .thenReturn(1);
+        when(modelMappingMapper.selectList(any())).thenReturn(List.of(), List.of());
+
+        service.update(10L, request);
+
+        verify(events).publishEvent(new AiApiBankCredentialConfiguredEvent(10L));
+        assertThat(current.getSourceCode()).isEqualTo(AiApiBankCatalogService.SOURCE_CODE);
+        assertThat(current.getSourceName()).isEqualTo(AiApiBankCatalogService.SOURCE_NAME);
     }
 
     @Test

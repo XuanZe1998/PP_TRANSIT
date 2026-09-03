@@ -88,14 +88,17 @@ public class AdminChannelService {
         if (current == null) {
             throw new IllegalArgumentException("Channel not found");
         }
+        boolean aiApiBankChannel = isAiApiBankChannel(id, current);
         String requestedModels = normalizedModels(request.getModels());
         boolean routingConfigurationChanged = !Objects.equals(current.getType(), request.getType())
                 || !Objects.equals(current.getBaseUrl(), request.getBaseUrl())
                 || !Objects.equals(normalizedModels(current.getModels()), requestedModels);
         current.setName(request.getName());
         current.setType(request.getType());
-        current.setSourceCode(defaultString(request.getSourceCode(), current.getSourceCode()));
-        current.setSourceName(defaultString(request.getSourceName(), current.getSourceName()));
+        current.setSourceCode(aiApiBankChannel ? AiApiBankCatalogService.SOURCE_CODE
+                : defaultString(request.getSourceCode(), current.getSourceCode()));
+        current.setSourceName(aiApiBankChannel ? AiApiBankCatalogService.SOURCE_NAME
+                : defaultString(request.getSourceName(), current.getSourceName()));
         current.setProtocolType(defaultString(request.getProtocolType(), "openai-chat"));
         current.setBaseUrl(request.getBaseUrl());
         normalizeSourceMetadata(current);
@@ -122,7 +125,7 @@ public class AdminChannelService {
         validateChannel(current);
         channelMapper.updateById(current);
         synchronizeModelMappings(id, parseModels(current.getModels()), safePricing(request.getModelPricing()));
-        if (credentialChanged && AiApiBankCatalogService.SOURCE_CODE.equalsIgnoreCase(current.getSourceCode())) {
+        if (credentialChanged && aiApiBankChannel) {
             events.publishEvent(new AiApiBankCredentialConfiguredEvent(id));
         }
         return channelView(channelMapper.selectById(id));
@@ -589,6 +592,15 @@ public class AdminChannelService {
         }
         channel.setSourceCode(defaultString(channel.getSourceCode(), "other"));
         channel.setSourceName(defaultString(channel.getSourceName(), "其他兼容服务"));
+    }
+
+    private boolean isAiApiBankChannel(Long channelId, Channel channel) {
+        if (channel != null && AiApiBankCatalogService.SOURCE_CODE.equalsIgnoreCase(channel.getSourceCode())) {
+            return true;
+        }
+        Integer count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM aiapibank_provider_groups WHERE channel_id=?", Integer.class, channelId);
+        return count != null && count > 0;
     }
 
     private void rejectDuplicateManagedChannel(Channel channel, Long currentId) {
