@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.transit.mapper.ChannelMapper;
 import com.transit.mapper.ModelMappingMapper;
 import com.transit.mapper.ModelPriceTierMapper;
+import com.transit.model.Channel;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -19,16 +20,23 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class AiApiBankCatalogServiceTests {
     private final ObjectMapper json = new ObjectMapper();
     private AiApiBankCatalogService service;
+    private JdbcTemplate jdbc;
+    private ChannelMapper channelMapper;
 
     @BeforeEach
     void setUp() {
-        service = new AiApiBankCatalogService(WebClient.create(), json, mock(JdbcTemplate.class),
-                mock(TransactionTemplate.class), mock(ChannelMapper.class), mock(ModelMappingMapper.class),
+        jdbc = mock(JdbcTemplate.class);
+        channelMapper = mock(ChannelMapper.class);
+        service = new AiApiBankCatalogService(WebClient.create(), json, jdbc,
+                mock(TransactionTemplate.class), channelMapper, mock(ModelMappingMapper.class),
                 mock(ModelPriceTierMapper.class), mock(ChannelSecretService.class));
         ReflectionTestUtils.setField(service, "saleMarkup", new BigDecimal("1.10"));
     }
@@ -82,5 +90,30 @@ class AiApiBankCatalogServiceTests {
         assertThatThrownBy(() -> service.parseCatalog(empty)).isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("拒绝覆盖现有目录");
     }
-}
 
+    @Test
+    void prefersConfiguredLegacyChannelOverEmptyBoundDuplicate() {
+        Channel duplicate = new Channel();
+        duplicate.setId(30L);
+        duplicate.setGroupName("gpt-low");
+        duplicate.setSourceCode(AiApiBankCatalogService.SOURCE_CODE);
+        Channel configured = new Channel();
+        configured.setId(11L);
+        configured.setName("AiAPIBank · GPT低价分组");
+        configured.setBaseUrl("https://aiapibank.com");
+        configured.setGroupName("gpt-low");
+        configured.setSourceCode("other");
+        configured.setApiKey("encrypted-provider-key");
+        when(jdbc.queryForList(anyString(), eq(Long.class), eq("gpt-low")))
+                .thenReturn(List.of(30L));
+        when(jdbc.queryForList(anyString(), eq(Long.class), eq("gpt-low"),
+                eq("aiapibank%"), eq("%aiapibank.com%")))
+                .thenReturn(List.of(11L));
+        when(channelMapper.selectById(30L)).thenReturn(duplicate);
+        when(channelMapper.selectById(11L)).thenReturn(configured);
+
+        Channel selected = ReflectionTestUtils.invokeMethod(service, "findChannel", "gpt-low");
+
+        assertThat(selected).isSameAs(configured);
+    }
+}

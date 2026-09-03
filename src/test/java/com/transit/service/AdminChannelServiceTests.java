@@ -181,6 +181,34 @@ class AdminChannelServiceTests {
     }
 
     @Test
+    void savingCredentialRecognizesLegacyAiApiBankChannelAfterGroupWasReboundToDuplicate() {
+        Channel current = channel("");
+        current.setId(11L);
+        current.setName("AiAPIBank · GPT低价分组");
+        current.setBaseUrl("https://aiapibank.com");
+        current.setSourceCode("other");
+        current.setGroupName("gpt-low");
+        Channel request = channel("");
+        request.setName(current.getName());
+        request.setBaseUrl(current.getBaseUrl());
+        request.setGroupName(current.getGroupName());
+        request.setApiKey("provider-key");
+        when(channelMapper.selectById(11L)).thenReturn(current, current);
+        when(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM aiapibank_provider_groups WHERE channel_id=?", Integer.class, 11L))
+                .thenReturn(0);
+        when(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM aiapibank_provider_groups WHERE group_slug=?", Integer.class, "gpt-low"))
+                .thenReturn(1);
+        when(modelMappingMapper.selectList(any())).thenReturn(List.of(), List.of());
+
+        service.update(11L, request);
+
+        verify(events).publishEvent(new AiApiBankCredentialConfiguredEvent(11L));
+        assertThat(current.getSourceCode()).isEqualTo(AiApiBankCatalogService.SOURCE_CODE);
+    }
+
+    @Test
     void listingChannelsLoadsAllPricingRowsInOneBatch() {
         Channel first = channel("model-a");
         first.setId(1L);

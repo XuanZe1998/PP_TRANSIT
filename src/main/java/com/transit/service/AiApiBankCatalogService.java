@@ -112,13 +112,14 @@ public class AiApiBankCatalogService {
         if (!enabled) return;
         List<Long> channelIds = jdbc.queryForList("""
                 SELECT DISTINCT c.id FROM channels c
-                LEFT JOIN aiapibank_provider_groups g ON g.channel_id=c.id
-                WHERE (LOWER(c.source_code)=? OR g.channel_id IS NOT NULL)
-                  AND c.api_key IS NOT NULL AND c.api_key<>''
+                JOIN aiapibank_provider_groups g ON g.channel_id=c.id OR (
+                    g.group_slug=c.group_name AND LOWER(c.name) LIKE ? AND LOWER(c.base_url) LIKE ?
+                )
+                WHERE c.api_key IS NOT NULL AND c.api_key<>''
                   AND (g.id IS NULL OR g.credential_status='CREDENTIAL_MISSING'
                        OR g.sync_status<>'SUCCESS' OR COALESCE(g.model_count,0)=0)
                 ORDER BY c.id
-                """, Long.class, SOURCE_CODE);
+                """, Long.class, "aiapibank%", "%aiapibank.com%");
         if (channelIds.isEmpty()) return;
         List<GroupSnapshot> groups;
         try {
@@ -221,7 +222,9 @@ public class AiApiBankCatalogService {
         if (channel == null) throw new IllegalArgumentException("AiAPIBank channel not found");
         Integer groupCount = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM aiapibank_provider_groups WHERE channel_id=?", Integer.class, channelId);
-        if (!SOURCE_CODE.equalsIgnoreCase(channel.getSourceCode()) && (groupCount == null || groupCount == 0)) {
+        if (!SOURCE_CODE.equalsIgnoreCase(channel.getSourceCode())
+                && (groupCount == null || groupCount == 0)
+                && !isLegacyAiApiBankChannel(channel)) {
             throw new IllegalArgumentException("Channel does not belong to AiAPIBank");
         }
         if (channel.getApiKey() == null || channel.getApiKey().isBlank()) {
@@ -692,12 +695,34 @@ public class AiApiBankCatalogService {
                 WHERE group_slug=? AND channel_id IS NOT NULL
                 ORDER BY id LIMIT 1
                 """, Long.class, slug);
+        Channel bound = null;
         if (!boundChannelIds.isEmpty()) {
-            Channel bound = channelMapper.selectById(boundChannelIds.get(0));
-            if (bound != null) return bound;
+            bound = channelMapper.selectById(boundChannelIds.get(0));
+            if (bound != null && bound.getApiKey() != null && !bound.getApiKey().isBlank()) return bound;
         }
+        List<Long> configuredChannelIds = jdbc.queryForList("""
+                SELECT id FROM channels
+                WHERE group_name=? AND api_key IS NOT NULL AND api_key<>''
+                  AND LOWER(name) LIKE ? AND LOWER(base_url) LIKE ?
+                ORDER BY id LIMIT 1
+                """, Long.class, slug, "aiapibank%", "%aiapibank.com%");
+        if (!configuredChannelIds.isEmpty()) {
+            Channel configured = channelMapper.selectById(configuredChannelIds.get(0));
+            if (configured != null) return configured;
+        }
+        if (bound != null) return bound;
         return channelMapper.selectOne(new LambdaQueryWrapper<Channel>()
                 .eq(Channel::getSourceCode, SOURCE_CODE).eq(Channel::getGroupName, slug).last("LIMIT 1"));
+    }
+
+    private boolean isLegacyAiApiBankChannel(Channel channel) {
+        String name = Objects.toString(channel.getName(), "").toLowerCase(Locale.ROOT);
+        String url = Objects.toString(channel.getBaseUrl(), "").toLowerCase(Locale.ROOT);
+        if (!name.startsWith("aiapibank") || !url.contains("aiapibank.com")) return false;
+        Integer groupCount = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM aiapibank_provider_groups WHERE group_slug=?",
+                Integer.class, channel.getGroupName());
+        return groupCount != null && groupCount > 0;
     }
 
     public static String publicModelId(String slug, String upstream) {
