@@ -2825,50 +2825,70 @@ textarea {
 .market-meta {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  overflow: hidden;
   margin: 0;
+  border: 1px solid #e4eae6;
+  border-radius: 9px;
+  background: #ffffff;
 }
 
 .market-meta div {
-  padding: 0;
+  min-width: 0;
+  padding: 9px 10px;
+  border-right: 1px solid #edf1ee;
+  border-bottom: 1px solid #edf1ee;
+}
+
+.market-meta div:nth-child(even),
+.market-meta div:last-child {
+  border-right: 0;
+}
+
+.market-meta div:last-child {
+  grid-column: 1 / -1;
+  border-bottom: 0;
 }
 
 .market-meta dt {
   color: #8a958e;
   font-size: 11px;
+  line-height: 1.35;
 }
 
 .market-meta dd {
   margin: 4px 0 0;
+  overflow-wrap: anywhere;
   color: #334139;
   font-size: 12px;
   font-weight: 700;
+  line-height: 1.45;
 }
 
 .market-card footer {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 16px;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+  gap: 10px;
+  padding: 12px 14px;
   border-top: 1px solid #edf1ee;
   background: #fbfcfb;
 }
 
-.market-card footer .market-meta { grid-column: 1; grid-row: 1; }
-.market-card footer .market-sale-pricing { grid-column: 1 / -1; grid-row: 2; width: 100%; }
-.market-card footer .market-card-actions { grid-column: 2; grid-row: 1; }
+.market-card footer .market-meta,
+.market-card footer .market-sale-pricing,
+.market-card footer .market-card-actions {
+  grid-column: 1;
+  width: 100%;
+}
 
 .market-card-actions {
-  display: flex;
-  flex: 0 0 auto;
-  flex-wrap: wrap;
-  justify-content: flex-end;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 5px;
 }
 
 .market-card-actions .el-button {
+  width: 100%;
   margin-left: 0;
 }
 
@@ -3468,12 +3488,15 @@ textarea {
   }
 
   .market-card-actions {
-    display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .market-card-actions .el-button {
-    width: 100%;
+  .market-meta div {
+    border-right: 0;
+  }
+
+  .market-meta div:last-child {
+    grid-column: 1;
   }
 
   .playground-usage-grid {
