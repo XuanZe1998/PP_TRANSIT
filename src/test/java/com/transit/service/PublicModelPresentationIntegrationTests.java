@@ -42,6 +42,8 @@ class PublicModelPresentationIntegrationTests {
 
         PublicModel platform = offer(canonicalName, canonicalName, "10");
         PublicModel bank = offer("aiapibank/team/" + canonicalName, "openai/" + canonicalName, "8");
+        bank.setPricingMessage("AiAPIBank 折后采购价 × 1.1");
+        bank.setPricingSourceUrl("https://vendor.invalid/internal-pricing");
         bank.setUpstreams(List.of(new PublicUpstream("aiapibank", "AiAPIBank", null, null)));
         bank.setProviderGroup(AiApiBankProviderGroupView.builder().slug("team").name("团队套餐").build());
         presentation.enrich(List.of(platform, bank));
@@ -56,6 +58,8 @@ class PublicModelPresentationIntegrationTests {
         assertThat(platform.getPlanName()).isEqualTo("智能路由");
         assertThat(bank.getRouteName()).isEqualTo("AiAPIBank");
         assertThat(bank.getPlanName()).isEqualTo("团队套餐");
+        assertThat(bank.getPricingMessage()).isEqualTo("本站公开销售价已核验");
+        assertThat(bank.getPricingSourceUrl()).isNull();
         assertThat(platform.getMinInputPricePerMillion()).isEqualByComparingTo("10");
         assertThat(bank.getMinInputPricePerMillion()).isEqualByComparingTo("8");
         assertThat(marketplace.comparison(List.of(platform, bank), canonicalName).offers()).hasSize(2);

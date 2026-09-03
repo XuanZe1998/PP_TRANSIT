@@ -377,7 +377,8 @@ class SecurityBoundaryIntegrationTests {
         assertThat(publicCatalog).doesNotContain(upstreamSecret).doesNotContain("apiKey")
                 .doesNotContain("CostMultiplier").doesNotContain("costMultiplier")
                 .doesNotContain("sourcePrice").doesNotContain("officialInputPrice")
-                .doesNotContain("resolvedRateMultiplier").doesNotContain("groupRateMultiplier");
+                .doesNotContain("resolvedRateMultiplier").doesNotContain("groupRateMultiplier")
+                .doesNotContain("采购价");
     }
 
     @Test

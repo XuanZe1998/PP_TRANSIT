@@ -92,7 +92,16 @@ public class PublicModelPresentationService {
             if (!useful(model.getVerificationStatus())) model.setVerificationStatus("AVAILABLE");
             if (!useful(model.getVerificationMessage())) model.setVerificationMessage("当前公开路由已验证可调用");
             if (!useful(model.getPricingStatus())) model.setPricingStatus(model.isBillingConfigured() ? "VERIFIED" : "PENDING");
+            model.setPricingMessage(publicPricingMessage(model));
+            model.setPricingSourceUrl(null);
         }
+    }
+
+    private String publicPricingMessage(PublicModel model) {
+        if ("FREE".equalsIgnoreCase(model.getBillingMode())) return "免费开发预览";
+        if (!model.isBillingConfigured()) return "本站销售价格未配置";
+        return "VERIFIED".equalsIgnoreCase(model.getPricingStatus())
+                ? "本站公开销售价已核验" : "本站公开销售价待核验";
     }
 
     private void applyRouteAndPlan(PublicModel model) {
