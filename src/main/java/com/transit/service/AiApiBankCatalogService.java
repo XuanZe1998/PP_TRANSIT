@@ -111,9 +111,10 @@ public class AiApiBankCatalogService {
     public void syncConfiguredPendingGroupsAfterStartup() {
         if (!enabled) return;
         List<Long> channelIds = jdbc.queryForList("""
-                SELECT c.id FROM channels c
+                SELECT DISTINCT c.id FROM channels c
                 LEFT JOIN aiapibank_provider_groups g ON g.channel_id=c.id
-                WHERE LOWER(c.source_code)=? AND c.api_key IS NOT NULL AND c.api_key<>''
+                WHERE (LOWER(c.source_code)=? OR g.channel_id IS NOT NULL)
+                  AND c.api_key IS NOT NULL AND c.api_key<>''
                   AND (g.id IS NULL OR g.credential_status='CREDENTIAL_MISSING'
                        OR g.sync_status<>'SUCCESS' OR COALESCE(g.model_count,0)=0)
                 ORDER BY c.id
@@ -218,7 +219,9 @@ public class AiApiBankCatalogService {
     private Channel requireAiApiBankChannel(Long channelId) {
         Channel channel = channelId == null ? null : channelMapper.selectById(channelId);
         if (channel == null) throw new IllegalArgumentException("AiAPIBank channel not found");
-        if (!SOURCE_CODE.equalsIgnoreCase(channel.getSourceCode())) {
+        Integer groupCount = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM aiapibank_provider_groups WHERE channel_id=?", Integer.class, channelId);
+        if (!SOURCE_CODE.equalsIgnoreCase(channel.getSourceCode()) && (groupCount == null || groupCount == 0)) {
             throw new IllegalArgumentException("Channel does not belong to AiAPIBank");
         }
         if (channel.getApiKey() == null || channel.getApiKey().isBlank()) {
@@ -684,6 +687,15 @@ public class AiApiBankCatalogService {
     }
 
     private Channel findChannel(String slug) {
+        List<Long> boundChannelIds = jdbc.queryForList("""
+                SELECT channel_id FROM aiapibank_provider_groups
+                WHERE group_slug=? AND channel_id IS NOT NULL
+                ORDER BY id LIMIT 1
+                """, Long.class, slug);
+        if (!boundChannelIds.isEmpty()) {
+            Channel bound = channelMapper.selectById(boundChannelIds.get(0));
+            if (bound != null) return bound;
+        }
         return channelMapper.selectOne(new LambdaQueryWrapper<Channel>()
                 .eq(Channel::getSourceCode, SOURCE_CODE).eq(Channel::getGroupName, slug).last("LIMIT 1"));
     }
