@@ -6,6 +6,53 @@ export type ModelCategoryInput = {
   outputModalities?: string | null
 }
 
+export type PublicUpstream = { code: string; name: string; badgeText?: string; badgeColor?: string }
+export type PublicModelOffer = ModelCategoryInput & {
+  publicName: string
+  displayName?: string
+  upstreamModelName?: string
+  comparisonKey?: string
+  publisherCode?: string
+  publisherName?: string
+  category?: ModelCategory
+  routeCode?: string
+  routeName?: string
+  planCode?: string
+  planName?: string
+  displayPriority?: number
+  source?: string
+  sources?: string
+  sourceName?: string
+  vendor?: string
+  protocols?: string
+  pricingUnit?: string
+  billingMode?: string
+  pricingStatus?: string
+  pricingMessage?: string
+  pricingVerifiedAt?: string
+  available?: boolean
+  billingConfigured?: boolean
+  upstreams?: PublicUpstream[]
+  minInputPricePerMillion?: number
+  maxInputPricePerMillion?: number
+  minOutputPricePerMillion?: number
+  maxOutputPricePerMillion?: number
+  minCacheReadPricePerMillion?: number
+  maxCacheReadPricePerMillion?: number
+  minCacheWritePricePerMillion?: number
+  maxCacheWritePricePerMillion?: number
+  saleUnitPrice?: number
+  pricing?: Record<string, any>
+  contextPricing?: Record<string, any>
+  providerGroup?: Record<string, any>
+  priceTiers?: Array<Record<string, any>>
+  unitPriceVariants?: Array<Record<string, any>>
+}
+
+export type ModelFacetOption = { value: string; label: string; count: number }
+export type ModelFacets = Record<string, ModelFacetOption[]>
+export type ModelComparison = { comparisonKey: string; displayName: string; comparableCount: number; offers: PublicModelOffer[] }
+
 export const modelCategoryOptions: Array<{ value: ModelCategory; label: string }> = [
   { value: 'language', label: '大语言模型' },
   { value: 'multimodal', label: '多模态模型' },

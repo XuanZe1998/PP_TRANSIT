@@ -2,6 +2,8 @@ package com.transit.controller;
 
 import com.transit.dto.PageResponse;
 import com.transit.dto.PublicModel;
+import com.transit.dto.PublicModelComparison;
+import com.transit.dto.PublicModelFacetOption;
 import com.transit.dto.PublicModelPricing;
 import com.transit.dto.MoneyAmount;
 import com.transit.mapper.ModelMappingMapper;
@@ -11,6 +13,8 @@ import com.transit.service.OtherServiceImageStorageService;
 import com.transit.service.ModelContextPricingService;
 import com.transit.service.PublicUpstreamMappingService;
 import com.transit.service.AiApiBankPublicCatalogService;
+import com.transit.service.PublicModelMarketplaceService;
+import com.transit.service.PublicModelPresentationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
@@ -28,6 +32,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Locale;
 import java.time.Duration;
 
@@ -42,6 +47,8 @@ public class PublicController {
     private final PublicUpstreamMappingService publicUpstreamMappingService;
     private final ModelContextPricingService modelContextPricingService;
     private final AiApiBankPublicCatalogService aiApiBankPublicCatalogService;
+    private final PublicModelPresentationService publicModelPresentationService;
+    private final PublicModelMarketplaceService publicModelMarketplaceService;
 
     @Value("${billing.model-currency:USD}")
     private String billingCurrency;
@@ -73,80 +80,56 @@ public class PublicController {
                                                   @RequestParam(value = "availability", required = false, defaultValue = "available") String availability,
                                                   @RequestParam(value = "capability", required = false) String capability,
                                                   @RequestParam(value = "vendor", required = false) String vendor,
+                                                  @RequestParam(value = "routes", required = false) String routes,
+                                                  @RequestParam(value = "publishers", required = false) String publishers,
+                                                  @RequestParam(value = "categories", required = false) String categories,
+                                                  @RequestParam(value = "capabilities", required = false) String capabilities,
+                                                  @RequestParam(value = "inputModalities", required = false) String inputModalities,
+                                                  @RequestParam(value = "outputModalities", required = false) String outputModalities,
+                                                  @RequestParam(value = "protocols", required = false) String protocols,
+                                                  @RequestParam(value = "pricingUnits", required = false) String pricingUnits,
+                                                  @RequestParam(value = "plans", required = false) String plans,
+                                                  @RequestParam(value = "priceStatuses", required = false) String priceStatuses,
                                                   @RequestParam(value = "sort", required = false, defaultValue = "priority") String sort) {
-        if (page < 1 || page > 1_000_000) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "page must be between 1 and 1000000");
-        }
-        if (size < 1 || size > 100) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "size must be between 1 and 100");
-        }
-        final String normalizedQuery = normalizeBlank(query);
-        // `type` is retained for older clients. New clients should use the
-        // explicit source parameter because upstream and protocol are separate concepts.
-        final String normalizedType = normalizeBlank(source) != null ? normalizeBlank(source) : normalizeBlank(type);
-        // Unverified and failed provider rows are operational data and are never public.
-        if (normalizedQuery != null && normalizedQuery.length() > 160) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "query is too long");
-        }
-        int offset;
-        try {
-            offset = Math.multiplyExact(page - 1, size);
-        } catch (ArithmeticException overflow) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "page offset is too large");
-        }
+        validatePage(page, size, query);
+        var filters = filters(query, first(routes, source, type), first(publishers, vendor), categories,
+                first(capabilities, capability), inputModalities, outputModalities, protocols, pricingUnits, plans, priceStatuses);
+        List<PublicModel> filtered = publicModelMarketplaceService.sort(
+                publicModelMarketplaceService.filter(loadPublicModels(), filters), sort);
+        int offset = Math.multiplyExact(page - 1, size);
+        int from = Math.min(offset, filtered.size());
+        int to = Math.min(from + size, filtered.size());
+        PageResponse<PublicModel> response = new PageResponse<>();
+        response.setPage(page); response.setSize(size); response.setTotal(filtered.size());
+        response.setItems(filtered.subList(from, to));
+        return Mono.just(response);
+    }
 
-        if (normalizedType != null || normalizeBlank(capability) != null || normalizeBlank(vendor) != null) {
-            List<PublicModel> all = modelMappingMapper.findPublicModels();
-            publicUpstreamMappingService.sanitize(all);
-            modelContextPricingService.enrich(all);
-            aiApiBankPublicCatalogService.enrich(all);
-            List<PublicModel> filtered = all.stream()
-                    .filter(item -> normalizedQuery == null || item.getPublicName().toLowerCase(Locale.ROOT).contains(normalizedQuery.toLowerCase(Locale.ROOT)))
-                    .filter(item -> normalizedType == null || normalizedType.equalsIgnoreCase(item.getSource())
-                            || (item.getSources() != null && List.of(item.getSources().split(",")).stream().anyMatch(normalizedType::equalsIgnoreCase)))
-                    .filter(item -> normalizeBlank(capability) == null || normalizeBlank(capability).equalsIgnoreCase(item.getCapability()))
-                    .filter(item -> normalizeBlank(vendor) == null || normalizeBlank(vendor).equalsIgnoreCase(item.getVendor()))
-                    .sorted(publicModelComparator(sort))
-                    .toList();
-            int from = Math.min(offset, filtered.size());
-            int to = Math.min(from + size, filtered.size());
-            List<PublicModel> items = filtered.subList(from, to);
-            items.forEach(this::applyMoney);
-            PageResponse<PublicModel> catalog = new PageResponse<>();
-            catalog.setPage(page); catalog.setSize(size); catalog.setTotal((long) filtered.size()); catalog.setItems(items);
-            return Mono.just(catalog);
-        }
+    @GetMapping("/models/facets")
+    public Mono<Map<String, List<PublicModelFacetOption>>> modelFacets(
+            @RequestParam(value = "query", required = false) String query,
+            @RequestParam(value = "routes", required = false) String routes,
+            @RequestParam(value = "publishers", required = false) String publishers,
+            @RequestParam(value = "categories", required = false) String categories,
+            @RequestParam(value = "capabilities", required = false) String capabilities,
+            @RequestParam(value = "inputModalities", required = false) String inputModalities,
+            @RequestParam(value = "outputModalities", required = false) String outputModalities,
+            @RequestParam(value = "protocols", required = false) String protocols,
+            @RequestParam(value = "pricingUnits", required = false) String pricingUnits,
+            @RequestParam(value = "plans", required = false) String plans,
+            @RequestParam(value = "priceStatuses", required = false) String priceStatuses) {
+        validateQuery(query);
+        var filters = filters(query, routes, publishers, categories, capabilities, inputModalities,
+                outputModalities, protocols, pricingUnits, plans, priceStatuses);
+        return Mono.just(publicModelMarketplaceService.facets(loadPublicModels(), filters));
+    }
 
-        Long total = modelMappingMapper.countPublicModels(normalizedQuery, normalizedType);
-        List<PublicModel> items;
-        if ("hot".equalsIgnoreCase(sort)) {
-            items = modelMappingMapper.findPublicModelsPagedHot(normalizedQuery, normalizedType, size, offset);
-        } else if ("recent".equalsIgnoreCase(sort)) {
-            items = modelMappingMapper.findPublicModelsPagedRecent(normalizedQuery, normalizedType, size, offset);
-        } else if ("priority".equalsIgnoreCase(sort)) {
-            items = modelMappingMapper.findPublicModelsPagedByPriority(normalizedQuery, normalizedType, size, offset);
-        } else if ("name_desc".equalsIgnoreCase(sort)) {
-            items = modelMappingMapper.findPublicModelsPagedByNameDesc(normalizedQuery, normalizedType, size, offset);
-        } else {
-            items = modelMappingMapper.findPublicModelsPagedByName(normalizedQuery, normalizedType, size, offset);
+    @GetMapping("/model-comparisons")
+    public Mono<PublicModelComparison> modelComparison(@RequestParam("model") String publicName) {
+        if (publicName == null || publicName.isBlank() || publicName.length() > 320) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "model must be between 1 and 320 characters");
         }
-
-        if (items == null) {
-            items = List.of();
-        }
-        for (PublicModel item : items) {
-            applyMoney(item);
-        }
-        publicUpstreamMappingService.sanitize(items);
-        modelContextPricingService.enrich(items);
-        aiApiBankPublicCatalogService.enrich(items);
-
-        PageResponse<PublicModel> resp = new PageResponse<>();
-        resp.setTotal(total == null ? 0 : total);
-        resp.setPage(page);
-        resp.setSize(size);
-        resp.setItems(items);
-        return Mono.just(resp);
+        return Mono.just(publicModelMarketplaceService.comparison(loadPublicModels(), publicName.trim()));
     }
 
     @GetMapping("/other-services")
@@ -175,6 +158,43 @@ public class PublicController {
 
     private boolean differs(java.math.BigDecimal left, java.math.BigDecimal right) {
         return left != null && right != null && left.compareTo(right) != 0;
+    }
+
+    private List<PublicModel> loadPublicModels() {
+        List<PublicModel> models = modelMappingMapper.findPublicModels();
+        if (models == null) models = List.of();
+        publicUpstreamMappingService.sanitize(models);
+        modelContextPricingService.enrich(models);
+        aiApiBankPublicCatalogService.enrich(models);
+        publicModelPresentationService.enrich(models);
+        models.forEach(this::applyMoney);
+        return models;
+    }
+
+    private PublicModelMarketplaceService.Filters filters(String query, String routes, String publishers,
+            String categories, String capabilities, String inputModalities, String outputModalities,
+            String protocols, String pricingUnits, String plans, String priceStatuses) {
+        return PublicModelMarketplaceService.criteria(query, routes, publishers, categories, capabilities,
+                inputModalities, outputModalities, protocols, pricingUnits, plans, priceStatuses);
+    }
+
+    private void validatePage(int page, int size, String query) {
+        if (page < 1 || page > 1_000_000) throw new ResponseStatusException(
+                HttpStatus.BAD_REQUEST, "page must be between 1 and 1000000");
+        if (size < 1 || size > 100) throw new ResponseStatusException(
+                HttpStatus.BAD_REQUEST, "size must be between 1 and 100");
+        validateQuery(query);
+    }
+
+    private void validateQuery(String query) {
+        if (query != null && query.trim().length() > 160) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "query is too long");
+        }
+    }
+
+    private String first(String... values) {
+        for (String value : values) if (value != null && !value.isBlank()) return value;
+        return null;
     }
 
     private void applyMoney(PublicModel item) {
@@ -210,21 +230,4 @@ public class PublicController {
         };
     }
 
-    private String normalizeBlank(String value) {
-        if (value == null) {
-            return null;
-        }
-        String trimmed = value.trim();
-        return trimmed.isEmpty() ? null : trimmed;
-    }
-
-    private java.util.Comparator<PublicModel> publicModelComparator(String sort) {
-        java.util.Comparator<PublicModel> byName = java.util.Comparator.comparing(
-                PublicModel::getPublicName, String.CASE_INSENSITIVE_ORDER);
-        if ("name_desc".equalsIgnoreCase(sort)) return byName.reversed();
-        if ("priority".equalsIgnoreCase(sort)) {
-            return java.util.Comparator.comparingInt(PublicModel::getDisplayPriority).reversed().thenComparing(byName);
-        }
-        return byName;
-    }
 }

@@ -1,5 +1,6 @@
 package com.transit.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -9,6 +10,14 @@ public class PublicModel {
     private String publicName;
     private String displayName;
     private String upstreamModelName;
+    private String comparisonKey;
+    private String publisherCode;
+    private String publisherName;
+    private String category;
+    private String routeCode;
+    private String routeName;
+    private String planCode;
+    private String planName;
     private int displayPriority;
     private String type;
     private String source;
@@ -36,14 +45,14 @@ public class PublicModel {
     private BigDecimal maxCacheReadPricePerMillion;
     private BigDecimal minCacheWritePricePerMillion;
     private BigDecimal maxCacheWritePricePerMillion;
-    private BigDecimal minInputCostMultiplier;
-    private BigDecimal maxInputCostMultiplier;
-    private BigDecimal minOutputCostMultiplier;
-    private BigDecimal maxOutputCostMultiplier;
-    private BigDecimal minCacheReadCostMultiplier;
-    private BigDecimal maxCacheReadCostMultiplier;
-    private BigDecimal minCacheWriteCostMultiplier;
-    private BigDecimal maxCacheWriteCostMultiplier;
+    @JsonIgnore private BigDecimal minInputCostMultiplier;
+    @JsonIgnore private BigDecimal maxInputCostMultiplier;
+    @JsonIgnore private BigDecimal minOutputCostMultiplier;
+    @JsonIgnore private BigDecimal maxOutputCostMultiplier;
+    @JsonIgnore private BigDecimal minCacheReadCostMultiplier;
+    @JsonIgnore private BigDecimal maxCacheReadCostMultiplier;
+    @JsonIgnore private BigDecimal minCacheWriteCostMultiplier;
+    @JsonIgnore private BigDecimal maxCacheWriteCostMultiplier;
     private long routeCount;
     private long providerCount;
     private String currency;

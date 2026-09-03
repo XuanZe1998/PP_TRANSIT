@@ -12,6 +12,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.server.ResponseStatusException;
@@ -44,6 +45,8 @@ public class ModelDiscoveryService {
     private final WebClient webClient;
     private final JdbcTemplate jdbcTemplate;
     private final ProviderModelCatalogService providerModelCatalogService;
+    @Autowired(required = false)
+    private ModelIdentityService modelIdentityService;
 
     public List<Map<String, Object>> providerCatalog() {
         return List.of(
@@ -126,6 +129,9 @@ public class ModelDiscoveryService {
                     .capabilityTags("discovered,pricing-required")
                     .build();
             modelMappingMapper.insert(mapping);
+            if (modelIdentityService != null) {
+                modelIdentityService.register(requireChannel(channelId), mapping, mapping.getVendor(), ModelIdentityService.RANK_INFERRED);
+            }
             created++;
         }
 

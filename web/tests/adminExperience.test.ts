@@ -50,7 +50,7 @@ describe('admin analytics and security experience', () => {
     expect(component).toContain('免费开发预览')
     expect(component).toContain("pricingUnit !== 'TOKEN'")
     expect(publicSite).toContain('ModelSalePricing')
-    expect(publicSite).toContain("name.includes('claude')")
+    expect(publicSite).toContain('model.publisherCode')
     expect(publicSite).not.toContain('publicMultiplierSummary')
     expect(userConsole).toContain('ModelSalePricing')
   })

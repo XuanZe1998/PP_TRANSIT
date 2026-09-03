@@ -49,6 +49,8 @@ public class AdminChannelService {
     private final ApplicationEventPublisher events;
     @Autowired(required = false)
     private ProviderCredentialService providerCredentialService;
+    @Autowired(required = false)
+    private ModelIdentityService modelIdentityService;
 
     @Transactional(readOnly = true)
     public List<Channel> list() {
@@ -78,7 +80,7 @@ public class AdminChannelService {
         requireCredentialEncryption();
         channel.setApiKey(channelSecretService.encrypt(channel.getApiKey()));
         channelMapper.insert(channel);
-        synchronizeModelMappings(channel.getId(), parseModels(channel.getModels()), requestedPricing);
+        synchronizeModelMappings(channel, parseModels(channel.getModels()), requestedPricing);
         return channelView(channelMapper.selectById(channel.getId()));
     }
 
@@ -124,7 +126,7 @@ public class AdminChannelService {
         current.setCooldownUntil(request.getCooldownUntil());
         validateChannel(current);
         channelMapper.updateById(current);
-        synchronizeModelMappings(id, parseModels(current.getModels()), safePricing(request.getModelPricing()));
+        synchronizeModelMappings(current, parseModels(current.getModels()), safePricing(request.getModelPricing()));
         if (credentialChanged && aiApiBankChannel) {
             events.publishEvent(new AiApiBankCredentialConfiguredEvent(id));
         }
@@ -159,6 +161,7 @@ public class AdminChannelService {
             modelMappingMapper.updateById(target);
         }
         priceTierService.synchronize(target, request.getPriceTiers());
+        registerIdentity(channel, target, ModelIdentityService.RANK_MAPPING);
 
         List<String> channelModels = new java.util.ArrayList<>(parseModels(channel.getModels()));
         if (!channelModels.contains(modelName)) {
@@ -659,8 +662,9 @@ public class AdminChannelService {
         return List.copyOf(unique);
     }
 
-    private void synchronizeModelMappings(Long channelId, List<String> models,
+    private void synchronizeModelMappings(Channel channel, List<String> models,
                                           List<ModelMapping> requestedPricing) {
+        Long channelId = channel.getId();
         List<ModelMapping> existing = modelMappingMapper.selectList(new LambdaQueryWrapper<ModelMapping>()
                 .eq(ModelMapping::getChannelId, channelId));
         Map<String, ModelMapping> existingByModel = existing.stream().collect(Collectors.toMap(
@@ -695,6 +699,7 @@ public class AdminChannelService {
             }
             priceTierService.synchronize(target,
                     requested == null ? List.of() : requested.getPriceTiers());
+            registerIdentity(channel, target, ModelIdentityService.RANK_MAPPING);
             retainedIds.add(target.getId());
         }
 
@@ -704,6 +709,10 @@ public class AdminChannelService {
                 modelMappingMapper.deleteById(mapping.getId());
             }
         }
+    }
+
+    private void registerIdentity(Channel channel, ModelMapping mapping, int rank) {
+        if (modelIdentityService != null) modelIdentityService.register(channel, mapping, mapping.getVendor(), rank);
     }
 
     private ModelMapping defaultMapping(Long channelId, String model) {

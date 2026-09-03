@@ -2443,7 +2443,9 @@ textarea {
 .market-filter-panel {
   position: sticky;
   top: 82px;
-  overflow: hidden;
+  max-height: calc(100vh - 100px);
+  overflow-x: hidden;
+  overflow-y: auto;
   border: 1px solid #dfe6e1;
   border-radius: 12px;
   background: #ffffff;
@@ -2861,6 +2863,8 @@ textarea {
 .market-card-actions {
   display: flex;
   flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 5px;
 }
 
@@ -2881,6 +2885,25 @@ textarea {
   justify-content: center;
   min-height: 48px;
   margin: 16px 0 28px;
+}
+
+.market-active-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 14px;
+  color: #69766f;
+  font-size: 12px;
+}
+
+.market-active-filters button {
+  padding: 5px 9px;
+  border: 1px solid #cfe0d5;
+  border-radius: 999px;
+  background: #f3f9f5;
+  color: #285a3e;
+  cursor: pointer;
 }
 
 .market-pagination .el-pagination {
@@ -3308,10 +3331,6 @@ textarea {
   .market-filter-panel {
     position: static;
     display: none;
-  }
-
-  .market-filter-panel.is-open {
-    display: block;
   }
 
   .market-toolbar {

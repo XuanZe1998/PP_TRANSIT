@@ -2,146 +2,96 @@
   <section class="site-section market-page">
     <div class="market-hero">
       <div class="market-hero-copy">
-        <div class="market-hero-label">
-          <img src="/model-icons/model-gateway.png" alt="统一模型网关" />
-          <span>统一模型目录</span>
-        </div>
-        <h1>发现并调用适合你的 AI 模型</h1>
-        <p>展示已验证的模型目录，并按上游、模型类型、发布方和能力筛选。</p>
+        <div class="market-hero-label"><img src="/model-icons/model-gateway.png" alt="统一模型网关" /><span>统一模型目录</span></div>
+        <h1>发现、筛选并比较适合你的 AI 模型</h1>
+        <p>平台智能路由、AiAPIBank 与后续渠道使用同一套模型属性和销售价格标准。</p>
       </div>
       <div class="market-stats">
-        <article><span>目录模型</span><strong>{{ models.length }}</strong></article>
-        <article><span>公开可调用</span><strong>{{ connectedCount }}</strong></article>
-        <article><span>模型发布方</span><strong>{{ publisherOptions.length }}</strong></article>
+        <article><span>目录模型</span><strong>{{ total }}</strong></article>
+        <article><span>公开可调用</span><strong>{{ total }}</strong></article>
+        <article><span>模型发布方</span><strong>{{ facets.publishers?.length || 0 }}</strong></article>
       </div>
     </div>
 
     <div v-if="error" class="market-fallback-note">{{ error }}</div>
-
     <div class="market-catalog-shell">
-      <aside :class="['market-filter-panel', { 'is-open': filtersOpen }]">
-        <header>
-          <div><span class="market-filter-icon">≡</span><h2>筛选</h2></div>
-          <button type="button" :disabled="!hasFilters" @click="clearFilters">重置</button>
-        </header>
-
-        <div class="market-filter-group">
-          <h3>模型类型</h3>
+      <aside class="market-filter-panel">
+        <header><div><span class="market-filter-icon">≡</span><h2>筛选</h2></div><button type="button" :disabled="!hasFilters" @click="clearFilters">重置</button></header>
+        <div v-for="group in facetGroups" v-show="group.options.length" :key="group.key" class="market-filter-group">
+          <h3>{{ group.title }}</h3>
           <div class="market-filter-options text-only">
-            <button v-for="option in categoryOptions" :key="option.value" type="button"
-              :class="{ active: filters.category === option.value }" :aria-pressed="filters.category === option.value"
-              @click="choose('category', option.value)">
-              <span><em>{{ option.label }}</em></span><b>{{ option.count }}</b>
-            </button>
-          </div>
-        </div>
-
-        <div v-if="upstreamOptions.length" class="market-filter-group">
-          <h3>模型上游</h3>
-          <div class="market-filter-options text-only">
-            <button v-for="option in upstreamOptions" :key="option.value" type="button"
-              :class="{ active: filters.source === option.value }" :aria-pressed="filters.source === option.value"
-              @click="choose('source', option.value)">
-              <span><em>{{ option.label }}</em></span><b>{{ option.count }}</b>
-            </button>
-          </div>
-        </div>
-
-        <div v-if="groupOptions.length" class="market-filter-group">
-          <h3>AiAPIBank 分组</h3>
-          <div class="market-filter-options text-only">
-            <button v-for="option in groupOptions" :key="option.value" type="button"
-              :class="{ active: filters.group === option.value }" :aria-pressed="filters.group === option.value"
-              @click="choose('group', option.value)">
-              <span><em>{{ option.label }}</em></span><b>{{ option.count }}</b>
-            </button>
-          </div>
-        </div>
-
-        <div v-if="platformOptions.length" class="market-filter-group">
-          <h3>平台与倍率</h3>
-          <el-select v-model="filters.platform" clearable placeholder="全部平台" style="width:100%">
-            <el-option v-for="option in platformOptions" :key="option.value" :label="`${option.label} (${option.count})`" :value="option.value" />
-          </el-select>
-          <el-select v-model="filters.multiplier" clearable placeholder="全部倍率" style="width:100%;margin-top:8px">
-            <el-option v-for="option in multiplierOptions" :key="option.value" :label="`${option.label} (${option.count})`" :value="option.value" />
-          </el-select>
-        </div>
-
-        <div class="market-filter-group">
-          <h3>模型发布方</h3>
-          <div class="market-filter-options">
-            <button v-for="option in publisherOptions" :key="option.value" type="button"
-              :class="{ active: filters.publisher === option.value }" :aria-pressed="filters.publisher === option.value"
-              @click="choose('publisher', option.value)">
-              <span>
-                <img v-if="option.icon" :src="option.icon" alt="" />
-                <i v-else>{{ option.label.slice(0, 1) }}</i>
-                <em>{{ option.label }}</em>
-              </span>
-              <b>{{ option.count }}</b>
-            </button>
-          </div>
-        </div>
-
-        <div v-if="tagOptions.length" class="market-filter-group">
-          <h3>能力与场景</h3>
-          <div class="market-filter-options text-only">
-            <button v-for="option in tagOptions" :key="option.value" type="button"
-              :class="{ active: filters.tag === option.value }" :aria-pressed="filters.tag === option.value"
-              @click="choose('tag', option.value)">
+            <button v-for="option in group.options" :key="option.value" type="button"
+              :class="{ active: group.selected.includes(option.value) }" :aria-pressed="group.selected.includes(option.value)"
+              @click="toggleFacet(group.key, option.value)">
               <span><em>{{ option.label }}</em></span><b>{{ option.count }}</b>
             </button>
           </div>
         </div>
       </aside>
 
+      <el-drawer v-model="filtersOpen" title="筛选模型" direction="ltr" size="min(360px, 88vw)" class="market-filter-drawer">
+        <div v-for="group in facetGroups" v-show="group.options.length" :key="group.key" class="market-filter-group">
+          <h3>{{ group.title }}</h3>
+          <div class="market-filter-options text-only">
+            <button v-for="option in group.options" :key="option.value" type="button"
+              :class="{ active: group.selected.includes(option.value) }" :aria-pressed="group.selected.includes(option.value)"
+              @click="toggleFacet(group.key, option.value)">
+              <span><em>{{ option.label }}</em></span><b>{{ option.count }}</b>
+            </button>
+          </div>
+        </div>
+        <template #footer><el-button :disabled="!hasFilters" @click="clearFilters">清空筛选</el-button><el-button type="primary" @click="filtersOpen = false">查看 {{ total }} 个模型</el-button></template>
+      </el-drawer>
+
       <div ref="resultsElement" class="market-results">
         <div class="market-toolbar">
-          <div class="market-result-count"><strong>{{ filteredModels.length }}</strong><span> 个模型</span></div>
-          <el-input v-model="filters.query" clearable placeholder="搜索模型名称、发布方或能力" class="market-search" />
+          <div class="market-result-count"><strong>{{ total }}</strong><span> 个模型</span></div>
+          <el-input v-model="filters.query" clearable placeholder="搜索模型名称、发布方、套餐或能力" class="market-search" />
           <el-select v-model="filters.sort" class="market-select" aria-label="排序方式">
             <el-option label="优先级（高到低）" value="priority" />
+            <el-option label="价格（低到高）" value="price_asc" />
+            <el-option label="价格（高到低）" value="price_desc" />
             <el-option label="名称升序" value="name_asc" />
             <el-option label="名称降序" value="name_desc" />
-            <el-option label="热度优先" value="popular" />
-            <el-option label="发布方排序" value="provider" />
+            <el-option label="最近核价" value="recent" />
           </el-select>
-          <el-button class="market-mobile-filter" @click="filtersOpen = !filtersOpen">{{ filtersOpen ? '收起筛选' : '筛选' }}</el-button>
-          <el-button class="market-refresh" :loading="loading" @click="fetchModels">刷新</el-button>
+          <el-button class="market-mobile-filter" @click="filtersOpen = true">筛选</el-button>
+          <el-button class="market-refresh" :loading="loading" @click="fetchCatalog">刷新</el-button>
+        </div>
+
+        <div v-if="activeFilters.length" class="market-active-filters">
+          <span>已选条件</span><button v-for="item in activeFilters" :key="`${item.key}-${item.value}`" type="button" @click="toggleFacet(item.key, item.value)">{{ item.label }} ×</button>
         </div>
 
         <div v-if="loading && !models.length" class="market-grid">
-          <article v-for="index in 5" :key="index" class="market-card"><el-skeleton :rows="4" animated /></article>
+          <article v-for="index in 6" :key="index" class="market-card"><el-skeleton :rows="6" animated /></article>
         </div>
-        <div v-else-if="displayModels.length" class="market-grid">
-          <article v-for="model in displayModels" :key="model.publicName" class="market-card connected">
+        <div v-else-if="models.length" class="market-grid">
+          <article v-for="model in models" :key="model.publicName" class="market-card connected">
             <div class="market-card-main">
               <header>
                 <div class="market-publisher">
-                  <span class="market-publisher-icon">
-                    <img v-if="model.publisher.icon" :src="model.publisher.icon" :alt="`${model.publisher.label} 图标`" />
-                    <span v-else class="market-publisher-fallback">{{ model.publisher.label.slice(0, 1) }}</span>
-                  </span>
-                  <span><strong>{{ model.publisher.label }}</strong><small>统一网关</small></span>
+                  <span class="market-publisher-icon"><img v-if="publisherIcon(model.publisherCode)" :src="publisherIcon(model.publisherCode)" :alt="`${model.publisherName} 图标`" /><span v-else class="market-publisher-fallback">{{ (model.publisherName || '未').slice(0, 1) }}</span></span>
+                  <span><strong>{{ model.publisherName || '未声明' }}</strong><small>{{ model.routeName || '平台智能路由' }}</small></span>
                 </div>
-                <div class="market-card-badges">
-                  <span v-for="upstream in model.upstreams" :key="upstream.value" :class="['market-badge', { nvidia: upstream.value === 'nvidia' }]">{{ upstream.label }}</span>
-                  <span class="market-badge available">已验证可调用</span>
-                </div>
+                <div class="market-card-badges"><span class="market-badge">{{ model.planName || '标准' }}</span><span class="market-badge available">已验证可调用</span></div>
               </header>
-              <h3>{{ model.raw.displayName || model.publicName }}</h3>
-              <p v-if="model.raw.displayName" class="market-public-id">{{ model.publicName }}</p>
-              <p class="market-card-desc">{{ model.description }}</p>
-              <div class="market-tags"><span v-for="tag in model.tags.slice(0, 4)" :key="tag">{{ tag }}</span></div>
+              <h3>{{ model.displayName || model.upstreamModelName || model.publicName }}</h3>
+              <p class="market-public-id">{{ model.publicName }}</p>
+              <p class="market-card-desc">{{ model.routeName || '平台智能路由' }} · {{ model.planName || '标准' }}，价格与可用性以当前公开目录为准。</p>
+              <div class="market-tags"><span>{{ categoryLabel(model.category) }}</span><span>{{ capabilityLabel(model.capability) }}</span><span>{{ model.inputModalities || '未声明' }} → {{ model.outputModalities || '未声明' }}</span><span>{{ model.protocols || '未声明' }}</span></div>
             </div>
             <footer>
               <dl class="market-meta">
-                <div><dt>模型类型 / 能力</dt><dd>{{ model.categoryLabel }} · {{ model.capabilityLabel }}</dd></div>
-                <div v-if="model.raw.providerGroup"><dt>分组 / 平台 / 倍率</dt><dd>{{ model.raw.providerGroup.name }} · {{ model.raw.providerGroup.platform }} · {{ model.raw.providerGroup.resolvedRateMultiplier }}x</dd></div>
+                <div><dt>渠道 / 套餐</dt><dd>{{ model.routeName || '平台智能路由' }} · {{ model.planName || '标准' }}</dd></div>
+                <div><dt>类型 / 能力</dt><dd>{{ categoryLabel(model.category) }} · {{ capabilityLabel(model.capability) }}</dd></div>
+                <div><dt>输入 / 输出模态</dt><dd>{{ model.inputModalities || '未声明' }} → {{ model.outputModalities || '未声明' }}</dd></div>
+                <div><dt>协议 / 计费单位</dt><dd>{{ model.protocols || '未声明' }} · {{ unitLabel(model.pricingUnit) }}</dd></div>
+                <div><dt>价格状态 / 核价时间</dt><dd>{{ priceStatusLabel(model) }} · {{ dateLabel(model.pricingVerifiedAt) }}</dd></div>
               </dl>
-              <ModelSalePricing :model="model.raw" :rebate-bps="customerRebateBps" compact class="market-sale-pricing" />
+              <ModelSalePricing :model="model" :rebate-bps="customerRebateBps" compact public-only class="market-sale-pricing" />
               <div class="market-card-actions">
+                <el-button @click="openComparison(model)">比价</el-button>
                 <el-button @click="copyModel(model.publicName)">复制模型名</el-button>
                 <el-button type="primary" @click="callModel(model)">立即调用 →</el-button>
               </div>
@@ -150,288 +100,97 @@
         </div>
         <div v-else class="market-empty"><el-empty description="没有找到匹配模型"><el-button @click="clearFilters">清空筛选</el-button></el-empty></div>
 
-        <div v-if="filteredModels.length" class="market-pagination">
-          <el-pagination v-model:current-page="page" v-model:page-size="pageSize"
-            :page-sizes="[10, 20, 50]" :total="filteredModels.length"
-            layout="total, sizes, prev, pager, next, jumper" background aria-label="模型列表分页"
-            @current-change="scrollToResults" @size-change="handlePageSizeChange" />
+        <div v-if="total" class="market-pagination">
+          <el-pagination v-model:current-page="page" v-model:page-size="pageSize" :page-sizes="[10, 20, 50]" :total="total"
+            layout="total, sizes, prev, pager, next, jumper" background aria-label="模型列表分页" @current-change="scrollToResults" @size-change="handlePageSizeChange" />
         </div>
       </div>
     </div>
 
-    <section class="market-guide">
-      <div>
-        <p class="eyebrow">快速接入</p>
-        <h2>后台配置渠道和映射后，模型即可从统一 Base URL 调用。</h2>
-        <p>模型广场展示目录、本站销售价格和接入状态；真实调用使用平台 API Key。</p>
-        <div class="hero-actions">
-          <el-button type="primary" @click="router.push('/docs')">查看接入文档</el-button>
-          <el-button @click="router.push('/console/playground')">在线调试</el-button>
-        </div>
-      </div>
-      <pre>{{ sdkExample }}</pre>
-    </section>
+    <section class="market-guide"><div><p class="eyebrow">快速接入</p><h2>选择模型 ID，通过统一 Base URL 调用。</h2><p>模型广场只公开用户销售价格；采购成本仅管理员可见。</p><div class="hero-actions"><el-button type="primary" @click="router.push('/docs')">查看接入文档</el-button><el-button @click="router.push('/console/playground')">在线调试</el-button></div></div><pre>{{ sdkExample }}</pre></section>
 
-    <ModelCallDialog v-model="callVisible" :model-id="callTarget?.publicName || ''" :capability="callTarget?.raw.capability || 'TEXT'" />
+    <ModelPriceComparisonDialog v-model="compareVisible" :model-id="compareTarget?.publicName || ''" :rebate-bps="customerRebateBps" />
+    <ModelCallDialog v-model="callVisible" :model-id="callTarget?.publicName || ''" :capability="callTarget?.capability || 'TEXT'" />
   </section>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import http from '@/utils/http'
 import ModelSalePricing from '@/components/ModelSalePricing.vue'
+import ModelPriceComparisonDialog from '@/components/ModelPriceComparisonDialog.vue'
 import ModelCallDialog from '@/components/ModelCallDialog.vue'
 import { getToken } from '@/utils/auth'
-import { clampPage, classifyModel, modelCategoryOptions, pageItems, type ModelCategory } from '@/utils/modelMarket'
+import { clampPage, type ModelFacets, type PublicModelOffer } from '@/utils/modelMarket'
 
-type PublicUpstream = { code: string; name: string }
-type PublicModel = {
-  publicName: string
-  displayName?: string
-  upstreamModelName?: string
-  displayPriority?: number
-  source?: string
-  sources?: string
-  sourceName?: string
-  vendor?: string
-  capability?: string
-  inputModalities?: string
-  outputModalities?: string
-  available?: boolean
-  upstreams?: PublicUpstream[]
-  minInputPricePerMillion?: number
-  maxInputPricePerMillion?: number
-  minOutputPricePerMillion?: number
-  maxOutputPricePerMillion?: number
-  minCacheReadPricePerMillion?: number
-  maxCacheReadPricePerMillion?: number
-  minCacheWritePricePerMillion?: number
-  maxCacheWritePricePerMillion?: number
-  pricingUnit?: string
-  billingMode?: string
-  pricingStatus?: string
-  pricingMessage?: string
-  saleUnitPrice?: number
-  pricing?: Record<string, unknown>
-  contextPricing?: Record<string, unknown>
-  providerGroup?: Record<string, any>
-  priceTiers?: Array<Record<string, any>>
-  unitPriceVariants?: Array<Record<string, any>>
-}
 type PageResponse<T> = { total: number; page: number; size: number; items: T[] }
-type Publisher = { value: string; label: string; icon: string }
-type MarketModel = {
-  publicName: string
-  raw: PublicModel
-  publisher: Publisher
-  category: ModelCategory
-  categoryLabel: string
-  capabilityLabel: string
-  description: string
-  tags: string[]
-  upstreams: Array<{ value: string; label: string }>
-  popularity: number
-  displayPriority: number
-}
-
-const router = useRouter()
-const loading = ref(false)
-const error = ref('')
-const models = ref<MarketModel[]>([])
-const filtersOpen = ref(false)
-const page = ref(1)
-const pageSize = ref(10)
-const resultsElement = ref<HTMLElement | null>(null)
-const callVisible = ref(false)
-const callTarget = ref<MarketModel | null>(null)
-const customerRebateBps = ref(0)
-const filters = reactive({ query: '', source: '', group: '', platform: '', multiplier: '', publisher: '', category: '' as ModelCategory | '', tag: '', sort: 'priority' })
-
-const publishers: Publisher[] = [
-  { label: 'NVIDIA', value: 'nvidia', icon: '/model-icons/nvidia.svg' },
-  { label: 'Meta', value: 'meta', icon: '/model-icons/meta.svg' },
-  { label: 'Google', value: 'google', icon: '/model-icons/google.svg' },
-  { label: 'Mistral AI', value: 'mistral', icon: '/model-icons/mistral.svg' },
-  { label: 'Qwen', value: 'qwen', icon: '/model-icons/qwen.svg' },
-  { label: 'DeepSeek AI', value: 'deepseek', icon: '/model-icons/deepseek.svg' },
-  { label: 'OpenAI', value: 'openai', icon: '/openai-icon.svg' },
-  { label: 'Anthropic', value: 'anthropic', icon: '/model-icons/anthropic.svg' },
-  { label: 'xAI', value: 'xai', icon: '/model-icons/xai.svg' },
-  { label: 'MiniMax', value: 'minimax', icon: '/model-icons/minimax.jpg' },
-  { label: 'StepFun', value: 'stepfun', icon: '/model-icons/stepfun.jpg' },
-  { label: 'Z.ai', value: 'zai', icon: '/model-icons/z-ai.jpg' },
-  { label: 'BAAI', value: 'baai', icon: '' },
-  { label: 'Moonshot', value: 'kimi', icon: '' },
-  { label: '其他', value: 'custom', icon: '' }
+type FilterKey = 'routes' | 'publishers' | 'categories' | 'capabilities' | 'inputModalities' | 'outputModalities' | 'protocols' | 'pricingUnits' | 'plans' | 'priceStatuses'
+type FilterState = Record<FilterKey, string[]> & { query: string; sort: string }
+const filterDefinitions: Array<{ key: FilterKey; title: string }> = [
+  { key: 'routes', title: '渠道 / 路由' }, { key: 'publishers', title: '模型发布方' }, { key: 'categories', title: '模型类型' },
+  { key: 'capabilities', title: '模型能力' }, { key: 'inputModalities', title: '输入模态' }, { key: 'outputModalities', title: '输出模态' },
+  { key: 'protocols', title: 'API 协议' }, { key: 'pricingUnits', title: '计费单位' }, { key: 'plans', title: '套餐 / 分组' },
+  { key: 'priceStatuses', title: '价格状态' }
 ]
 
-const categoryLabels = Object.fromEntries(modelCategoryOptions.map(item => [item.value, item.label])) as Record<ModelCategory, string>
-const capabilityLabels: Record<string, string> = {
-  text: '文本', reasoning: '推理', vision: '视觉', image: '图像生成', video: '视频生成',
-  speech: '语音合成', transcription: '语音识别', music: '音乐', embedding: '向量嵌入', rerank: '重排'
-}
+const router = useRouter(); const route = useRoute()
+const loading = ref(false); const error = ref(''); const models = ref<PublicModelOffer[]>([]); const facets = ref<ModelFacets>({})
+const total = ref(0); const page = ref(1); const pageSize = ref(10); const filtersOpen = ref(false); const resultsElement = ref<HTMLElement | null>(null)
+const callVisible = ref(false); const callTarget = ref<PublicModelOffer | null>(null); const compareVisible = ref(false); const compareTarget = ref<PublicModelOffer | null>(null)
+const customerRebateBps = ref(0); let timer: ReturnType<typeof setTimeout> | undefined; let requestVersion = 0; let hydrating = true
+const filters = reactive<FilterState>({ query: '', sort: 'priority', routes: [], publishers: [], categories: [], capabilities: [], inputModalities: [], outputModalities: [], protocols: [], pricingUnits: [], plans: [], priceStatuses: [] })
 
-function publisherFor(model: PublicModel) {
-  const name = String(model.upstreamModelName || model.publicName).toLowerCase()
-  let key = String(model.providerGroup?.platform || model.vendor || '').toLowerCase()
-  if (key === 'grok') key = 'xai'
-  if (key === 'zhipu' || key === 'glm') key = 'zai'
-  if (key === 'moonshot') key = 'kimi'
-  if (name.includes('claude')) key = 'anthropic'
-  else if (name.includes('deepseek')) key = 'deepseek'
-  else if (name.includes('llama') || name.startsWith('meta/')) key = 'meta'
-  else if (name.includes('gemma') || name.includes('gemini') || name.startsWith('google/')) key = 'google'
-  else if (name.includes('mistral')) key = 'mistral'
-  else if (name.includes('qwen')) key = 'qwen'
-  else if (name.startsWith('gpt-') || name.startsWith('openai/') || name.includes('gpt-oss')) key = 'openai'
-  else if (name.includes('minimax')) key = 'minimax'
-  else if (name.includes('stepfun') || name.includes('step-')) key = 'stepfun'
-  else if (name.includes('glm') || name.startsWith('z-ai/')) key = 'zai'
-  else if (name.includes('bge-') || name.startsWith('baai/')) key = 'baai'
-  else if (name.includes('kimi')) key = 'kimi'
-  else if (name.includes('nemotron') || name.startsWith('nvidia/') || name.startsWith('nv-')) key = 'nvidia'
-  return publishers.find(item => item.value === key) || publishers[publishers.length - 1]
-}
-
-function enrich(model: PublicModel, index: number): MarketModel {
-  const publisher = publisherFor(model)
-  const category = classifyModel(model)
-  const capability = String(model.capability || 'text').toLowerCase()
-  const capabilityLabel = capabilityLabels[capability] || capability
-  const upstreams = model.upstreams?.length
-    ? model.upstreams.map(item => ({ value: item.code, label: item.name }))
-    : [{ value: String(model.source || 'platform-route'), label: model.sourceName || '平台智能路由' }]
-  const group = model.providerGroup
-  const tags = Array.from(new Set([categoryLabels[category], capabilityLabel, publisher.label,
-    group?.name, group?.platform, group ? `${group.resolvedRateMultiplier}x` : ''].filter(Boolean)))
-  return {
-    publicName: model.publicName,
-    raw: model,
-    publisher,
-    category,
-    categoryLabel: categoryLabels[category],
-    capabilityLabel,
-    description: group?.description || `${publisher.label} 提供的${categoryLabels[category]}，通过本站统一网关接入；可用性与价格以当前公开目录为准。`,
-    tags,
-    upstreams,
-    popularity: Math.max(1, 1000 - index),
-    displayPriority: Number(model.displayPriority || 0)
-  }
-}
-
-const filteredModels = computed(() => {
-  const keyword = filters.query.trim().toLowerCase()
-  const rows = models.value.filter(model => {
-    const keywordMatched = !keyword || model.publicName.toLowerCase().includes(keyword)
-      || model.publisher.label.toLowerCase().includes(keyword) || model.tags.some(tag => tag.toLowerCase().includes(keyword))
-    return keywordMatched
-      && (!filters.source || model.upstreams.some(item => item.value === filters.source))
-      && (!filters.group || model.raw.providerGroup?.slug === filters.group)
-      && (!filters.platform || model.raw.providerGroup?.platform === filters.platform)
-      && (!filters.multiplier || String(model.raw.providerGroup?.resolvedRateMultiplier) === filters.multiplier)
-      && (!filters.publisher || model.publisher.value === filters.publisher)
-      && (!filters.category || model.category === filters.category)
-      && (!filters.tag || model.tags.includes(filters.tag))
-  })
-  if (filters.sort === 'popular') return [...rows].sort((a, b) => b.popularity - a.popularity)
-  if (filters.sort === 'provider') return [...rows].sort((a, b) => a.publisher.label.localeCompare(b.publisher.label) || a.publicName.localeCompare(b.publicName))
-  if (filters.sort === 'name_desc') return [...rows].sort((a, b) => b.publicName.localeCompare(a.publicName))
-  if (filters.sort === 'priority') return [...rows].sort((a, b) => b.displayPriority - a.displayPriority || a.publicName.localeCompare(b.publicName))
-  return [...rows].sort((a, b) => a.publicName.localeCompare(b.publicName))
-})
-const displayModels = computed(() => pageItems(filteredModels.value, page.value, pageSize.value))
-const connectedCount = computed(() => models.value.filter(model => model.raw.available !== false).length)
-const hasFilters = computed(() => Boolean(filters.query || filters.source || filters.group || filters.platform || filters.multiplier || filters.publisher || filters.category || filters.tag || filters.sort !== 'priority'))
-
-function countedOptions<T extends { value: string; label: string }>(options: T[], values: string[]) {
-  const counts = new Map<string, number>()
-  values.forEach(value => counts.set(value, (counts.get(value) || 0) + 1))
-  return options.map(option => ({ ...option, count: counts.get(option.value) || 0 })).filter(option => option.count > 0)
-}
-const categoryOptions = computed(() => countedOptions(modelCategoryOptions, models.value.map(model => model.category)))
-const publisherOptions = computed(() => countedOptions(publishers, models.value.map(model => model.publisher.value)))
-const upstreamOptions = computed(() => {
-  const labels = new Map<string, string>()
-  const values: string[] = []
-  models.value.forEach(model => model.upstreams.forEach(item => { labels.set(item.value, item.label); values.push(item.value) }))
-  return countedOptions([...labels].map(([value, label]) => ({ value, label })), values)
-})
-const groupOptions = computed(() => {
-  const labels = new Map<string, string>(); const values: string[] = []
-  models.value.forEach(model => { const group = model.raw.providerGroup; if (group?.slug) { labels.set(group.slug, group.name); values.push(group.slug) } })
-  return countedOptions([...labels].map(([value, label]) => ({ value, label })), values)
-})
-const platformOptions = computed(() => {
-  const values = models.value.map(model => String(model.raw.providerGroup?.platform || '')).filter(Boolean)
-  return countedOptions(Array.from(new Set(values)).map(value => ({ value, label: value })), values)
-})
-const multiplierOptions = computed(() => {
-  const values = models.value.map(model => model.raw.providerGroup?.resolvedRateMultiplier)
-    .filter(value => value !== undefined && value !== null).map(value => String(value))
-  return countedOptions(Array.from(new Set(values)).map(value => ({ value, label: `${value}x` })), values)
-})
-const tagOptions = computed(() => {
-  const values = models.value.flatMap(model => model.tags.filter(tag => tag !== model.publisher.label && tag !== model.categoryLabel))
-  return countedOptions(Array.from(new Set(values)).map(value => ({ value, label: value })), values).slice(0, 10)
-})
-
+const facetGroups = computed(() => filterDefinitions.map(group => ({ ...group, options: facets.value[group.key] || [], selected: filters[group.key] })))
+const activeFilters = computed(() => filterDefinitions.flatMap(group => filters[group.key].map(value => ({ key: group.key, value, label: facets.value[group.key]?.find(item => item.value === value)?.label || value }))))
+const hasFilters = computed(() => Boolean(filters.query || filters.sort !== 'priority' || activeFilters.value.length))
 const configuredBase = String(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
 const sdkExample = `import OpenAI from "openai";\n\nconst client = new OpenAI({\n  apiKey: "YOUR_API_KEY",\n  baseURL: "${configuredBase || window.location.origin}/v1"\n});`
 
-async function fetchModels() {
-  loading.value = true
-  error.value = ''
+function requestParams(includePage = true) {
+  const params: Record<string, string | number> = { sort: filters.sort }
+  if (includePage) { params.page = page.value; params.size = pageSize.value }
+  if (filters.query.trim()) params.query = filters.query.trim()
+  for (const group of filterDefinitions) if (filters[group.key].length) params[group.key] = filters[group.key].join(',')
+  return params
+}
+async function fetchCatalog() {
+  const version = ++requestVersion; loading.value = true; error.value = ''
   try {
-    const catalog: PublicModel[] = []
-    let catalogPage = 1
-    let total = 0
-    do {
-      const response = await http.get<PageResponse<PublicModel>>('/api/public/models', {
-        params: { page: catalogPage, size: 100, sort: 'priority', availability: 'available' }
-      })
-      catalog.push(...(response.data?.items || []))
-      total = Number(response.data?.total || catalog.length)
-      catalogPage += 1
-    } while (catalog.length < total && catalogPage <= 20)
-    models.value = catalog.map(enrich)
-    page.value = clampPage(page.value, filteredModels.value.length, pageSize.value)
-  } catch {
-    models.value = []
-    error.value = '后端模型目录暂时不可用。为避免误导，不展示未验证的模型、状态或价格。'
-  } finally {
-    loading.value = false
-  }
+    const [catalog, facetResponse] = await Promise.all([
+      http.get<PageResponse<PublicModelOffer>>('/api/public/models', { params: requestParams(true) }),
+      http.get<ModelFacets>('/api/public/models/facets', { params: requestParams(false) })
+    ])
+    if (version !== requestVersion) return
+    models.value = catalog.data.items || []; total.value = Number(catalog.data.total || 0); facets.value = facetResponse.data || {}
+    const safePage = clampPage(page.value, total.value, pageSize.value)
+    if (safePage !== page.value) page.value = safePage
+  } catch { if (version === requestVersion) { models.value = []; total.value = 0; error.value = '后端模型目录暂时不可用。为避免误导，不展示未验证的模型、状态或价格。' } }
+  finally { if (version === requestVersion) loading.value = false }
 }
-
-async function fetchRebate() {
-  if (!getToken()) return
-  try {
-    const { data } = await http.get('/api/user/agent')
-    customerRebateBps.value = Number(data?.customerBinding?.customer_rebate_bps || 0)
-  } catch { customerRebateBps.value = 0 }
-}
-
-function choose(field: 'source' | 'group' | 'platform' | 'multiplier' | 'publisher' | 'category' | 'tag', value: string) {
-  const record = filters as unknown as Record<string, string>
-  record[field] = record[field] === value ? '' : value
-}
-function clearFilters() {
-  filters.query = ''; filters.source = ''; filters.group = ''; filters.platform = ''; filters.multiplier = ''; filters.publisher = ''; filters.category = ''; filters.tag = ''; filters.sort = 'priority'; page.value = 1
-}
+function scheduleFetch() { clearTimeout(timer); timer = setTimeout(() => { void fetchCatalog() }, 220) }
+function toggleFacet(key: FilterKey, value: string) { const selected = filters[key]; const index = selected.indexOf(value); if (index >= 0) selected.splice(index, 1); else selected.push(value) }
+function clearFilters() { filters.query = ''; filters.sort = 'priority'; for (const group of filterDefinitions) filters[group.key].splice(0); page.value = 1 }
 function handlePageSizeChange() { page.value = 1; scrollToResults() }
-function scrollToResults() {
-  const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-  resultsElement.value?.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'start' })
-}
-async function copyModel(name: string) {
-  try { await navigator.clipboard.writeText(name); ElMessage.success('模型名已复制') }
-  catch { ElMessage.error('复制失败，请手动复制模型名') }
-}
-function callModel(model: MarketModel) { callTarget.value = model; callVisible.value = true }
+function scrollToResults() { const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches; resultsElement.value?.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'start' }) }
+async function copyModel(name: string) { try { await navigator.clipboard.writeText(name); ElMessage.success('模型名已复制') } catch { ElMessage.error('复制失败，请手动复制模型名') } }
+function callModel(model: PublicModelOffer) { callTarget.value = model; callVisible.value = true }
+function openComparison(model: PublicModelOffer) { compareTarget.value = model; compareVisible.value = true }
+async function fetchRebate() { if (!getToken()) return; try { customerRebateBps.value = Number((await http.get('/api/user/agent')).data?.customerBinding?.customer_rebate_bps || 0) } catch { customerRebateBps.value = 0 } }
 
-watch(() => [filters.query, filters.source, filters.group, filters.platform, filters.multiplier, filters.publisher, filters.category, filters.tag, filters.sort], () => { page.value = 1 })
-watch(() => filteredModels.value.length, total => { page.value = clampPage(page.value, total, pageSize.value) })
-onMounted(() => { void Promise.all([fetchModels(), fetchRebate()]) })
+function syncUrl() { const query: Record<string, string> = {}; if (filters.query) query.query = filters.query; if (filters.sort !== 'priority') query.sort = filters.sort; for (const group of filterDefinitions) if (filters[group.key].length) query[group.key] = filters[group.key].join(','); if (page.value > 1) query.page = String(page.value); if (pageSize.value !== 10) query.size = String(pageSize.value); void router.replace({ query }) }
+function hydrateFromUrl() { filters.query = String(route.query.query || ''); filters.sort = String(route.query.sort || 'priority'); page.value = Math.max(1, Number(route.query.page || 1)); pageSize.value = [10, 20, 50].includes(Number(route.query.size)) ? Number(route.query.size) : 10; for (const group of filterDefinitions) filters[group.key] = String(route.query[group.key] || '').split(',').filter(Boolean); hydrating = false }
+
+const icons: Record<string, string> = { nvidia: '/model-icons/nvidia.svg', meta: '/model-icons/meta.svg', google: '/model-icons/google.svg', mistral: '/model-icons/mistral.svg', alibaba: '/model-icons/qwen.svg', deepseek: '/model-icons/deepseek.svg', openai: '/openai-icon.svg', anthropic: '/model-icons/anthropic.svg', xai: '/model-icons/xai.svg', minimax: '/model-icons/minimax.jpg', stepfun: '/model-icons/stepfun.jpg', zai: '/model-icons/z-ai.jpg' }
+function publisherIcon(code?: string | null) { return icons[String(code || '').toLowerCase()] || '' }
+function categoryLabel(value?: string | null) { return ({ language: '大语言模型', multimodal: '多模态模型', image: '图像模型', video: '视频模型', audio: '音频模型', vector: '向量模型' } as Record<string, string>)[String(value || '')] || '大语言模型' }
+function capabilityLabel(value?: string | null) { return ({ text: '文本', reasoning: '推理', vision: '视觉', image: '图像生成', video: '视频生成', speech: '语音合成', transcription: '语音识别', music: '音乐', embedding: '向量嵌入', rerank: '重排' } as Record<string, string>)[String(value || '').toLowerCase()] || value || '未声明' }
+function unitLabel(value?: string | null) { return ({ TOKEN: 'USD / 1M Token', IMAGE: 'USD / 张', SECOND: 'USD / 秒', MINUTE: 'USD / 分钟', CHARACTER: 'USD / 千字符', TASK: 'USD / 次' } as Record<string, string>)[String(value || 'TOKEN').toUpperCase()] || value || '未声明' }
+function priceStatusLabel(model: PublicModelOffer) { return model.billingMode === 'FREE_PREVIEW' ? '免费预览' : model.billingConfigured ? '价格已核验' : '价格待配置' }
+function dateLabel(value?: string | null) { if (!value) return '未记录'; const date = new Date(value); return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString('zh-CN') }
+
+watch(filters, () => { if (hydrating) return; page.value = 1; syncUrl(); scheduleFetch() }, { deep: true })
+watch([page, pageSize], () => { if (hydrating) return; syncUrl(); scheduleFetch() })
+onMounted(() => { hydrateFromUrl(); void Promise.all([fetchCatalog(), fetchRebate()]) })
 </script>
