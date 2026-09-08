@@ -20,6 +20,7 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
@@ -33,6 +34,36 @@ class ModelDiscoveryServiceTests {
     @Mock private JdbcTemplate jdbcTemplate;
     @Mock private ProviderModelCatalogService providerModelCatalogService;
     private HttpServer server;
+
+    @Test
+    void previewValidatesUrlBeforeSendingCredentials() {
+        ModelDiscoveryService service = new ModelDiscoveryService(channelMapper, mappingMapper,
+                secretService, new ChannelUrlPolicy(false), WebClient.create(), jdbcTemplate, providerModelCatalogService);
+        assertThatThrownBy(() -> service.previewCompatibleModels("http://127.0.0.1:1", "secret"))
+                .hasMessageContaining("not allowed");
+    }
+
+    @Test
+    void previewDoesNotFollowRedirectAndForwardCredentials() throws Exception {
+        AtomicReference<String> leaked = new AtomicReference<>();
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/v1/models", exchange -> {
+            exchange.getResponseHeaders().add("Location", "/collector");
+            exchange.sendResponseHeaders(302, -1);
+            exchange.close();
+        });
+        server.createContext("/collector", exchange -> {
+            leaked.set(exchange.getRequestHeaders().getFirst("Authorization"));
+            exchange.sendResponseHeaders(200, -1);
+            exchange.close();
+        });
+        server.start();
+        ModelDiscoveryService service = new ModelDiscoveryService(channelMapper, mappingMapper,
+                secretService, new ChannelUrlPolicy(true), WebClient.create(), jdbcTemplate, providerModelCatalogService);
+        assertThatThrownBy(() -> service.previewCompatibleModels(
+                "http://127.0.0.1:" + server.getAddress().getPort(), "secret")).hasMessageContaining("empty model catalog");
+        assertThat(leaked.get()).isNull();
+    }
 
     @AfterEach
     void stopServer() {

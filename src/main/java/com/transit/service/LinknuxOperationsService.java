@@ -96,7 +96,7 @@ public class LinknuxOperationsService {
         return Map.of("requestNo", no, "status", "REQUESTED", "message", "备份请求已登记；由受限服务器发布脚本执行，应用不具备恢复权限");
     }
 
-    public List<Map<String, Object>> backups() { return jdbc.queryForList("SELECT id,request_no,status,storage_path_masked,size_bytes,checksum_sha256,started_at,completed_at,error_message,created_at FROM backup_runs ORDER BY id DESC LIMIT 100"); }
+    public List<Map<String, Object>> backups() { return jdbc.queryForList("SELECT id,request_no,status,storage_path_masked,size_bytes,checksum_sha256,started_at,completed_at,error_message,created_at FROM backup_runs ORDER BY id DESC "); }
 
     @Scheduled(fixedDelayString = "${features.linknux.ops.aggregate-ms:60000}", initialDelayString = "${features.linknux.ops.aggregate-ms:60000}")
     @Transactional

@@ -1,0 +1,35 @@
+import {test,expect} from '@playwright/test'
+test('gateway uses site/group hierarchy, red failures, unified jobs and selectable pages',async({page})=>{
+ await page.addInitScript(()=>{localStorage.setItem('admin_access_token','browser-test-only');localStorage.setItem('admin_info',JSON.stringify({username:'test',role:'ADMIN'}))})
+ const sites=[{id:1,name:'AiAPIBank'},{id:2,name:'好易智算'},{id:3,name:'ahh'}]
+ const groups=Array.from({length:24},(_,i)=>({id:i+1,site_id:i===0?3:i===1?2:1,site_name:i===0?'ahh':i===1?'好易智算':'AiAPIBank',name:i===0?'ahh':`group-${i}`,group_name:i===0?'Claude-Max':`分组 ${i}`,model_count:6,enabled:true,credential_configured:true,sync_enabled:true,sync_status:i===0?'ERROR':'SUCCESS',message:i===0?'上游凭据无效或已过期':'同步完成',http_status:i===0?401:null,suggestion:'更新该分组 Key 后重试',phase:'MODELS'}))
+ const calls:string[]=[]
+ await page.route('**/api/**',async route=>{const url=new URL(route.request().url());calls.push(url.pathname+'?'+url.searchParams.toString());
+  if(url.pathname.endsWith('/gateway/sites'))return route.fulfill({json:{items:sites,total:3,page:1,size:100}})
+  if(url.pathname.endsWith('/gateway/groups')){let rows=groups;if(url.searchParams.get('siteId'))rows=rows.filter(x=>x.site_id===Number(url.searchParams.get('siteId')));const size=Number(url.searchParams.get('size')||20),current=Number(url.searchParams.get('page')||1);return route.fulfill({json:{items:url.searchParams.get('all')==='true'?rows:rows.slice((current-1)*size,current*size),total:rows.length,page:current,size}})}
+  if(url.pathname.endsWith('/gateway/sync'))return route.fulfill({json:{jobs:[{groupId:1,jobId:'job-test'}]}})
+  if(url.pathname.endsWith('/gateway/jobs'))return route.fulfill({json:{items:[{id:'job-test',channel_id:1,site_name:'ahh',group_name:'Claude-Max',status:'ERROR',message:'上游凭据无效或已过期',suggestion:'更新该分组 Key 后重试',http_status:401,phase:'MODELS'}],total:1,page:1,size:20}})
+  return route.fulfill({json:{}})
+ })
+ await page.goto('/admin/model-gateway')
+ const workbench=page.locator('.gateway-workbench')
+ await expect(workbench.getByRole('tab')).toHaveCount(3)
+ await expect(workbench.getByText('预览 AiAPIBank 全分组')).toHaveCount(0)
+ await expect(workbench.getByText('一键导入 AiAPIBank 全分组')).toHaveCount(0)
+ await expect(workbench.locator('.el-tag--danger').first()).toHaveText('失败')
+ await workbench.locator('.filters .el-select').first().click()
+ for(const name of ['AiAPIBank','好易智算','ahh'])await expect(page.getByRole('option',{name,exact:true})).toBeVisible()
+ await page.getByRole('option',{name:'ahh',exact:true}).click()
+ await expect(workbench.locator('.el-table__body tr')).toHaveCount(1)
+ await expect(workbench.getByText('Claude-Max',{exact:true}).first()).toBeVisible()
+ await workbench.getByRole('button',{name:'同步目录',exact:true}).click()
+ await expect.poll(()=>calls.some(x=>x.includes('/admin/api/gateway/sync'))).toBeTruthy()
+ await workbench.getByRole('tab',{name:'运行记录'}).click()
+ await workbench.getByRole('button',{name:'详情',exact:true}).click()
+ await expect(page.getByText('HTTP：401')).toBeVisible()
+ await page.getByRole('button',{name:'Close this dialog'}).click()
+ await workbench.locator('.list-pagination .el-select').click()
+ await page.getByRole('option',{name:'显示全部',exact:true}).click()
+ await expect.poll(()=>calls.some(x=>x.includes('all=true'))).toBeTruthy()
+ await page.screenshot({path:'../logs/gateway-workbench-browser.png',fullPage:true})
+})

@@ -51,6 +51,7 @@ public class ServiceCommerceService {
     private final ObjectMapper objectMapper;
     private final ChannelSecretService secretService;
     private final PaymentRefundJobMapper refundJobMapper;
+    private final DujiaoNextProcurementService dujiaoNextProcurementService;
 
     @Value("${service-orders.reservation-minutes:15}")
     private long reservationMinutes;
@@ -97,6 +98,14 @@ public class ServiceCommerceService {
     public void reserve(ServiceOrder order, Map<String, String> customFields) {
         if (order.getServiceId() == null) return;
         validateCustomFields(order.getServiceId(), customFields);
+        OtherService service = otherServiceMapper.selectById(order.getServiceId());
+        if (service == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Service not found");
+        String supplierType = service.getSupplierType() == null
+                ? OtherServiceCatalogService.LOCAL_INVENTORY
+                : service.getSupplierType().trim().toUpperCase(Locale.ROOT);
+        order.setSupplierType(supplierType);
+        order.setSupplierProductId(service.getSupplierProductId());
+        order.setSupplierSkuId(service.getSupplierSkuId());
         LocalDateTime expiresAt = now().plusMinutes(Math.max(1, reservationMinutes));
         order.setReservationExpiresAt(expiresAt);
         order.setCustomInputJson(writeJson(customFields == null ? Map.of() : customFields));
@@ -124,6 +133,14 @@ public class ServiceCommerceService {
             return latest == null ? order : revealDelivery(latest);
         }
         order.setFulfillmentStatus("SETTLING");
+        OtherService service = otherServiceMapper.selectById(order.getServiceId());
+        String supplierType = order.getSupplierType() == null && service != null ? service.getSupplierType() : order.getSupplierType();
+        if (OtherServiceCatalogService.DUJIAO_NEXT.equals(supplierType == null
+                ? OtherServiceCatalogService.LOCAL_INVENTORY : supplierType.trim().toUpperCase(Locale.ROOT))) {
+            consumeCouponReservation(order);
+            order.setReservationExpiresAt(null);
+            return dujiaoNextProcurementService.enqueue(order, service);
+        }
         if (AUTOMATIC.equals(order.getFulfillmentMode())) {
             List<ServiceInventoryItem> items = inventoryMapper.selectList(new LambdaQueryWrapper<ServiceInventoryItem>()
                     .eq(ServiceInventoryItem::getReservedOrderId, order.getId()).eq(ServiceInventoryItem::getStatus, RESERVED)
@@ -341,7 +358,7 @@ public class ServiceCommerceService {
 
     public List<ServiceInventoryItem> listInventory(Long serviceId, String status) {
         LambdaQueryWrapper<ServiceInventoryItem> query = new LambdaQueryWrapper<ServiceInventoryItem>()
-                .eq(ServiceInventoryItem::getServiceId, serviceId).orderByDesc(ServiceInventoryItem::getId).last("LIMIT 500");
+                .eq(ServiceInventoryItem::getServiceId, serviceId).orderByDesc(ServiceInventoryItem::getId);
         if (status != null && !status.isBlank()) query.eq(ServiceInventoryItem::getStatus, status.trim().toUpperCase(Locale.ROOT));
         return inventoryMapper.selectList(query);
     }
@@ -390,6 +407,8 @@ public class ServiceCommerceService {
     }
 
     private Integer availableStock(OtherService service) {
+        if (OtherServiceCatalogService.DUJIAO_NEXT.equals(service.getSupplierType() == null
+                ? OtherServiceCatalogService.LOCAL_INVENTORY : service.getSupplierType().trim().toUpperCase(Locale.ROOT))) return null;
         if (AUTOMATIC.equals(normalizeMode(service.getFulfillmentMode()))) return Math.toIntExact(inventoryMapper.selectCount(new LambdaQueryWrapper<ServiceInventoryItem>().eq(ServiceInventoryItem::getServiceId, service.getId()).eq(ServiceInventoryItem::getStatus, AVAILABLE)));
         if (service.getManualStock() == null) return null;
         return Math.max(0, service.getManualStock() - (service.getManualReserved() == null ? 0 : service.getManualReserved()));

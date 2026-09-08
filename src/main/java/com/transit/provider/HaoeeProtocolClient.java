@@ -117,6 +117,7 @@ public class HaoeeProtocolClient {
 
     private boolean haoee(Channel channel) {
         if ("aiapibank".equalsIgnoreCase(channel.getSourceCode())) return false;
+        if ("sub2api".equalsIgnoreCase(channel.getSourceCode())) return false;
         return !channel.isManaged()
                 || "haoee".equalsIgnoreCase(channel.getSourceCode())
                 || "haoee".equalsIgnoreCase(channel.getType())

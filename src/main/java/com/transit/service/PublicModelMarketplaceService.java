@@ -43,7 +43,7 @@ public class PublicModelMarketplaceService {
 
     public Map<String, List<PublicModelFacetOption>> facets(List<PublicModel> models, Filters filters) {
         Map<String, List<PublicModelFacetOption>> result = new LinkedHashMap<>();
-        result.put("routes", facet(filter(models, filters, "routes"), model -> one(model.getRouteCode()), model -> model.getRouteName()));
+        result.put("routes", routeFacets(filter(models, filters, "routes")));
         result.put("publishers", facet(filter(models, filters, "publishers"), model -> one(model.getPublisherCode()), model -> model.getPublisherName()));
         result.put("categories", facet(filter(models, filters, "categories"), model -> one(model.getCategory()), model -> categoryLabel(model.getCategory())));
         result.put("capabilities", facet(filter(models, filters, "capabilities"), model -> one(model.getCapability()), model -> model.getCapability()));
@@ -82,7 +82,7 @@ public class PublicModelMarketplaceService {
             String haystack = String.join(" ", safe(model.getPublicName()), safe(model.getDisplayName()),
                     safe(model.getPublisherName()), safe(model.getCapability()), safe(model.getPlanName())).toLowerCase(Locale.ROOT);
             return (f.query().isBlank() || haystack.contains(f.query()))
-                    && ignoredOrMatches(ignored, "routes", f.routes(), one(model.getRouteCode()))
+                    && ignoredOrMatches(ignored, "routes", f.routes(), routeLabels(model).keySet())
                     && ignoredOrMatches(ignored, "publishers", f.publishers(), one(model.getPublisherCode()))
                     && ignoredOrMatches(ignored, "categories", f.categories(), one(model.getCategory()))
                     && ignoredOrMatches(ignored, "capabilities", f.capabilities(), one(model.getCapability()))
@@ -93,6 +93,35 @@ public class PublicModelMarketplaceService {
                     && ignoredOrMatches(ignored, "plans", f.plans(), one(model.getPlanCode()))
                     && ignoredOrMatches(ignored, "priceStatuses", f.priceStatuses(), one(model.getPricingStatus()));
         }).toList();
+    }
+
+    private Map<String, String> routeLabels(PublicModel model) {
+        Map<String, String> routes = new LinkedHashMap<>();
+        if (model.getUpstreams() != null) {
+            for (var upstream : model.getUpstreams()) {
+                if (!normalize(upstream.getCode()).isBlank()) {
+                    routes.putIfAbsent(normalize(upstream.getCode()), upstream.getName());
+                }
+            }
+        }
+        if (routes.isEmpty() && !normalize(model.getRouteCode()).isBlank()) {
+            routes.put(normalize(model.getRouteCode()), model.getRouteName());
+        }
+        return routes;
+    }
+
+    private List<PublicModelFacetOption> routeFacets(List<PublicModel> models) {
+        Map<String, Long> counts = new LinkedHashMap<>();
+        Map<String, String> labels = new LinkedHashMap<>();
+        for (PublicModel model : models) {
+            routeLabels(model).forEach((code, name) -> {
+                counts.merge(code, 1L, Long::sum);
+                labels.putIfAbsent(code, name == null || name.isBlank() ? code : name);
+            });
+        }
+        return counts.entrySet().stream()
+                .map(entry -> new PublicModelFacetOption(entry.getKey(), labels.get(entry.getKey()), entry.getValue()))
+                .sorted(Comparator.comparing(PublicModelFacetOption::label, String.CASE_INSENSITIVE_ORDER)).toList();
     }
 
     private boolean ignoredOrMatches(String ignored, String name, Set<String> selected, Set<String> actual) {

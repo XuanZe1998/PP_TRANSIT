@@ -29,6 +29,8 @@ class ServiceCommerceServiceIntegrationTests {
     @Autowired private ServiceOrderService orderService;
     @Autowired private ServiceInventoryItemMapper inventoryMapper;
     @Autowired private com.transit.mapper.ServiceOrderMapper orderMapper;
+    @Autowired private DujiaoNextProcurementService dujiaoNextProcurementService;
+    @Autowired private com.fasterxml.jackson.databind.ObjectMapper objectMapper;
 
     @Test
     void automaticProductSnapshotsTierCouponAndDeliversEncryptedInventoryExactlyOnce() {
@@ -153,6 +155,43 @@ class ServiceCommerceServiceIntegrationTests {
 
         assertThat(orderMapper.selectById(order.getId()).getStatus()).isEqualTo("EXPIRED");
         assertThat(commerceService.inventoryStats(service.getId()).get(ServiceCommerceService.AVAILABLE)).isEqualTo(1L);
+    }
+
+    @Test
+    void paidDujiaoMappedServiceQueuesDurableUpstreamProcurementWithoutLocalInventory() {
+        OtherService service = catalogService.create(OtherService.builder()
+                .name("Dujiao mapped product").description("test").enabled(true).purchaseEnabled(true)
+                .priceCents(1_500L).serviceFeeCents(50L).currency("CNY")
+                .supplierType(OtherServiceCatalogService.DUJIAO_NEXT)
+                .supplierProductId(42L).supplierSkuId(84L)
+                .maxPurchaseQuantity(2).wholesaleTiersJson("[]").inputSchemaJson("[]").build());
+        User user = new User(); user.setId(99_004L); user.setEmail("dujiao@example.com");
+        user.setEmailVerifiedAt(java.time.LocalDateTime.now());
+
+        ServiceOrder created = orderService.createOrder(user, baseOrderRequest(service, user.getEmail())).getOrder();
+        ServiceOrder paid = orderService.startPayment(user, created.getId(), "127.0.0.1").getOrder();
+
+        assertThat(paid.getStatus()).isEqualTo("PAID");
+        assertThat(paid.getFulfillmentStatus()).isEqualTo("PROCUREMENT_PENDING");
+        ServiceOrder stored = orderMapper.selectById(paid.getId());
+        assertThat(stored.getSupplierType()).isEqualTo(OtherServiceCatalogService.DUJIAO_NEXT);
+        assertThat(stored.getSupplierProductId()).isEqualTo(42L);
+        assertThat(stored.getSupplierSkuId()).isEqualTo(84L);
+        assertThat(stored.getSupplierOrderId()).isNull();
+
+        dujiaoNextProcurementService.handleCallback(objectMapper.valueToTree(java.util.Map.of(
+                "order_id", 501L,
+                "order_no", "DJ-501",
+                "downstream_order_no", stored.getOrderNo(),
+                "status", "completed",
+                "amount", "10.00",
+                "currency", "CNY",
+                "fulfillment", java.util.Map.of("status", "delivered", "payload", "UPSTREAM-CARD-501")
+        )));
+        ServiceOrder delivered = orderService.getUserOrder(user, stored.getId());
+        assertThat(delivered.getStatus()).isEqualTo("FULFILLED");
+        assertThat(delivered.getFulfillmentStatus()).isEqualTo("COMPLETED");
+        assertThat(delivered.getDeliveryItems()).containsExactly("UPSTREAM-CARD-501");
     }
 
     private ServiceOrderCreateRequest baseOrderRequest(OtherService service, String email) {

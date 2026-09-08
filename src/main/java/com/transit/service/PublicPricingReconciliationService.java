@@ -30,6 +30,7 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class PublicPricingReconciliationService {
+    @org.springframework.beans.factory.annotation.Autowired(required=false) private GatewayPricingService gatewayPricing;
     private static final String MANIFEST = "catalog/public-model-prices.yaml";
 
     private final ModelMappingMapper mappingMapper;
@@ -116,6 +117,7 @@ public class PublicPricingReconciliationService {
                     }
                     mappingMapper.updateById(mapping);
                     tierService.synchronize(mapping, desired);
+                    if(gatewayPricing!=null)gatewayPricing.repriceAfterSync(mapping.getId());
                 }
                 routes.add(routeReport(route, unified, true));
             }

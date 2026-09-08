@@ -9,7 +9,7 @@
     </div>
 
     <el-alert v-if="pendingOnly" type="warning" :closable="false" title="当前仅显示待处理（PENDING / CONFIRMED）订单" />
-    <el-table v-loading="loading" :data="displayOrders" empty-text="暂无服务订单">
+    <PagedTable v-loading="loading" :data="displayOrders" empty-text="暂无服务订单" list-id="AdminServiceOrders-1">
       <el-table-column prop="orderNo" label="订单号" min-width="190" />
       <el-table-column prop="userId" label="用户 ID" width="90" />
       <el-table-column prop="productName" label="服务名称" min-width="180" />
@@ -33,7 +33,7 @@
           <el-button link type="danger" @click="deleteOrder(row)">删除</el-button>
         </template>
       </el-table-column>
-    </el-table>
+    </PagedTable>
 
     <el-dialog v-model="dialogVisible" title="处理服务订单" width="620px">
       <el-form label-position="top">
@@ -59,6 +59,13 @@
         <el-form-item label="订单备注">
           <el-input v-model="form.fulfillmentNote" type="textarea" :rows="5" />
         </el-form-item>
+        <el-descriptions v-if="selectedOrder?.supplierDetails" title="Dujiao-Next 采购" :column="2" border>
+          <el-descriptions-item label="Product / SKU">{{ selectedOrder.supplierDetails.productId || '-' }} / {{ selectedOrder.supplierDetails.skuId || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="上游状态">{{ selectedOrder.supplierDetails.status || selectedOrder.fulfillmentStatus || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="上游订单号">{{ selectedOrder.supplierDetails.orderNo || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="采购金额">{{ selectedOrder.supplierDetails.amount || '-' }} {{ selectedOrder.supplierDetails.currency || '' }}</el-descriptions-item>
+          <el-descriptions-item v-if="selectedOrder.supplierDetails.lastError" label="最近错误" :span="2">{{ selectedOrder.supplierDetails.lastError }}</el-descriptions-item>
+        </el-descriptions>
         <el-form-item v-if="selectedOrder?.fulfillmentMode === 'MANUAL_PROCESSING' && selectedOrder?.status === 'PAID'" label="交付内容" required>
           <el-input v-model="form.deliveryContent" type="textarea" :rows="6" placeholder="仅在订单详情中展示给订单所属用户" />
         </el-form-item>
@@ -77,6 +84,7 @@
 </template>
 
 <script setup lang="ts">
+import PagedTable from '@/components/PagedTable.vue'
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -99,6 +107,7 @@ type ServiceOrder = {
   fulfillmentNote?: string
   fulfillmentReference?: string
   paymentReference?: string
+  supplierDetails?: Record<string, any>
   createdAt: string
 }
 

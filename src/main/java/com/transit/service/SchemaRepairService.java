@@ -37,6 +37,7 @@ public class SchemaRepairService {
             ensureAccountPresentationTables();
             removeLegacyPlusAndService07();
             ensureColumns();
+            consolidateDuplicateSitePublicMappings();
             normalizeAndValidateContacts();
             ensureIndexes();
             purgeExistingFailedProviderModels();
@@ -45,6 +46,12 @@ public class SchemaRepairService {
             backfillChannelModelMappings();
             backfillModelPriceTiers();
         };
+    }
+
+    @Bean
+    @Order(2)
+    ApplicationRunner newApiImageProtocolRepairRunner() {
+        return args -> repairNewApiImageProtocols();
     }
 
     private void removeLegacyPlusAndService07() {
@@ -205,10 +212,10 @@ public class SchemaRepairService {
      * settings.
      */
     int backfillChannelModelMappings() {
-        List<Map<String, Object>> channels = jdbcTemplate.queryForList("""
-                SELECT id, models FROM channels
-                WHERE models IS NOT NULL AND TRIM(models) <> ''
-                """);
+        String managedFilter = columnExists("channels", "source_code")
+                ? " AND COALESCE(source_code,'') NOT IN ('new-api','sub2api','aiapibank','haoee','nvidia')" : "";
+        List<Map<String, Object>> channels = jdbcTemplate.queryForList(
+                "SELECT id, models FROM channels WHERE models IS NOT NULL AND TRIM(models) <> ''" + managedFilter);
         int created = 0;
         for (Map<String, Object> channel : channels) {
             long channelId = ((Number) channel.get("id")).longValue();
@@ -249,6 +256,49 @@ public class SchemaRepairService {
             log.info("Backfilled {} channel-owned model mapping(s)", created);
         }
         return created;
+    }
+
+    int repairNewApiImageProtocols() {
+        if (!tableExists("channels") || !tableExists("model_mappings")
+                || !columnExists("channels", "source_code") || !columnExists("channels", "protocol_type")
+                || !columnExists("model_mappings", "capability") || !columnExists("model_mappings", "protocols")) {
+            return 0;
+        }
+        int repaired = jdbcTemplate.update("""
+                UPDATE model_mappings
+                   SET capability='image', input_modalities='text', output_modalities='image',
+                       protocols='images', endpoint_path='/v1/images/generations'
+                 WHERE channel_id IN (SELECT id FROM channels WHERE source_code='new-api')
+                   AND (
+                       LOWER(channel_model_name) LIKE '%image%'
+                       OR LOWER(channel_model_name) LIKE '%dall-e%'
+                       OR LOWER(channel_model_name) LIKE '%imagen%'
+                       OR LOWER(channel_model_name) LIKE '%seedream%'
+                       OR LOWER(channel_model_name) LIKE '%flux%'
+                       OR LOWER(channel_model_name) LIKE '%recraft%'
+                       OR LOWER(channel_model_name) LIKE '%ideogram%'
+                       OR LOWER(channel_model_name) LIKE '%stable-diffusion%'
+                   )
+                   AND (capability<>'image' OR protocols<>'images'
+                        OR output_modalities<>'image' OR endpoint_path IS NULL
+                        OR endpoint_path<>'/v1/images/generations')
+                """);
+        repaired += jdbcTemplate.update("""
+                UPDATE channels c
+                   SET protocol_type='openai-image', health_status='UNTESTED'
+                 WHERE c.source_code='new-api' AND c.protocol_type<>'openai-image'
+                   AND EXISTS (SELECT 1 FROM model_mappings m WHERE m.channel_id=c.id AND m.capability='image')
+                   AND NOT EXISTS (SELECT 1 FROM model_mappings m WHERE m.channel_id=c.id AND m.capability<>'image')
+                """);
+        repaired += jdbcTemplate.update("""
+                UPDATE channels c
+                   SET protocol_type='multi-protocol', health_status='UNTESTED'
+                 WHERE c.source_code='new-api' AND c.protocol_type<>'multi-protocol'
+                   AND EXISTS (SELECT 1 FROM model_mappings m WHERE m.channel_id=c.id AND m.capability='image')
+                   AND EXISTS (SELECT 1 FROM model_mappings m WHERE m.channel_id=c.id AND m.capability<>'image')
+                """);
+        if (repaired > 0) log.info("Repaired {} New API image protocol row(s)", repaired);
+        return repaired;
     }
 
     int backfillModelPriceTiers() {
@@ -504,6 +554,17 @@ public class SchemaRepairService {
                     custom_input_json TEXT NULL,
                     purchase_prompt VARCHAR(1000) NULL,
                     supplier_quote_json TEXT NULL,
+                    supplier_type VARCHAR(32) NOT NULL DEFAULT 'LOCAL_INVENTORY',
+                    supplier_product_id BIGINT NULL,
+                    supplier_sku_id BIGINT NULL,
+                    supplier_order_id BIGINT NULL,
+                    supplier_order_no VARCHAR(120) NULL,
+                    supplier_status VARCHAR(40) NULL,
+                    supplier_amount VARCHAR(40) NULL,
+                    supplier_currency VARCHAR(3) NULL,
+                    supplier_error VARCHAR(1000) NULL,
+                    procurement_attempts INT NOT NULL DEFAULT 0,
+                    next_procurement_at DATETIME NULL,
                     reservation_expires_at DATETIME NULL,
                     fulfillment_status VARCHAR(32) NULL,
                     delivery_content_encrypted TEXT NULL,
@@ -536,6 +597,9 @@ public class SchemaRepairService {
                     purchase_enabled BOOLEAN NOT NULL DEFAULT FALSE,
                     product_type VARCHAR(32) NOT NULL DEFAULT 'STANDARD',
                     fulfillment_mode VARCHAR(32) NOT NULL DEFAULT 'MANUAL_PROCESSING',
+                    supplier_type VARCHAR(32) NOT NULL DEFAULT 'LOCAL_INVENTORY',
+                    supplier_product_id BIGINT NULL,
+                    supplier_sku_id BIGINT NULL,
                     purchase_prompt VARCHAR(1000) NULL,
                     max_purchase_quantity INT NOT NULL DEFAULT 1,
                     manual_stock INT NULL,
@@ -1334,6 +1398,17 @@ public class SchemaRepairService {
         ensureColumn("service_orders", "coupon_reservation_active", "ALTER TABLE service_orders ADD COLUMN coupon_reservation_active BOOLEAN NOT NULL DEFAULT FALSE");
         ensureColumn("service_orders", "refund_resources_released", "ALTER TABLE service_orders ADD COLUMN refund_resources_released BOOLEAN NOT NULL DEFAULT FALSE");
         ensureColumn("service_orders", "supplier_quote_json", "ALTER TABLE service_orders ADD COLUMN supplier_quote_json TEXT NULL");
+        ensureColumn("service_orders", "supplier_type", "ALTER TABLE service_orders ADD COLUMN supplier_type VARCHAR(32) NOT NULL DEFAULT 'LOCAL_INVENTORY'");
+        ensureColumn("service_orders", "supplier_product_id", "ALTER TABLE service_orders ADD COLUMN supplier_product_id BIGINT NULL");
+        ensureColumn("service_orders", "supplier_sku_id", "ALTER TABLE service_orders ADD COLUMN supplier_sku_id BIGINT NULL");
+        ensureColumn("service_orders", "supplier_order_id", "ALTER TABLE service_orders ADD COLUMN supplier_order_id BIGINT NULL");
+        ensureColumn("service_orders", "supplier_order_no", "ALTER TABLE service_orders ADD COLUMN supplier_order_no VARCHAR(120) NULL");
+        ensureColumn("service_orders", "supplier_status", "ALTER TABLE service_orders ADD COLUMN supplier_status VARCHAR(40) NULL");
+        ensureColumn("service_orders", "supplier_amount", "ALTER TABLE service_orders ADD COLUMN supplier_amount VARCHAR(40) NULL");
+        ensureColumn("service_orders", "supplier_currency", "ALTER TABLE service_orders ADD COLUMN supplier_currency VARCHAR(3) NULL");
+        ensureColumn("service_orders", "supplier_error", "ALTER TABLE service_orders ADD COLUMN supplier_error VARCHAR(1000) NULL");
+        ensureColumn("service_orders", "procurement_attempts", "ALTER TABLE service_orders ADD COLUMN procurement_attempts INT NOT NULL DEFAULT 0");
+        ensureColumn("service_orders", "next_procurement_at", "ALTER TABLE service_orders ADD COLUMN next_procurement_at DATETIME NULL");
         ensureColumn("service_orders", "service_fee_cents", "ALTER TABLE service_orders ADD COLUMN service_fee_cents BIGINT NULL");
         ensureColumn("service_orders", "contact_email", "ALTER TABLE service_orders ADD COLUMN contact_email VARCHAR(255) NULL");
         ensureColumn("service_orders", "contact_note", "ALTER TABLE service_orders ADD COLUMN contact_note VARCHAR(1000) NULL");
@@ -1374,6 +1449,9 @@ public class SchemaRepairService {
         ensureColumn("other_services", "purchase_enabled", "ALTER TABLE other_services ADD COLUMN purchase_enabled BOOLEAN NOT NULL DEFAULT FALSE");
         ensureColumn("other_services", "product_type", "ALTER TABLE other_services ADD COLUMN product_type VARCHAR(32) NOT NULL DEFAULT 'STANDARD'");
         ensureColumn("other_services", "fulfillment_mode", "ALTER TABLE other_services ADD COLUMN fulfillment_mode VARCHAR(32) NOT NULL DEFAULT 'MANUAL_PROCESSING'");
+        ensureColumn("other_services", "supplier_type", "ALTER TABLE other_services ADD COLUMN supplier_type VARCHAR(32) NOT NULL DEFAULT 'LOCAL_INVENTORY'");
+        ensureColumn("other_services", "supplier_product_id", "ALTER TABLE other_services ADD COLUMN supplier_product_id BIGINT NULL");
+        ensureColumn("other_services", "supplier_sku_id", "ALTER TABLE other_services ADD COLUMN supplier_sku_id BIGINT NULL");
         ensureColumn("other_services", "purchase_prompt", "ALTER TABLE other_services ADD COLUMN purchase_prompt VARCHAR(1000) NULL");
         ensureColumn("other_services", "max_purchase_quantity", "ALTER TABLE other_services ADD COLUMN max_purchase_quantity INT NOT NULL DEFAULT 1");
         ensureColumn("other_services", "manual_stock", "ALTER TABLE other_services ADD COLUMN manual_stock INT NULL");
@@ -1441,6 +1519,8 @@ public class SchemaRepairService {
                 "CREATE INDEX idx_service_orders_provider_trade_no ON service_orders(provider_trade_no)");
         ensureIndex("service_orders", "idx_service_orders_reservation_expiry",
                 "CREATE INDEX idx_service_orders_reservation_expiry ON service_orders(status, reservation_expires_at)");
+        ensureIndex("service_orders", "idx_service_orders_procurement",
+                "CREATE INDEX idx_service_orders_procurement ON service_orders(supplier_type, fulfillment_status, next_procurement_at)");
         ensureIndex("service_inventory_items", "uq_service_inventory_fingerprint",
                 "CREATE UNIQUE INDEX uq_service_inventory_fingerprint ON service_inventory_items(service_id, content_fingerprint)");
         ensureIndex("service_inventory_items", "idx_service_inventory_claim",
@@ -1529,6 +1609,39 @@ public class SchemaRepairService {
         if (seedDemoCatalog) {
             seedMarketplaceModels();
         }
+    }
+
+    int consolidateDuplicateSitePublicMappings() {
+        if (!tableExists("upstream_sites") || !tableExists("upstream_site_channels")
+                || !tableExists("upstream_display_mappings")) return 0;
+        List<Map<String, Object>> candidates = jdbcTemplate.queryForList("""
+                SELECT sc.site_id,MIN(d.public_name) public_name,COUNT(*) mapping_count,
+                       COUNT(DISTINCT LOWER(TRIM(d.public_name))) public_name_count
+                FROM upstream_site_channels sc
+                JOIN upstream_display_mappings d ON d.channel_id=sc.channel_id AND d.enabled=TRUE
+                WHERE d.public_name IS NOT NULL AND TRIM(d.public_name)<>''
+                GROUP BY sc.site_id
+                HAVING COUNT(*)>1 AND COUNT(DISTINCT LOWER(TRIM(d.public_name)))=1
+                """);
+        int consolidated = 0;
+        for (Map<String, Object> candidate : candidates) {
+            long siteId = ((Number) candidate.get("site_id")).longValue();
+            String publicName = String.valueOf(candidate.get("public_name")).trim();
+            Map<String, Object> site = jdbcTemplate.queryForMap(
+                    "SELECT public_code,public_name FROM upstream_sites WHERE id=?", siteId);
+            String existingName = site.get("public_name") == null ? "" : site.get("public_name").toString().trim();
+            if (!existingName.isBlank() && !existingName.equalsIgnoreCase(publicName)) continue;
+            String existingCode = site.get("public_code") == null ? "" : site.get("public_code").toString().trim();
+            jdbcTemplate.update("UPDATE upstream_sites SET public_code=?,public_name=? WHERE id=?",
+                    existingCode.isBlank() ? "site-" + siteId : existingCode, publicName, siteId);
+            consolidated += jdbcTemplate.update("""
+                    DELETE FROM upstream_display_mappings
+                    WHERE channel_id IN (SELECT channel_id FROM upstream_site_channels WHERE site_id=?)
+                      AND LOWER(TRIM(public_name))=LOWER(TRIM(?))
+                    """, siteId, publicName);
+        }
+        if (consolidated > 0) log.info("Consolidated {} duplicate group display mappings into site identities", consolidated);
+        return consolidated;
     }
 
     private void seedOtherServices() {

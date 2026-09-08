@@ -25,7 +25,7 @@ public class RedeemCodeService {
     public List<Map<String, Object>> list() {
         return jdbcTemplate.queryForList("""
                 SELECT id, code_prefix, amount, max_uses, used_count, enabled, expires_at, created_at
-                FROM redeem_codes ORDER BY created_at DESC LIMIT 500
+                FROM redeem_codes ORDER BY created_at DESC
                 """);
     }
 

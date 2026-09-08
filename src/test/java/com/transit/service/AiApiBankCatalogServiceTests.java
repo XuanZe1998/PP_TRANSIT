@@ -9,14 +9,19 @@ import com.transit.mapper.ModelPriceTierMapper;
 import com.transit.model.Channel;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.web.reactive.function.client.ClientResponse;
 import org.springframework.web.reactive.function.client.WebClient;
+import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -81,6 +86,29 @@ class AiApiBankCatalogServiceTests {
         assertThat(service.salePrice(new BigDecimal("0.05"))).isEqualByComparingTo("0.055");
         assertThat(service.salePrice(new BigDecimal("0.10"))).isEqualByComparingTo("0.11");
         assertThat(service.salePrice(BigDecimal.ZERO)).isEqualByComparingTo(BigDecimal.ZERO);
+    }
+
+    @Test
+    void sendsShortLivedAccountTokenWhenTheSiteHasCatalogAuthorization() {
+        AtomicReference<String> authorization = new AtomicReference<>();
+        WebClient client = WebClient.builder().exchangeFunction(request -> {
+            authorization.set(request.headers().getFirst(HttpHeaders.AUTHORIZATION));
+            return Mono.just(ClientResponse.create(HttpStatus.OK).header("Content-Type", "application/json")
+                    .body("{\"code\":0,\"data\":{\"groups\":[]}}").build());
+        }).build();
+        var authenticated = new AiApiBankCatalogService(client, json, jdbc,
+                mock(TransactionTemplate.class), channelMapper, mock(ModelMappingMapper.class),
+                mock(ModelPriceTierMapper.class), mock(ChannelSecretService.class));
+        var sessions = mock(AiApiBankAccountSessionService.class);
+        when(sessions.isAuthorized(7L)).thenReturn(true);
+        when(sessions.accessToken(7L)).thenReturn("short-lived-access");
+        ReflectionTestUtils.setField(authenticated, "accountSessions", sessions);
+        ReflectionTestUtils.setField(authenticated, "baseUrl", "https://aiapibank.test");
+        ReflectionTestUtils.setField(authenticated, "timeoutSeconds", 5);
+
+        authenticated.fetchCatalog(7L);
+
+        assertThat(authorization).hasValue("Bearer short-lived-access");
     }
 
     @Test

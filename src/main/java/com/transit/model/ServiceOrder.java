@@ -137,6 +137,50 @@ public class ServiceOrder {
     @TableField("supplier_quote_json")
     private String supplierQuoteJson;
 
+    @JsonIgnore
+    @TableField("supplier_type")
+    private String supplierType;
+
+    @JsonIgnore
+    @TableField("supplier_product_id")
+    private Long supplierProductId;
+
+    @JsonIgnore
+    @TableField("supplier_sku_id")
+    private Long supplierSkuId;
+
+    @JsonIgnore
+    @TableField("supplier_order_id")
+    private Long supplierOrderId;
+
+    @JsonIgnore
+    @TableField("supplier_order_no")
+    private String supplierOrderNo;
+
+    @JsonIgnore
+    @TableField("supplier_status")
+    private String supplierStatus;
+
+    @JsonIgnore
+    @TableField("supplier_amount")
+    private String supplierAmount;
+
+    @JsonIgnore
+    @TableField("supplier_currency")
+    private String supplierCurrency;
+
+    @JsonIgnore
+    @TableField("supplier_error")
+    private String supplierError;
+
+    @JsonIgnore
+    @TableField("procurement_attempts")
+    private Integer procurementAttempts;
+
+    @JsonIgnore
+    @TableField("next_procurement_at")
+    private LocalDateTime nextProcurementAt;
+
     @TableField("reservation_expires_at")
     private LocalDateTime reservationExpiresAt;
 
@@ -194,4 +238,5 @@ public class ServiceOrder {
     @TableField(exist = false) private MoneyAmount serviceFeeMoney;
     @TableField(exist = false) private MoneyAmount amountMoney;
     @TableField(exist = false) private MoneyAmount settlementMoney;
+    @TableField(exist = false) private java.util.Map<String, Object> supplierDetails;
 }

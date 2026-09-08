@@ -137,7 +137,7 @@
               从 VMCard 刷新
             </el-button>
           </div>
-          <el-table v-loading="productsLoading" :data="productCodes" empty-text="暂无产品码，请先从 VMCard 刷新">
+          <PagedTable v-loading="productsLoading" :data="productCodes" empty-text="暂无产品码，请先从 VMCard 刷新" list-id="AdminVmCardTest-1">
             <el-table-column prop="productCode" label="产品码" min-width="140" fixed />
             <el-table-column prop="bin" label="BIN" min-width="120" />
             <el-table-column prop="type" label="类型" min-width="100" />
@@ -161,7 +161,7 @@
                 </el-tag>
               </template>
             </el-table-column>
-          </el-table>
+          </PagedTable>
         </section>
       </el-tab-pane>
 
@@ -174,7 +174,7 @@
             </div>
             <el-button :loading="cardsLoading" @click="loadSavedCards">刷新</el-button>
           </div>
-          <el-table :data="savedCards" empty-text="暂无本地卡片记录">
+          <PagedTable :data="savedCards" empty-text="暂无本地卡片记录" list-id="AdminVmCardTest-2">
             <el-table-column type="expand">
               <template #default="{ row }">
                 <el-alert
@@ -195,7 +195,7 @@
               <template #default="{ row }">{{ row.disabledOrFrozenAt || '-' }}</template>
             </el-table-column>
             <el-table-column prop="createdAt" label="本地入库时间" width="190" />
-          </el-table>
+          </PagedTable>
         </section>
       </el-tab-pane>
 
@@ -214,7 +214,7 @@
             :closable="false"
             title="请配置 VMCARD_WEBHOOK_SECRET，再将 /webhooks/vmcard/{secret} 设置为 VMCard Webhook 地址。"
           />
-          <el-table :data="events" empty-text="暂无 Webhook 通知">
+          <PagedTable :data="events" empty-text="暂无 Webhook 通知" list-id="AdminVmCardTest-3">
             <el-table-column type="expand">
               <template #default="{ row }">
                 <pre class="event-json">{{ formatJson(row.payload) }}</pre>
@@ -223,7 +223,7 @@
             <el-table-column prop="eventType" label="类型" width="140" />
             <el-table-column prop="externalId" label="事件标识" min-width="220" show-overflow-tooltip />
             <el-table-column prop="receivedAt" label="接收时间" width="190" />
-          </el-table>
+          </PagedTable>
         </section>
       </el-tab-pane>
     </el-tabs>
@@ -231,6 +231,7 @@
 </template>
 
 <script setup lang="ts">
+import PagedTable from '@/components/PagedTable.vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import http, { getHttpErrorMessage } from '@/utils/http'

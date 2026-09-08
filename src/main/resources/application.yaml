@@ -117,7 +117,8 @@ haoee:
   verify-on-startup: ${HAOEE_VERIFY_ON_STARTUP:false}
 
 # AiAPIBank catalog synchronization never stores credentials in configuration.
-# Each group key lives in the existing encrypted channels.api_key column.
+# Account authorization keeps only an encrypted refresh token in the database;
+# each group key lives in the existing encrypted channels.api_key column.
 aiapibank:
   enabled: ${AIAPIBANK_ENABLED:true}
   base-url: ${AIAPIBANK_BASE_URL:https://aiapibank.com}
@@ -125,6 +126,11 @@ aiapibank:
   sync-cron: ${AIAPIBANK_SYNC_CRON:0 20 3 * * *}
   sync-zone: ${AIAPIBANK_SYNC_ZONE:Asia/Tokyo}
   request-timeout-seconds: ${AIAPIBANK_REQUEST_TIMEOUT_SECONDS:30}
+
+new-api:
+  sync:
+    enabled: ${NEW_API_SYNC_ENABLED:true}
+    cron: ${NEW_API_SYNC_CRON:0 */15 * * * *}
 
 model-catalog:
   manual-verification-only: ${MODEL_CATALOG_MANUAL_VERIFICATION_ONLY:true}
@@ -283,6 +289,23 @@ service-orders:
   expiry-scan-ms: ${SERVICE_ORDER_EXPIRY_SCAN_MS:60000}
   # Optional comma-separated trusted HTTPS hosts. When set, redirects are restricted to this allowlist.
   redemption-allowed-hosts: ${SERVICE_REDEMPTION_ALLOWED_HOSTS:}
+
+dujiao-next:
+  # Customer payments still settle through this application's payment provider.
+  # A paid mapped service is then purchased from this upstream wallet.
+  enabled: ${DUJIAO_NEXT_ENABLED:false}
+  allow-purchases: ${DUJIAO_NEXT_ALLOW_PURCHASES:false}
+  base-url: ${DUJIAO_NEXT_BASE_URL:https://www.cccrad.uk}
+  api-key: ${DUJIAO_NEXT_API_KEY:}
+  api-secret: ${DUJIAO_NEXT_API_SECRET:}
+  callback-url: ${DUJIAO_NEXT_CALLBACK_URL:}
+  request-timeout-seconds: ${DUJIAO_NEXT_REQUEST_TIMEOUT_SECONDS:20}
+  timestamp-tolerance-seconds: ${DUJIAO_NEXT_TIMESTAMP_TOLERANCE_SECONDS:60}
+  worker-interval-ms: ${DUJIAO_NEXT_WORKER_INTERVAL_MS:2000}
+  worker-initial-delay-ms: ${DUJIAO_NEXT_WORKER_INITIAL_DELAY_MS:5000}
+  poll-interval-seconds: ${DUJIAO_NEXT_POLL_INTERVAL_SECONDS:30}
+  max-attempts: ${DUJIAO_NEXT_MAX_ATTEMPTS:8}
+  batch-size: ${DUJIAO_NEXT_BATCH_SIZE:10}
 
 billing:
   currency: ${BILLING_CURRENCY:CNY}

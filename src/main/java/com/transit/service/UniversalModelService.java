@@ -477,7 +477,8 @@ public class UniversalModelService {
         return healthy && (channel.isManaged()
                 || "haoee".equalsIgnoreCase(channel.getType())
                 || "haoee-openai".equalsIgnoreCase(channel.getType())
-                || "aiapibank".equalsIgnoreCase(channel.getSourceCode()));
+                || "aiapibank".equalsIgnoreCase(channel.getSourceCode())
+                || "sub2api".equalsIgnoreCase(channel.getSourceCode()));
     }
 
     private boolean supports(ModelMapping mapping, String protocol) {

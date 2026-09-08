@@ -42,6 +42,7 @@ public class NvidiaCatalogService implements ApplicationRunner {
     private final AdminChannelService adminChannelService;
     private final ProviderModelCatalogService providerModelCatalogService;
 
+    @Value("${nvidia.enabled:false}") private boolean nvidiaEnabled;
     @Value("${nvidia.key:}") private String configuredKey;
     @Value("${nvida.key:}") private String legacyConfiguredKey;
     @Value("${nvidia.verify-on-startup:false}") private boolean verifyOnStartup;
@@ -51,7 +52,7 @@ public class NvidiaCatalogService implements ApplicationRunner {
 
     @Override
     public void run(ApplicationArguments args) {
-        if (effectiveKey().isBlank()) {
+        if (!nvidiaEnabled || effectiveKey().isBlank()) {
             log.info("nvidia.key is empty; NVIDIA catalog remains inactive");
             return;
         }
@@ -68,7 +69,7 @@ public class NvidiaCatalogService implements ApplicationRunner {
     @Async
     @EventListener(ApplicationReadyEvent.class)
     public void verifyAfterStartup() {
-        if (manualVerificationOnly || !(verifyOnStartup || legacyVerifyOnStartup) || effectiveKey().isBlank()) return;
+        if (!nvidiaEnabled || manualVerificationOnly || !(verifyOnStartup || legacyVerifyOnStartup) || effectiveKey().isBlank()) return;
         Channel channel = findManagedChannel();
         if (channel == null) {
             log.info("Skipped NVIDIA startup verification because no managed channel is available");
@@ -81,6 +82,7 @@ public class NvidiaCatalogService implements ApplicationRunner {
     }
 
     public Long syncCatalog() {
+        if(!nvidiaEnabled)throw new IllegalStateException("NVIDIA integration is disabled");
         String sharedKey = requireConfiguredKey();
         if (!channelSecretService.isConfigured()) {
             throw new IllegalStateException("nvidia.key requires security.data-encryption-key");

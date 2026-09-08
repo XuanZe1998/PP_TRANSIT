@@ -143,13 +143,13 @@
             </div>
             <div class="activity-list">
               <el-empty v-if="activities.length === 0" description="暂无调用记录" />
-              <div v-for="item in activities" :key="item.title">
+              <PagedList :data="activities" list-id="UserConsole.vue-1" v-slot="{items:pagedItems}"><div v-for="item in pagedItems" :key="item.title">
                 <span :class="item.tone"></span>
                 <p>
                   <strong>{{ item.title }}</strong>
                   <small>{{ item.time }} · {{ item.desc }}</small>
                 </p>
-              </div>
+              </div></PagedList>
             </div>
           </section>
         </section>
@@ -162,7 +162,7 @@
             </div>
             <el-button type="primary" @click="openCreateKey">新建 Key</el-button>
           </div>
-          <el-table :data="keys" border>
+          <PagedTable :data="keys" border list-id="UserConsole-1">
             <el-table-column prop="name" label="名称" min-width="140" />
             <el-table-column prop="key" label="Key" min-width="220" />
             <el-table-column prop="quota" label="额度" min-width="140" />
@@ -173,7 +173,7 @@
                 <el-tag :type="row.status === '启用' ? 'success' : 'info'">{{ row.status }}</el-tag>
               </template>
             </el-table-column>
-          </el-table>
+          </PagedTable>
         </section>
 
         <section v-else-if="current.key === 'playground'" class="playground-layout">
@@ -377,7 +377,7 @@
             </article>
           </div>
           <div class="usage-table-scroll" tabindex="0" aria-label="账单汇总横向滚动区域">
-          <el-table :data="billingSummary" border scrollbar-always-on style="min-width: 1260px">
+          <PagedTable :data="billingSummary" border scrollbar-always-on style="min-width: 1260px" list-id="UserConsole-2">
             <el-table-column prop="model" label="模型" min-width="180" />
             <el-table-column prop="request_count" label="请求" width="90" />
             <el-table-column prop="prompt_tokens" label="输入 Token" width="130" />
@@ -395,11 +395,11 @@
             <el-table-column label="总费用(USD)" width="150">
               <template #default="{ row }">{{ formatUsd(row.total_amount) }}</template>
             </el-table-column>
-          </el-table>
+          </PagedTable>
           </div>
 
           <div class="usage-table-scroll billing-detail-table" tabindex="0" aria-label="用量明细横向滚动区域">
-          <el-table :data="billingRows" border scrollbar-always-on style="min-width: 1390px">
+          <PagedTable :data="billingRows" border scrollbar-always-on style="min-width: 1390px" list-id="UserConsole-3" pagination="external">
             <el-table-column prop="created_at" label="时间" min-width="170" />
             <el-table-column prop="trace_id" label="Trace ID" min-width="150" />
             <el-table-column prop="token_name" label="Key" min-width="140" />
@@ -412,9 +412,9 @@
             </el-table-column>
             <el-table-column prop="status" label="状态" width="110" />
             <el-table-column prop="error_message" label="错误" min-width="220" />
-          </el-table>
+          </PagedTable>
           </div>
-          <el-pagination
+          <SelectablePagination
             v-model:current-page="billingPage"
             v-model:page-size="billingPageSize"
             class="billing-pagination"
@@ -423,7 +423,7 @@
             :total="billingTotal"
             @current-change="loadBilling"
             @size-change="handleBillingPageSizeChange"
-          />
+           list-id="UserConsole-1"/>
         </section>
 
         <section v-else-if="current.key === 'model-probe'" class="console-panel">
@@ -483,12 +483,12 @@
               </div>
             </div>
             <div class="wallet-plan-grid">
-              <article v-for="plan in wallet.plans" :key="plan.id">
+              <PagedList :data="wallet.plans" list-id="UserConsole.vue-2" v-slot="{items:pagedItems}"><article v-for="plan in pagedItems" :key="plan.id">
                 <strong>{{ plan.name }}</strong>
                 <span>{{ formatMoneyDto(plan.paymentMoney) }}</span>
                 <small>赠送 {{ Number(plan.bonus || 0).toFixed(2) }}% · 到账 {{ formatMoneyDto(plan.totalCreditMoney) }}</small>
                 <el-button type="primary" :loading="rechargeSubmitting" @click="openRecharge(plan)">购买</el-button>
-              </article>
+              </article></PagedList>
               <article>
                 <strong>自定义充值</strong>
                 <span>任意金额</span>
@@ -500,7 +500,7 @@
 
           <section class="console-panel wallet-transactions">
             <div class="panel-head"><div><h2>充值订单</h2><p>金额由服务端套餐快照确定，付款后可下载账单和收据。</p></div></div>
-            <el-table :data="rechargeOrders" border empty-text="暂无充值订单">
+            <PagedTable :data="rechargeOrders" border empty-text="暂无充值订单" list-id="UserConsole-4">
               <el-table-column prop="orderNo" label="订单号" min-width="220" />
               <el-table-column prop="planName" label="套餐" min-width="130" />
               <el-table-column label="实付" width="130"><template #default="{ row }">{{ formatMoneyDto(row.paymentMoney) }}</template></el-table-column>
@@ -510,7 +510,7 @@
                 <el-button v-if="row.invoiceRequested" link type="primary" @click="downloadRecharge(row.id, 'invoice')">账单</el-button>
                 <el-button v-if="['PAID','REFUNDED'].includes(row.status)" link type="success" @click="downloadRecharge(row.id, 'receipt')">收据</el-button>
               </template></el-table-column>
-            </el-table>
+            </PagedTable>
           </section>
 
           <section class="console-panel wallet-transactions">
@@ -521,7 +521,7 @@
               </div>
               <el-button :loading="walletLoading" @click="loadWallet">刷新</el-button>
             </div>
-            <el-table :data="wallet.transactions" border empty-text="暂无余额流水">
+            <PagedTable :data="wallet.transactions" border empty-text="暂无余额流水" list-id="UserConsole-5" pagination="external">
               <el-table-column prop="created_at" label="时间" min-width="180" />
               <el-table-column prop="type" label="类型" width="130" />
               <el-table-column label="变动金额" width="150">
@@ -532,8 +532,8 @@
               </el-table-column>
               <el-table-column prop="channel" label="渠道" width="130" />
               <el-table-column prop="remark" label="备注" min-width="220" />
-            </el-table>
-            <el-pagination
+            </PagedTable>
+            <SelectablePagination
               v-model:current-page="walletTransactionPage"
               v-model:page-size="walletTransactionPageSize"
               class="billing-pagination"
@@ -542,17 +542,17 @@
               :total="walletTransactionTotal"
               @current-change="loadWallet"
               @size-change="handleWalletTransactionPageSizeChange"
-            />
+             list-id="UserConsole-2"/>
           </section>
 
           <el-drawer v-model="rechargeVisible" title="充值方案" size="min(680px, 94vw)" destroy-on-close>
             <div class="recharge-drawer-plans">
-              <button v-for="plan in wallet.plans" :key="plan.id" type="button"
+              <PagedList :data="wallet.plans" list-id="UserConsole.vue-3" v-slot="{items:pagedItems}"><button v-for="plan in pagedItems" :key="plan.id" type="button"
                 :class="{ selected: !customRecharge && selectedRechargePlan?.id === plan.id }" @click="selectRechargePlan(plan)">
                 <span><strong>{{ plan.name }}</strong><small>赠送 {{ Number(plan.bonus || 0).toFixed(2) }}%</small></span>
                 <b>{{ formatMoneyDto(plan.paymentMoney) }}</b>
                 <small class="recharge-credit-note">到账 {{ formatMoneyDto(plan.totalCreditMoney) }}</small>
-              </button>
+              </button></PagedList>
               <button type="button" :class="{ selected: customRecharge }" @click="selectCustomRecharge">
                 <span><strong>自定义充值</strong><small>无赠送</small></span>
                 <b>自定义金额</b>
@@ -588,11 +588,11 @@
             </div>
             <el-button type="primary" @click="go(current.actionPath)">{{ current.action }}</el-button>
           </div>
-          <el-table :data="genericRows" border>
+          <PagedTable :data="genericRows" border list-id="UserConsole-6">
             <el-table-column prop="name" label="项目" min-width="180" />
             <el-table-column prop="desc" label="说明" min-width="260" />
             <el-table-column prop="status" label="状态" min-width="120" />
-          </el-table>
+          </PagedTable>
         </section>
       </main>
 
@@ -668,6 +668,9 @@
 </template>
 
 <script setup lang="ts">
+import PagedList from "@/components/PagedList.vue"
+import SelectablePagination from '@/components/SelectablePagination.vue'
+import PagedTable from '@/components/PagedTable.vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Compass, DataLine, Document, HomeFilled, Key, MagicStick, Monitor, Promotion, ShoppingCart, SwitchButton, Tickets, Wallet, User } from '@element-plus/icons-vue'
@@ -778,7 +781,7 @@ const modelGrantOptions = computed(() => {
 })
 const walletLoading = ref(false)
 const walletTransactionPage = ref(1)
-const walletTransactionPageSize = ref(10)
+const walletTransactionPageSize = ref(20)
 const walletTransactionTotal = ref(0)
 const redeeming = ref(false)
 const redeemCode = ref('')

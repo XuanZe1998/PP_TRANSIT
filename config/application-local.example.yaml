@@ -199,3 +199,12 @@ verification:
     provider: ""
     endpoint: ""
     token: ""
+# Dujiao-Next upstream procurement. Keep both switches false until the
+# connection test succeeds and the upstream wallet has enough balance.
+dujiao-next:
+  enabled: false
+  allow-purchases: false
+  base-url: https://www.cccrad.uk
+  api-key: "REPLACE_WITH_DUJIAO_API_KEY"
+  api-secret: "REPLACE_WITH_DUJIAO_API_SECRET"
+  callback-url: https://your-domain.example/api/v1/upstream/callback

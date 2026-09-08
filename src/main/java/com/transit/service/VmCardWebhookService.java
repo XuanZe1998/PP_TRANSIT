@@ -65,7 +65,7 @@ public class VmCardWebhookService {
     public List<Map<String, Object>> recentEvents() {
         return eventMapper.selectList(new LambdaQueryWrapper<VmCardWebhookEvent>()
                         .orderByDesc(VmCardWebhookEvent::getReceivedAt)
-                        .last("LIMIT 100"))
+                        )
                 .stream()
                 .map(this::toView)
                 .toList();

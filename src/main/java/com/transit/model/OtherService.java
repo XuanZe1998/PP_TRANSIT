@@ -75,6 +75,18 @@ public class OtherService {
     @TableField("fulfillment_mode")
     private String fulfillmentMode;
 
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
+    @TableField("supplier_type")
+    private String supplierType;
+
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
+    @TableField("supplier_product_id")
+    private Long supplierProductId;
+
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
+    @TableField("supplier_sku_id")
+    private Long supplierSkuId;
+
     @TableField("purchase_prompt")
     private String purchasePrompt;
 
@@ -109,6 +121,9 @@ public class OtherService {
 
     @TableField(exist = false)
     private Boolean orderEnabled;
+
+    @TableField(exist = false)
+    private Boolean supplierConfigured;
 
     @TableField("created_at")
     private LocalDateTime createdAt;

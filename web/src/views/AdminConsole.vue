@@ -13,39 +13,13 @@
         <el-date-picker v-if="module === 'dashboard' && dashboardPeriod === 'custom'" v-model="dashboardCustomRange" type="daterange" value-format="YYYY-MM-DD" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" @change="handleDashboardCustomRange" />
         <el-input v-model="query" clearable :placeholder="module === 'audit' ? '搜索 Trace、用户或模型' : '搜索当前列表'" :prefix-icon="Search" @keyup.enter="handleToolbarSearch" @clear="handleToolbarSearch" />
         <el-button :icon="Refresh" @click="load">刷新</el-button>
+        <NewApiConnect v-if="module === 'channels'" @connected="load()" />
         <el-button v-if="config.createLabel" type="primary" :icon="Plus" @click="openCreate">
           {{ config.createLabel }}
         </el-button>
       </div>
     </section>
 
-    <section v-if="module === 'channels'" class="panel aiapibank-sync-panel">
-      <div class="panel-head">
-        <div>
-          <h3>AiAPIBank 全分组目录</h3>
-          <p>首次全量同步创建分组；保存分组 Key 后自动只同步该渠道的模型与定价。每日 03:20（Asia/Tokyo）刷新全量目录。</p>
-        </div>
-        <div>
-          <el-button :loading="aiApiBankSyncing" @click="syncAiApiBank(true)">预览同步</el-button>
-          <el-button type="primary" :loading="aiApiBankSyncing" @click="syncAiApiBank(false)">立即同步</el-button>
-        </div>
-      </div>
-      <div class="market-tags">
-        <el-tag>分组 {{ Number(aiApiBankStatus.groupCount || 0) }}/13</el-tag>
-        <el-tag :type="Number(aiApiBankStatus.credentialsMissing || 0) ? 'warning' : 'success'">缺 Key {{ Number(aiApiBankStatus.credentialsMissing || 0) }}</el-tag>
-        <el-tag :type="Number(aiApiBankStatus.disabledModels || 0) ? 'danger' : 'success'">停用模型 {{ Number(aiApiBankStatus.disabledModels || 0) }}</el-tag>
-        <el-tag v-if="aiApiBankStatus.lastRun">最近同步 {{ display(aiApiBankStatus.lastRun.finished_at || aiApiBankStatus.lastRun.finishedAt) }}</el-tag>
-      </div>
-      <el-table v-if="(aiApiBankStatus.groups || []).length" :data="aiApiBankStatus.groups" size="small" max-height="320">
-        <el-table-column prop="group_name" label="分组" min-width="240" />
-        <el-table-column prop="platform" label="平台" width="110" />
-        <el-table-column prop="resolved_rate_multiplier" label="账号倍率" width="110" />
-        <el-table-column prop="model_count" label="模型" width="80" />
-        <el-table-column prop="credential_status" label="Key" width="150" />
-        <el-table-column prop="sync_status" label="同步" width="130" />
-        <el-table-column prop="last_synced_at" label="最近同步" min-width="170" />
-      </el-table>
-    </section>
 
     <section v-if="metrics.length" class="metric-grid admin-metrics">
       <article v-for="metric in metrics" :key="metric.label" :class="['metric-card',{clickable:metric.href}]" :tabindex="metric.href?0:undefined" @click="metric.href&&router.push(metric.href)" @keyup.enter="metric.href&&router.push(metric.href)">
@@ -64,7 +38,7 @@
             <h3>渠道健康</h3>
             <el-tag type="success">{{ rows.length }} 个渠道</el-tag>
           </div>
-          <el-table :data="dashboard.channelHealth || []" size="small">
+          <PagedTable :data="dashboard.channelHealth || []" size="small" list-id="AdminConsole-1">
             <el-table-column prop="name" label="渠道" min-width="160" />
             <el-table-column prop="type" label="类型" width="120" />
             <el-table-column prop="health_status" label="健康" width="120">
@@ -73,7 +47,7 @@
               </template>
             </el-table-column>
             <el-table-column prop="weight" label="权重" width="90" />
-          </el-table>
+          </PagedTable>
         </article>
         <article class="panel">
           <div class="panel-head">
@@ -113,7 +87,7 @@
             <span>{{ financeErrors.transactions }}</span>
             <el-button link type="primary" @click="loadFinanceSection('transactions')">重试</el-button>
           </div>
-          <el-table :data="rows" v-loading="loading">
+          <PagedTable :data="rows" v-loading="loading" list-id="AdminConsole-2" :pagination="module==='finance'?'external':'local'">
             <el-table-column prop="username" label="用户" min-width="120" />
             <el-table-column prop="type" label="类型" width="120" />
             <el-table-column label="金额(CNY)" width="150">
@@ -125,8 +99,8 @@
             <el-table-column prop="channel" label="渠道" width="120" />
             <el-table-column prop="remark" label="备注" min-width="180" />
             <el-table-column prop="created_at" label="时间" min-width="180" />
-          </el-table>
-          <el-pagination
+          </PagedTable>
+          <SelectablePagination
             v-model:current-page="financePage"
             v-model:page-size="financePageSize"
             class="admin-pagination"
@@ -135,7 +109,7 @@
             :total="financeTotal"
             @current-change="loadFinanceTransactions"
             @size-change="handleFinancePageSizeChange"
-          />
+           list-id="AdminConsole-1"/>
         </article>
         <article class="panel">
           <div class="panel-head">
@@ -145,14 +119,14 @@
             <span>{{ financeErrors.codes }}</span>
             <el-button link type="primary" @click="loadFinanceSection('codes')">重试</el-button>
           </div>
-          <el-table :data="secondaryRows" size="small">
+          <PagedTable :data="secondaryRows" size="small" list-id="AdminConsole-3">
             <el-table-column prop="code" label="兑换码" min-width="150" />
             <el-table-column label="额度(CNY)" width="140">
               <template #default="{ row }">{{ money(row.amount) }}</template>
             </el-table-column>
             <el-table-column prop="used_count" label="已用" width="90" />
             <el-table-column prop="max_uses" label="上限" width="90" />
-          </el-table>
+          </PagedTable>
         </article>
         <article class="panel wide-panel">
           <div class="panel-head">
@@ -163,7 +137,7 @@
             <span>{{ financeErrors.plans }}</span>
             <el-button link type="primary" @click="loadFinanceSection('plans')">重试</el-button>
           </div>
-          <el-table :data="rechargePlans" size="small">
+          <PagedTable :data="rechargePlans" size="small" list-id="AdminConsole-4">
             <el-table-column prop="name" label="套餐" min-width="150" />
             <el-table-column label="售价(CNY)" width="150"><template #default="{ row }">{{ money(row.amount) }}</template></el-table-column>
             <el-table-column prop="bonus_percent" label="赠送比例" width="120"><template #default="{ row }">{{ row.bonus_percent }}%</template></el-table-column>
@@ -173,7 +147,7 @@
               <el-button link type="primary" @click="openRechargePlan(row)">编辑</el-button>
               <el-button link type="danger" @click="removeRechargePlan(row)">删除</el-button>
             </template></el-table-column>
-          </el-table>
+          </PagedTable>
         </article>
       </section>
       <el-dialog v-model="rechargePlanVisible" :title="rechargePlanForm.id ? '编辑充值套餐' : '新增充值套餐'" width="480px">
@@ -195,7 +169,7 @@
             <h3>系统配置</h3>
             <el-button type="primary" :icon="Plus" @click="openCreate">保存配置</el-button>
           </div>
-          <el-table :data="filteredRows" v-loading="loading">
+          <PagedTable :data="filteredRows" v-loading="loading" list-id="AdminConsole-5">
             <el-table-column prop="setting_key" label="键" min-width="180" />
             <el-table-column prop="setting_value" label="值" min-width="220" />
             <el-table-column prop="description" label="说明" min-width="200" />
@@ -204,7 +178,7 @@
                 <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
               </template>
             </el-table-column>
-          </el-table>
+          </PagedTable>
         </article>
         <article class="panel">
           <div class="panel-head">
@@ -217,14 +191,14 @@
             <div><span>毛利率</span><strong>{{ percent(report.grossMargin) }}</strong></div>
             <div><span>P95 延迟</span><strong>{{ report.p95LatencyMs || 0 }} ms</strong></div>
           </div>
-          <el-table :data="report.models || []" size="small">
+          <PagedTable :data="report.models || []" size="small" list-id="AdminConsole-6">
             <el-table-column prop="model" label="模型" min-width="160" />
             <el-table-column prop="requests" label="请求" width="100" />
             <el-table-column prop="tokens" label="Token" width="120" />
             <el-table-column label="模型收入(USD)" width="150">
               <template #default="{ row }">{{ formatUsd(row.revenue) }}</template>
             </el-table-column>
-          </el-table>
+          </PagedTable>
         </article>
       </section>
     </template>
@@ -278,14 +252,14 @@
           <el-tabs v-model="securityTab">
             <el-tab-pane label="通用策略" name="policies">
               <el-alert title="通用策略用于限流、告警和人工审核；敏感词请在独立词库中配置。" type="info" :closable="false" show-icon />
-              <el-table :data="rows" size="small" max-height="540" style="margin-top:14px">
+              <PagedTable :data="rows" size="small" max-height="540" style="margin-top:14px" list-id="AdminConsole-7">
                 <el-table-column prop="name" label="策略" min-width="160" />
                 <el-table-column prop="scope" label="范围" min-width="140" />
                 <el-table-column prop="action" label="动作" width="130" />
                 <el-table-column prop="threshold_value" label="阈值" min-width="160" />
                 <el-table-column label="状态" width="90"><template #default="{ row }"><el-tag :type="valueOf(row, 'enabled') ? 'success' : 'info'">{{ valueOf(row, 'enabled') ? '启用' : '停用' }}</el-tag></template></el-table-column>
                 <el-table-column label="操作" width="100"><template #default="{ row }"><el-button link type="primary" @click="openEdit(row)">编辑</el-button></template></el-table-column>
-              </el-table>
+              </PagedTable>
             </el-tab-pane>
             <el-tab-pane label="敏感词库" name="words">
               <el-alert
@@ -304,7 +278,7 @@
                 <div><strong>实际生效的敏感词</strong><span>模板默认停用；只检测文本，不保存原始 Prompt。</span></div>
                 <div><el-button @click="bulkVisible = true">批量导入</el-button><el-button type="primary" @click="openSensitiveWord()">新增词条</el-button></div>
               </div>
-              <el-table :data="sensitiveWords" size="small" max-height="520">
+              <PagedTable :data="sensitiveWords" size="small" max-height="520" list-id="AdminConsole-8">
                 <el-table-column prop="term" label="词条" min-width="170" />
                 <el-table-column prop="category" label="分类" min-width="130" />
                 <el-table-column label="匹配" width="100"><template #default="{ row }">{{ valueOf(row, 'match_mode') === 'EXACT' ? '完整' : '包含' }}</template></el-table-column>
@@ -312,7 +286,7 @@
                 <el-table-column label="范围" min-width="140"><template #default="{ row }">{{ sensitiveScopeLabel(row) }}</template></el-table-column>
                 <el-table-column label="状态" width="90"><template #default="{ row }"><el-tag :type="valueOf(row, 'enabled') ? 'success' : 'info'">{{ valueOf(row, 'enabled') ? '启用' : '停用' }}</el-tag></template></el-table-column>
                 <el-table-column label="操作" width="130"><template #default="{ row }"><el-button link type="primary" @click="openSensitiveWord(row)">编辑</el-button><el-button link type="danger" @click="removeSensitiveWord(row)">删除</el-button></template></el-table-column>
-              </el-table>
+              </PagedTable>
               <div class="sensitive-test-box">
                 <div><strong>匹配测试</strong><span>测试不会写入安全事件。</span></div>
                 <el-input v-model="sensitiveTestText" type="textarea" :rows="3" placeholder="输入一段文本验证当前已启用词条" />
@@ -321,7 +295,7 @@
               </div>
             </el-tab-pane>
             <el-tab-pane label="安全事件" name="events">
-              <el-table :data="securityEvents" size="small" max-height="580">
+              <PagedTable :data="securityEvents" size="small" max-height="580" list-id="AdminConsole-9">
                 <el-table-column prop="created_at" label="时间" min-width="170" />
                 <el-table-column prop="trace_id" label="Trace ID" min-width="150" />
                 <el-table-column prop="username" label="用户" min-width="120" />
@@ -329,7 +303,7 @@
                 <el-table-column prop="category" label="分类" min-width="130" />
                 <el-table-column prop="matched_term" label="命中词条" min-width="160" />
                 <el-table-column prop="action" label="动作" width="100" />
-              </el-table>
+              </PagedTable>
             </el-tab-pane>
           </el-tabs>
         </div>
@@ -350,7 +324,7 @@
           class="model-availability-alert"
         />
         <div v-if="module !== 'security'" class="admin-table-shell" :class="`admin-table-${module}`">
-        <el-table :data="displayRows" v-loading="loading" row-key="id" scrollbar-always-on :max-height="gatewayTableMaxHeight">
+        <PagedTable :data="displayRows" v-loading="loading" row-key="id" scrollbar-always-on :max-height="gatewayTableMaxHeight" list-id="AdminConsole-10" :pagination="['models','audit'].includes(module)?'external':'local'">
           <el-table-column v-for="column in config.columns" :key="column.prop" :prop="column.prop" :label="column.label" :min-width="column.minWidth" :width="column.width" :fixed="gatewayModules.includes(module) && column === config.columns[0] ? 'left' : undefined">
             <template #default="{ row }">
               <el-tag v-if="column.kind === 'status'" :type="statusType(getValue(row, column.prop))">{{ getValue(row, column.prop) }}</el-tag>
@@ -391,9 +365,9 @@
               <el-button v-if="config.deletable" link type="danger" @click="removeRow(row)">删除</el-button>
             </template>
           </el-table-column>
-        </el-table>
+        </PagedTable>
         </div>
-        <el-pagination
+        <SelectablePagination
           v-if="module === 'models'"
           v-model:current-page="modelPage"
           v-model:page-size="modelPageSize"
@@ -401,8 +375,8 @@
           layout="total, sizes, prev, pager, next"
           :page-sizes="[10, 20, 50, 100]"
           :total="filteredRows.length"
-        />
-        <el-pagination v-if="module === 'audit'" v-model:current-page="auditPage" v-model:page-size="auditPageSize" class="admin-pagination" layout="total, sizes, prev, pager, next" :page-sizes="[20, 50, 100, 200]" :total="auditTotal" @change="loadAuditLogs" />
+         list-id="AdminConsole-2"/>
+        <SelectablePagination v-if="module === 'audit'" v-model:current-page="auditPage" v-model:page-size="auditPageSize" class="admin-pagination" layout="total, sizes, prev, pager, next" :page-sizes="[20, 50, 100, 200]" :total="auditTotal" @change="loadAuditLogs"  list-id="AdminConsole-3"/>
         <el-collapse
           v-if="module === 'channels'"
           v-model="channelLedgerSections"
@@ -418,7 +392,7 @@
                 <el-tag>{{ testRows.length }} 条</el-tag>
               </div>
             </template>
-            <el-table :data="testRows" size="small" :max-height="420" class="channel-ledger-table">
+            <PagedTable :data="testRows" size="small" :max-height="420" class="channel-ledger-table" list-id="AdminConsole-11">
               <el-table-column prop="tested_at" label="时间" min-width="170" />
               <el-table-column prop="channel_name" label="渠道" min-width="150" />
               <el-table-column prop="model_name" label="模型" min-width="180" />
@@ -431,7 +405,7 @@
               </el-table-column>
               <el-table-column prop="latency_ms" label="耗时(ms)" width="110" />
               <el-table-column prop="error_message" label="错误" min-width="260" />
-            </el-table>
+            </PagedTable>
           </el-collapse-item>
         </el-collapse>
       </section>
@@ -442,14 +416,14 @@
         <el-input v-model="modelMarketDisplayQuery" clearable placeholder="搜索公开模型名称" :prefix-icon="Search" />
         <span>数值越大越靠前，同优先级按名称升序。</span>
       </div>
-      <el-table v-loading="modelMarketDisplayLoading" :data="filteredModelMarketDisplayItems" height="calc(100vh - 230px)">
+      <PagedTable v-loading="modelMarketDisplayLoading" :data="filteredModelMarketDisplayItems" height="calc(100vh - 230px)" list-id="AdminConsole-12">
         <el-table-column prop="publicName" label="公开模型" min-width="330" />
         <el-table-column label="展示优先级" width="190">
           <template #default="{ row }">
             <el-input-number v-model="row.displayPriority" :min="0" :max="1000000" :step="10" controls-position="right" />
           </template>
         </el-table-column>
-      </el-table>
+      </PagedTable>
       <template #footer>
         <el-button @click="modelMarketDisplayVisible = false">取消</el-button>
         <el-button type="primary" :loading="modelMarketDisplaySaving" @click="saveModelMarketDisplay">批量保存</el-button>
@@ -531,7 +505,7 @@
               <div><strong>渠道凭证池</strong><span>集中维护同一供应商的多个 API Key</span></div>
               <el-button type="primary" plain @click="openCredential()">添加凭证</el-button>
             </div>
-            <el-table :data="channelCredentials" size="small" empty-text="暂无独立凭证，将回退到渠道基础 API Key">
+            <PagedTable :data="channelCredentials" size="small" empty-text="暂无独立凭证，将回退到渠道基础 API Key" list-id="AdminConsole-13">
               <el-table-column prop="name" label="名称" min-width="150" />
               <el-table-column prop="secretPreview" label="API Key" min-width="130" />
               <el-table-column prop="priority" label="优先级" width="90" />
@@ -542,7 +516,7 @@
                 <el-button link type="primary" @click="openCredential(row)">编辑</el-button>
                 <el-button link type="danger" @click="removeCredential(row)">删除</el-button>
               </template></el-table-column>
-            </el-table>
+            </PagedTable>
           </section>
           <el-empty v-if="channelModelPricing.length === 0" description="请先在上方模型清单中填写模型名称，可用逗号、顿号或换行分隔" :image-size="72" />
           <article v-for="pricing in activePricingRows" :key="pricing.channelModelName" class="channel-model-pricing-card">
@@ -789,12 +763,12 @@
           <div><span>已有映射</span><strong>{{ discoveryResult.existingCount || 0 }}</strong></div>
           <div><span>待新增</span><strong>{{ discoveryResult.missingCount || 0 }}</strong></div>
         </div>
-        <el-table :data="discoveryResult.missingModels || []" max-height="360" size="small">
+        <PagedTable :data="discoveryResult.missingModels || []" max-height="360" size="small" list-id="AdminConsole-14">
           <el-table-column type="index" width="70" />
           <el-table-column label="待同步模型">
             <template #default="{ row }"><code>{{ row }}</code></template>
           </el-table-column>
-        </el-table>
+        </PagedTable>
         <el-switch
           v-model="activateDiscoveredModels"
           active-text="同步后立即启用（计费仍关闭，需尽快配置价格）"
@@ -865,6 +839,8 @@
 </template>
 
 <script setup lang="ts">
+import SelectablePagination from '@/components/SelectablePagination.vue'
+import PagedTable from '@/components/PagedTable.vue'
 import { computed, defineAsyncComponent, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Refresh, Search } from '@element-plus/icons-vue'
@@ -872,6 +848,7 @@ import { useRoute, useRouter } from 'vue-router'
 import http, { getHttpErrorMessage, getHttpErrorNotice } from '@/utils/http'
 import { formatCny, formatPerMillionUsd, formatUsd } from '@/utils/money'
 const AdminUsageCharts = defineAsyncComponent(() => import('@/components/AdminUsageCharts.vue'))
+const NewApiConnect = defineAsyncComponent(() => import('@/components/NewApiConnect.vue'))
 
 type ModuleKey = 'dashboard' | 'users' | 'channels' | 'models' | 'tokens' | 'audit' | 'finance' | 'security' | 'settings'
 type Column = {
@@ -938,8 +915,6 @@ const auditPage = ref(1)
 const auditPageSize = ref(50)
 const auditTotal = ref(0)
 const testRows = ref<any[]>([])
-const aiApiBankStatus = ref<any>({ groups: [] })
-const aiApiBankSyncing = ref(false)
 const channelLedgerSections = ref<string[]>([])
 const dashboard = ref<Record<string, any>>({})
 const report = ref<Record<string, any>>({})
@@ -1506,14 +1481,12 @@ async function load() {
       const res = await http.get(`/api${config.value.endpoint}`)
       rows.value = res.data
       if (module.value === 'channels') {
-        const [testLogRes, providerRes, aiApiBankRes] = await Promise.all([
+        const [testLogRes, providerRes] = await Promise.all([
           http.get('/api/admin/api/channels/test-logs'),
-          http.get('/api/admin/api/channels/providers'),
-          http.get('/api/admin/api/aiapibank/status')
+          http.get('/api/admin/api/channels/providers')
         ])
         testRows.value = testLogRes.data
         providerCatalog.value = providerRes.data || []
-        aiApiBankStatus.value = aiApiBankRes.data || { groups: [] }
         const providerField = configs.channels.fields.find(field => field.prop === 'type')
         if (providerField) {
           providerField.options = providerCatalog.value.map(item => ({
@@ -2415,22 +2388,6 @@ async function removeRow(row: any) {
   await http.delete(url)
   ElMessage.success('删除成功')
   await load()
-}
-
-async function syncAiApiBank(dryRun: boolean) {
-  aiApiBankSyncing.value = true
-  try {
-    const { data } = await http.post('/api/admin/api/aiapibank/sync', { dryRun }, { timeout: 180_000 })
-    const errors = Array.isArray(data?.errors) ? data.errors.length : 0
-    ElMessage.success(`${dryRun ? '预览' : '同步'}完成：${Number(data?.groupsSeen || 0)} 个分组、${Number(data?.modelsSeen || 0)} 个模型${errors ? `，${errors} 个分组保留旧目录` : ''}`)
-    const status = await http.get('/api/admin/api/aiapibank/status')
-    aiApiBankStatus.value = status.data || { groups: [] }
-    if (!dryRun) await load()
-  } catch (error: unknown) {
-    ElMessage.error(getHttpErrorNotice(error, `${dryRun ? '预览' : '同步'} AiAPIBank 目录失败`))
-  } finally {
-    aiApiBankSyncing.value = false
-  }
 }
 
 async function testChannel(row: any) {

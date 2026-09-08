@@ -16,7 +16,7 @@
     <el-skeleton v-if="loading" :rows="6" animated />
     <el-empty v-else-if="services.length === 0" description="暂无其他服务" />
     <div v-else class="services-grid">
-      <article v-for="(service, index) in services" :key="service.id" class="service-card">
+      <PagedList :data="services" list-id="OtherServices.vue-1" v-slot="{items:pagedItems}"><article v-for="(service, index) in pagedItems" :key="service.id" class="service-card">
         <div class="service-image">
           <img
             v-if="service.imageUrl && !failedImages.has(service.id)"
@@ -62,7 +62,7 @@
             </el-button>
           </div>
         </div>
-      </article>
+      </article></PagedList>
     </div>
 
     <section v-if="authenticated" class="service-orders">
@@ -73,7 +73,7 @@
         </div>
         <el-button :loading="ordersLoading" @click="loadOrders">刷新订单</el-button>
       </div>
-      <el-table v-loading="ordersLoading" :data="orders" empty-text="暂无服务订单">
+      <PagedTable v-loading="ordersLoading" :data="orders" empty-text="暂无服务订单" list-id="OtherServices-1">
         <el-table-column prop="orderNo" label="订单号" min-width="190" />
         <el-table-column prop="productName" label="服务" min-width="170" />
         <el-table-column label="金额" width="120">
@@ -114,7 +114,7 @@
             >下载收据</el-button>
           </template>
         </el-table-column>
-      </el-table>
+      </PagedTable>
     </section>
 
     <el-dialog v-model="orderDialogVisible" title="填写账单信息" width="min(680px, 94vw)">
@@ -205,10 +205,10 @@
         />
         <div v-if="orderDetail.deliveryItems?.length" class="delivery-box">
           <strong>已发货卡密</strong>
-          <div v-for="(item, index) in orderDetail.deliveryItems" :key="index" class="delivery-row">
+          <PagedList :data="orderDetail.deliveryItems" list-id="OtherServices.vue-2" v-slot="{items:pagedItems}"><div v-for="(item, index) in pagedItems" :key="index" class="delivery-row">
             <pre>{{ item }}</pre>
             <el-button size="small" @click="copyDelivery(item)">复制</el-button>
-          </div>
+          </div></PagedList>
         </div>
       </template>
       <template #footer>
@@ -220,6 +220,8 @@
 </template>
 
 <script setup lang="ts">
+import PagedList from "@/components/PagedList.vue"
+import PagedTable from '@/components/PagedTable.vue'
 import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -307,6 +309,10 @@ const orderDetail = ref<ServiceOrder | null>(null)
 const orderDetailRedemptionPath = ref('')
 const redemptionCountdown = ref(0)
 let redemptionTimer: number | undefined
+let fulfillmentTimer: number | undefined
+let fulfillmentPolling = false
+let fulfillmentPollAttempts = 0
+let fulfillmentTargetOrderId: number | null = null
 const authenticated = Boolean(getToken())
 const orderForm = reactive({
   quantity: 1,
@@ -354,6 +360,10 @@ const formatMoney = (cents?: number, currency?: string) => {
 }
 
 const canPay = (order: ServiceOrder) => ['PENDING', 'CONFIRMED'].includes(order.status)
+const deliveryComplete = (order: ServiceOrder) => order.status === 'FULFILLED'
+  && order.fulfillmentStatus === 'COMPLETED'
+const awaitingFulfillment = (order: ServiceOrder) => order.status === 'PAID'
+  && !['COMPLETED', 'FAILED'].includes(order.fulfillmentStatus || '')
 
 const statusType = (status: string) => {
   if (['PAID', 'CONFIRMED'].includes(status)) return 'success'
@@ -423,12 +433,18 @@ const wait = (milliseconds: number) => new Promise(resolve => window.setTimeout(
 async function finishPaidFlow(order: ServiceOrder, pending: PendingServicePayment, message?: string) {
   clearPendingPayment()
   await Promise.all([loadCatalog(), loadOrders()])
-  const serviceId = order.serviceId || pending.serviceId
+  const latestOrder = orders.value.find(item => item.id === order.id) || order
+  const serviceId = latestOrder.serviceId || pending.serviceId
   const service = services.value.find(item => item.id === serviceId)
   if (service?.productType === 'CARD_KEY' && service.redemptionConfigured) {
-    ElMessage.success(message || '支付成功，卡密已自动发货')
-    const opened = await showOrderDetail(order, service.redemptionPath || `/services/${service.id}/redeem`)
-    if (!opened) await router.replace(service.redemptionPath || `/services/${service.id}/redeem`)
+    if (deliveryComplete(latestOrder)) {
+      ElMessage.success(message || '支付成功，卡密已自动发货')
+      const opened = await showOrderDetail(latestOrder, service.redemptionPath || `/services/${service.id}/redeem`)
+      if (!opened) await router.replace(service.redemptionPath || `/services/${service.id}/redeem`)
+    } else {
+      ElMessage.success(message || '支付成功，上游正在发货')
+      startFulfillmentPolling(latestOrder.id)
+    }
     return
   }
   ElMessage.success(message || '支付成功')
@@ -487,6 +503,62 @@ async function loadOrders() {
   } finally {
     ordersLoading.value = false
   }
+}
+
+function stopFulfillmentPolling() {
+  if (fulfillmentTimer !== undefined) window.clearInterval(fulfillmentTimer)
+  fulfillmentTimer = undefined
+  fulfillmentPolling = false
+  fulfillmentPollAttempts = 0
+  fulfillmentTargetOrderId = null
+}
+
+function startFulfillmentPolling(targetOrderId?: number) {
+  if (targetOrderId) fulfillmentTargetOrderId = targetOrderId
+  if (fulfillmentTimer !== undefined) return
+  fulfillmentPollAttempts = 0
+  fulfillmentTimer = window.setInterval(async () => {
+    if (fulfillmentPolling) return
+    fulfillmentPolling = true
+    try {
+      const response = await http.get<ServiceOrder[]>('/api/service-orders')
+      orders.value = response.data || []
+      fulfillmentPollAttempts += 1
+      const target = fulfillmentTargetOrderId === null
+        ? undefined
+        : orders.value.find(item => item.id === fulfillmentTargetOrderId)
+      if (target && deliveryComplete(target)) {
+        const completedOrderId = fulfillmentTargetOrderId
+        stopFulfillmentPolling()
+        const completedOrder = orders.value.find(item => item.id === completedOrderId)
+        const service = services.value.find(item => item.id === completedOrder?.serviceId)
+        ElMessage.success('卡密已发货')
+        if (completedOrder) {
+          await showOrderDetail(completedOrder, service?.redemptionConfigured
+            ? (service.redemptionPath || `/services/${service.id}/redeem`) : '')
+        }
+        return
+      }
+      if (target?.fulfillmentStatus === 'FAILED' || target?.status === 'FAILED') {
+        stopFulfillmentPolling()
+        ElMessage.error('上游发货失败，请联系管理员处理')
+        return
+      }
+      if (!orders.value.some(awaitingFulfillment)) {
+        stopFulfillmentPolling()
+        return
+      }
+      if (fulfillmentPollAttempts >= 60) {
+        stopFulfillmentPolling()
+        ElMessage.info('上游仍在发货，可稍后刷新订单查看卡密')
+      }
+    } catch {
+      fulfillmentPollAttempts += 1
+      if (fulfillmentPollAttempts >= 60) stopFulfillmentPolling()
+    } finally {
+      fulfillmentPolling = false
+    }
+  }, 2000)
 }
 
 async function openOrderDialog(service: OtherService) {
@@ -657,6 +729,7 @@ onMounted(async () => {
     if (authenticated) {
       await loadOrders()
       await resumePendingPayment()
+      if (orders.value.some(awaitingFulfillment)) startFulfillmentPolling()
     }
   } catch {
     ElMessage.error('其他服务加载失败，请稍后重试')
@@ -665,7 +738,10 @@ onMounted(async () => {
   }
 })
 
-onBeforeUnmount(cancelRedemptionCountdown)
+onBeforeUnmount(() => {
+  cancelRedemptionCountdown()
+  stopFulfillmentPolling()
+})
 </script>
 
 <style scoped>

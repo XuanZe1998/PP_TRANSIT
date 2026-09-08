@@ -28,6 +28,8 @@ public class OtherServiceCatalogService {
     private static final Pattern CURRENCY_PATTERN = Pattern.compile("^[A-Z]{3}$");
     private static final String STANDARD_PRODUCT = "STANDARD";
     private static final String CARD_KEY_PRODUCT = "CARD_KEY";
+    public static final String LOCAL_INVENTORY = "LOCAL_INVENTORY";
+    public static final String DUJIAO_NEXT = "DUJIAO_NEXT";
 
     private final OtherServiceMapper otherServiceMapper;
     private final ServiceInventoryItemMapper inventoryItemMapper;
@@ -71,6 +73,8 @@ public class OtherServiceCatalogService {
         view.put("actionLabel", service.getActionLabel()); view.put("priceCents", service.getPriceCents()); view.put("serviceFeeCents", service.getServiceFeeCents());
         view.put("currency", service.getCurrency()); view.put("purchaseEnabled", service.getPurchaseEnabled()); view.put("productType", service.getProductType());
         view.put("fulfillmentMode", service.getFulfillmentMode()); view.put("purchasePrompt", service.getPurchasePrompt()); view.put("maxPurchaseQuantity", service.getMaxPurchaseQuantity());
+        view.put("supplierType", supplierType(service.getSupplierType())); view.put("supplierProductId", service.getSupplierProductId()); view.put("supplierSkuId", service.getSupplierSkuId());
+        view.put("supplierConfigured", supplierConfigured(service));
         view.put("manualStock", service.getManualStock()); view.put("wholesaleTiersJson", service.getWholesaleTiersJson()); view.put("inputSchemaJson", service.getInputSchemaJson());
         view.put("redemptionUrl", service.getRedemptionUrl()); view.put("redemptionConfigured", service.getRedemptionConfigured()); view.put("availableStock", service.getAvailableStock());
         return view;
@@ -91,7 +95,10 @@ public class OtherServiceCatalogService {
         boolean enabled = request.getEnabled() == null || request.getEnabled();
         boolean purchaseEnabled = Boolean.TRUE.equals(request.getPurchaseEnabled());
         String productType = productType(request.getProductType());
-        String fulfillmentMode = CARD_KEY_PRODUCT.equals(productType)
+        String supplierType = supplierType(request.getSupplierType());
+        Long supplierProductId = supplierId(request.getSupplierProductId(), "supplierProductId", supplierType);
+        Long supplierSkuId = supplierId(request.getSupplierSkuId(), "supplierSkuId", supplierType);
+        String fulfillmentMode = CARD_KEY_PRODUCT.equals(productType) || DUJIAO_NEXT.equals(supplierType)
                 ? "AUTOMATIC_DELIVERY" : fulfillmentMode(request.getFulfillmentMode());
         String redemptionUrl = redemptionUrl(request.getRedemptionUrl(), productType, true);
 
@@ -108,6 +115,9 @@ public class OtherServiceCatalogService {
                 .purchaseEnabled(purchaseEnabled)
                 .productType(productType)
                 .fulfillmentMode(fulfillmentMode)
+                .supplierType(supplierType)
+                .supplierProductId(supplierProductId)
+                .supplierSkuId(supplierSkuId)
                 .purchasePrompt(optionalText(request.getPurchasePrompt(), "purchasePrompt", 1000))
                 .maxPurchaseQuantity(positive(request.getMaxPurchaseQuantity(), "maxPurchaseQuantity"))
                 .manualStock(manualStock(request.getManualStock(), fulfillmentMode))
@@ -141,6 +151,12 @@ public class OtherServiceCatalogService {
         boolean purchaseEnabled = Boolean.TRUE.equals(request.getPurchaseEnabled());
         String productType = productType(request.getProductType() == null
                 ? service.getProductType() : request.getProductType());
+        String supplierType = supplierType(request.getSupplierType() == null
+                ? service.getSupplierType() : request.getSupplierType());
+        Long supplierProductId = supplierId(request.getSupplierProductId() == null
+                ? service.getSupplierProductId() : request.getSupplierProductId(), "supplierProductId", supplierType);
+        Long supplierSkuId = supplierId(request.getSupplierSkuId() == null
+                ? service.getSupplierSkuId() : request.getSupplierSkuId(), "supplierSkuId", supplierType);
         LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
 
         service.setName(name);
@@ -154,8 +170,11 @@ public class OtherServiceCatalogService {
         service.setCurrency(currency);
         service.setPurchaseEnabled(purchaseEnabled);
         service.setProductType(productType);
+        service.setSupplierType(supplierType);
+        service.setSupplierProductId(supplierProductId);
+        service.setSupplierSkuId(supplierSkuId);
         boolean hasCommerceConfig = request.getFulfillmentMode() != null && !request.getFulfillmentMode().isBlank();
-        String fulfillmentMode = CARD_KEY_PRODUCT.equals(productType) ? "AUTOMATIC_DELIVERY" : hasCommerceConfig
+        String fulfillmentMode = CARD_KEY_PRODUCT.equals(productType) || DUJIAO_NEXT.equals(supplierType) ? "AUTOMATIC_DELIVERY" : hasCommerceConfig
                 ? fulfillmentMode(request.getFulfillmentMode()) : fulfillmentMode(service.getFulfillmentMode());
         service.setFulfillmentMode(fulfillmentMode);
         if (CARD_KEY_PRODUCT.equals(productType)) {
@@ -220,9 +239,12 @@ public class OtherServiceCatalogService {
         service.setOrderEnabled(Boolean.TRUE.equals(service.getEnabled())
                 && Boolean.TRUE.equals(service.getPurchaseEnabled())
                 && service.getAmountCents() != null
-                && service.getAmountCents() > 0);
+                && service.getAmountCents() > 0
+                && supplierConfigured(service));
         if (service.getFulfillmentMode() == null) service.setFulfillmentMode("MANUAL_PROCESSING");
         if (service.getProductType() == null) service.setProductType(STANDARD_PRODUCT);
+        if (service.getSupplierType() == null) service.setSupplierType(LOCAL_INVENTORY);
+        service.setSupplierConfigured(supplierConfigured(service));
         boolean hasRedemption = CARD_KEY_PRODUCT.equals(service.getProductType())
                 && service.getRedemptionUrl() != null && !service.getRedemptionUrl().isBlank();
         service.setRedemptionConfigured(hasRedemption);
@@ -230,7 +252,8 @@ public class OtherServiceCatalogService {
         if (service.getMaxPurchaseQuantity() == null || service.getMaxPurchaseQuantity() < 1) {
             service.setMaxPurchaseQuantity(1);
         }
-        if ("AUTOMATIC_DELIVERY".equals(service.getFulfillmentMode()) && inventoryItemMapper != null) {
+        if ("AUTOMATIC_DELIVERY".equals(service.getFulfillmentMode())
+                && LOCAL_INVENTORY.equals(supplierType(service.getSupplierType())) && inventoryItemMapper != null) {
             service.setAvailableStock(Math.toIntExact(inventoryItemMapper.selectCount(
                     new LambdaQueryWrapper<com.transit.model.ServiceInventoryItem>()
                             .eq(com.transit.model.ServiceInventoryItem::getServiceId, service.getId())
@@ -259,6 +282,27 @@ public class OtherServiceCatalogService {
             throw badRequest("productType must be STANDARD or CARD_KEY");
         }
         return normalized;
+    }
+
+    private String supplierType(String value) {
+        String normalized = value == null || value.isBlank() ? LOCAL_INVENTORY : value.trim().toUpperCase(Locale.ROOT);
+        if (!normalized.equals(LOCAL_INVENTORY) && !normalized.equals(DUJIAO_NEXT)) {
+            throw badRequest("supplierType must be LOCAL_INVENTORY or DUJIAO_NEXT");
+        }
+        return normalized;
+    }
+
+    private Long supplierId(Long value, String field, String supplierType) {
+        if (!DUJIAO_NEXT.equals(supplierType)) return null;
+        if (value == null || value < 1) throw badRequest(field + " is required for DUJIAO_NEXT services");
+        return value;
+    }
+
+    private boolean supplierConfigured(OtherService service) {
+        String type = supplierType(service.getSupplierType());
+        return LOCAL_INVENTORY.equals(type)
+                || (service.getSupplierProductId() != null && service.getSupplierProductId() > 0
+                && service.getSupplierSkuId() != null && service.getSupplierSkuId() > 0);
     }
 
     private String redemptionUrl(String value, String productType, boolean required) {

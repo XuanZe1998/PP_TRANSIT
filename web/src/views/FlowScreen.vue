@@ -80,13 +80,13 @@
         </div>
 
         <div v-if="screen.cards?.length" class="card-grid">
-          <article v-for="card in screen.cards" :key="card.title" class="feature-card">
+          <PagedList :data="screen.cards" list-id="FlowScreen.vue-1" v-slot="{items:pagedItems}"><article v-for="card in pagedItems" :key="card.title" class="feature-card">
             <h2>{{ card.title }}</h2>
             <p>{{ card.description }}</p>
             <div class="tag-row">
               <span v-for="tag in card.tags" :key="tag">{{ tag }}</span>
             </div>
-          </article>
+          </article></PagedList>
         </div>
 
         <section v-if="screen.table" class="panel table-panel">
@@ -94,7 +94,7 @@
             <h2>{{ screen.table.title }}</h2>
             <el-button size="small">筛选</el-button>
           </div>
-          <el-table :data="tableRows" border>
+          <PagedTable :data="tableRows" border list-id="FlowScreen-1">
             <el-table-column
               v-for="column in screen.table.columns"
               :key="column"
@@ -109,7 +109,7 @@
                 <span v-else>{{ row[column] }}</span>
               </template>
             </el-table-column>
-          </el-table>
+          </PagedTable>
         </section>
       </section>
     </main>
@@ -117,6 +117,8 @@
 </template>
 
 <script setup lang="ts">
+import PagedList from "@/components/PagedList.vue"
+import PagedTable from '@/components/PagedTable.vue'
 import { computed, defineComponent, h, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElButton, ElDivider, ElForm, ElFormItem, ElInput, ElMessage, ElRadioButton, ElRadioGroup, ElTag } from 'element-plus'

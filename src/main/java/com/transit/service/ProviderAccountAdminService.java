@@ -109,7 +109,7 @@ public class ProviderAccountAdminService {
         request.put("reauthorizeCredentialId", id);
         return oauthAccounts.authorize(String.valueOf(row.get("platform")), adminId, request);
     }
-    public List<Map<String, Object>> events(long id) { requireEnabled(); return jdbc.queryForList("SELECT id,event_type,error_class,retryable,detail_masked,created_at FROM provider_account_events WHERE credential_id=? ORDER BY id DESC LIMIT 200", id); }
+    public List<Map<String, Object>> events(long id) { requireEnabled(); return jdbc.queryForList("SELECT id,event_type,error_class,retryable,detail_masked,created_at FROM provider_account_events WHERE credential_id=? ORDER BY id DESC ", id); }
 
     private ProviderCredential input(Map<String, Object> body) {
         return ProviderCredential.builder().name(text(body.get("name"))).secret(text(body.get("secret")))

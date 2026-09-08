@@ -6,14 +6,14 @@ const root = resolve(import.meta.dirname, '..')
 const source = (path: string) => readFileSync(resolve(root, path), 'utf8')
 
 describe('model marketplace layout', () => {
-  it('uses a full-width themed header and numbered client-side pagination', () => {
+  it('uses a full-width themed header and numbered server pagination', () => {
     const publicSite = source('src/views/ModelMarket.vue')
     const layout = source('src/layouts/PublicLayout.vue')
     const css = source('src/style.css')
     expect(layout).toContain('site-nav-inner')
-    expect(publicSite).toContain('<el-pagination')
+    expect(publicSite).toContain('<SelectablePagination')
     expect(publicSite).toContain('layout="total, sizes, prev, pager, next, jumper"')
-    expect(publicSite).toContain(':page-sizes="[10, 20, 50]"')
+    expect(publicSite).toContain(':page-sizes="[10, 20, 50, 100, 200]"')
     expect(publicSite).not.toContain('加载更多（已显示')
     expect(css).toContain('.market-pagination')
     expect(css).toMatch(/\.site-nav\s*\{[\s\S]*?width:\s*100%/)
@@ -53,9 +53,9 @@ describe('model gateway administration routes', () => {
     expect(router).toMatch(/path: 'mappings'.*tab: 'models'/)
   })
 
-  it('exposes all four management tabs from one navigation entry', () => {
+  it('exposes the three consolidated management tabs from one navigation entry', () => {
     const gateway = source('src/views/ModelGateway.vue')
-    for (const tab of ['overview', 'channels', 'models', 'health']) {
+    for (const tab of ['channels', 'models', 'records']) {
       expect(gateway).toContain(`name="${tab}"`)
     }
 
@@ -63,5 +63,17 @@ describe('model gateway administration routes', () => {
     expect(layout).toContain("path: '/admin/model-gateway'")
     expect(layout).not.toContain("path: '/admin/channels'")
     expect(layout).not.toContain("path: '/admin/models'")
+  })
+
+  it('supports encrypted AiAPIBank account authorization without retaining the password', () => {
+    const gateway = source('src/views/ModelGateway.vue')
+    expect(gateway).toContain('未授权时同步匿名模型广场')
+    expect(gateway).toContain('登录密码（仅用于本次登录，不保存）')
+    expect(gateway).toContain('登录授权并同步')
+    expect(gateway).toContain('totpCode')
+    expect(gateway).toContain('“对接专用”分组')
+    expect(gateway).not.toContain('accountAccessToken')
+    expect(gateway).not.toContain('accountUserAgent')
+    expect(gateway).not.toContain('clearAccountAccessToken')
   })
 })

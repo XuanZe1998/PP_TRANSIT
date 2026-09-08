@@ -169,7 +169,14 @@ public class AuthService {
                 throw new ResponseStatusException(HttpStatus.FORBIDDEN, "User account is not active");
             }
             authenticationThrottle.success(identifier);
-            if (!loginIps.isTrusted(user.getId(), clientIp)) return loginIps.createChallenge(user.getId(), user.getEmail(), clientIp);
+            // Accounts created before login-IP tracking have no history to compare
+            // against. Treat the first successful password login as the trust
+            // bootstrap, matching the existing social-login migration path.
+            if (!loginIps.hasHistory(user.getId())) {
+                loginIps.trust(user.getId(), clientIp);
+            } else if (!loginIps.isTrusted(user.getId(), clientIp)) {
+                return loginIps.createChallenge(user.getId(), user.getEmail(), clientIp);
+            }
             user.setLastLoginAt(LocalDateTime.now());
             userMapper.updateById(user);
             loginIps.touch(user.getId(), clientIp);
