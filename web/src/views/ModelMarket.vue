@@ -14,37 +14,8 @@
     </div>
 
     <div v-if="error" class="market-fallback-note">{{ error }}</div>
-    <div class="market-catalog-shell">
-      <aside class="market-filter-panel">
-        <header><div><span class="market-filter-icon">≡</span><h2>筛选</h2></div><button type="button" :disabled="!hasFilters" @click="clearFilters">重置</button></header>
-        <div v-for="group in facetGroups" v-show="group.options.length" :key="group.key" class="market-filter-group">
-          <h3>{{ group.title }}</h3>
-          <div class="market-filter-options text-only">
-            <button v-for="option in group.options" :key="option.value" type="button"
-              :class="{ active: group.selected.includes(option.value) }" :aria-pressed="group.selected.includes(option.value)"
-              @click="toggleFacet(group.key, option.value)">
-              <span><em>{{ option.label }}</em></span><b>{{ option.count }}</b>
-            </button>
-          </div>
-        </div>
-      </aside>
-
-      <el-drawer v-model="filtersOpen" title="筛选模型" direction="ltr" size="min(360px, 88vw)" class="market-filter-drawer">
-        <div v-for="group in facetGroups" v-show="group.options.length" :key="group.key" class="market-filter-group">
-          <h3>{{ group.title }}</h3>
-          <div class="market-filter-options text-only">
-            <button v-for="option in group.options" :key="option.value" type="button"
-              :class="{ active: group.selected.includes(option.value) }" :aria-pressed="group.selected.includes(option.value)"
-              @click="toggleFacet(group.key, option.value)">
-              <span><em>{{ option.label }}</em></span><b>{{ option.count }}</b>
-            </button>
-          </div>
-        </div>
-        <template #footer><el-button :disabled="!hasFilters" @click="clearFilters">清空筛选</el-button><el-button type="primary" @click="filtersOpen = false">查看 {{ total }} 个模型</el-button></template>
-      </el-drawer>
-
-      <div ref="resultsElement" class="market-results">
-        <div class="market-toolbar">
+    <div ref="resultsElement" class="market-catalog">
+      <div class="market-toolbar">
           <div class="market-result-count"><strong>{{ total }}</strong><span> 个模型</span></div>
           <el-input v-model="filters.query" clearable placeholder="搜索模型名称、发布方、套餐或能力" class="market-search" />
           <el-select v-model="filters.sort" class="market-select" aria-label="排序方式">
@@ -57,11 +28,42 @@
           </el-select>
           <el-button class="market-mobile-filter" @click="filtersOpen = true">筛选</el-button>
           <el-button class="market-refresh" :loading="loading" @click="fetchCatalog">刷新</el-button>
-        </div>
+      </div>
 
-        <div v-if="activeFilters.length" class="market-active-filters">
-          <span>已选条件</span><button v-for="item in activeFilters" :key="`${item.key}-${item.value}`" type="button" @click="toggleFacet(item.key, item.value)">{{ item.label }} ×</button>
-        </div>
+      <div v-if="activeFilters.length" class="market-active-filters">
+        <span>已选条件</span><button v-for="item in activeFilters" :key="`${item.key}-${item.value}`" type="button" @click="toggleFacet(item.key, item.value)">{{ item.label }} ×</button>
+      </div>
+
+      <div class="market-catalog-shell">
+        <aside class="market-filter-panel">
+          <header><div><span class="market-filter-icon">≡</span><h2>筛选</h2></div><button type="button" :disabled="!hasFilters" @click="clearFilters">重置</button></header>
+          <div v-for="group in facetGroups" v-show="group.options.length" :key="group.key" class="market-filter-group">
+            <h3>{{ group.title }}</h3>
+            <div class="market-filter-options text-only">
+              <button v-for="option in group.options" :key="option.value" type="button"
+                :class="{ active: group.selected.includes(option.value) }" :aria-pressed="group.selected.includes(option.value)"
+                @click="toggleFacet(group.key, option.value)">
+                <span><em>{{ option.label }}</em></span><b>{{ option.count }}</b>
+              </button>
+            </div>
+          </div>
+        </aside>
+
+        <el-drawer v-model="filtersOpen" title="筛选模型" direction="ltr" size="min(360px, 88vw)" class="market-filter-drawer">
+          <div v-for="group in facetGroups" v-show="group.options.length" :key="group.key" class="market-filter-group">
+            <h3>{{ group.title }}</h3>
+            <div class="market-filter-options text-only">
+              <button v-for="option in group.options" :key="option.value" type="button"
+                :class="{ active: group.selected.includes(option.value) }" :aria-pressed="group.selected.includes(option.value)"
+                @click="toggleFacet(group.key, option.value)">
+                <span><em>{{ option.label }}</em></span><b>{{ option.count }}</b>
+              </button>
+            </div>
+          </div>
+          <template #footer><el-button :disabled="!hasFilters" @click="clearFilters">清空筛选</el-button><el-button type="primary" @click="filtersOpen = false">查看 {{ total }} 个模型</el-button></template>
+        </el-drawer>
+
+        <div class="market-results">
 
         <div v-if="loading && !models.length" class="market-grid">
           <article v-for="index in 6" :key="index" class="market-card"><el-skeleton :rows="6" animated /></article>
@@ -105,6 +107,7 @@
             layout="total, sizes, prev, pager, next, jumper" background aria-label="模型列表分页" @current-change="scrollToResults" @size-change="handlePageSizeChange"  list-id="ModelMarket-1"/>
         </div>
       </div>
+    </div>
     </div>
 
     <section class="market-guide"><div><p class="eyebrow">快速接入</p><h2>选择模型 ID，通过统一 Base URL 调用。</h2><p>模型广场只公开用户销售价格；采购成本仅管理员可见。</p><div class="hero-actions"><el-button type="primary" @click="router.push('/docs')">查看接入文档</el-button><el-button @click="router.push('/console/playground')">在线调试</el-button></div></div><pre>{{ sdkExample }}</pre></section>
