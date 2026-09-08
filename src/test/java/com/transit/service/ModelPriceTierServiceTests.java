@@ -47,6 +47,21 @@ class ModelPriceTierServiceTests {
         assertThat(service.select(mapping, 2_000_000).getTierName()).isEqualTo("长上下文");
     }
 
+    @Test void serviceTierAndContextRangesAreIndependent() {
+        var base = tier("base", null, 0);
+        var priorityShort = tier("priority short", 128_000, 1);
+        priorityShort.setServiceTier("priority");
+        var priorityLong = tier("priority long", null, 2);
+        priorityLong.setServiceTier("priority");
+        var mapping = ModelMapping.builder().id(91L).priceTiers(List.of(base, priorityShort, priorityLong)).build();
+        service.synchronize(mapping, mapping.getPriceTiers());
+        assertThat(service.select(mapping, 200_000).getTierName()).isEqualTo("base");
+        assertThat(service.select(mapping, 128_000, "priority").getTierName()).isEqualTo("priority short");
+        assertThat(service.select(mapping, 128_001, "priority").getTierName()).isEqualTo("priority long");
+        assertThat(service.select(mapping, 128_001, "default").getTierName()).isEqualTo("base");
+        assertThat(mapping.getPriceTiers()).extracting(ModelPriceTier::getServiceTier).containsExactly("base", "priority", "priority");
+    }
+
     @Test
     void synchronizingTiersMirrorsThePrimaryTierIntoLegacyMappingColumns() {
         ModelMapping mapping = ModelMapping.builder()

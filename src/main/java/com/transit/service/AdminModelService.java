@@ -20,6 +20,7 @@ import java.util.Objects;
 @RequiredArgsConstructor
 public class AdminModelService {
     @org.springframework.beans.factory.annotation.Autowired(required=false) private GatewayPricingService gatewayPrices;
+    @Autowired(required=false) private GatewayPublicationService publications;
 
     private final ModelMappingMapper modelMappingMapper;
     private final ChannelMapper channelMapper;
@@ -49,6 +50,9 @@ public class AdminModelService {
         if (mapping == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Model mapping not found");
         }
+        if (publications != null && (mapping.isEnabled() && !request.isEnabled()
+                || !Objects.equals(mapping.getChannelId(), request.getChannelId())
+                || !Objects.equals(mapping.getChannelModelName(), request.getChannelModelName()))) publications.cancel(id);
         mapping.setPublicModelName(request.getPublicModelName());
         mapping.setChannelModelName(request.getChannelModelName());
         mapping.setChannelId(request.getChannelId());
@@ -96,6 +100,8 @@ public class AdminModelService {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Model mapping not found");
         }
         mapping.setPublicModelName(publicModelName);
+        if (publications != null && (!enabled || !Objects.equals(mapping.getChannelId(), channelId)
+                || !Objects.equals(mapping.getChannelModelName(), channelModelName))) publications.cancel(id);
         mapping.setChannelModelName(channelModelName);
         mapping.setChannelId(channelId);
         mapping.setPriority(priority);
@@ -107,6 +113,7 @@ public class AdminModelService {
 
     @Transactional
     public void delete(Long id) {
+        if (publications != null) publications.remove(id);
         priceTierService.deleteForMappings(List.of(id));
         modelMappingMapper.deleteById(id);
     }

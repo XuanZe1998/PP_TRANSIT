@@ -58,15 +58,15 @@ class NewApiPricingTests {
             assertThat(mapping.isEnabled()).isFalse();
         }
     }
-    @Test void safelyReadsServiceTierPricesWithoutEnablingAmbiguousBilling() throws Exception {
+    @Test void importsBothServiceTierPricesForAutomaticBilling() throws Exception {
         var p = quote("""
                 {"quota_type":0,"billing_mode":"tiered_expr",
                  "billing_expr":"param(\\\"service_tier\\\") != \\\"priority\\\" ? tier(\\\"base\\\", p * 5 + c * 30 + cr * 0.5 + cc * 6.25) : tier(\\\"priority\\\", p * 10 + c * 60 + cr * 1 + cc * 12.5)",
                  "enable_groups":["paid"]}
                 """);
-        assertThat(p.status()).isEqualTo("TIERED");
+        assertThat(p.status()).isEqualTo("READY");
         assertThat(p.quoted()).isTrue();
-        assertThat(p.supported()).isFalse();
+        assertThat(p.supported()).isTrue();
         assertThat(p.input()).isEqualByComparingTo("1");
         assertThat(p.output()).isEqualByComparingTo("6");
         assertThat(p.cacheRead()).isEqualByComparingTo("0.1");
@@ -77,8 +77,13 @@ class NewApiPricingTests {
         pricing.apply(mapping, p, "https://example.com", "paid");
         assertThat(mapping.getInputCostPerMillion()).isEqualByComparingTo("1");
         assertThat(mapping.getInputPricePerMillion()).isEqualByComparingTo("1.5");
-        assertThat(mapping.isBillingEnabled()).isFalse();
-        assertThat(mapping.getPricingStatus()).isEqualTo("PENDING");
+        assertThat(mapping.isBillingEnabled()).isTrue();
+        assertThat(mapping.getPricingStatus()).isEqualTo("VERIFIED");
+        assertThat(mapping.isEnabled()).isFalse();
+        assertThat(mapping.getPriceTiers()).hasSize(2);
+        assertThat(mapping.getPriceTiers().get(1).getServiceTier()).isEqualTo("priority");
+        assertThat(mapping.getPriceTiers().get(1).getSaleInputPrice()).isEqualByComparingTo("3");
+        assertThat(mapping.getPriceTiers().get(1).getCostOutputPrice()).isEqualByComparingTo("12");
     }
 
     @Test void neverExecutesUnrecognizedTieredExpressions() throws Exception {

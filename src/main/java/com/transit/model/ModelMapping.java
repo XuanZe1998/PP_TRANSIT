@@ -145,6 +145,11 @@ public class ModelMapping {
     @Builder.Default
     private List<ModelPriceTier> priceTiers = List.of();
 
+    /** Request-local pricing branch, never persisted or accepted in admin JSON. */
+    @TableField(exist = false)
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    private String billingServiceTier;
+
     // Use a transient field for the Channel object if needed, 
     // or handle join manually in mapper.
     @TableField(exist = false)

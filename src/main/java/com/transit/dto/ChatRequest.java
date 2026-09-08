@@ -35,6 +35,8 @@ public class ChatRequest {
     private Object responseFormat;
     @JsonProperty("reasoning_effort")
     private String reasoningEffort;
+    @JsonProperty("service_tier")
+    private String serviceTier;
     private List<String> modalities;
     private Map<String, Object> audio;
     @JsonProperty("web_search_options")

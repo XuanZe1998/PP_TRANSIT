@@ -28,6 +28,10 @@ public class ModelPriceTier {
     @TableField("tier_name")
     private String tierName;
 
+    @TableField("service_tier")
+    @Builder.Default
+    private String serviceTier = "base";
+
     /** Inclusive upper context-token boundary; null means unlimited. */
     @TableField("max_context_tokens")
     private Integer maxContextTokens;

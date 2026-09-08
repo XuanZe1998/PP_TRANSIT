@@ -4,6 +4,8 @@
 
 网关使用数据库 COUNT + LIMIT/OFFSET。旧集合接口保留兼容入口：listPage/listPath/listCurrent/listSize/listAll；该兼容层在授权后分页，仍会读取原集合。高容量旧接口后续应逐个下推到数据库，避免集合装载开销。前端派生的小数据集本地分页。
 
+网关自动发布状态、等待原因和下次重试时间随 `/admin/api/gateway/models` 同页返回，保持 COUNT + LIMIT/OFFSET 和相同筛选。批量处理结果沿用 `ModelGateway-4` 的 PagedTable，每批服务端最多200条。服务档位价格沿用 `gateway-model-price-tiers` 分页表格。
+
 | 文件 | 列表标识 | 数据 | 方式 |
 |---|---|---|---|
 | web/src/components/AdminUsageCharts.vue | AdminUsageCharts-1 | `dailyByModel` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |

@@ -39,6 +39,7 @@ import static org.mockito.ArgumentMatchers.startsWith;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -323,7 +324,9 @@ class TransitServiceTests {
         when(primaryGateway.chatCompletions(any(), any(), anyString(), anyString()))
                 .thenReturn(Mono.just(response));
 
-        StepVerifier.create(service.chatCompletions(token, request(), "203.0.113.10"))
+        ChatRequest priorityRequest = request();
+        priorityRequest.setServiceTier("priority");
+        StepVerifier.create(service.chatCompletions(token, priorityRequest, "203.0.113.10"))
                 .expectNextMatches(result -> result.getBilling() != null
                         && "长上下文".equals(result.getBilling().getPriceTier())
                         && "KB".equals(result.getBilling().getPriceUnit())
@@ -339,6 +342,7 @@ class TransitServiceTests {
                 .verifyComplete();
 
         verify(settlementService).settle(eq(reservation), eq(1_500), eq(488L), startsWith("API usage public-model"));
+        verify(priceTierService, atLeastOnce()).select(argThat((ModelMapping item) -> "priority".equals(item.getBillingServiceTier())), anyInt());
         verify(logMapper).insert(org.mockito.ArgumentMatchers.<Log>argThat(log ->
                 log.getCacheReadTokens() == 200
                         && log.getCacheWriteTokens() == 100

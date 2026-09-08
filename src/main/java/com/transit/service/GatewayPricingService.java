@@ -43,7 +43,7 @@ public class GatewayPricingService {
    if(ratio!=null)put(new Rule("GROUP",id(c.get("id")),"PERCENT",ratio.subtract(BigDecimal.ONE).movePointRight(2).max(BigDecimal.ZERO),Map.of()));
   }
   for(var model:models(new Rule("GLOBAL",0,"PERCENT",BigDecimal.ZERO,Map.of()),false)) {
-   if("FREE_PREVIEW".equals(model.get("billing_mode")))continue;
+   if("FREE_PREVIEW".equals(model.get("billing_mode"))||!"VERIFIED".equals(model.get("pricing_status")))continue;
    long modelId=id(model.get("id"));
    var effective=effective(model,null);
    var proposed=calculate(model,effective);
@@ -110,24 +110,25 @@ public class GatewayPricingService {
  @Transactional public void protect(long modelId) {
   var model=jdbc.queryForMap("SELECT * FROM model_mappings WHERE id=?",modelId);
   Map<String,Object> snapshot=new LinkedHashMap<>();Map<String,Object> prices=new LinkedHashMap<>();MODEL.keySet().forEach(k->prices.put(k,model.get(k)));snapshot.put("model",prices);
-  snapshot.put("tiers",tiers(modelId,false).stream().map(t->{Map<String,Object> v=new LinkedHashMap<>();v.put("sort_order",t.get("sort_order"));v.put("max_context_tokens",t.get("max_context_tokens"));for(String d:DIMENSIONS)v.put("sale_"+d+"_price",t.get("sale_"+d+"_price"));return v;}).toList());
+  snapshot.put("tiers",tiers(modelId,false).stream().map(t->{Map<String,Object> v=new LinkedHashMap<>();v.put("sort_order",t.get("sort_order"));v.put("service_tier",t.get("service_tier"));v.put("max_context_tokens",t.get("max_context_tokens"));for(String d:DIMENSIONS)v.put("sale_"+d+"_price",t.get("sale_"+d+"_price"));return v;}).toList());
   jdbc.update("DELETE FROM gateway_price_overrides WHERE model_mapping_id=?",modelId);
   jdbc.update("INSERT INTO gateway_price_overrides(model_mapping_id,snapshot) VALUES(?,?)",modelId,encode(snapshot));
  }
  @Transactional public void repriceAfterSync(long modelId) {
   var model=jdbc.queryForMap("SELECT * FROM model_mappings WHERE id=?",modelId);
-  if("FREE_PREVIEW".equals(model.get("billing_mode"))||!"VERIFIED".equals(model.get("pricing_status")))return;
+  if("FREE_PREVIEW".equals(model.get("billing_mode")))return;
   var overrides=jdbc.queryForList("SELECT snapshot FROM gateway_price_overrides WHERE model_mapping_id=?",modelId);
   if(!overrides.isEmpty()){restore(modelId,decode(overrides.get(0).get("snapshot").toString()));return;}
+  if(!"VERIFIED".equals(model.get("pricing_status")))return;
   applyModel(model,effective(model,null));
  }
  @SuppressWarnings("unchecked") private void restore(long modelId,Map<String,Object> snapshot) {
   updatePrices("model_mappings",modelId,(Map<String,Object>)snapshot.get("model"));
   List<Map<String,Object>> old=(List<Map<String,Object>>)snapshot.get("tiers");
   for(var tier:tiers(modelId,true)){
-   var match=old.stream().filter(t->Objects.toString(t.get("sort_order"),"").equals(Objects.toString(tier.get("sort_order"),""))&&Objects.toString(t.get("max_context_tokens"),"").equals(Objects.toString(tier.get("max_context_tokens"),""))).findFirst();
+   var match=old.stream().filter(t->Objects.toString(t.get("service_tier"),"base").equals(Objects.toString(tier.get("service_tier"),"base"))&&Objects.toString(t.get("sort_order"),"").equals(Objects.toString(tier.get("sort_order"),""))&&Objects.toString(t.get("max_context_tokens"),"").equals(Objects.toString(tier.get("max_context_tokens"),""))).findFirst();
    if(match.isEmpty()){jdbc.update("UPDATE model_mappings SET enabled=FALSE,pricing_status='PENDING',pricing_message='上游阶梯已变化，请重新核验手工售价' WHERE id=?",modelId);continue;}
-   Map<String,Object> values=new LinkedHashMap<>(match.get());values.remove("sort_order");values.remove("max_context_tokens");updatePrices("model_price_tiers",id(tier.get("id")),values);
+   Map<String,Object> values=new LinkedHashMap<>(match.get());values.remove("service_tier");values.remove("sort_order");values.remove("max_context_tokens");updatePrices("model_price_tiers",id(tier.get("id")),values);
   }
  }
  private void updatePrices(String table,long id,Map<String,Object> values){

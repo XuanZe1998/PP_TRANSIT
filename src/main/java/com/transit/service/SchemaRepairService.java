@@ -45,7 +45,21 @@ public class SchemaRepairService {
             backfillPaymentIntents();
             backfillChannelModelMappings();
             backfillModelPriceTiers();
+            queuePendingPricePublication();
         };
+    }
+
+    private void queuePendingPricePublication() {
+        if (jdbcTemplate.queryForObject("SELECT COUNT(*) FROM system_settings WHERE setting_key='gateway.pending_publication_v1'", Integer.class)>0) return;
+        jdbcTemplate.update("""
+                INSERT INTO gateway_publication_requests(model_mapping_id,reason)
+                SELECT m.id,'等待自动同步报价并校验发布条件' FROM model_mappings m
+                JOIN upstream_site_channels sc ON sc.channel_id=m.channel_id
+                WHERE m.enabled=FALSE AND (m.pricing_status IS NULL OR m.pricing_status<>'VERIFIED')
+                AND (m.billing_mode IS NULL OR m.billing_mode<>'FREE_PREVIEW')
+                AND NOT EXISTS(SELECT 1 FROM gateway_publication_requests p WHERE p.model_mapping_id=m.id)
+                """);
+        jdbcTemplate.update("INSERT INTO system_settings(setting_key,setting_value,description,updated_at) VALUES('gateway.pending_publication_v1','true','Existing pending models queued for automatic publication',CURRENT_TIMESTAMP)");
     }
 
     @Bean
@@ -1317,6 +1331,7 @@ public class SchemaRepairService {
         ensureColumn("model_mappings", "official_unit_price", "ALTER TABLE model_mappings ADD COLUMN official_unit_price DECIMAL(18,6) NOT NULL DEFAULT 0");
         ensureColumn("model_mappings", "cost_unit_price", "ALTER TABLE model_mappings ADD COLUMN cost_unit_price DECIMAL(18,6) NOT NULL DEFAULT 0");
         ensureColumn("model_mappings", "sale_unit_price", "ALTER TABLE model_mappings ADD COLUMN sale_unit_price DECIMAL(18,6) NOT NULL DEFAULT 0");
+        ensureColumn("model_price_tiers", "service_tier", "ALTER TABLE model_price_tiers ADD COLUMN service_tier VARCHAR(24) NOT NULL DEFAULT 'base'");
         ensureColumn("model_price_tiers", "official_price_unit", "ALTER TABLE model_price_tiers ADD COLUMN official_price_unit VARCHAR(8) NOT NULL DEFAULT 'M'");
         ensureColumn("model_price_tiers", "official_price_suffix", "ALTER TABLE model_price_tiers ADD COLUMN official_price_suffix VARCHAR(120) NOT NULL DEFAULT 'USD / 1M Token'");
         ensureColumn("model_price_tiers", "official_cache_write_1h_price", "ALTER TABLE model_price_tiers ADD COLUMN official_cache_write_1h_price DECIMAL(24,10) NOT NULL DEFAULT 0");
