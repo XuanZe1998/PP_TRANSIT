@@ -3,7 +3,6 @@ package com.transit.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.transit.mapper.ChannelMapper;
@@ -46,6 +45,9 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class AiApiBankCatalogService {
+    @Autowired(required=false) @org.springframework.context.annotation.Lazy private GatewaySyncJobs gatewayJobs;
+    @org.springframework.beans.factory.annotation.Autowired(required=false) private GatewayPricingService gatewayPrices;
+    @Autowired(required=false) private AiApiBankAccountSessionService accountSessions;
     public static final String SOURCE_CODE = "aiapibank";
     public static final String SOURCE_NAME = "AiAPIBank";
     public static final String CATALOG_URL = "https://aiapibank.com/api/v1/model-plaza";
@@ -68,13 +70,14 @@ public class AiApiBankCatalogService {
     private final ModelPriceTierMapper tierMapper;
     private final ChannelSecretService secrets;
     @Autowired(required = false) private ModelIdentityService modelIdentityService;
+    @Autowired @org.springframework.context.annotation.Lazy private AdminChannelService adminChannels;
 
     @Value("${aiapibank.enabled:true}") private boolean enabled;
     @Value("${aiapibank.base-url:https://aiapibank.com}") private String baseUrl;
     @Value("${aiapibank.sale-markup:1.10}") private BigDecimal saleMarkup;
     @Value("${aiapibank.request-timeout-seconds:30}") private int timeoutSeconds;
 
-    @Scheduled(cron = "${aiapibank.sync-cron:0 20 3 * * *}", zone = "${aiapibank.sync-zone:Asia/Tokyo}")
+    // Scheduled imports are owned by NewApiCatalogManagementService.
     public void scheduledSync() {
         if (!enabled) return;
         try {
@@ -90,7 +93,8 @@ public class AiApiBankCatalogService {
     @Async
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void syncAfterCredentialConfigured(AiApiBankCredentialConfiguredEvent event) {
-        if (!enabled || event == null || event.channelId() == null) return;
+        if (!enabled || event == null || event.channelId() == null || catalogPaused(event.channelId())) return;
+        if(gatewayJobs!=null){gatewayJobs.enqueue(event.channelId());return;}
         try {
             ChannelSyncResult result = syncChannel(event.channelId());
             log.info("AiAPIBank channel catalog auto-sync completed: channelId={}, group={}, models={}",
@@ -125,7 +129,7 @@ public class AiApiBankCatalogService {
         if (channelIds.isEmpty()) return;
         List<GroupSnapshot> groups;
         try {
-            groups = catalogGroups();
+            groups = catalogGroups(defaultSiteId());
         } catch (RuntimeException error) {
             log.error("AiAPIBank pending channel startup sync could not load the catalog: {}", safe(error));
             return;
@@ -134,6 +138,8 @@ public class AiApiBankCatalogService {
         int failures = 0;
         for (Long channelId : channelIds) {
             try {
+                if (catalogPaused(channelId)) continue;
+                if(gatewayJobs!=null){gatewayJobs.enqueue(channelId);continue;}
                 Channel channel = requireAiApiBankChannel(channelId);
                 modelsApplied += syncChannel(channel, groups).modelsApplied();
             } catch (RuntimeException error) {
@@ -149,7 +155,7 @@ public class AiApiBankCatalogService {
     public ChannelSyncResult syncChannel(Long channelId) {
         if (!enabled) throw new IllegalStateException("AiAPIBank catalog synchronization is disabled");
         Channel channel = requireAiApiBankChannel(channelId);
-        return syncChannel(channel, catalogGroups());
+        return syncChannel(channel, catalogGroups(siteIdForChannel(channel.getId())));
     }
 
     public SyncResult sync(boolean dryRun) {
@@ -163,15 +169,15 @@ public class AiApiBankCatalogService {
         int disabledRoutes = 0;
         List<GroupSnapshot> groups;
         try {
-            groups = catalogGroups();
+            groups = catalogGroups(defaultSiteId());
         } catch (RuntimeException invalidCatalog) {
             if (runId != null) finishRun(runId, "FAILED", 0, 0, 0, 0, 0, 0,
                     List.of(safe(invalidCatalog)));
             throw invalidCatalog;
         }
-        Set<Long> seenGroups = groups.stream().map(GroupSnapshot::externalId).collect(Collectors.toSet());
         for (GroupSnapshot group : groups) {
             Channel channel = findChannel(group.slug());
+            if (!dryRun && channel != null && catalogPaused(channel.getId())) continue;
             boolean hasCredential = channel != null && channel.getApiKey() != null && !channel.getApiKey().isBlank();
             if (!hasCredential) {
                 credentialsMissing++;
@@ -202,7 +208,6 @@ public class AiApiBankCatalogService {
                 }
             }
         }
-        if (!dryRun) disabledRoutes += markMissingGroups(seenGroups);
         SyncResult result = new SyncResult(dryRun, groups.size(), groupsApplied, modelsSeen, modelsApplied,
                 credentialsMissing, disabledRoutes, List.copyOf(errors), started, LocalDateTime.now());
         if (runId != null) finishRun(runId, errors.isEmpty() ? "SUCCESS" : "PARTIAL",
@@ -210,13 +215,57 @@ public class AiApiBankCatalogService {
         return result;
     }
 
-    private List<GroupSnapshot> catalogGroups() {
-        List<GroupSnapshot> groups = new ArrayList<>(parseCatalog(fetchCatalog()));
-        groups.add(imageGroup(IMAGE_1K_ID, "gpt-image2-1k",
-                "GPT-Image-2 分组 特价0.05一张（只支持1K）", "生图1K分组"));
-        groups.add(imageGroup(IMAGE_ALL_ID, "image2-all-res",
-                "Image-2 生图1K/2K/4K", "3种分辨率全支持 1K/2K-0.1一张 4K-0.2一张"));
-        return groups;
+    public List<Map<String,Object>> previewGroups() {
+        return catalogGroups(defaultSiteId()).stream().map(g -> Map.<String,Object>of("slug",g.slug(),"name",g.name(),"models",g.models().stream().map(m->m.path("name").asText()).filter(n->!n.isBlank()).distinct().toList())).toList();
+    }
+    public record GroupDiscovery(int seen,int added,int deleted) {}
+    public GroupDiscovery discoverGroups() { return discoverGroups(null); }
+    public GroupDiscovery discoverGroups(Long siteId) {
+        if(!enabled)throw new IllegalStateException("AiAPIBank catalog synchronization is disabled");
+        var groups=catalogGroups(siteId);
+        return transactions.execute(status->{
+            int added=0;
+            for(var group:groups) {
+                Channel existing=findChannel(group.slug());
+                if(existing!=null && siteId!=null) {
+                    var owners=jdbc.queryForList("SELECT site_id FROM upstream_site_channels WHERE channel_id=?",Long.class,existing.getId());
+                    if(owners.stream().anyMatch(owner->!owner.equals(siteId)))
+                        throw new IllegalStateException("分组已关联其他站点，拒绝跨站点同步");
+                }
+                if(existing==null){applyCredentialMissing(group,null);added++;}
+                if(siteId!=null) {
+                    Long channel=findChannel(group.slug()).getId();
+                    if(jdbc.queryForObject("SELECT COUNT(*) FROM upstream_site_channels WHERE channel_id=?",Integer.class,channel)==0)
+                        jdbc.update("INSERT INTO upstream_site_channels(channel_id,site_id) VALUES(?,?)",channel,siteId);
+                }
+            }
+            // The public model plaza describes visibility, not authoritative deletions.
+            return new GroupDiscovery(groups.size(),added,0);
+        });
+    }
+
+    private boolean catalogPaused(Long channelId) {
+        return Integer.valueOf(1).equals(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM upstream_catalog_sync WHERE channel_id=? AND sync_enabled=FALSE", Integer.class, channelId));
+    }
+
+    private List<GroupSnapshot> catalogGroups(Long siteId) {
+        return parseCatalog(fetchCatalog(siteId));
+    }
+
+    private Long defaultSiteId() {
+        List<Long> sites = jdbc.queryForList(
+                "SELECT id FROM upstream_sites WHERE adapter='aiapibank' ORDER BY id LIMIT 1", Long.class);
+        return sites.isEmpty() ? null : sites.get(0);
+    }
+
+    private Long siteIdForChannel(Long channelId) {
+        if (channelId == null) return defaultSiteId();
+        List<Long> sites = jdbc.queryForList("""
+                SELECT s.id FROM upstream_sites s JOIN upstream_site_channels sc ON sc.site_id=s.id
+                WHERE sc.channel_id=? AND s.adapter='aiapibank' ORDER BY s.id LIMIT 1
+                """, Long.class, channelId);
+        return sites.isEmpty() ? defaultSiteId() : sites.get(0);
     }
 
     private Channel requireAiApiBankChannel(Long channelId) {
@@ -239,7 +288,7 @@ public class AiApiBankCatalogService {
         String slug = Objects.toString(channel.getGroupName(), "").trim();
         GroupSnapshot group = groups.stream().filter(candidate -> candidate.slug().equals(slug))
                 .findFirst().orElseThrow(() -> new IllegalStateException(
-                        "AiAPIBank catalog no longer contains group " + slug));
+                        "AiAPIBank 公开目录未提供此分组的模型报价，已保留现有模型和售价：" + slug));
         CredentialSnapshot credential;
         try {
             credential = inspectCredential(channel, group);
@@ -289,6 +338,18 @@ public class AiApiBankCatalogService {
                 .block(Duration.ofSeconds(Math.max(3, timeoutSeconds)));
     }
 
+    JsonNode fetchCatalog(Long siteId) {
+        if (siteId == null || accountSessions == null || !accountSessions.isAuthorized(siteId)) {
+            return fetchCatalog();
+        }
+        String accessToken = accountSessions.accessToken(siteId);
+        if (accessToken == null || accessToken.isBlank()) return fetchCatalog();
+        return webClient.get().uri(catalogUrl())
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+                .retrieve().bodyToMono(JsonNode.class)
+                .block(Duration.ofSeconds(Math.max(3, timeoutSeconds)));
+    }
+
     private String catalogUrl() {
         String root = baseUrl == null ? "" : baseUrl.replaceAll("/+$", "");
         return root.endsWith("/api/v1/model-plaza") ? root : root + "/api/v1/model-plaza";
@@ -296,6 +357,7 @@ public class AiApiBankCatalogService {
 
     List<GroupSnapshot> parseCatalog(JsonNode root) {
         if (root == null || root.isNull()) throw new IllegalStateException("AiAPIBank 模型广场响应为空");
+        if(root.has("success")&&!root.path("success").asBoolean())throw new IllegalStateException("AiAPIBank 分组目录不完整；拒绝覆盖现有目录");
         if (root.has("code") && root.path("code").asInt(-1) != 0) {
             throw new IllegalStateException("AiAPIBank 模型广场返回错误: " + root.path("message").asText("unknown"));
         }
@@ -303,12 +365,23 @@ public class AiApiBankCatalogService {
         if (!groups.isArray() || groups.isEmpty()) {
             throw new IllegalStateException("AiAPIBank 模型广场没有有效分组；拒绝覆盖现有目录");
         }
+        for(JsonNode envelope:List.of(root,root.path("data"))) {
+            if(envelope.path("has_more").asBoolean()||envelope.path("hasMore").asBoolean()
+                    ||envelope.path("truncated").asBoolean()||!envelope.path("next_cursor").asText("").isBlank()
+                    ||!envelope.path("next").asText("").isBlank()
+                    ||!envelope.path("nextCursor").asText("").isBlank()
+                    ||envelope.path("total").asInt(0)>groups.size()
+                    ||envelope.path("total_count").asInt(0)>groups.size()
+                    ||envelope.path("pagination").path("total").asInt(0)>groups.size())
+                throw new IllegalStateException("AiAPIBank 分组目录不完整；拒绝覆盖现有目录");
+        }
+        Set<Long> uniqueIds=new HashSet<>();
         List<GroupSnapshot> result = new ArrayList<>();
         for (JsonNode node : groups) {
             long id = node.path("id").asLong(Long.MIN_VALUE);
             String name = node.path("name").asText("").trim();
             String platform = node.path("platform").asText("").trim().toLowerCase(Locale.ROOT);
-            if (id == Long.MIN_VALUE || name.isBlank() || platform.isBlank() || !node.path("models").isArray()) {
+            if (id <= 0 || !uniqueIds.add(id) || name.isBlank() || platform.isBlank() || !node.path("models").isArray()) {
                 throw new IllegalStateException("AiAPIBank 分组字段不完整；拒绝覆盖现有目录");
             }
             result.add(new GroupSnapshot(id, groupSlug(id), name,
@@ -389,6 +462,7 @@ public class AiApiBankCatalogService {
 
     private ApplyResult applyGroup(GroupSnapshot group, Channel existing, CredentialSnapshot credential,
                                    List<JsonNode> available) {
+        boolean firstCatalog=existing==null||existing.getModels()==null||existing.getModels().isBlank();
         Channel channel = upsertChannel(group, existing, available);
         upsertPublicAlias(channel.getId());
         long groupId = upsertGroup(group, channel.getId(), credential, available.size(), "SUCCESS", null);
@@ -402,6 +476,10 @@ public class AiApiBankCatalogService {
             applied++;
         }
         int disabled = incrementMissingOffers(groupId, seen);
+        if(firstCatalog)jdbc.update("""
+                UPDATE model_mappings SET enabled=TRUE WHERE channel_id=? AND pricing_status='VERIFIED'
+                AND billing_enabled=TRUE AND (input_cost_per_million>0 OR output_cost_per_million>0 OR cost_unit_price>0)
+                """,channel.getId());
         return new ApplyResult(applied, disabled);
     }
 
@@ -484,11 +562,11 @@ public class AiApiBankCatalogService {
         ModelMapping mapping = mappingMapper.selectOne(new LambdaQueryWrapper<ModelMapping>()
                 .eq(ModelMapping::getChannelId, channel.getId())
                 .eq(ModelMapping::getChannelModelName, upstream).last("LIMIT 1"));
-        if (mapping == null) mapping = new ModelMapping();
+        if (mapping == null) { mapping = new ModelMapping(); mapping.setEnabled(false); }
         JsonNode pricing = model.path("pricing");
         PriceSet primary = group.imageOnly() ? imagePrimary(group) : tokenPrices(pricing, credential.resolvedRate());
         mapping.setPublicModelName(publicName); mapping.setChannelModelName(upstream); mapping.setChannelId(channel.getId());
-        mapping.setPriority(100); mapping.setEnabled(true); mapping.setBillingEnabled(true); mapping.setTrafficPercent(100);
+        mapping.setPriority(100); mapping.setBillingEnabled(true); mapping.setTrafficPercent(100);
         mapping.setPriceRatio(saleMarkup);
         mapping.setVendor(ModelIdentityService.publisherCode(group.platform(), upstream));
         mapping.setCapability(group.imageOnly() ? "image" : capability(upstream));
@@ -533,6 +611,7 @@ public class AiApiBankCatalogService {
                 Long.class, groupId, upstream);
         if (group.imageOnly()) synchronizeImageVariants(offerId, group);
         synchronizeTiers(mapping, model, credential, group);
+        if(gatewayPrices!=null)gatewayPrices.repriceAfterSync(mapping.getId());
         if (modelIdentityService != null) {
             modelIdentityService.register(channel, mapping, group.platform(), ModelIdentityService.RANK_PROVIDER_CATALOG);
         }
@@ -639,25 +718,6 @@ public class AiApiBankCatalogService {
                 jdbc.update("UPDATE model_mappings SET enabled=FALSE,pricing_message=? WHERE id=?",
                         "AiAPIBank 连续三次同步未发现该模型", value(offer, "model_mapping_id"));
                 disabled++;
-            }
-        }
-        return disabled;
-    }
-
-    private int markMissingGroups(Set<Long> seenGroups) {
-        List<Map<String, Object>> rows = jdbc.queryForList(
-                "SELECT id,external_group_id,channel_id,missing_sync_count FROM aiapibank_provider_groups");
-        int disabled = 0;
-        for (Map<String, Object> row : rows) {
-            long externalId = ((Number) value(row, "external_group_id")).longValue();
-            if (seenGroups.contains(externalId)) continue;
-            int missing = ((Number) value(row, "missing_sync_count")).intValue() + 1;
-            jdbc.update("UPDATE aiapibank_provider_groups SET missing_sync_count=?,sync_status=?,updated_at=? WHERE id=?",
-                    missing, missing >= 3 ? "DISABLED_MISSING" : "MISSING", LocalDateTime.now(), value(row, "id"));
-            if (missing >= 3) {
-                Long channelId = ((Number) value(row, "channel_id")).longValue();
-                disabled += jdbc.update("UPDATE model_mappings SET enabled=FALSE WHERE channel_id=? AND enabled=TRUE", channelId);
-                jdbc.update("UPDATE channels SET enabled=FALSE,health_status='DISABLED' WHERE id=?", channelId);
             }
         }
         return disabled;

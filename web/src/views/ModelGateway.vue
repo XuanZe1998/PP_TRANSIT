@@ -1,467 +1,105 @@
 <template>
-  <div class="model-gateway-page">
-    <section class="gateway-heading">
-      <div>
-        <p class="gateway-eyebrow">MODEL GATEWAY</p>
-        <h2>模型网关统一管理</h2>
-        <p>集中维护供应商渠道、公开模型路由、价格档位、健康状态与连通性测试。</p>
-      </div>
-      <div class="gateway-heading-actions">
-        <el-button :loading="loading" @click="loadGatewayData">刷新状态</el-button>
-        <el-button type="primary" @click="router.push('/market')">查看模型广场</el-button>
-      </div>
-    </section>
-
-    <el-tabs v-model="activeTab" class="gateway-tabs" @tab-change="syncTab">
-      <el-tab-pane label="总览" name="overview">
-        <section class="gateway-metrics" v-loading="loading">
-          <button type="button" @click="selectTab('channels')">
-            <span>渠道总数</span><strong>{{ channels.length }}</strong><small>{{ enabledChannels }} 个已启用</small>
-          </button>
-          <button type="button" @click="selectTab('health')">
-            <span>健康渠道</span><strong>{{ healthyChannels }}</strong><small>{{ unhealthyChannels }} 个需要处理</small>
-          </button>
-          <button type="button" @click="selectTab('models')">
-            <span>公开模型</span><strong>{{ publicModelCount }}</strong><small>{{ enabledRoutes }} 条路由已发布</small>
-          </button>
-          <button type="button" @click="selectTab('catalog')">
-            <span>前台可调用</span><strong>{{ callableModelCount }}</strong><small>通过统一 Base URL 调用</small>
-          </button>
-        </section>
-
-        <section class="gateway-overview-grid">
-          <article class="gateway-panel">
-            <div class="gateway-panel-head">
-              <div><h3>渠道健康</h3><p>当前所有上游渠道的运行状态</p></div>
-              <el-button link type="primary" @click="selectTab('health')">查看测试记录</el-button>
-            </div>
-            <el-table :data="channels" size="small" empty-text="暂无渠道">
-              <el-table-column prop="name" label="渠道" min-width="150" />
-              <el-table-column prop="type" label="类型" width="110" />
-              <el-table-column label="状态" width="110">
-                <template #default="{ row }"><el-tag :type="healthTag(row.healthStatus)">{{ row.healthStatus || 'UNTESTED' }}</el-tag></template>
-              </el-table-column>
-              <el-table-column label="启用" width="80">
-                <template #default="{ row }"><el-tag :type="row.enabled ? 'success' : 'info'">{{ row.enabled ? '是' : '否' }}</el-tag></template>
-              </el-table-column>
-            </el-table>
-          </article>
-
-          <article class="gateway-panel">
-            <div class="gateway-panel-head">
-              <div><h3>待处理问题</h3><p>影响模型发布或调用的配置</p></div>
-              <el-tag :type="issues.length ? 'warning' : 'success'">{{ issues.length }} 项</el-tag>
-            </div>
-            <el-empty v-if="!issues.length" description="模型网关状态正常" :image-size="72" />
-            <div v-else class="gateway-issues">
-              <button v-for="issue in issues" :key="issue.key" type="button" @click="selectTab(issue.tab)">
-                <span :class="`severity-${issue.severity}`"></span>
-                <div><strong>{{ issue.title }}</strong><small>{{ issue.message }}</small></div>
-              </button>
-            </div>
-          </article>
-        </section>
-      </el-tab-pane>
-
-      <el-tab-pane label="渠道管理" name="channels">
-        <AdminConsole module="channels" />
-      </el-tab-pane>
-
-      <el-tab-pane label="模型与路由" name="models">
-        <AdminConsole module="models" />
-      </el-tab-pane>
-
-      <el-tab-pane label="公开上游映射" name="presentation">
-        <section class="gateway-panel">
-          <div class="gateway-panel-head"><div><h3>公开上游映射</h3><p>用户侧只能看到此处的公开名称；未配置时统一显示“平台智能路由”。</p></div></div>
-          <el-table :data="displayMappings" border empty-text="暂无渠道">
-            <el-table-column prop="internalName" label="内部渠道" min-width="160"/><el-table-column prop="sourceCode" label="内部代号" width="120"/>
-            <el-table-column label="公开代号" min-width="150"><template #default="{row}"><el-input v-model="row.publicCode"/></template></el-table-column>
-            <el-table-column label="公开显示名" min-width="170"><template #default="{row}"><el-input v-model="row.publicName"/></template></el-table-column>
-            <el-table-column label="徽标" width="130"><template #default="{row}"><el-input v-model="row.badgeText"/></template></el-table-column>
-            <el-table-column label="颜色" width="135"><template #default="{row}"><el-color-picker v-model="row.badgeColor"/></template></el-table-column>
-            <el-table-column label="排序" width="110"><template #default="{row}"><el-input-number v-model="row.sortOrder" :min="0" :max="9999" controls-position="right"/></template></el-table-column>
-            <el-table-column label="启用" width="80"><template #default="{row}"><el-switch v-model="row.enabled"/></template></el-table-column>
-            <el-table-column label="操作" width="90" fixed="right"><template #default="{row}"><el-button link type="primary" @click="saveDisplayMapping(row)">保存</el-button></template></el-table-column>
-          </el-table>
-        </section>
-        <section class="gateway-panel context-policy-panel">
-          <div class="gateway-panel-head"><div><h3>长上下文销售策略</h3><p>实际输入 Token 超过阈值后，输入和输出售价固定为基础价的 2 倍，缓存价格不变。</p></div></div>
-          <div class="context-policy-form"><el-select v-model="contextModel" filterable placeholder="选择公开模型" @change="loadContextPolicy"><el-option v-for="name in publicModelNames" :key="name" :label="name" :value="name"/></el-select><el-switch v-model="contextPolicy.enabled" active-text="启用 2 倍价格"/><el-input-number v-model="contextPolicy.thresholdTokens" :min="1" :max="100000000"/><el-input v-model="contextPolicy.verificationNote" maxlength="500" placeholder="核验说明"/><el-button type="primary" :disabled="!contextModel" @click="saveContextPolicy">保存策略</el-button></div>
-        </section>
-      </el-tab-pane>
-
-      <el-tab-pane label="供应商目录" name="catalog">
-        <section class="gateway-panel">
-          <div class="gateway-panel-head">
-            <div><h3>全量供应商模型目录</h3><p>目录可展示全部模型；只有 AVAILABLE 状态会进入用户 Key 和 /v1/models。</p></div>
-            <div class="gateway-heading-actions">
-              <el-button :loading="catalogAction !== ''" @click="syncCatalog('haoee')">同步好易智算</el-button>
-              <el-button :loading="catalogAction !== ''" @click="syncCatalog('nvidia')">同步 NVIDIA</el-button>
-              <el-button type="primary" :loading="catalogAction !== ''" @click="verifyCatalogSource">验证低成本模型</el-button>
-              <el-button type="danger" plain :loading="catalogAction !== ''" @click="purgeFailedModels">删除验证失败</el-button>
-              <el-button @click="openExclusions">排除清单</el-button>
-            </div>
-          </div>
-          <div class="catalog-filters">
-            <el-select v-model="catalogSource" clearable placeholder="全部上游"><el-option label="好易智算" value="haoee" /><el-option label="NVIDIA" value="nvidia" /></el-select>
-            <el-select v-model="catalogStatus" clearable placeholder="全部状态">
-              <el-option v-for="status in catalogStatuses" :key="status" :label="status" :value="status" />
-            </el-select>
-            <el-input v-model="catalogQuery" clearable placeholder="搜索模型、厂家或功能" />
-          </div>
-          <div class="gateway-table-shell catalog-table-shell">
-          <el-table :data="filteredCatalog" v-loading="loading" max-height="calc(100vh - 330px)" scrollbar-always-on empty-text="暂无目录模型">
-            <el-table-column prop="sourceName" label="上游" width="130" fixed="left" />
-            <el-table-column prop="publicModelName" label="模型" min-width="230" show-overflow-tooltip fixed="left" />
-            <el-table-column prop="vendor" label="厂家" width="130" />
-            <el-table-column prop="capability" label="功能" width="110" />
-            <el-table-column prop="protocols" label="协议" min-width="160" show-overflow-tooltip />
-            <el-table-column label="验证状态" width="135">
-              <template #default="{ row }"><el-tag :type="catalogStatusTag(row.verificationStatus)">{{ row.verificationStatus }}</el-tag></template>
-            </el-table-column>
-            <el-table-column prop="verificationMessage" label="验证信息" min-width="220" show-overflow-tooltip />
-            <el-table-column label="操作" width="140" fixed="right">
-              <template #default="{ row }">
-                <el-button link type="primary" :disabled="row.verificationStatus === 'VERIFYING'" @click="verifyCatalogModel(row)">验证</el-button>
-                <el-button link @click="showVerificationHistory(row)">记录</el-button>
-              </template>
-            </el-table-column>
-          </el-table>
-          </div>
-        </section>
-      </el-tab-pane>
-
-      <el-tab-pane label="健康与测试" name="health">
-        <section class="gateway-panel gateway-health-panel">
-          <div class="gateway-panel-head">
-            <div><h3>渠道连通性</h3><p>使用内置安全探针测试渠道，不执行自定义代码。</p></div>
-          </div>
-          <el-table :data="channels" v-loading="loading" empty-text="暂无渠道">
-            <el-table-column prop="name" label="渠道" min-width="160" />
-            <el-table-column prop="type" label="类型" width="120" />
-            <el-table-column prop="baseUrl" label="Base URL" min-width="220" show-overflow-tooltip />
-            <el-table-column label="健康状态" width="130">
-              <template #default="{ row }"><el-tag :type="healthTag(row.healthStatus)">{{ row.healthStatus || 'UNTESTED' }}</el-tag></template>
-            </el-table-column>
-            <el-table-column label="操作" width="120" fixed="right">
-              <template #default="{ row }">
-                <el-button link type="primary" :loading="testingChannelId === row.id" @click="testChannel(row)">立即测试</el-button>
-              </template>
-            </el-table-column>
-          </el-table>
-        </section>
-
-        <section class="gateway-panel gateway-log-panel">
-          <div class="gateway-panel-head">
-            <div><h3>最近模型测试</h3><p>展示最近 500 条渠道模型探针记录。</p></div>
-            <el-tag>{{ testLogs.length }} 条</el-tag>
-          </div>
-          <el-table :data="testLogs" size="small" :max-height="520" empty-text="暂无测试记录">
-            <el-table-column prop="tested_at" label="时间" min-width="170" />
-            <el-table-column prop="channel_name" label="渠道" min-width="140" />
-            <el-table-column prop="model_name" label="模型" min-width="180" show-overflow-tooltip />
-            <el-table-column label="结果" width="100">
-              <template #default="{ row }"><el-tag :type="row.status === 'SUCCESS' ? 'success' : 'danger'">{{ row.status }}</el-tag></template>
-            </el-table-column>
-            <el-table-column prop="latency_ms" label="耗时(ms)" width="110" />
-            <el-table-column prop="error_message" label="错误" min-width="240" show-overflow-tooltip />
-          </el-table>
-        </section>
-      </el-tab-pane>
-    </el-tabs>
-
-    <el-drawer v-model="exclusionVisible" title="已永久排除的模型" size="min(720px, 92vw)">
-      <p class="drawer-tip">这些模型不会在下次同步时重新出现。恢复后需重新同步，再由管理员手动验证。</p>
-      <el-table :data="exclusions" v-loading="exclusionsLoading" empty-text="暂无排除记录">
-        <el-table-column prop="source_code" label="上游" width="110" />
-        <el-table-column prop="public_model_name" label="模型" min-width="220" show-overflow-tooltip />
-        <el-table-column prop="reason" label="排除原因" min-width="220" show-overflow-tooltip />
-        <el-table-column prop="excluded_at" label="排除时间" width="175" />
-        <el-table-column label="操作" width="90" fixed="right">
-          <template #default="{ row }"><el-button link type="primary" @click="restoreExclusion(row)">恢复</el-button></template>
-        </el-table-column>
-      </el-table>
-    </el-drawer>
-  </div>
+ <div class="gateway-workbench">
+  <header class="heading"><div><p>上游站点 → 分组 → 模型，统一管理同步、定价与发布。</p></div><div class="actions"><NewApiConnect @connected="reloadAll"/><el-button :loading="loading" @click="load">刷新</el-button></div></header>
+  <div class="actions"><el-button v-for="metric in metrics" :key="metric.key" text @click="showMetric(metric.state)">{{metric.label}} {{summary[metric.key] ?? 0}}</el-button></div>
+  <section class="filters">
+   <el-select v-model="siteId" clearable filterable remote :remote-method="searchSites" placeholder="全部上游" @change="siteChanged"><el-option v-for="s in siteOptions" :key="s.id" :value="s.id" :label="s.name"/><template #footer><el-button v-if="siteOptions.length<siteTotal" link @click="searchSites(siteQuery,true)">加载更多</el-button></template></el-select>
+   <el-select v-model="groupId" clearable filterable remote :remote-method="searchGroups" placeholder="全部上游分组" @change="filterChanged"><el-option v-for="g in groupOptions" :key="g.id" :value="g.id" :label="g.group_name"/><template #footer><el-button v-if="groupOptions.length<groupTotal" link @click="searchGroups(groupQuery,true)">加载更多</el-button></template></el-select>
+   <el-input v-model="query" clearable placeholder="搜索名称" @keyup.enter="filterChanged" @clear="filterChanged"/>
+   <el-button type="primary" :loading="working" @click="synchronize()">同步目录</el-button>
+   <el-button v-if="siteOptions.find(s=>s.id===siteId)?.adapter==='aiapibank'" :loading="working" @click="syncGroups(siteId)">同步上游分组</el-button>
+   <el-button v-if="siteId" @click="editSite">站点设置</el-button>
+   <el-button @click="pricingEditor?.show()">销售加价设置</el-button>
+  </section>
+  <el-tabs v-model="tab" @tab-change="tabChanged"><el-tab-pane label="上游与分组" name="channels"/><el-tab-pane label="模型与定价" name="models"/><el-tab-pane label="运行记录" name="records"/></el-tabs>
+  <el-alert v-if="error" :title="error" type="error" :closable="false"/>
+  <section class="panel">
+   <div class="actions" v-if="tab === 'models'"><el-select v-model="modelState" clearable placeholder="全部模型状态" @change="filterChanged"><el-option label="待导入" value="pending-import"/><el-option label="待定价" value="pending-price"/><el-option label="待发布" value="pending-publish"/><el-option label="已发布" value="published"/><el-option label="已停用" value="disabled"/></el-select><el-button :disabled="!selected.length || working" type="primary" @click="publish">{{modelState==='pending-import'?'导入所选模型':'发布所选模型'}}</el-button><span>已选 {{ selected.length }} 个（当前页）</span></div>
+   <PagedTable scrollbar-always-on v-if="tab === 'channels'" :data="rows" v-loading="loading" list-id="ModelGateway-1" pagination="external">
+    <el-table-column prop="site_name" label="上游" min-width="120"/><el-table-column prop="group_name" label="上游分组" min-width="170"/>
+    <el-table-column prop="model_count" label="模型" width="80"/><el-table-column label="前台名称" min-width="160"><template #default="{row}">{{row.public_name}} <el-button link type="primary" @click="editPublicName(row)">修改</el-button></template></el-table-column>
+    <el-table-column label="凭据 / 启用" width="130"><template #default="{row}"><el-tag :type="row.credential_configured?'success':'warning'">{{row.credential_configured?'Key 已配置':'缺少 Key'}}</el-tag><div>{{row.enabled?'已启用':'未启用'}}</div></template></el-table-column>
+    <el-table-column label="测试健康" min-width="120"><template #default="{row}"><el-tag :type="row.health_status==='HEALTHY'?'success':row.health_status==='UNTESTED'?'info':'warning'">{{healthLabel(row.health_status)}}</el-tag></template></el-table-column>
+    <el-table-column label="同步" min-width="130"><template #default="{row}"><el-tag :type="statusType(row.sync_status,row.sync_enabled)">{{statusLabel(row.sync_status)}}</el-tag><small v-if="!row.sync_enabled">自动同步已暂停</small></template></el-table-column>
+    <el-table-column label="最近结果 / 原因" min-width="240"><template #default="{row}"><span :class="{'failure-text':row.sync_status==='ERROR'}">{{row.message || (row.sync_status==='ERROR'?'历史原因未记录':'尚未同步')}}</span><el-button v-if="row.message" link @click="detail=row">详情</el-button></template></el-table-column>
+    <el-table-column label="操作" min-width="185" fixed="right"><template #default="{row}"><el-button link type="primary" @click="editGroup(row)">设置</el-button><el-button link type="primary" @click="synchronize(row.id)">同步</el-button><el-button link @click="test(row)">测试</el-button></template></el-table-column>
+   </PagedTable>
+   <PagedTable scrollbar-always-on v-else-if="tab === 'models'" :data="rows" v-loading="loading" @selection-change="selected=$event" list-id="ModelGateway-2" pagination="external">
+    <el-table-column type="selection" width="42"/><el-table-column prop="public_model_name" label="模型 / 路由" min-width="210"/><el-table-column prop="site_name" label="上游" min-width="115"/><el-table-column prop="group_name" label="上游分组" min-width="175"/>
+    <el-table-column label="采购 → 销售 (USD)" min-width="205"><template #default="{row}"><template v-if="row.pricing_unit==='TOKEN'">输入 {{row.input_cost_per_million??'未知'}} → {{row.input_price_per_million??'未知'}}<br/>输出 {{row.output_cost_per_million??'未知'}} → {{row.output_price_per_million??'未知'}}<small> / 百万 Token</small></template><template v-else>{{row.cost_unit_price??'未知'}} → {{row.sale_unit_price??'未知'}} / {{row.pricing_unit}}</template></template></el-table-column>
+    <el-table-column label="状态" min-width="125"><template #default="{row}"><el-tag :type="row.enabled?'success':row.pricing_status==='VERIFIED'?'info':'warning'">{{row.enabled?'已发布':row.pricing_status==='VERIFIED'?'待发布':String(row.pricing_message||'').startsWith('已读取上游当前分层报价')?'分层价待配置':'待定价'}}</el-tag></template></el-table-column>
+    <el-table-column prop="pricing_message" label="上游价格说明" min-width="310"><template #default="{row}">{{row.pricing_message||'尚未读取上游报价'}}</template></el-table-column>
+    <el-table-column label="销售规则" min-width="130"><template #default="{row}">{{row.manual_price?'手工价保护':'继承加价规则'}}<el-button v-if="row.id" link type="primary" @click="pricingEditor?.show(row.id)">加价规则</el-button><el-button v-if="row.id" link @click="modelEditor?.show(row.id)">编辑</el-button></template></el-table-column>
+   </PagedTable>
+   <template v-else><el-radio-group v-model="recordKind" @change="filterChanged"><el-radio-button value="jobs">目录同步</el-radio-button><el-radio-button value="tests">健康与测试</el-radio-button></el-radio-group><PagedTable scrollbar-always-on :data="rows" v-loading="loading" list-id="ModelGateway-3" pagination="external"><el-table-column prop="site_name" label="上游" min-width="110"/><el-table-column prop="group_name" label="分组" min-width="180"/><el-table-column label="状态" width="125"><template #default="{row}"><el-tag :type="statusType(row.status,true)">{{statusLabel(row.status)}}</el-tag></template></el-table-column><el-table-column label="结果 / 原因" min-width="230"><template #default="{row}"><span :class="{'failure-text':row.status==='ERROR'}">{{row.message||'等待执行'}}</span></template></el-table-column><el-table-column prop="created_at" label="开始时间" min-width="160"/><el-table-column label="操作" width="145" fixed="right"><template #default="{row}"><el-button link @click="detail=row">详情</el-button><el-button link type="primary" @click="row.job_type==='GROUPS'?syncGroups(row.site_id):synchronize(row.channel_id)">重试</el-button></template></el-table-column></PagedTable></template>
+   <ListPagination v-model:page="paging.page" v-model:size="paging.size" v-model:all="paging.all" :total="paging.total" @change="load"/>
+  </section>
+  <el-dialog :model-value="!!detail" title="执行详情" width="min(640px,95vw)" @close="detail=null"><template v-if="detail"><p>状态：{{statusLabel(detail.status||detail.sync_status)}}</p><p>阶段：{{phaseLabel(detail.phase)}}</p><p>原因：{{detail.message||'历史原因未记录'}}</p><p v-if="detail.http_status">HTTP：{{detail.http_status}}</p><p>处理建议：{{detail.suggestion||'检查分组设置后重新同步'}}</p><p>时间：{{detail.finished_at||detail.created_at||'历史时间未记录'}}</p></template></el-dialog>
+   <el-dialog v-model="settingsOpen" :title="settingsKind==='site'?'站点设置':'分组设置'" width="min(570px,95vw)" @closed="clearSettingsSecrets">
+    <el-form label-position="top"><template v-if="settingsKind==='site' && siteOptions.find(s=>s.id===settingsId)?.adapter==='aiapibank'"><el-alert :type="accountAuth.status==='READY'?'success':accountAuth.status==='ERROR'?'error':'info'" :title="accountStatusMessage()" :closable="false"/><p>授权后同步账号可见目录，包括已获权限的“对接专用”分组；未授权时同步匿名模型广场。</p><template v-if="accountAuth.status!=='TWO_FACTOR_REQUIRED'"><el-form-item label="AiAPIBank 登录邮箱"><el-input v-model="accountAuth.email" maxlength="190" autocomplete="username"/></el-form-item><el-form-item label="AiAPIBank 登录密码（仅用于本次登录，不保存）"><el-input v-model="accountAuth.password" type="password" show-password maxlength="4096" autocomplete="current-password"/></el-form-item></template><el-form-item v-else label="6位两步验证码"><el-input v-model="accountAuth.totpCode" maxlength="6" inputmode="numeric" autocomplete="one-time-code"/></el-form-item><div class="actions"><el-button type="primary" :loading="working" @click="authorizeAiApiBank">{{accountAuth.status==='TWO_FACTOR_REQUIRED'?'验证并同步专用分组':'登录授权并同步'}}</el-button><el-button v-if="accountAuth.authenticated||accountAuth.status==='TWO_FACTOR_REQUIRED'" :disabled="working" @click="clearAiApiBankAuthorization">移除账号授权</el-button></div></template><el-form-item label="名称"><el-input v-model="settings.name" maxlength="120"/></el-form-item><template v-if="settingsKind==='group'"><el-form-item label="分组 Key（留空保留；AiAPIBank 保存后自动同步核验）"><el-input v-model="settings.apiKey" type="password" show-password autocomplete="off"/></el-form-item><el-form-item label="启用分组"><el-switch v-model="settings.enabled"/></el-form-item><el-form-item label="自动同步"><el-switch v-model="settings.syncEnabled"/></el-form-item><el-form-item label="前台名称继承站点"><el-switch v-model="settings.inheritDisplay"/></el-form-item></template><template v-if="settingsKind==='site'||!settings.inheritDisplay"><el-form-item label="前台公开名称"><el-input v-model="settings.publicName" maxlength="120"/></el-form-item><el-form-item label="公开代号（留空自动生成）"><el-input v-model="settings.publicCode"/></el-form-item><el-form-item label="徽标"><el-input v-model="settings.badgeText" maxlength="40"/><el-color-picker v-model="settings.badgeColor"/></el-form-item></template></el-form>
+   <el-alert v-if="settingsError" type="error" :title="settingsError" :closable="false"/><template #footer><el-button type="primary" :loading="working" @click="saveSettings">保存</el-button></template>
+  </el-dialog>
+  <el-dialog v-model="batchOpen" title="批量处理结果"><PagedTable scrollbar-always-on :data="batchResults" list-id="ModelGateway-4"><el-table-column prop="id" label="模型 ID"/><el-table-column label="结果"><template #default="{row}"><el-tag :type="row.success?'success':'danger'">{{row.success?'处理成功':'处理失败'}}</el-tag></template></el-table-column><el-table-column prop="reason" label="原因"/></PagedTable></el-dialog>
+  <GatewayModelEditor ref="modelEditor" @changed="load"/><GatewayPricingEditor ref="pricingEditor" :site-id="siteId" :group-id="groupId" @changed="load"/>
+ </div>
 </template>
-
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import AdminConsole from '@/views/AdminConsole.vue'
-import http from '@/utils/http'
-
-type GatewayTab = 'overview' | 'channels' | 'models' | 'presentation' | 'catalog' | 'health'
-type ChannelRow = { id: number; name: string; type: string; baseUrl?: string; enabled?: boolean; healthStatus?: string }
-type ModelRow = { id: number; publicModelName?: string; enabled?: boolean; callable?: boolean; availabilityMessage?: string }
-type TestLog = Record<string, any>
-type CatalogRow = { id: number; sourceCode: string; sourceName: string; publicModelName: string; vendor: string; capability: string; protocols: string; verificationStatus: string; verificationMessage?: string }
-type ExclusionRow = { id: number; source_code: string; upstream_model_name: string; public_model_name: string; reason?: string; excluded_at?: string }
-
-const route = useRoute()
-const router = useRouter()
-const tabs: GatewayTab[] = ['overview', 'channels', 'models', 'presentation', 'catalog', 'health']
-const routeTab = (): GatewayTab => tabs.includes(route.query.tab as GatewayTab) ? route.query.tab as GatewayTab : 'overview'
-const activeTab = ref<GatewayTab>(routeTab())
-const loading = ref(false)
-const testingChannelId = ref<number | null>(null)
-const channels = ref<ChannelRow[]>([])
-const models = ref<ModelRow[]>([])
-const testLogs = ref<TestLog[]>([])
-const providerCatalog = ref<CatalogRow[]>([])
-const catalogSource = ref('')
-const catalogStatus = ref('')
-const catalogQuery = ref('')
-const catalogAction = ref('')
-const exclusionVisible = ref(false)
-const exclusionsLoading = ref(false)
-const exclusions = ref<ExclusionRow[]>([])
-const displayMappings=ref<any[]>([]),contextModel=ref(''),contextPolicy=ref<any>({enabled:false,thresholdTokens:128000,verificationNote:''})
-const publicModelNames=computed(()=>[...new Set(models.value.map(item=>item.publicModelName).filter((item):item is string=>Boolean(item)))].sort())
-const catalogStatuses = ['DISCOVERED', 'VERIFYING', 'AVAILABLE', 'FAILED', 'UNSUPPORTED', 'RETIRED']
-const filteredCatalog = computed(() => {
-  const query = catalogQuery.value.trim().toLowerCase()
-  return providerCatalog.value.filter(row => (!catalogSource.value || row.sourceCode === catalogSource.value)
-    && (!catalogStatus.value || row.verificationStatus === catalogStatus.value)
-    && (!query || `${row.publicModelName} ${row.vendor} ${row.capability}`.toLowerCase().includes(query)))
-})
-
-const enabledChannels = computed(() => channels.value.filter(channel => channel.enabled).length)
-const healthyChannels = computed(() => channels.value.filter(channel => channel.enabled && channel.healthStatus === 'HEALTHY').length)
-const unhealthyChannels = computed(() => channels.value.filter(channel => channel.enabled && channel.healthStatus !== 'HEALTHY').length)
-const enabledRoutes = computed(() => models.value.filter(model => model.enabled).length)
-const publicModelCount = computed(() => new Set(models.value.map(model => model.publicModelName).filter(Boolean)).size)
-const callableModelCount = computed(() => new Set(models.value.filter(model => model.callable).map(model => model.publicModelName).filter(Boolean)).size)
-const issues = computed(() => {
-  const rows: Array<{ key: string; title: string; message: string; severity: 'warning' | 'danger'; tab: GatewayTab }> = []
-  channels.value.filter(channel => channel.enabled && channel.healthStatus !== 'HEALTHY').forEach(channel => rows.push({
-    key: `channel-${channel.id}`,
-    title: `${channel.name} 状态异常`,
-    message: `当前状态为 ${channel.healthStatus || 'UNTESTED'}，请执行连通性测试。`,
-    severity: channel.healthStatus === 'DEGRADED' ? 'danger' : 'warning',
-    tab: 'health'
-  }))
-  models.value.filter(model => model.enabled && !model.callable).slice(0, 8).forEach(model => rows.push({
-    key: `model-${model.id}`,
-    title: `${model.publicModelName || '未命名模型'} 暂不可调用`,
-    message: model.availabilityMessage || '请检查渠道、密钥、健康状态和模型映射。',
-    severity: 'warning',
-    tab: 'models'
-  }))
-  return rows.slice(0, 12)
-})
-
-async function loadGatewayData() {
-  loading.value = true
-  try {
-    const [channelResponse, modelResponse, logResponse, catalogResponse, mappingResponse] = await Promise.all([
-      http.get<ChannelRow[]>('/api/admin/api/channels'),
-      http.get<ModelRow[]>('/api/admin/api/models'),
-      http.get<TestLog[]>('/api/admin/api/channels/test-logs'),
-      http.get<CatalogRow[]>('/api/admin/api/model-catalog'),
-      http.get<any[]>('/api/admin/api/upstream-display-mappings')
-    ])
-    channels.value = channelResponse.data || []
-    models.value = modelResponse.data || []
-    testLogs.value = logResponse.data || []
-    providerCatalog.value = catalogResponse.data || []
-    displayMappings.value=(mappingResponse.data||[]).map(row=>({...row,publicCode:row.publicCode||'platform-route',publicName:row.publicName||'平台智能路由',badgeText:row.badgeText||'智能路由',badgeColor:row.badgeColor||'#2563eb',sortOrder:Number(row.sortOrder??100),enabled:row.enabled!==false}))
-  } catch (error: any) {
-    ElMessage.error(error?.response?.data?.message || '模型网关数据加载失败')
-  } finally {
-    loading.value = false
-  }
-}
-
-async function saveDisplayMapping(row:any){try{await http.put(`/api/admin/api/upstream-display-mappings/${row.channelId}`,row);ElMessage.success('公开上游映射已保存')}catch(error:any){ElMessage.error(error?.response?.data?.message||'映射保存失败')}}
-async function loadContextPolicy(){if(!contextModel.value)return;try{const r=await http.get('/api/admin/api/models/context-pricing',{params:{publicName:contextModel.value}});contextPolicy.value=r.data||{enabled:false,thresholdTokens:128000,verificationNote:''}}catch(error:any){if(error?.response?.status===404)contextPolicy.value={enabled:false,thresholdTokens:128000,verificationNote:''};else ElMessage.error('策略加载失败')}}
-async function saveContextPolicy(){try{await http.put('/api/admin/api/models/context-pricing',contextPolicy.value,{params:{publicName:contextModel.value}});ElMessage.success('长上下文策略已保存')}catch(error:any){ElMessage.error(error?.response?.data?.message||'策略保存失败')}}
-
-function idempotencyKey(prefix: string) {
-  return `${prefix}-${crypto.randomUUID()}`
-}
-
-async function syncCatalog(source: 'haoee' | 'nvidia') {
-  catalogAction.value = `sync-${source}`
-  try {
-    const response = await http.post('/api/admin/api/model-catalog/sync', { source }, { headers: { 'Idempotency-Key': idempotencyKey(`catalog-${source}`) } })
-    ElMessage.success(`${source === 'haoee' ? '好易智算' : 'NVIDIA'} 已同步 ${response.data?.total || 0} 个模型`)
-    await loadGatewayData()
-  } catch (error: any) {
-    ElMessage.error(error?.response?.data?.message || '目录同步失败')
-  } finally { catalogAction.value = '' }
-}
-
-async function verifyCatalogSource() {
-  const source = catalogSource.value || 'nvidia'
-  catalogAction.value = `verify-${source}`
-  try {
-    const response = await http.post('/api/admin/api/model-catalog/verify', { source, limit: 20, allowPaid: false }, { headers: { 'Idempotency-Key': idempotencyKey(`verify-${source}`) } })
-    ElMessage.success(`已加入 ${response.data?.count || 0} 个低成本验证任务`)
-    await loadGatewayData()
-  } catch (error: any) {
-    ElMessage.error(error?.response?.data?.message || '验证任务提交失败')
-  } finally { catalogAction.value = '' }
-}
-
-async function verifyCatalogModel(row: CatalogRow) {
-  const paid = ['image', 'video', 'music', 'speech', 'transcription'].includes(row.capability)
-  if (paid) {
-    try {
-      await ElMessageBox.confirm(`验证 ${row.publicModelName} 可能产生真实的多模态费用，确认继续？`, '费用确认', { type: 'warning', confirmButtonText: '确认付费验证', cancelButtonText: '取消' })
-    } catch { return }
-  }
-  catalogAction.value = `verify-${row.id}`
-  try {
-    await http.post('/api/admin/api/model-catalog/verify', { id: row.id, allowPaid: paid }, { headers: { 'Idempotency-Key': idempotencyKey(`verify-${row.id}`) } })
-    ElMessage.success('模型已进入验证队列')
-    await loadGatewayData()
-  } catch (error: any) {
-    ElMessage.error(error?.response?.data?.message || '模型验证提交失败')
-  } finally { catalogAction.value = '' }
-}
-
-async function purgeFailedModels() {
-  const scope = catalogSource.value || '全部上游'
-  const count = providerCatalog.value.filter(row => row.verificationStatus === 'FAILED'
-    && (!catalogSource.value || row.sourceCode === catalogSource.value)).length
-  if (!count) return ElMessage.info('当前筛选范围没有验证失败的模型')
-  try {
-    await ElMessageBox.confirm(`将删除 ${scope} 的 ${count} 个失败模型及对应路由，并加入永久排除清单。确认继续？`, '删除验证失败模型', {
-      type: 'warning', confirmButtonText: '确认删除并排除', cancelButtonText: '取消'
-    })
-  } catch { return }
-  catalogAction.value = 'purge-failed'
-  try {
-    const response = await http.post('/api/admin/api/model-catalog/purge-failed',
-      catalogSource.value ? { source: catalogSource.value } : {},
-      { headers: { 'Idempotency-Key': idempotencyKey(`purge-failed-${catalogSource.value || 'all'}`) } })
-    ElMessage.success(`已删除并排除 ${response.data?.removed || 0} 个失败模型`)
-    await loadGatewayData()
-  } catch (error: any) {
-    ElMessage.error(error?.response?.data?.message || '删除失败模型失败')
-  } finally { catalogAction.value = '' }
-}
-
-async function loadExclusions() {
-  exclusionsLoading.value = true
-  try {
-    const response = await http.get<ExclusionRow[]>('/api/admin/api/model-catalog/exclusions', {
-      params: catalogSource.value ? { source: catalogSource.value } : {}
-    })
-    exclusions.value = response.data || []
-  } catch (error: any) {
-    ElMessage.error(error?.response?.data?.message || '排除清单加载失败')
-  } finally { exclusionsLoading.value = false }
-}
-
-async function openExclusions() {
-  exclusionVisible.value = true
-  await loadExclusions()
-}
-
-async function restoreExclusion(row: ExclusionRow) {
-  try {
-    await http.delete(`/api/admin/api/model-catalog/exclusions/${row.id}`)
-    ElMessage.success(`${row.public_model_name} 已恢复，可重新同步并手动验证`)
-    await loadExclusions()
-  } catch (error: any) {
-    ElMessage.error(error?.response?.data?.message || '恢复失败')
-  }
-}
-
-async function showVerificationHistory(row: CatalogRow) {
-  try {
-    const response = await http.get<Record<string, any>[]>('/api/admin/api/model-catalog/verifications', { params: { modelId: row.id, limit: 20 } })
-    const records = response.data || []
-    const text = records.length
-      ? records.map(record => `${record.started_at || record.startedAt}  ${record.status}\n${record.message || '无详细信息'}`).join('\n\n')
-      : '暂无验证记录'
-    await ElMessageBox.alert(text, `${row.publicModelName} · 验证记录`, { customClass: 'catalog-history-dialog' })
-  } catch (error: any) {
-    ElMessage.error(error?.response?.data?.message || '验证记录加载失败')
-  }
-}
-
-function catalogStatusTag(status: string) {
-  if (status === 'AVAILABLE') return 'success'
-  if (status === 'FAILED' || status === 'RETIRED') return 'danger'
-  if (status === 'VERIFYING') return 'primary'
-  return 'warning'
-}
-
-function healthTag(status?: string) {
-  if (status === 'HEALTHY') return 'success'
-  if (status === 'DEGRADED' || status === 'UNHEALTHY') return 'danger'
-  return 'warning'
-}
-
-function selectTab(tab: GatewayTab) {
-  activeTab.value = tab
-  syncTab(tab)
-}
-
-function syncTab(tab: string | number) {
-  const value = tabs.includes(tab as GatewayTab) ? tab as GatewayTab : 'overview'
-  router.replace({ path: '/admin/model-gateway', query: value === 'overview' ? {} : { tab: value } })
-}
-
-async function testChannel(channel: ChannelRow) {
-  testingChannelId.value = channel.id
-  try {
-    const response = await http.post(`/api/admin/api/channels/${channel.id}/test`)
-    ElMessage.success(`${channel.name} 测试完成：${response.data?.healthStatus || response.data?.status || 'SUCCESS'}`)
-    await loadGatewayData()
-  } catch (error: any) {
-    ElMessage.error(error?.response?.data?.message || `${channel.name} 测试失败`)
-    await loadGatewayData()
-  } finally {
-    testingChannelId.value = null
-  }
-}
-
-watch(() => route.query.tab, () => { activeTab.value = routeTab() })
-onMounted(loadGatewayData)
+import PagedTable from '@/components/PagedTable.vue'
+import {ref,reactive,onMounted,onBeforeUnmount} from 'vue'
+import {useRoute,useRouter} from 'vue-router'
+import {ElMessage} from 'element-plus'
+import http,{getHttpErrorMessage} from '../utils/http'
+import {useListPage} from '../utils/listPage'
+import ListPagination from '../components/ListPagination.vue'
+import NewApiConnect from '../components/NewApiConnect.vue'
+import GatewayPricingEditor from '../components/GatewayPricingEditor.vue'
+import GatewayModelEditor from '../components/GatewayModelEditor.vue'
+const route=useRoute(),router=useRouter()
+const tab=ref(['models','catalog'].includes(String(route.query.tab))?'models':['health','records'].includes(String(route.query.tab))?'records':'channels')
+const rows=ref<any[]>([]),siteOptions=ref<any[]>([]),groupOptions=ref<any[]>([]),siteId=ref<number>(),groupId=ref<number>(),query=ref(''),modelState=ref(''),selected=ref<any[]>([])
+const modelEditor=ref<InstanceType<typeof GatewayModelEditor>>()
+const summary=ref<Record<string,number>>({})
+const metrics=[{key:'models',label:'模型总数',state:''},{key:'published',label:'已发布',state:'published'},{key:'pending_price',label:'待定价',state:'pending-price'},{key:'pending_publish',label:'待发布',state:'pending-publish'}]
+function showMetric(state:string){tab.value='models';modelState.value=state;tabChanged()}
+const recordKind=ref('jobs')
+const loading=ref(false),working=ref(false),error=ref(''),detail=ref<any>(null),pricingEditor=ref<InstanceType<typeof GatewayPricingEditor>>()
+const paging=useListPage('gateway-'+tab.value),settingsOpen=ref(false),settingsKind=ref('site'),settingsId=ref(0),settingsError=ref('')
+const settings=reactive({name:'',enabled:false,syncEnabled:true,apiKey:'',publicName:'',publicCode:'',badgeText:'',badgeColor:'#2563eb',inheritDisplay:true})
+const accountAuth=reactive({email:'',password:'',totpCode:'',emailPreview:'',authenticated:false,status:'ANONYMOUS',lastError:''})
+const batchResults=ref<any[]>([]),batchOpen=ref(false)
+const statusNames:Record<string,string>={ERROR:'失败',FAILED:'失败',SUCCESS:'成功',PARTIAL:'部分完成',QUEUED:'等待执行',RUNNING:'正在同步',PENDING:'未执行',IMPORTED:'已导入',MISSING_CONFIRMATION:'等待确认',GROUP_REMOVED:'分组已停用',DISABLED_MISSING:'上游分组已移除',CREDENTIAL_MISSING:'缺少凭据',UNMANAGED:'未接入同步',MISSING:'等待确认缺失'}
+function phaseLabel(value:string){return ({GROUPS:'同步上游分组',MODELS:'读取模型目录',PRICING:'读取采购价格',APPLY:'应用目录与价格',CATALOG:'读取上游目录',TEST:'连通性测试'} as Record<string,string>)[value]||'历史阶段未记录'}
+function statusLabel(value:string){return statusNames[value]||value||'未执行'}
+function statusType(value:string,enabled:boolean):'danger'|'warning'|'success'|'info'{return ['ERROR','FAILED','GROUP_REMOVED','DISABLED_MISSING'].includes(value)?'danger':['PARTIAL','MISSING_CONFIRMATION','MISSING','CREDENTIAL_MISSING'].includes(value)?'warning':value==='SUCCESS'?'success':'info'}
+const siteTotal=ref(0),groupTotal=ref(0),siteQuery=ref(''),groupQuery=ref('')
+let sitePage=1,groupPage=1,siteGeneration=0,groupGeneration=0
+async function searchSites(query:string,more=false){const generation=++siteGeneration;siteQuery.value=query;sitePage=more?sitePage+1:1;const {data}=await http.get('/api/admin/api/gateway/sites',{params:{query,page:sitePage,size:100}});if(generation!==siteGeneration)return;siteOptions.value=more?[...siteOptions.value,...data.items]:data.items;siteTotal.value=data.total}
+async function searchGroups(query:string,more=false){const generation=++groupGeneration;groupQuery.value=query;groupPage=more?groupPage+1:1;const {data}=await http.get('/api/admin/api/gateway/groups',{params:{query,siteId:siteId.value,page:groupPage,size:100}});if(generation!==groupGeneration)return;groupOptions.value=more?[...groupOptions.value,...data.items]:data.items;groupTotal.value=data.total}
+async function options(){await Promise.all([searchSites(''),searchGroups('')])}
+async function load(){loading.value=true;error.value='';try{const path=tab.value==='channels'?'groups':tab.value==='records'?recordKind.value:'models';const{data}=await http.get('/api/admin/api/gateway/'+path,{params:{siteId:siteId.value,groupId:groupId.value,query:query.value,state:modelState.value,page:paging.page,size:paging.size,all:paging.all}});rows.value=data.items;summary.value=(await http.get('/api/admin/api/gateway/summary',{params:{siteId:siteId.value,groupId:groupId.value}})).data;paging.total=data.total;paging.page=data.page;selected.value=[]}catch(e){if(paging.all){paging.all=false;await load()}else error.value=getHttpErrorMessage(e,'读取失败')}finally{loading.value=false}}
+async function reloadAll(){await options();await load()}
+function filterChanged(){paging.page=1;load()}
+async function siteChanged(){groupId.value=undefined;await options();filterChanged()}
+function tabChanged(){router.replace({query:{...route.query,tab:tab.value}});filterChanged()}
+const pendingGroupJobs=ref<string[]>([])
+async function checkGroupJobs(){for(const id of [...pendingGroupJobs.value]){try{const {data}=await http.get(`/api/admin/api/gateway/jobs/${id}`);if(!['QUEUED','RUNNING'].includes(data.status)){pendingGroupJobs.value=pendingGroupJobs.value.filter(x=>x!==id);if(data.status==='SUCCESS')ElMessage.success(data.message);else if(data.status==='PARTIAL')ElMessage.warning(data.message);else ElMessage.error(data.message||'分组同步失败');await reloadAll()}}catch{pendingGroupJobs.value=pendingGroupJobs.value.filter(x=>x!==id)}}}
+async function syncGroups(id?:number){if(!id)return;working.value=true;try{const {data}=await http.post(`/api/admin/api/gateway/sites/${id}/sync-groups`);pendingGroupJobs.value.push(data.jobId);ElMessage.success('上游分组同步已提交，可在运行记录查看结果');await reloadAll()}catch(e){ElMessage.error(getHttpErrorMessage(e,'分组同步失败'))}finally{working.value=false}}
+async function synchronize(id?:number){working.value=true;try{const {data}=await http.post('/api/admin/api/gateway/sync',{siteId:siteId.value,groupId:typeof id==='number'?id:groupId.value});pendingGroupJobs.value.push(...data.jobs.filter((j:any)=>j.siteId&&j.jobId).map((j:any)=>j.jobId));const failures=data.jobs.filter((j:any)=>j.error);if(failures.length)ElMessage.error(failures.map((j:any)=>`分组 ${j.groupId}：${j.error}`).join('；'));else ElMessage.success('同步任务已提交，可在运行记录查看进度');await load()}catch(e){ElMessage.error(getHttpErrorMessage(e,'提交失败'))}finally{working.value=false}}
+function healthLabel(value:string){return ({CREDENTIAL_MISSING:'待配置 Key',VERIFYING:'待核验',HEALTHY:'健康',UNTESTED:'待测试',DEGRADED:'测试异常',DISABLED:'认证失败'} as Record<string,string>)[value]||value||'待测试'}
+async function test(row:any){working.value=true;try{const {data}=await http.post(`/api/admin/api/gateway/groups/${row.id}/test`,{},{timeout:180000});if(data.status==='SUCCESS')ElMessage.success(`测试成功：${data.model||''}`);else ElMessage.error(`测试失败：${data.error||healthLabel(data.healthStatus)}`)}catch(e){ElMessage.error(getHttpErrorMessage(e,'测试失败'))}finally{await load();working.value=false}}
+function editPublicName(row:any){editGroup(row);settings.inheritDisplay=false}
+function editSite(){const s=siteOptions.value.find(x=>x.id===siteId.value);if(!s)return;settingsId.value=s.id;settingsKind.value='site';Object.assign(settings,{name:s.name,publicName:s.public_name||'',publicCode:s.public_code||'',badgeText:s.badge_text||'',badgeColor:s.badge_color||'#2563eb',apiKey:''});Object.assign(accountAuth,{email:'',password:'',totpCode:'',emailPreview:s.account_email_preview||'',authenticated:!!s.account_authenticated,status:s.account_auth_status||'ANONYMOUS',lastError:s.account_auth_error||''});settingsError.value='';settingsOpen.value=true}
+function editGroup(row:any){settingsId.value=row.id;settingsKind.value='group';Object.assign(settings,{name:row.name,enabled:!!row.enabled,syncEnabled:!!row.sync_enabled,apiKey:'',publicName:row.public_name||'',publicCode:row.public_code||'',badgeText:row.badge_text||'',badgeColor:row.badge_color||'#2563eb',inheritDisplay:!row.display_mapping_id});settingsError.value='';settingsOpen.value=true}
+async function saveSettings(){working.value=true;settingsError.value='';try{await http.put(`/api/admin/api/gateway/${settingsKind.value==='site'?'sites':'groups'}/${settingsId.value}`,settings);settings.apiKey='';settingsOpen.value=false;await reloadAll()}catch(e){settingsError.value=getHttpErrorMessage(e,'保存失败')}finally{working.value=false}}
+function accountStatusMessage(){if(accountAuth.status==='READY')return `账号目录已授权${accountAuth.emailPreview?'：'+accountAuth.emailPreview:''}`;if(accountAuth.status==='TWO_FACTOR_REQUIRED')return '请输入 AiAPIBank 两步验证码完成授权';if(accountAuth.status==='ERROR')return accountAuth.lastError||'账号授权已失效，请重新登录';return '当前使用匿名模型广场目录'}
+function clearSettingsSecrets(){settings.apiKey='';accountAuth.password='';accountAuth.totpCode=''}
+async function authorizeAiApiBank(){working.value=true;settingsError.value='';try{const payload=accountAuth.status==='TWO_FACTOR_REQUIRED'?{totpCode:accountAuth.totpCode}:{email:accountAuth.email,password:accountAuth.password};const{data}=await http.post(`/api/admin/api/gateway/sites/${settingsId.value}/aiapibank/authorize`,payload,{timeout:60000});accountAuth.password='';accountAuth.totpCode='';accountAuth.emailPreview=data.accountEmailPreview||accountAuth.emailPreview;accountAuth.authenticated=!!data.authenticated;accountAuth.status=data.status;if(data.requiresTwoFactor){ElMessage.warning('请输入两步验证码完成授权')}else{if(data.jobId)pendingGroupJobs.value.push(data.jobId);ElMessage.success('账号授权成功，专用分组同步已提交');await reloadAll()}}catch(e){settingsError.value=getHttpErrorMessage(e,'AiAPIBank 登录授权失败')}finally{accountAuth.password='';working.value=false}}
+async function clearAiApiBankAuthorization(){working.value=true;settingsError.value='';try{await http.delete(`/api/admin/api/gateway/sites/${settingsId.value}/aiapibank/authorization`);Object.assign(accountAuth,{email:'',password:'',totpCode:'',emailPreview:'',authenticated:false,status:'ANONYMOUS',lastError:''});ElMessage.success('账号授权已移除，后续使用匿名目录');await reloadAll()}catch(e){settingsError.value=getHttpErrorMessage(e,'移除账号授权失败')}finally{working.value=false}}
+async function publish(){working.value=true;try{batchResults.value=(await http.post('/api/admin/api/gateway/models/'+(modelState.value==='pending-import'?'import':'publish'),modelState.value==='pending-import'?selected.value.map(x=>({channelId:x.channel_id,model:x.upstream_model_name})):{ids:selected.value.map(x=>x.id)})).data;batchOpen.value=true;await load()}catch(e){ElMessage.error(getHttpErrorMessage(e,'发布失败'))}finally{working.value=false}}
+let timer:ReturnType<typeof setInterval>|undefined
+onMounted(async()=>{await reloadAll();timer=setInterval(()=>{if(pendingGroupJobs.value.length)checkGroupJobs();if(!loading.value&&rows.value.some(r=>['QUEUED','RUNNING'].includes(r.status||r.sync_status)))load()},3000)})
+onBeforeUnmount(()=>{if(timer)clearInterval(timer)})
 </script>
-
 <style scoped>
-.model-gateway-page { display: grid; gap: 16px; }
-.gateway-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; padding: 22px 24px; border: 1px solid #dfe7e2; border-radius: 14px; background: linear-gradient(135deg, #fff, #f4f9f1); }
-.gateway-heading h2 { margin: 3px 0 6px; color: #17251c; font-size: 26px; }
-.gateway-heading p { margin: 0; color: #66736b; }
-.gateway-eyebrow { color: #5f9800 !important; font-size: 11px; font-weight: 800; letter-spacing: .12em; }
-.gateway-heading-actions { display: flex; flex: 0 1 auto; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
-.gateway-tabs :deep(.el-tabs__header) { margin-bottom: 14px; }
-.gateway-tabs,
-.gateway-tabs :deep(.el-tabs__content),
-.gateway-tabs :deep(.el-tab-pane) { min-width: 0; }
-.gateway-tabs :deep(.el-tabs__content) { overflow: visible; }
-.gateway-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 14px; }
-.gateway-metrics button { display: grid; gap: 5px; padding: 17px; border: 1px solid #e0e7e2; border-radius: 12px; background: #fff; color: #657169; cursor: pointer; text-align: left; transition: border-color .15s ease, transform .15s ease; }
-.gateway-metrics button:hover { border-color: #78ad30; transform: translateY(-1px); }
-.gateway-metrics strong { color: #17251c; font-size: 28px; }
-.gateway-metrics small { color: #8a968e; }
-.gateway-overview-grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(320px, .65fr); gap: 14px; }
-.gateway-panel { overflow: hidden; padding: 18px; border: 1px solid #e0e7e2; border-radius: 12px; background: #fff; }
-.gateway-panel-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
-.gateway-panel-head h3 { margin: 0; color: #213128; font-size: 17px; }
-.gateway-panel-head p { margin: 4px 0 0; color: #87928b; font-size: 12px; }
-.gateway-issues { display: grid; gap: 7px; }
-.gateway-issues button { display: grid; grid-template-columns: 8px minmax(0, 1fr); gap: 10px; align-items: start; padding: 10px; border: 0; border-radius: 8px; background: #f8faf8; cursor: pointer; text-align: left; }
-.gateway-issues button:hover { background: #f0f7e9; }
-.gateway-issues span { width: 8px; height: 8px; margin-top: 5px; border-radius: 50%; }
-.severity-warning { background: #e6a23c; }.severity-danger { background: #f56c6c; }
-.gateway-issues div { display: grid; gap: 3px; }.gateway-issues strong { color: #34433a; }.gateway-issues small { color: #829087; line-height: 1.45; }
-.gateway-health-panel { margin-bottom: 14px; }
-.catalog-filters { display: grid; grid-template-columns: 180px 190px minmax(220px, 1fr); gap: 10px; margin-bottom: 14px; }
-.gateway-table-shell { width: 100%; min-width: 0; overflow-x: auto; overflow-y: hidden; overscroll-behavior-inline: contain; }
-.gateway-table-shell :deep(.el-table__body),.gateway-table-shell :deep(.el-table__header) { min-width: 1250px; }
-.gateway-table-shell :deep(.el-scrollbar__bar.is-horizontal) { height: 10px; opacity: 1; }
-.gateway-table-shell :deep(.el-scrollbar__thumb) { background-color: #64748b; }
-.drawer-tip { margin: 0 0 14px; color: #768279; font-size: 13px; line-height: 1.6; }
-.context-policy-panel{margin-top:14px}.context-policy-form{display:grid;grid-template-columns:minmax(220px,1.2fr) auto 190px minmax(220px,1fr) auto;align-items:center;gap:10px}.context-policy-form .el-input-number{width:100%}
-@media (max-width: 1100px) { .gateway-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }.gateway-overview-grid { grid-template-columns: minmax(0, 1fr); } }
-@media (max-width: 1100px){.context-policy-form{grid-template-columns:repeat(2,minmax(0,1fr))}}@media (max-width: 680px) { .gateway-heading { align-items: stretch; flex-direction: column; }.gateway-heading-actions { display: grid; grid-template-columns: 1fr 1fr; }.gateway-metrics,.catalog-filters,.context-policy-form { grid-template-columns: minmax(0, 1fr); } }
+.gateway-workbench { display:grid; gap:16px; }.heading,.actions,.filters { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }.heading{justify-content:space-between}.heading h2{margin:0}.heading p{color:var(--el-text-color-secondary)}.filters .el-select{width:210px}.filters .el-input{max-width:250px}.panel{min-width: 0;padding:18px;border:1px solid var(--el-border-color);border-radius:12px;background:var(--el-bg-color)}.failure-text{color:var(--el-color-danger)}small{color:var(--el-text-color-secondary)}
 </style>

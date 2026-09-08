@@ -237,7 +237,6 @@ public class AgentDistributionService {
                        w.destination_type,w.status,w.audit_note,w.reviewed_by,w.reviewed_at,w.created_at
                 FROM agent_withdrawals w JOIN users u ON u.id=w.agent_user_id
                 ORDER BY CASE w.status WHEN 'PENDING' THEN 0 WHEN 'APPROVED' THEN 1 ELSE 2 END,w.id DESC
-                LIMIT 500
                 """);
     }
 

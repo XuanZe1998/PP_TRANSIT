@@ -199,7 +199,7 @@ public class ModelProbeService {
 
     public PageResponse<ModelProbeTask> list(Long userId, int page, int size) {
         int p = Math.max(1, page);
-        int s = Math.max(1, Math.min(100, size));
+        int s = size==200?200:Math.max(1, Math.min(100, size));
         LambdaQueryWrapper<ModelProbeTask> qw = new LambdaQueryWrapper<>();
         if (userId != null) {
             qw.eq(ModelProbeTask::getUserId, userId);

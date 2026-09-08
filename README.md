@@ -88,6 +88,10 @@ AIGC:
 
 ## 接入一个模型供应商
 
+sub2api 搭建的上游可使用“模型网关 → 接入上游 → sub2api 站点”一键接入：只需站点地址和推理 Key，系统会识别官方版、simple mode 及保留公共契约的二次开发版，导入 Key 可见模型并持续同步，详见 [sub2api 上游一键接入](docs/SUB2API_QUICK_CONNECT.md)。
+
+New API 中转站可使用“渠道治理 → New API 快速接入”：填写站点地址和推理 Key，确认分组、销售倍率及模型后导入渠道和标准价格。默认每 15 分钟同步；模型或分组连续两次完整目录缺失后停用。新增模型未发布，动态计费保留待配置，详见 [New API 两步接入与自动同步](docs/NEW_API_QUICK_CONNECT.md)。
+
 1. 登录 `/admin`，进入“渠道治理”。
 2. 选择协议类型，填写 Base URL、API Key 与模型清单，设置权重、限流和熔断阈值。
 3. 渠道表单会为模型清单中的每个模型生成独立定价卡片；填写输入/输出/缓存的上游成本、销售价格与售卖倍率后一起保存。
@@ -143,6 +147,7 @@ curl -N http://127.0.0.1:8089/v1/chat/completions \
 - 渠道 API Key 使用 `DATA_ENCRYPTION_KEY` 加密，管理 API 只返回脱敏预览。
 - 上游 Base URL 默认禁止私网、回环和其他 SSRF 高风险地址；仅在受控开发环境设置 `ALLOW_PRIVATE_UPSTREAMS=true`。
 - AnyiPay、VMCard、ShopGPT 和创作供应商均应保持默认关闭，配置完成并完成合规审查后再分别启用。
+- Dujiao-Next 成品服务上游采购见 [docs/DUJIAO_NEXT_UPSTREAM.md](docs/DUJIAO_NEXT_UPSTREAM.md)。
 - 如果历史提交或工作区曾包含真实凭据，应立即在对应供应商控制台轮换；仅从当前文件删除不能使旧凭据失效。
 
 ## 验证

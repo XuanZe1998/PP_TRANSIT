@@ -5,6 +5,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.reactive.AutoConfigureWebTestClient;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import com.transit.service.SecretHashService;
 import com.transit.service.OAuthService;
@@ -30,6 +31,9 @@ class AuthFlowIntegrationTests {
 
     @Autowired
     private OAuthService oauthService;
+
+    @Autowired
+    private BCryptPasswordEncoder passwordEncoder;
 
     @Test
     void registrationLoginAndLogoutFormACompleteSessionLifecycle() {
@@ -68,6 +72,32 @@ class AuthFlowIntegrationTests {
                 .expectBody()
                 .jsonPath("$.access_token").isNotEmpty()
                 .jsonPath("$.refresh_token").isNotEmpty();
+    }
+
+    @Test
+    void firstPasswordLoginBootstrapsTrustForAccountsWithoutIpHistory() {
+        String identifier = uniqueEmail();
+        jdbcTemplate.update("""
+                INSERT INTO users(username, password, email, auth_provider, role, status, balance)
+                VALUES (?, ?, ?, 'local', 'USER', 'ACTIVE', 0)
+                """, identifier, passwordEncoder.encode("StrongPass123"), identifier);
+        Long userId = jdbcTemplate.queryForObject(
+                "SELECT id FROM users WHERE username = ?", Long.class, identifier);
+
+        client.post()
+                .uri("/auth/login")
+                .bodyValue(Map.of("identifier", identifier, "password", "StrongPass123"))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.access_token").isNotEmpty()
+                .jsonPath("$.verificationRequired").doesNotExist();
+
+        Integer trustedAddresses = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM login_ip_history
+                WHERE user_id = ? AND verified = TRUE AND revoked_at IS NULL
+                """, Integer.class, userId);
+        assertThat(trustedAddresses).isEqualTo(1);
     }
 
     @Test

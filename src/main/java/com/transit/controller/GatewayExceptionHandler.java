@@ -1,6 +1,7 @@
 package com.transit.controller;
 
 import com.transit.config.RequestIdFilter;
+import com.transit.service.DujiaoNextApiException;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -109,6 +110,17 @@ public class GatewayExceptionHandler {
     private String requestId(HttpServletRequest request) {
         Object value = request.getAttribute(RequestIdFilter.ATTRIBUTE);
         return value == null ? "unknown" : value.toString();
+    }
+
+    @ExceptionHandler(DujiaoNextApiException.class)
+    ResponseEntity<Map<String, Object>> dujiaoError(DujiaoNextApiException exception,
+                                                     HttpServletRequest request) {
+        int upstreamStatus = exception.getHttpStatus();
+        HttpStatus status = upstreamStatus == 503 ? HttpStatus.SERVICE_UNAVAILABLE : HttpStatus.BAD_GATEWAY;
+        log.warn("Dujiao-Next request failure requestId={} code={} upstreamStatus={} retryable={}",
+                requestId(request), exception.getErrorCode(), upstreamStatus, exception.isRetryable());
+        return ResponseEntity.status(status).body(error(exception.getMessage(), exception.getErrorCode(),
+                "upstream_error", request));
     }
 
     private String safeUpstreamBody(String value) {

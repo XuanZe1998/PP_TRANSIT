@@ -16,6 +16,21 @@ class PublicModelMarketplaceServiceTests {
     private final PublicModelMarketplaceService service = new PublicModelMarketplaceService();
 
     @Test
+    void countsAndFiltersEachPublicUpstreamOfSharedModelsOnce() {
+        PublicModel shared = model("claude", "claude", "multi-route", "anthropic", "language", "text", "TOKEN", "3");
+        var ahh = new com.transit.dto.PublicUpstream("new-api-35", "ahh", "", "#2563eb");
+        shared.setUpstreams(List.of(ahh, ahh,
+                new com.transit.dto.PublicUpstream("platform-route", "平台智能路由", "", "#2563eb")));
+        PublicModel exclusive = model("opus", "opus", "new-api-35", "anthropic", "language", "text", "TOKEN", "4");
+        exclusive.setUpstreams(List.of(ahh));
+        var filters = PublicModelMarketplaceService.criteria(null, "new-api-35", null, null, null, null, null, null, null, null, null);
+        assertThat(service.filter(List.of(shared, exclusive), filters)).containsExactly(shared, exclusive);
+        assertThat(service.facets(List.of(shared, exclusive), filters).get("routes"))
+                .extracting(option -> option.value() + ":" + option.label() + ":" + option.count())
+                .containsExactlyInAnyOrder("new-api-35:ahh:2", "platform-route:平台智能路由:1");
+    }
+
+    @Test
     void appliesOrWithinFacetAndAndAcrossFacets() {
         List<PublicModel> models = List.of(
                 model("platform/gpt", "openai:gpt-5.6", "platform-route", "openai", "language", "reasoning", "TOKEN", "10"),

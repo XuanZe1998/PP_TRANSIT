@@ -27,7 +27,7 @@ public class AdminBillingService {
                 FROM wallet_transactions wt
                 LEFT JOIN users u ON u.id = wt.user_id
                 ORDER BY wt.created_at DESC
-                LIMIT 500
+
                 """);
         rows.forEach(row->{row.put("amountMoney",new MoneyAmount(((Number)row.get("amount")).longValue(),"CNY",10000));row.put("balanceAfterMoney",new MoneyAmount(((Number)row.get("balance_after")).longValue(),"CNY",10000));});
         return rows;
@@ -35,7 +35,7 @@ public class AdminBillingService {
 
     public PageResponse<Map<String, Object>> transactionsPage(int page, int size, String query) {
         if (page < 1 || page > 1_000_000) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "page is out of range");
-        if (size < 1 || size > 100) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "size must be between 1 and 100");
+        if (size < 1 || (size > 100 && size != 200)) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "size must be between 1 and 100");
         String needle = query == null ? "" : query.trim().toLowerCase();
         if (needle.length() > 160) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "query is too long");
         String filter = needle.isBlank() ? "" : """

@@ -161,7 +161,7 @@ public class PaymentIntentService {
     }
 
     public boolean refundsEnabled() { return localTestMode || anyiPayClient.isMoneyMutationsEnabled(); }
-    public List<PaymentIntent> listAll() { return mapper.selectList(new LambdaQueryWrapper<PaymentIntent>().orderByDesc(PaymentIntent::getCreatedAt).last("LIMIT 500")).stream().map(this::enrich).toList(); }
+    public List<PaymentIntent> listAll() { return mapper.selectList(new LambdaQueryWrapper<PaymentIntent>().orderByDesc(PaymentIntent::getCreatedAt)).stream().map(this::enrich).toList(); }
 
     private PaymentIntent markPaid(PaymentIntent intent, String tradeNo, String type, String source) {
         PaymentIntent latest = mapper.selectById(intent.getId());

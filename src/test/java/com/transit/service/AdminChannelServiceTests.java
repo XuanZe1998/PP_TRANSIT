@@ -35,15 +35,94 @@ class AdminChannelServiceTests {
     @Mock private ChannelSecretService channelSecretService;
     @Mock private ModelPriceTierService priceTierService;
     @Mock private ApplicationEventPublisher events;
+    @Mock private OpenAiImageHealthProbe imageHealthProbe;
 
     private AdminChannelService service;
 
     @BeforeEach
     void setUp() {
         service = new AdminChannelService(channelMapper, modelMappingMapper, jdbcTemplate,
-                channelUrlPolicy, providerGatewayFactory, channelSecretService, priceTierService, events);
+                channelUrlPolicy, providerGatewayFactory, channelSecretService, priceTierService, events, imageHealthProbe);
         org.mockito.Mockito.lenient().when(channelSecretService.isConfigured()).thenReturn(true);
         org.mockito.Mockito.lenient().when(channelSecretService.encrypt("provider-key")).thenReturn("encrypted-provider-key");
+    }
+
+    @Test
+    void groupTestSelectsChatModelInsteadOfFirstImageModel() {
+        Channel channel = channel("image-model\nchat-model");
+        channel.setId(42L);
+        when(channelMapper.selectById(42L)).thenReturn(channel);
+        when(modelMappingMapper.selectList(any())).thenReturn(List.of(
+                ModelMapping.builder().channelModelName("image-model").protocols("images").build(),
+                ModelMapping.builder().channelModelName("chat-model").protocols("chat-completions").build()));
+        AdminChannelService spy = org.mockito.Mockito.spy(service);
+        org.mockito.Mockito.doReturn(java.util.Map.of("healthStatus", "HEALTHY", "latencyMs", 1))
+                .when(spy).testModel(org.mockito.ArgumentMatchers.eq(42L), any());
+        spy.test(42L);
+        verify(spy).testModel(42L, java.util.Map.of("providerModelName", "chat-model", "prompt", "你是什么模型", "timeoutSeconds", 20));
+    }
+
+    @Test
+    void newApiGroupTestPrefersVerifiedModelAndFallsBackAfterTransientFailure() {
+        Channel channel = channel("dynamic-model\nstable-model\nbackup-model");
+        channel.setId(43L);
+        channel.setSourceCode("new-api");
+        ModelMapping dynamic = ModelMapping.builder().id(1L).channelModelName("dynamic-model")
+                .protocols("chat-completions").pricingStatus("PENDING").build();
+        ModelMapping stable = ModelMapping.builder().id(2L).channelModelName("stable-model")
+                .protocols("chat-completions").pricingStatus("VERIFIED").build();
+        ModelMapping backup = ModelMapping.builder().id(3L).channelModelName("backup-model")
+                .protocols("chat-completions").pricingStatus("VERIFIED").build();
+        when(channelMapper.selectById(43L)).thenReturn(channel);
+        when(modelMappingMapper.selectList(any())).thenReturn(List.of(dynamic, stable, backup));
+        AdminChannelService spy = org.mockito.Mockito.spy(service);
+        org.mockito.Mockito.doReturn(java.util.Map.of("status", "UPSTREAM_ERROR", "healthStatus", "DEGRADED", "latencyMs", 1))
+                .when(spy).testModel(43L, java.util.Map.of("providerModelName", "stable-model", "prompt", "你是什么模型", "timeoutSeconds", 60));
+        org.mockito.Mockito.doReturn(java.util.Map.of("status", "SUCCESS", "healthStatus", "HEALTHY", "latencyMs", 2))
+                .when(spy).testModel(43L, java.util.Map.of("providerModelName", "backup-model", "prompt", "你是什么模型", "timeoutSeconds", 60));
+
+        assertThat(spy.test(43L).get("healthStatus")).isEqualTo("HEALTHY");
+
+        verify(spy).testModel(43L, java.util.Map.of("providerModelName", "stable-model", "prompt", "你是什么模型", "timeoutSeconds", 60));
+        verify(spy).testModel(43L, java.util.Map.of("providerModelName", "backup-model", "prompt", "你是什么模型", "timeoutSeconds", 60));
+        verify(spy, never()).testModel(43L, java.util.Map.of("providerModelName", "dynamic-model", "prompt", "你是什么模型", "timeoutSeconds", 60));
+    }
+
+    @Test
+    void imageProtocolUsesDedicatedImageProbe() {
+        Channel channel = channel("gpt-image-2");
+        channel.setId(44L);
+        channel.setProtocolType("openai-image");
+        when(channelMapper.selectById(44L)).thenReturn(channel);
+        when(imageHealthProbe.probe(channel, "gpt-image-2", 30)).thenReturn(new java.util.LinkedHashMap<>(java.util.Map.of(
+                "status", "SUCCESS", "latencyMs", 3L, "model", "gpt-image-2", "usage", java.util.Map.of(),
+                "sampleText", "Image generation response accepted", "error", "", "exitCode", 0)));
+
+        assertThat(service.testModel(44L, java.util.Map.of("providerModelName", "gpt-image-2", "timeoutSeconds", 30))
+                .get("healthStatus")).isEqualTo("HEALTHY");
+
+        verify(imageHealthProbe).probe(channel, "gpt-image-2", 30);
+        verify(providerGatewayFactory, never()).resolve(any());
+    }
+
+    @Test
+    void imageGroupTestPrefersLowestResolutionModel() {
+        Channel channel = channel("gpt-image-2\ngpt-image-2-1K\ngpt-image-2-2K\ngpt-image-2-4K");
+        channel.setId(45L);
+        channel.setSourceCode("new-api");
+        channel.setProtocolType("openai-image");
+        when(channelMapper.selectById(45L)).thenReturn(channel);
+        when(modelMappingMapper.selectList(any())).thenReturn(List.of(
+                imageMapping(1L, "gpt-image-2"), imageMapping(2L, "gpt-image-2-1K"),
+                imageMapping(3L, "gpt-image-2-2K"), imageMapping(4L, "gpt-image-2-4K")));
+        AdminChannelService spy = org.mockito.Mockito.spy(service);
+        org.mockito.Mockito.doReturn(java.util.Map.of("status", "SUCCESS", "healthStatus", "HEALTHY", "latencyMs", 2))
+                .when(spy).testModel(45L, java.util.Map.of("providerModelName", "gpt-image-2-1K",
+                        "prompt", "你是什么模型", "timeoutSeconds", 120));
+
+        assertThat(spy.test(45L).get("healthStatus")).isEqualTo("HEALTHY");
+        verify(spy).testModel(45L, java.util.Map.of("providerModelName", "gpt-image-2-1K",
+                "prompt", "你是什么模型", "timeoutSeconds", 120));
     }
 
     @Test
@@ -135,6 +214,28 @@ class AdminChannelServiceTests {
 
         assertThat(updated.getModels()).isEqualTo("model-a\nmodel-b");
         assertThat(updated.getHealthStatus()).isEqualTo("HEALTHY");
+    }
+
+    @Test
+    void editingBoundNewApiChannelRepairsSourceWithoutChangingPublication() {
+        Channel current = channel("");
+        current.setId(35L);
+        current.setSourceCode("other");
+        current.setSourceName("其他兼容服务");
+        current.setHealthStatus("HEALTHY");
+        Channel request = channel("");
+        request.setApiKey("");
+        request.setEnabled(true);
+        when(channelMapper.selectById(35L)).thenReturn(current);
+        when(jdbcTemplate.queryForObject(org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.eq(Integer.class), org.mockito.ArgumentMatchers.eq(35L)))
+                .thenAnswer(invocation -> invocation.<String>getArgument(0).contains("new_api_connections") ? 1 : 0);
+        when(modelMappingMapper.selectList(any())).thenReturn(List.of());
+        service.update(35L, request);
+        assertThat(current.getSourceCode()).isEqualTo("new-api");
+        assertThat(current.getSourceName()).isEqualTo("New API");
+        assertThat(current.isEnabled()).isTrue();
+        assertThat(current.getHealthStatus()).isEqualTo("HEALTHY");
     }
 
     @Test
@@ -336,6 +437,17 @@ class AdminChannelServiceTests {
                 .cachedCostPerMillion(BigDecimal.ZERO)
                 .billingEnabled(true)
                 .trafficPercent(100)
+                .build();
+    }
+
+    private ModelMapping imageMapping(long id, String model) {
+        return ModelMapping.builder()
+                .id(id)
+                .channelModelName(model)
+                .capability("image")
+                .protocols("images")
+                .pricingStatus("VERIFIED")
+                .enabled(true)
                 .build();
     }
 }

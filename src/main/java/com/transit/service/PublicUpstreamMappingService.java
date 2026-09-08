@@ -38,6 +38,10 @@ public class PublicUpstreamMappingService {
                     text(value(row, "badge_text"), "智能路由"),
                     text(value(row, "badge_color"), "#2563eb")));
         }
+        for (var row : jdbcTemplate.queryForList("SELECT sc.channel_id,s.public_code,s.public_name,s.badge_text,s.badge_color FROM upstream_site_channels sc JOIN upstream_sites s ON s.id=sc.site_id WHERE s.public_code IS NOT NULL AND s.public_name IS NOT NULL AND sc.channel_id IN (" + placeholders + ")", ids.toArray())) {
+            long id=((Number)value(row,"channel_id")).longValue();
+            result.putIfAbsent(id,new PublicUpstream(safeCode(value(row,"public_code")),text(value(row,"public_name"),FALLBACK_NAME),text(value(row,"badge_text"),"智能路由"),text(value(row,"badge_color"),"#2563eb")));
+        }
         return result;
     }
 
@@ -46,12 +50,14 @@ public class PublicUpstreamMappingService {
         List<String> names = models.stream().map(PublicModel::getPublicName).filter(v -> v != null && !v.isBlank()).distinct().toList();
         if (names.isEmpty()) return;
         String placeholders = String.join(",", java.util.Collections.nCopies(names.size(), "?"));
-        String sql = "SELECT mm.public_model_name, COALESCE(NULLIF(udm.public_code,''), ?) public_code, "
-                + "COALESCE(NULLIF(udm.public_name,''), ?) public_name, "
-                + "COALESCE(NULLIF(udm.badge_text,''), '智能路由') badge_text, "
-                + "COALESCE(NULLIF(udm.badge_color,''), '#2563eb') badge_color, "
+        String sql = "SELECT mm.public_model_name, COALESCE(NULLIF(udm.public_code,''), NULLIF(site.public_code,''), ?) public_code, "
+                + "COALESCE(NULLIF(udm.public_name,''), NULLIF(site.public_name,''), ?) public_name, "
+                + "COALESCE(NULLIF(udm.badge_text,''), NULLIF(site.badge_text,''), '智能路由') badge_text, "
+                + "COALESCE(NULLIF(udm.badge_color,''), NULLIF(site.badge_color,''), '#2563eb') badge_color, "
                 + "COALESCE(udm.sort_order, 100) sort_order "
                 + "FROM model_mappings mm "
+                + "LEFT JOIN upstream_site_channels sc ON sc.channel_id=mm.channel_id "
+                + "LEFT JOIN upstream_sites site ON site.id=sc.site_id "
                 + "LEFT JOIN upstream_display_mappings udm ON udm.channel_id=mm.channel_id AND udm.enabled=TRUE "
                 + "WHERE mm.public_model_name IN (" + placeholders + ") AND mm.enabled=TRUE "
                 + "ORDER BY sort_order, mm.channel_id";

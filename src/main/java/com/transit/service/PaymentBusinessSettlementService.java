@@ -28,6 +28,7 @@ public class PaymentBusinessSettlementService {
     private final ServiceCommerceService serviceCommerceService;
     private final JdbcTemplate jdbcTemplate;
     private final WalletBalanceService walletBalanceService;
+    private final DujiaoNextProcurementService dujiaoNextProcurementService;
 
     @Transactional
     public void settle(PaymentIntent intent) {
@@ -135,6 +136,7 @@ public class PaymentBusinessSettlementService {
         if (!("PAID".equals(order.getStatus()) || "REFUND_PENDING".equals(order.getStatus())) || "COMPLETED".equals(order.getFulfillmentStatus())) {
             throw conflict("Only a paid, unfulfilled service order can be refunded");
         }
+        dujiaoNextProcurementService.prepareRefund(order);
         intent.setInternalState(order.getFulfillmentStatus());
         order.setStatus("REFUND_PENDING"); order.setUpdatedAt(now()); orderMapper.updateById(order);
     }

@@ -40,11 +40,26 @@ try {
 
     Invoke-Native -FilePath (Join-Path $repoRoot "mvnw.cmd") -Arguments @("--batch-mode", "--no-transfer-progress", "verify")
     Push-Location (Join-Path $repoRoot "web")
+    $previousApiBaseUrl = $env:VITE_API_BASE_URL
     try {
+        $env:VITE_API_BASE_URL = "https://api.linknux.com"
         Invoke-Native -FilePath npm -Arguments @("ci")
         Invoke-Native -FilePath npm -Arguments @("test")
         Invoke-Native -FilePath npm -Arguments @("run", "build")
+        $builtJavaScript = (Get-ChildItem -LiteralPath (Join-Path $repoRoot "web\dist\assets") -Filter "*.js" -File |
+            ForEach-Object { [IO.File]::ReadAllText($_.FullName) }) -join "`n"
+        if ($builtJavaScript -match 'https?://(?:127\.0\.0\.1|localhost):8089') {
+            throw "Production frontend contains a loopback API address"
+        }
+        if ($builtJavaScript -notmatch 'https://api\.linknux\.com') {
+            throw "Production frontend does not contain the expected API origin"
+        }
     } finally {
+        if ($null -eq $previousApiBaseUrl) {
+            Remove-Item Env:VITE_API_BASE_URL -ErrorAction SilentlyContinue
+        } else {
+            $env:VITE_API_BASE_URL = $previousApiBaseUrl
+        }
         Pop-Location
     }
 

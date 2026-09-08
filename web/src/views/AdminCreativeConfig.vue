@@ -4,7 +4,7 @@
     <el-tabs v-model="tab" class="config-tabs">
       <el-tab-pane label="平台模型" name="connections">
         <div class="toolbar"><p>分别配置文本、图片和 Seedance 视频默认连接。</p><el-button type="primary" @click="openConnection()">新增连接</el-button></div>
-        <el-table :data="connections" empty-text="尚未配置平台模型">
+        <PagedTable :data="connections" empty-text="尚未配置平台模型" list-id="AdminCreativeConfig-1">
           <el-table-column prop="capability" label="能力" width="90" />
           <el-table-column prop="displayName" label="名称" min-width="150" />
           <el-table-column prop="baseUrl" label="Base URL" min-width="240" show-overflow-tooltip />
@@ -12,7 +12,7 @@
           <el-table-column label="状态" width="150"><template #default="{ row }"><el-tag :type="row.enabled ? 'success' : 'info'">{{ row.enabled ? '启用' : '停用' }}</el-tag><el-tag v-if="row.isDefault" class="tag-gap">默认</el-tag></template></el-table-column>
           <el-table-column label="密钥" width="100"><template #default="{ row }">{{ row.apiKeyConfigured ? row.apiKeyPreview : '未配置' }}</template></el-table-column>
           <el-table-column label="操作" width="230" fixed="right"><template #default="{ row }"><el-button link @click="testConnection(row)">测试</el-button><el-button link @click="openConnection(row)">编辑</el-button><el-button link type="danger" @click="removeConnection(row)">删除</el-button></template></el-table-column>
-        </el-table>
+        </PagedTable>
       </el-tab-pane>
       <el-tab-pane label="自动成片" name="runtime">
         <el-form label-width="170px" class="form-card">
@@ -64,6 +64,7 @@
 </template>
 
 <script setup lang="ts">
+import PagedTable from '@/components/PagedTable.vue'
 import { defineComponent, h, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox, ElTag } from 'element-plus'
 import http, { getHttpErrorMessage } from '@/utils/http'

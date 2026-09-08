@@ -38,6 +38,7 @@ import java.util.concurrent.TimeoutException;
 @Service
 @RequiredArgsConstructor
 public class AdminChannelService {
+    @org.springframework.beans.factory.annotation.Autowired(required=false) private GatewayPricingService gatewayPrices;
 
     private final ChannelMapper channelMapper;
     private final ModelMappingMapper modelMappingMapper;
@@ -47,6 +48,7 @@ public class AdminChannelService {
     private final ChannelSecretService channelSecretService;
     private final ModelPriceTierService priceTierService;
     private final ApplicationEventPublisher events;
+    private final OpenAiImageHealthProbe imageHealthProbe;
     @Autowired(required = false)
     private ProviderCredentialService providerCredentialService;
     @Autowired(required = false)
@@ -91,6 +93,9 @@ public class AdminChannelService {
             throw new IllegalArgumentException("Channel not found");
         }
         boolean aiApiBankChannel = isAiApiBankChannel(id, current);
+        boolean newApiChannel = !aiApiBankChannel && ("new-api".equalsIgnoreCase(current.getSourceCode())
+                || Integer.valueOf(1).equals(jdbcTemplate.queryForObject(
+                        "SELECT COUNT(*) FROM new_api_connections WHERE channel_id=?", Integer.class, id)));
         String requestedModels = normalizedModels(request.getModels());
         boolean routingConfigurationChanged = !Objects.equals(current.getType(), request.getType())
                 || !Objects.equals(current.getBaseUrl(), request.getBaseUrl())
@@ -104,6 +109,10 @@ public class AdminChannelService {
         current.setProtocolType(defaultString(request.getProtocolType(), "openai-chat"));
         current.setBaseUrl(request.getBaseUrl());
         normalizeSourceMetadata(current);
+        if (newApiChannel) {
+            current.setSourceCode("new-api");
+            current.setSourceName("New API");
+        }
         rejectDuplicateManagedChannel(current, id);
         boolean credentialChanged = request.getApiKey() != null && !request.getApiKey().isBlank()
                 && !request.getApiKey().contains("***");
@@ -161,6 +170,7 @@ public class AdminChannelService {
             modelMappingMapper.updateById(target);
         }
         priceTierService.synchronize(target, request.getPriceTiers());
+        if(gatewayPrices!=null)gatewayPrices.protect(target.getId());
         registerIdentity(channel, target, ModelIdentityService.RANK_MAPPING);
 
         List<String> channelModels = new java.util.ArrayList<>(parseModels(channel.getModels()));
@@ -192,6 +202,18 @@ public class AdminChannelService {
 
     @Transactional
     public void delete(Long id) {
+        jdbcTemplate.update("DELETE FROM sub2api_model_state WHERE channel_id=?", id);
+        jdbcTemplate.update("DELETE FROM sub2api_connections WHERE channel_id=?", id);
+        jdbcTemplate.update("DELETE FROM new_api_model_state WHERE channel_id=?", id);
+        jdbcTemplate.update("DELETE FROM new_api_connections WHERE channel_id=?", id);
+        jdbcTemplate.update("DELETE FROM upstream_catalog_sync WHERE channel_id=?", id);
+        jdbcTemplate.update("DELETE FROM gateway_price_overrides WHERE model_mapping_id IN (SELECT id FROM model_mappings WHERE channel_id=?)", id);
+        jdbcTemplate.update("DELETE FROM gateway_price_rules WHERE scope_type='MODEL' AND scope_id IN (SELECT id FROM model_mappings WHERE channel_id=?)", id);
+        jdbcTemplate.update("DELETE FROM gateway_price_rules WHERE scope_type='GROUP' AND scope_id=?", id);
+        jdbcTemplate.update("DELETE FROM upstream_site_channels WHERE channel_id=?", id);
+        jdbcTemplate.update("DELETE FROM upstream_display_mappings WHERE channel_id=?", id);
+        jdbcTemplate.update("DELETE FROM provider_account_route_bindings WHERE channel_id=?", id);
+        jdbcTemplate.update("DELETE FROM provider_credentials WHERE channel_id=?", id);
         List<Long> mappingIds = modelMappingMapper.selectList(new LambdaQueryWrapper<ModelMapping>()
                         .eq(ModelMapping::getChannelId, id))
                 .stream().map(ModelMapping::getId).toList();
@@ -206,21 +228,33 @@ public class AdminChannelService {
         if (channel == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Channel not found");
         }
-        String model = resolveProviderModel(channel, Map.of());
-        if (model == null || model.isBlank()) {
+        List<String> candidates = resolveProbeModels(channel);
+        if (candidates.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "Configure at least one provider model before testing this channel");
         }
-        Map<String, Object> result = testModel(id, Map.of(
-                "providerModelName", model,
-                "prompt", "你是什么模型",
-                "timeoutSeconds", 20));
+        boolean imageChannel = isImageProtocol(channel.getProtocolType());
+        int timeoutSeconds = "new-api".equalsIgnoreCase(channel.getSourceCode())
+                ? (imageChannel ? 120 : 60) : 20;
+        int maximumAttempts = imageChannel ? 1 : Math.min(3, candidates.size());
+        Map<String, Object> result = null;
+        for (int index = 0; index < maximumAttempts; index++) {
+            result = testModel(id, Map.of(
+                    "providerModelName", candidates.get(index),
+                    "prompt", "你是什么模型",
+                    "timeoutSeconds", timeoutSeconds));
+            String probeStatus = stringValue(result.get("status"), "FAILED");
+            if ("SUCCESS".equalsIgnoreCase(probeStatus) || !retryableProbeStatus(probeStatus)) break;
+        }
+        if (result == null) throw new IllegalStateException("Provider probe did not run");
         String status = stringValue(result.get("healthStatus"), "DEGRADED");
         long latency = longValue(result.get("latencyMs"), 0);
+        String probeStatus = stringValue(result.get("status"), "FAILED");
         jdbcTemplate.update(
                 "INSERT INTO channel_health_checks(channel_id, status, latency_ms, message, checked_at) VALUES (?, ?, ?, ?, ?)",
                 id, status, latency, status.equals("HEALTHY")
-                        ? "Authenticated provider probe succeeded" : "Authenticated provider probe failed", LocalDateTime.now()
+                        ? "Authenticated provider probe succeeded"
+                        : "Authenticated provider probe failed: " + probeStatus, LocalDateTime.now()
         );
         return result;
     }
@@ -310,12 +344,15 @@ public class AdminChannelService {
                 FROM channel_test_logs ctl
                 LEFT JOIN channels c ON c.id = ctl.channel_id
                 ORDER BY ctl.tested_at DESC
-                LIMIT 500
+
                 """);
     }
 
     private Map<String, Object> runProbe(Channel channel, String model, String prompt, int timeoutSeconds,
                                          Map<String, Object> options) {
+        if (isImageProtocol(channel.getProtocolType()) || NewApiPricing.isImageModel(model)) {
+            return imageHealthProbe.probe(channel, model, timeoutSeconds);
+        }
         long started = System.currentTimeMillis();
         try {
             channelUrlPolicy.validate(channel.getBaseUrl());
@@ -510,10 +547,78 @@ public class AdminChannelService {
         if (explicit != null && !explicit.isBlank()) {
             return explicit;
         }
+        List<ModelMapping> candidates = modelMappingMapper.selectList(new LambdaQueryWrapper<ModelMapping>()
+                .eq(ModelMapping::getChannelId, channel.getId()).orderByDesc(ModelMapping::isEnabled).orderByAsc(ModelMapping::getId));
+        Set<String> configured = new java.util.HashSet<>(parseModels(Objects.toString(channel.getModels(), "")));
+        String chatModel = candidates.stream()
+                .filter(m -> configured.isEmpty() || configured.contains(m.getChannelModelName()))
+                .filter(m -> m.getProtocols() != null && m.getProtocols().contains("chat-completions"))
+                .map(ModelMapping::getChannelModelName).filter(Objects::nonNull).findFirst().orElse(null);
+        if (chatModel != null) return chatModel;
         if (channel.getModels() == null || channel.getModels().isBlank()) {
             return null;
         }
         return parseModels(channel.getModels()).stream().findFirst().orElse(null);
+    }
+
+    private List<String> resolveProbeModels(Channel channel) {
+        List<ModelMapping> mappings = modelMappingMapper.selectList(new LambdaQueryWrapper<ModelMapping>()
+                .eq(ModelMapping::getChannelId, channel.getId())
+                .orderByDesc(ModelMapping::isEnabled)
+                .orderByAsc(ModelMapping::getId));
+        Set<String> configured = new LinkedHashSet<>(parseModels(Objects.toString(channel.getModels(), "")));
+        boolean imageProtocol = isImageProtocol(channel.getProtocolType());
+        List<ModelMapping> compatible = mappings.stream()
+                .filter(mapping -> configured.isEmpty() || configured.contains(mapping.getChannelModelName()))
+                .filter(mapping -> imageProtocol == isImageMapping(mapping))
+                .sorted((left, right) -> {
+                    int enabled = Boolean.compare(right.isEnabled(), left.isEnabled());
+                    if (enabled != 0) return enabled;
+                    int pricing = Boolean.compare(isVerifiedPricing(right), isVerifiedPricing(left));
+                    if (pricing != 0) return pricing;
+                    if (imageProtocol) {
+                        int resolution = Integer.compare(imageProbePriority(left.getChannelModelName()),
+                                imageProbePriority(right.getChannelModelName()));
+                        if (resolution != 0) return resolution;
+                    }
+                    long leftId = left.getId() == null ? Long.MAX_VALUE : left.getId();
+                    long rightId = right.getId() == null ? Long.MAX_VALUE : right.getId();
+                    return Long.compare(leftId, rightId);
+                })
+                .toList();
+        LinkedHashSet<String> result = compatible.stream().map(ModelMapping::getChannelModelName)
+                .filter(Objects::nonNull).collect(Collectors.toCollection(LinkedHashSet::new));
+        if (result.isEmpty()) configured.stream()
+                .filter(model -> imageProtocol == NewApiPricing.isImageModel(model)).forEach(result::add);
+        if (result.isEmpty()) result.addAll(configured);
+        return List.copyOf(result);
+    }
+
+    private boolean isImageMapping(ModelMapping mapping) {
+        return "image".equalsIgnoreCase(mapping.getCapability())
+                || (mapping.getProtocols() != null && mapping.getProtocols().toLowerCase(Locale.ROOT).contains("images"))
+                || NewApiPricing.isImageModel(mapping.getChannelModelName());
+    }
+
+    private boolean isVerifiedPricing(ModelMapping mapping) {
+        return "VERIFIED".equalsIgnoreCase(mapping.getPricingStatus())
+                || "FREE_PREVIEW".equalsIgnoreCase(mapping.getPricingStatus());
+    }
+
+    private int imageProbePriority(String model) {
+        String normalized = Objects.toString(model, "").toLowerCase(Locale.ROOT);
+        if (normalized.matches(".*(?:-|_)1k(?:$|[^0-9].*)") || normalized.contains("1024")) return 0;
+        if (normalized.matches(".*(?:-|_)2k(?:$|[^0-9].*)")) return 2;
+        if (normalized.matches(".*(?:-|_)4k(?:$|[^0-9].*)")) return 3;
+        return 1;
+    }
+
+    private boolean isImageProtocol(String protocol) {
+        return "openai-image".equalsIgnoreCase(protocol);
+    }
+
+    private boolean retryableProbeStatus(String status) {
+        return Set.of("TIMEOUT", "RATE_LIMITED", "UPSTREAM_ERROR").contains(status.toUpperCase(Locale.ROOT));
     }
 
     private Map<String, Object> failedProbe(String status, long latencyMs, String model, String error, int exitCode) {

@@ -9,22 +9,22 @@
       <template v-else-if="comparison">
         <el-alert v-if="comparison.comparableCount < 2" type="info" :closable="false"
           title="当前只有一个公开可用报价，暂无其他渠道可比。" />
-        <div class="compare-scroll">
+        <PagedList :data="comparison.offers" list-id="model-comparison-offers" v-slot="{items}"><div class="compare-scroll">
           <table class="compare-table">
-            <thead><tr><th>比较项</th><th v-for="offer in comparison.offers" :key="offer.publicName">
+            <thead><tr><th>比较项</th><th v-for="offer in items" :key="offer.publicName">
               <strong>{{ offer.routeName || offer.sourceName }}</strong><span>{{ offer.planName || '标准' }}</span>
             </th></tr></thead>
             <tbody>
-              <tr><th>发布方</th><td v-for="offer in comparison.offers" :key="offer.publicName">{{ offer.publisherName || '未声明' }}</td></tr>
-              <tr><th>API 模型 ID</th><td v-for="offer in comparison.offers" :key="offer.publicName"><code>{{ offer.publicName }}</code></td></tr>
-              <tr><th>能力 / 模态</th><td v-for="offer in comparison.offers" :key="offer.publicName">{{ offer.capability || '未声明' }} · {{ offer.inputModalities || '未声明' }} → {{ offer.outputModalities || '未声明' }}</td></tr>
-              <tr><th>协议 / 计费</th><td v-for="offer in comparison.offers" :key="offer.publicName">{{ offer.protocols || '未声明' }} · {{ unitLabel(offer.pricingUnit) }}</td></tr>
+              <tr><th>发布方</th><td v-for="offer in items" :key="offer.publicName">{{ offer.publisherName || '未声明' }}</td></tr>
+              <tr><th>API 模型 ID</th><td v-for="offer in items" :key="offer.publicName"><code>{{ offer.publicName }}</code></td></tr>
+              <tr><th>能力 / 模态</th><td v-for="offer in items" :key="offer.publicName">{{ offer.capability || '未声明' }} · {{ offer.inputModalities || '未声明' }} → {{ offer.outputModalities || '未声明' }}</td></tr>
+              <tr><th>协议 / 计费</th><td v-for="offer in items" :key="offer.publicName">{{ offer.protocols || '未声明' }} · {{ unitLabel(offer.pricingUnit) }}</td></tr>
               <tr v-for="row in priceRows" :key="row.key"><th>{{ row.label }}</th>
-                <td v-for="offer in comparison.offers" :key="offer.publicName" :class="{ cheapest: isLowest(row, offer) }">
+                <td v-for="offer in items" :key="offer.publicName" :class="{ cheapest: isLowest(row, offer) }">
                   <strong>{{ displayPrice(row, offer) }}</strong><small v-if="isLowest(row, offer)">最低价</small>
                 </td>
               </tr>
-              <tr><th>价格状态</th><td v-for="offer in comparison.offers" :key="offer.publicName">
+              <tr><th>价格状态</th><td v-for="offer in items" :key="offer.publicName">
                 <el-tag :type="offer.billingMode === 'FREE_PREVIEW' ? 'info' : offer.billingConfigured ? 'success' : 'warning'" size="small">
                   {{ offer.billingMode === 'FREE_PREVIEW' ? '免费开发预览' : offer.billingConfigured ? '已核验' : '待配置' }}
                 </el-tag>
@@ -32,7 +32,7 @@
             </tbody>
           </table>
         </div>
-        <p class="compare-note">仅比较本站公开销售价格{{ rebateBps ? '，已应用当前账号返利' : '' }}；采购成本不会在模型广场展示。免费开发预览不参与生产最低价计算。</p>
+        </PagedList><p class="compare-note">仅比较本站公开销售价格{{ rebateBps ? '，已应用当前账号返利' : '' }}；采购成本不会在模型广场展示。免费开发预览不参与生产最低价计算。</p>
       </template>
     </div>
   </el-dialog>
@@ -40,6 +40,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import PagedList from './PagedList.vue'
 import http from '@/utils/http'
 import type { ModelComparison, PublicModelOffer } from '@/utils/modelMarket'
 

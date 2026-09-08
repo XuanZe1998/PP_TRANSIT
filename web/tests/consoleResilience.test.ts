@@ -89,7 +89,7 @@ describe('console layout contracts', () => {
     expect(adminConsole).toContain('min-width: 1400px')
     expect(adminConsole).toContain('min-width: 2600px')
     expect(gateway).toContain('scrollbar-always-on')
-    expect(gateway).toContain('min-width: 1250px')
+    expect(gateway).toContain('min-width: 0')
     expect(gateway).toContain('fixed="right"')
   })
 })

@@ -36,7 +36,7 @@ public class PlatformOperationsService {
 
     public Map<String, Object> userWallet(User user, int requestedPage, int requestedPageSize) {
         int page = Math.max(1, requestedPage);
-        int pageSize = List.of(10, 20, 50, 100).contains(requestedPageSize) ? requestedPageSize : 10;
+        int pageSize = List.of(10, 20, 50, 100, 200).contains(requestedPageSize) ? requestedPageSize : 10;
         long transactionTotal = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM wallet_transactions WHERE user_id = ?", Long.class, user.getId());
         long offset = (long) (page - 1) * pageSize;
@@ -249,7 +249,6 @@ public class PlatformOperationsService {
                 FROM wallet_transactions wt
                 LEFT JOIN users u ON u.id = wt.user_id
                 ORDER BY wt.created_at DESC
-                LIMIT 200
                 """);
     }
 

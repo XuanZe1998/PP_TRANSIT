@@ -136,10 +136,6 @@ public class ServiceOrderService {
         ServiceOrderQuoteResponse serviceQuote = requireCommerce().quote(
                 request.getServiceId(), request.getQuantity(), request.getCouponCode());
         verificationPolicy.requireComplete(user, "购买");
-        if (ServiceCommerceService.AUTOMATIC.equals(serviceQuote.getFulfillmentMode())
-                && paymentIntentService != null && !paymentIntentService.refundsEnabled()) {
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "自动发货商品暂停结账：管理员尚未配置支付退款能力");
-        }
         long unitPriceCents = serviceQuote.getListUnitPriceCents();
         long effectiveUnitPriceCents = serviceQuote.getEffectiveUnitPriceCents();
         int quantity = serviceQuote.getQuantity();
@@ -782,6 +778,20 @@ public class ServiceOrderService {
     public ServiceOrder getAdminOrder(Long id) {
         ServiceOrder order = orderMapper.selectById(id);
         if (order == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Order not found");
+        if (order.getSupplierType() != null && !OtherServiceCatalogService.LOCAL_INVENTORY.equals(order.getSupplierType())) {
+            Map<String, Object> details = new java.util.LinkedHashMap<>();
+            details.put("type", order.getSupplierType());
+            details.put("productId", order.getSupplierProductId());
+            details.put("skuId", order.getSupplierSkuId());
+            details.put("orderId", order.getSupplierOrderId());
+            details.put("orderNo", order.getSupplierOrderNo());
+            details.put("status", order.getSupplierStatus());
+            details.put("amount", order.getSupplierAmount());
+            details.put("currency", order.getSupplierCurrency());
+            details.put("attempts", order.getProcurementAttempts());
+            details.put("lastError", order.getSupplierError());
+            order.setSupplierDetails(details);
+        }
         return serviceCommerceService == null ? order : serviceCommerceService.revealDelivery(order);
     }
 

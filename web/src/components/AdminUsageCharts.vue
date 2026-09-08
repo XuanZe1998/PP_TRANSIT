@@ -29,7 +29,7 @@
 
     <div v-if="showTable && dailyByModel.length" class="usage-daily-table">
       <div class="usage-table-title"><strong>每日模型明细</strong><span>完整数据，不合并“其他”</span></div>
-      <el-table :data="pagedRows" size="small" max-height="460">
+      <PagedTable :data="dailyByModel" size="small" max-height="460" list-id="AdminUsageCharts-1">
         <el-table-column prop="usage_day" label="日期" min-width="115" />
         <el-table-column prop="model" label="模型" min-width="190" show-overflow-tooltip />
         <el-table-column prop="request_count" label="请求" width="90" />
@@ -38,13 +38,13 @@
         <el-table-column label="销售额(USD)" width="140"><template #default="{ row }">{{ usd(metric(row, 'total_amount')) }}</template></el-table-column>
         <el-table-column label="利润(USD)" width="130"><template #default="{ row }"><span :class="{ loss: metric(row, 'profit_amount') < 0 }">{{ usd(metric(row, 'profit_amount')) }}</span></template></el-table-column>
         <el-table-column label="利润率" width="100"><template #default="{ row }">{{ Number(metric(row, 'profit_margin')).toFixed(1) }}%</template></el-table-column>
-      </el-table>
-      <el-pagination v-model:current-page="tablePage" layout="total, prev, pager, next" :page-size="20" :total="dailyByModel.length" />
+      </PagedTable>
     </div>
   </section>
 </template>
 
 <script setup lang="ts">
+import PagedTable from '@/components/PagedTable.vue'
 import { computed, ref, watch } from 'vue'
 import VChart from 'vue-echarts'
 import { use } from 'echarts/core'

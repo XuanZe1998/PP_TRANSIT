@@ -73,7 +73,7 @@ public class PublicController {
 
     @GetMapping("/models")
     public Mono<PageResponse<PublicModel>> models(@RequestParam(value = "page", required = false, defaultValue = "1") int page,
-                                                  @RequestParam(value = "size", required = false, defaultValue = "12") int size,
+                                                  @RequestParam(value = "size", required = false, defaultValue = "20") int size,
                                                   @RequestParam(value = "query", required = false) String query,
                                                   @RequestParam(value = "type", required = false) String type,
                                                   @RequestParam(value = "source", required = false) String source,
@@ -181,7 +181,7 @@ public class PublicController {
     private void validatePage(int page, int size, String query) {
         if (page < 1 || page > 1_000_000) throw new ResponseStatusException(
                 HttpStatus.BAD_REQUEST, "page must be between 1 and 1000000");
-        if (size < 1 || size > 100) throw new ResponseStatusException(
+        if (size < 1 || (size > 100 && size != 200)) throw new ResponseStatusException(
                 HttpStatus.BAD_REQUEST, "size must be between 1 and 100");
         validateQuery(query);
     }

@@ -52,6 +52,7 @@ public class ProviderModelCatalogService implements ApplicationRunner {
     private static final String NVIDIA_RESOURCE = "catalog/nvidia-models.yaml";
     private static final String MODEL_PATTERN = "[A-Za-z0-9][A-Za-z0-9._:/-]{0,159}";
 
+    @org.springframework.beans.factory.annotation.Value("${nvidia.enabled:false}") private boolean nvidiaEnabled;
     private final ProviderModelMapper providerModelMapper;
     private final ModelMappingMapper modelMappingMapper;
     private final ChannelMapper channelMapper;
@@ -80,10 +81,26 @@ public class ProviderModelCatalogService implements ApplicationRunner {
 
     @Transactional
     public int synchronizeHaoee(long channelId) {
+        return synchronizeHaoee(channelId, false);
+    }
+
+    @Transactional
+    public int synchronizeHaoeeLive(long channelId) {
+        return synchronizeHaoee(channelId, true);
+    }
+
+    private int synchronizeHaoee(long channelId, boolean strict) {
         Channel channel = channelMapper.selectById(channelId);
+        strict = strict || (channel != null && channelSecretService.isEncrypted(channel.getApiKey()));
         List<CatalogSeed> manifest = loadHaoeeManifest();
-        List<CatalogSeed> seeds = liveHaoeeCatalog(channel, manifest);
-        Map<String, String> aliases = loadHaoeeAliases();
+        List<CatalogSeed> seeds = liveHaoeeCatalog(channel, manifest, strict);
+        if (strict && channel != null) {
+            channel.setApiKey(channelSecretService.encrypt(channel.getApiKey()));
+            jdbcTemplate.update("UPDATE channels SET api_key=? WHERE id=?", channel.getApiKey(), channelId);
+        }
+        Map<String, String> aliases = strict ? Map.of() : loadHaoeeAliases();
+        Set<String> liveNames = seeds.stream().map(CatalogSeed::name).collect(java.util.stream.Collectors.toSet());
+        if (strict) removeMissingHaoee(channelId, liveNames);
         boolean managedCatalogChannel = channel != null
                 && "haoee".equalsIgnoreCase(Objects.toString(channel.getGroupName(), ""));
         boolean initializeChannelSelection = channel != null && channel.getModels() == null;
@@ -111,7 +128,7 @@ public class ProviderModelCatalogService implements ApplicationRunner {
                 if (aliasSeed != null) upsert("haoee", "好易智算", channelId, aliasSeed, now, null);
             }
         }
-        markMissing("haoee", seeds.stream().map(CatalogSeed::name).collect(java.util.stream.Collectors.toSet()), now);
+        if (!strict) markMissing("haoee", liveNames, now);
         applyHaoeeAliases(channelId, aliases, manifestByName, now);
         Set<String> releaseVerified = seeds.stream().filter(CatalogSeed::releaseVerified)
                 .map(CatalogSeed::name).collect(java.util.stream.Collectors.toSet());
@@ -132,20 +149,55 @@ public class ProviderModelCatalogService implements ApplicationRunner {
         return seeds.size();
     }
 
-    private List<CatalogSeed> liveHaoeeCatalog(Channel storedChannel, List<CatalogSeed> manifest) {
+    // Called only after a complete authenticated live snapshot has been validated.
+    // Historical billing records and other channels are not part of the catalog.
+    private void removeMissingHaoee(long channelId, Set<String> liveNames) {
+        Map<String, String> retiredAliases = loadHaoeeAliases();
+        for (ModelMapping mapping : modelMappingMapper.selectList(new LambdaQueryWrapper<ModelMapping>()
+                .eq(ModelMapping::getChannelId, channelId))) {
+            if (liveNames.contains(mapping.getChannelModelName())
+                    && !(retiredAliases.containsKey(mapping.getPublicModelName())
+                    && !liveNames.contains(mapping.getPublicModelName()))) continue;
+            jdbcTemplate.update("DELETE FROM model_price_tiers WHERE model_mapping_id=?", mapping.getId());
+            jdbcTemplate.update("DELETE FROM gateway_price_overrides WHERE model_mapping_id=?", mapping.getId());
+            jdbcTemplate.update("DELETE FROM gateway_price_rules WHERE scope_type='MODEL' AND scope_id=?", mapping.getId());
+            modelMappingMapper.deleteById(mapping.getId());
+        }
+        for (ProviderModel model : providerModelMapper.selectList(new LambdaQueryWrapper<ProviderModel>()
+                .eq(ProviderModel::getSourceCode, "haoee"))) {
+            if (liveNames.contains(model.getUpstreamModelName())) continue;
+            Integer remaining = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM model_mappings mm JOIN channels c ON c.id=mm.channel_id WHERE c.source_code='haoee' AND mm.channel_model_name=?", Integer.class, model.getUpstreamModelName());
+            if (remaining != null && remaining > 0) continue;
+            jdbcTemplate.update("DELETE FROM provider_model_verifications WHERE provider_model_id=?", model.getId());
+            jdbcTemplate.update("DELETE FROM model_identity_aliases WHERE source_code='haoee' AND upstream_model_name=?", model.getUpstreamModelName());
+            providerModelMapper.deleteById(model.getId());
+        }
+        Channel channel = channelMapper.selectById(channelId);
+        if (channel != null && channel.getModels() != null) {
+            channel.setModels(String.join("\n", configuredModels(channel.getModels()).stream().filter(liveNames::contains).sorted().toList()));
+            channelMapper.updateById(channel);
+        }
+    }
+
+    private List<CatalogSeed> liveHaoeeCatalog(Channel storedChannel, List<CatalogSeed> manifest, boolean strict) {
         // Integration tests and one-time plaintext migrations deliberately retain
         // the reviewed manifest path. Production credentials are encrypted.
-        if (storedChannel == null || !channelSecretService.isEncrypted(storedChannel.getApiKey())) return manifest;
+        if (storedChannel == null || storedChannel.getApiKey() == null || storedChannel.getApiKey().isBlank()
+                || (!strict && !channelSecretService.isEncrypted(storedChannel.getApiKey()))) {
+            if (strict) throw new IllegalStateException("Haoee credential is not configured");
+            return manifest;
+        }
         try {
-            Channel channel = channelSecretService.reveal(storedChannel);
-            String base = Objects.toString(channel.getBaseUrl(), "https://maas.haoee.com").replaceAll("/+$", "");
-            String endpoint = base.endsWith("/v1") ? base + "/models" : base + "/v1/models";
+            String apiKey = channelSecretService.decrypt(storedChannel.getApiKey());
+            String base = Objects.toString(storedChannel.getBaseUrl(), "https://maas.haoee.com").replaceAll("/+$", "");
+            String endpoint = NewApiCatalogClient.haoeeModelsEndpoint(base);
             JsonNode payload = webClient.get().uri(endpoint)
-                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + channel.getApiKey())
+                    .header(HttpHeaders.AUTHORIZATION, apiKey.regionMatches(true, 0, "Bearer ", 0, 7) ? apiKey : "Bearer " + apiKey)
                     .retrieve().bodyToMono(JsonNode.class).timeout(Duration.ofSeconds(30)).block();
             if (payload == null || !payload.path("data").isArray()) {
                 throw new IllegalStateException("Haoee returned an invalid model catalog");
             }
+            if (strict) NewApiCatalogClient.parseModels(payload);
             Map<String, CatalogSeed> metadata = manifest.stream()
                     .collect(java.util.stream.Collectors.toMap(CatalogSeed::name, seed -> seed));
             List<CatalogSeed> live = new ArrayList<>();
@@ -158,6 +210,7 @@ public class ProviderModelCatalogService implements ApplicationRunner {
             live.sort(Comparator.comparing(CatalogSeed::name));
             return live;
         } catch (RuntimeException error) {
+            if (strict) throw new IllegalStateException("Haoee live catalog unavailable", error);
             log.warn("Haoee live catalog refresh failed; using reviewed manifest: {}", limit(error.getMessage(), 300));
             return manifest;
         }
@@ -239,6 +292,7 @@ public class ProviderModelCatalogService implements ApplicationRunner {
 
     @Transactional
     public List<ProviderModel> synchronizeNvidia(long channelId, String plainApiKey) {
+        if(!nvidiaEnabled)throw new IllegalStateException("NVIDIA 渠道已停用");
         JsonNode payload = webClient.get().uri("https://integrate.api.nvidia.com/v1/models")
                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + plainApiKey)
                 .retrieve().bodyToMono(JsonNode.class).timeout(Duration.ofSeconds(30)).block();
@@ -267,6 +321,7 @@ public class ProviderModelCatalogService implements ApplicationRunner {
     /** Scheduled refresh is fail-safe: a provider failure never retires the cached catalog. */
     @Scheduled(cron = "${nvidia.catalog-sync-cron:0 17 */6 * * *}")
     public void scheduledNvidiaSync() {
+        if(!nvidiaEnabled)return;
         Channel channel = managedChannel("nvidia");
         if (channel == null || !channel.isEnabled()) return;
         try {

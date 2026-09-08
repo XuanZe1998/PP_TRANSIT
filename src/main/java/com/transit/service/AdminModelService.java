@@ -19,6 +19,7 @@ import java.util.Objects;
 @Service
 @RequiredArgsConstructor
 public class AdminModelService {
+    @org.springframework.beans.factory.annotation.Autowired(required=false) private GatewayPricingService gatewayPrices;
 
     private final ModelMappingMapper modelMappingMapper;
     private final ChannelMapper channelMapper;
@@ -84,6 +85,7 @@ public class AdminModelService {
         normalize(mapping);
         modelMappingMapper.updateById(mapping);
         priceTierService.synchronize(mapping, request.getPriceTiers());
+        if(gatewayPrices!=null)gatewayPrices.protect(mapping.getId());
         return decorateAvailability(mapping);
     }
 

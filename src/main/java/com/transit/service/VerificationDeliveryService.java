@@ -5,6 +5,7 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.mail.SimpleMailMessage;
+import org.springframework.mail.MailException;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -50,7 +51,11 @@ public class VerificationDeliveryService {
         message.setTo(recipient);
         message.setSubject("平台验证码");
         message.setText("您的验证码是 " + code + "，5 分钟内有效。请勿转发。");
-        mailSenderProvider.getObject().send(message);
+        try {
+            mailSenderProvider.getObject().send(message);
+        } catch (MailException exception) {
+            throw unavailable("邮件发送失败");
+        }
     }
 
     public void sendSms(String recipient, String code) {

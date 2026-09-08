@@ -1,3 +1,4 @@
+import { rememberLists } from './listOrigin'
 import axios, { AxiosError, type InternalAxiosRequestConfig } from 'axios'
 import { clearAuth, getRefreshToken, getToken, getUser, setAuth, type AuthScope } from './auth'
 
@@ -54,6 +55,7 @@ export function getHttpErrorNotice(error: unknown, fallback = '请求失败，�
 }
 
 function authScope(url = ''): AuthScope | 'public' {
+  url=url.replace(/^\/api(?=\/)/, '')
   if (/^\/(public\/|ops\/catalog|auth\/(login|register|refresh|validate)|oauth\/|admin\/auth\/login)/.test(url)) return 'public'
   if (/^\/(admin\/|platform\/admin\/|service-orders\/admin\/|channels\/|tokens\/|mappings\/)/.test(url)) return 'admin'
   return 'user'
@@ -94,7 +96,10 @@ async function refreshUserAccessToken() {
   return refreshPromise
 }
 
-http.interceptors.response.use(response => response, async error => {
+http.interceptors.response.use(response => {
+  if (response.config.method === 'get' && !response.config.params?.listPage && response.config.url) rememberLists(response.data, {url:response.config.url,params:{...response.config.params}})
+  return response
+}, async error => {
   const config = error?.config as ScopedConfig | undefined
   const scope = config?._authScope || authScope(config?.url || '')
   if (error?.response?.status !== 401 || scope === 'public') return Promise.reject(error)

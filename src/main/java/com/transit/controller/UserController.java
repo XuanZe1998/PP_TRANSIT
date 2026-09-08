@@ -491,7 +491,7 @@ public class UserController {
                                                                    int page, int size) {
         if (page < 1 || page > 1_000_000) throw new org.springframework.web.server.ResponseStatusException(
                 org.springframework.http.HttpStatus.BAD_REQUEST, "page is out of range");
-        if (size < 1 || size > 100) throw new org.springframework.web.server.ResponseStatusException(
+        if (size < 1 || (size > 100 && size != 200)) throw new org.springframework.web.server.ResponseStatusException(
                 org.springframework.http.HttpStatus.BAD_REQUEST, "size must be between 1 and 100");
         List<Object> params = new ArrayList<>();
         params.add(userId);

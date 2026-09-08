@@ -13,7 +13,7 @@
 
     <el-tabs v-model="activeTab" @tab-change="syncTab">
       <el-tab-pane label="服务目录" name="catalog">
-    <el-table v-loading="loading" :data="services" empty-text="暂无服务">
+    <PagedTable v-loading="loading" :data="services" empty-text="暂无服务" list-id="AdminOtherServices-1">
       <el-table-column label="图片" width="116">
         <template #default="{ row }">
           <div class="admin-service-thumb">
@@ -54,7 +54,7 @@
           <el-button link type="danger" @click="remove(row)">删除</el-button>
         </template>
       </el-table-column>
-    </el-table>
+    </PagedTable>
       </el-tab-pane>
       <el-tab-pane label="服务订单" name="orders">
         <AdminServiceOrders />
@@ -74,6 +74,42 @@
         <el-form-item label="服务名称" required>
           <el-input v-model="form.name" maxlength="160" show-word-limit placeholder="例如：服务7" />
         </el-form-item>
+        <el-form-item label="交付来源" required>
+          <el-radio-group v-model="form.supplierType">
+            <el-radio-button value="LOCAL_INVENTORY">本站库存/人工</el-radio-button>
+            <el-radio-button value="DUJIAO_NEXT">cccrad.uk 自动采购</el-radio-button>
+          </el-radio-group>
+          <span class="form-tip form-tip-block">Dujiao-Next 模式只会在本站确认收款后创建上游采购单。</span>
+        </el-form-item>
+        <template v-if="form.supplierType === 'DUJIAO_NEXT'">
+          <el-alert
+            title="售价由本站设置；采购价从 cccrad.uk 钱包扣除。请先测试连接并确认上游余额。"
+            type="warning"
+            :closable="false"
+            show-icon
+          />
+          <el-form-item label="上游商品 / SKU" required>
+            <div class="supplier-picker">
+              <el-select
+                v-model="form.supplierSelection"
+                filterable
+                placeholder="加载并选择 cccrad.uk 商品"
+                :loading="supplierLoading"
+                @change="applySupplierSelection"
+              >
+                <el-option
+                  v-for="option in supplierOptions"
+                  :key="option.value"
+                  :label="option.label"
+                  :value="option.value"
+                />
+              </el-select>
+              <el-button :loading="supplierLoading" @click="loadSupplierProducts">从上游刷新</el-button>
+              <el-button :loading="supplierTesting" @click="testSupplier">测试连接</el-button>
+            </div>
+            <span class="form-tip">Product ID: {{ form.supplierProductId || '-' }}；SKU ID: {{ form.supplierSkuId || '-' }}</span>
+          </el-form-item>
+        </template>
         <el-form-item label="服务介绍">
           <el-input v-model="form.description" type="textarea" :rows="4" maxlength="1000" show-word-limit placeholder="填写服务内容或说明" />
         </el-form-item>
@@ -147,7 +183,7 @@
           <el-form-item label="购买提示">
             <el-input v-model="form.purchasePrompt" type="textarea" :rows="2" maxlength="1000" placeholder="例如：付款后在订单详情复制卡密，再前往兑换网站使用" />
           </el-form-item>
-          <el-form-item label="初始卡密库存">
+          <el-form-item v-if="form.supplierType === 'LOCAL_INVENTORY'" label="初始卡密库存">
             <el-input
               v-model="form.inventoryText"
               type="textarea"
@@ -176,6 +212,7 @@
 </template>
 
 <script setup lang="ts">
+import PagedTable from '@/components/PagedTable.vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -202,7 +239,12 @@ type OtherService = {
   redemptionConfigured?: boolean
   maxPurchaseQuantity?: number
   purchasePrompt?: string
+  supplierType?: 'LOCAL_INVENTORY' | 'DUJIAO_NEXT'
+  supplierProductId?: number
+  supplierSkuId?: number
 }
+
+type SupplierOption = { value: string; label: string; productId: number; skuId: number }
 
 const route = useRoute()
 const router = useRouter()
@@ -210,6 +252,9 @@ const services = ref<OtherService[]>([])
 const loading = ref(false)
 const saving = ref(false)
 const uploadingImage = ref(false)
+const supplierLoading = ref(false)
+const supplierTesting = ref(false)
+const supplierOptions = ref<SupplierOption[]>([])
 const imageFileInput = ref<HTMLInputElement | null>(null)
 const dialogVisible = ref(false)
 const allowedTabs = ['catalog', 'orders']
@@ -232,6 +277,10 @@ const form = reactive({
   redemptionConfigured: false,
   maxPurchaseQuantity: 1,
   purchasePrompt: '',
+  supplierType: 'LOCAL_INVENTORY' as 'LOCAL_INVENTORY' | 'DUJIAO_NEXT',
+  supplierProductId: null as number | null,
+  supplierSkuId: null as number | null,
+  supplierSelection: '',
   inventoryText: ''
 })
 const recognizedInventoryItems = computed(() => Array.from(new Set(
@@ -276,6 +325,10 @@ function resetForm() {
   form.redemptionConfigured = false
   form.maxPurchaseQuantity = 1
   form.purchasePrompt = ''
+  form.supplierType = 'LOCAL_INVENTORY'
+  form.supplierProductId = null
+  form.supplierSkuId = null
+  form.supplierSelection = ''
   form.inventoryText = ''
 }
 
@@ -309,6 +362,11 @@ async function openEdit(service: OtherService) {
   form.redemptionConfigured = service.redemptionConfigured === true
   form.maxPurchaseQuantity = service.maxPurchaseQuantity || 1
   form.purchasePrompt = service.purchasePrompt || ''
+  form.supplierType = service.supplierType || 'LOCAL_INVENTORY'
+  form.supplierProductId = service.supplierProductId || null
+  form.supplierSkuId = service.supplierSkuId || null
+  form.supplierSelection = form.supplierProductId && form.supplierSkuId
+    ? `${form.supplierProductId}:${form.supplierSkuId}` : ''
   form.inventoryText = ''
   dialogVisible.value = true
 }
@@ -360,6 +418,10 @@ async function save() {
     ElMessage.warning('请填写卡密兑换网站')
     return
   }
+  if (form.supplierType === 'DUJIAO_NEXT' && (!form.supplierProductId || !form.supplierSkuId)) {
+    ElMessage.warning('请先选择 cccrad.uk 上游商品和 SKU')
+    return
+  }
   saving.value = true
   const payload = {
     name: form.name.trim(),
@@ -373,7 +435,10 @@ async function save() {
     serviceFeeCents: Math.round((form.serviceFee || 0) * 100),
     purchaseEnabled: form.purchaseEnabled,
     productType: form.productType,
-    fulfillmentMode: form.productType === 'CARD_KEY' ? 'AUTOMATIC_DELIVERY' : 'MANUAL_PROCESSING',
+    fulfillmentMode: form.productType === 'CARD_KEY' || form.supplierType === 'DUJIAO_NEXT' ? 'AUTOMATIC_DELIVERY' : 'MANUAL_PROCESSING',
+    supplierType: form.supplierType,
+    supplierProductId: form.supplierType === 'DUJIAO_NEXT' ? form.supplierProductId : undefined,
+    supplierSkuId: form.supplierType === 'DUJIAO_NEXT' ? form.supplierSkuId : undefined,
     redemptionUrl: form.redemptionUrl.trim() || undefined,
     maxPurchaseQuantity: form.maxPurchaseQuantity,
     purchasePrompt: form.purchasePrompt.trim()
@@ -387,7 +452,7 @@ async function save() {
       const response = await http.post<OtherService>('/api/admin/api/other-services', payload)
       savedService = response.data
     }
-    if (form.productType === 'CARD_KEY' && recognizedInventoryItems.value.length > 0) {
+    if (form.productType === 'CARD_KEY' && form.supplierType === 'LOCAL_INVENTORY' && recognizedInventoryItems.value.length > 0) {
       try {
         const response = await http.post<{ imported: number }>(
           `/api/admin/api/other-services/${savedService.id}/inventory/import`,
@@ -410,6 +475,61 @@ async function save() {
     ElMessage.error(getHttpErrorMessage(error, '保存失败'))
   } finally {
     saving.value = false
+  }
+}
+
+function localizedText(value: unknown) {
+  if (typeof value === 'string') return value
+  if (!value || typeof value !== 'object') return ''
+  const record = value as Record<string, unknown>
+  return String(record['zh-CN'] || record['zh'] || record['en-US'] || record['en'] || Object.values(record)[0] || '')
+}
+
+async function loadSupplierProducts() {
+  supplierLoading.value = true
+  try {
+    const response = await http.get('/api/admin/api/dujiao-next/products', { params: { page: 1, page_size: 100 } })
+    const items = Array.isArray(response.data?.items) ? response.data.items : []
+    supplierOptions.value = items.flatMap((product: any) => (Array.isArray(product.skus) ? product.skus : [])
+      .filter((sku: any) => sku?.is_active !== false)
+      .map((sku: any) => ({
+        value: `${product.id}:${sku.id}`,
+        productId: Number(product.id),
+        skuId: Number(sku.id),
+        label: `${localizedText(product.title) || `商品 ${product.id}`} / ${sku.sku_code || `SKU ${sku.id}`} · ${sku.price_amount || product.price_amount || '-'} · 库存 ${sku.stock_quantity === -1 ? '∞' : (sku.stock_quantity ?? '-')}`
+      })))
+    if (form.supplierSelection && !supplierOptions.value.some(option => option.value === form.supplierSelection)) {
+      supplierOptions.value.unshift({
+        value: form.supplierSelection,
+        productId: Number(form.supplierProductId),
+        skuId: Number(form.supplierSkuId),
+        label: `当前映射 Product ${form.supplierProductId} / SKU ${form.supplierSkuId}`
+      })
+    }
+    ElMessage.success(`已加载 ${supplierOptions.value.length} 个可用 SKU`)
+  } catch (error: unknown) {
+    ElMessage.error(getHttpErrorMessage(error, '上游商品加载失败'))
+  } finally {
+    supplierLoading.value = false
+  }
+}
+
+function applySupplierSelection(value: string) {
+  const option = supplierOptions.value.find(item => item.value === value)
+  if (!option) return
+  form.supplierProductId = option.productId
+  form.supplierSkuId = option.skuId
+}
+
+async function testSupplier() {
+  supplierTesting.value = true
+  try {
+    const response = await http.post('/api/admin/api/dujiao-next/ping')
+    ElMessage.success(`连接成功：${response.data?.site_name || 'Dujiao-Next'}，上游余额 ${response.data?.balance ?? '-'} ${response.data?.currency || ''}`)
+  } catch (error: unknown) {
+    ElMessage.error(getHttpErrorMessage(error, 'Dujiao-Next 连接测试失败'))
+  } finally {
+    supplierTesting.value = false
   }
 }
 
@@ -457,6 +577,17 @@ onMounted(load)
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+.supplier-picker {
+  display: flex;
+  width: 100%;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.supplier-picker .el-select {
+  flex: 1 1 360px;
 }
 
 .admin-service-thumb {

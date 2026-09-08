@@ -154,6 +154,13 @@ public class ModelDiscoveryService {
         return result;
     }
 
+    /** Preview an unsaved compatible channel without persisting its credentials. */
+    public List<String> previewCompatibleModels(String baseUrl, String apiKey) {
+        channelUrlPolicy.validate(baseUrl);
+        return fetchModels(Channel.builder().type("openai-compatible")
+                .baseUrl(baseUrl).apiKey(apiKey).build());
+    }
+
     private List<String> fetchModels(Channel channel) {
         String type = normalizedType(channel);
         if (isHaoee(channel, type)) {

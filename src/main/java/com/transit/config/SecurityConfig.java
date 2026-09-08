@@ -51,6 +51,7 @@ public class SecurityConfig {
                         .requestMatchers("/admin/auth/login").permitAll()
                         .requestMatchers("/webhooks/vmcard/**").permitAll()
                         .requestMatchers("/webhooks/anyipay").permitAll()
+                        .requestMatchers("/api/v1/upstream/callback").permitAll()
                         .requestMatchers("/public/**", "/ops/catalog", "/platform/user/docs",
                                 "/creative/catalog", "/creative/templates", "/creative/auto-movie/catalog",
                                 "/public/creative-assets/**").permitAll()

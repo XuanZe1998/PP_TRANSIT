@@ -51,7 +51,7 @@ public class AdminUserService {
                 LEFT JOIN organization_members om ON om.organization_id=o.id AND om.user_id=u.id
                 LEFT JOIN wallet_accounts wa ON wa.organization_id=o.id AND wa.user_id=u.id AND wa.status='ACTIVE'
                 ORDER BY u.created_at DESC
-                LIMIT 500
+
                 """);
         rows.forEach(row -> {
             String revealed = personalDataCrypto.decrypt((String) row.remove("last_ip_encrypted"));

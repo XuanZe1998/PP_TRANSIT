@@ -22,7 +22,7 @@
           <h2>佣金操作</h2><p>消费佣金冻结 {{ summary.feature.freezeDays }} 天；提现最低 {{ money(summary.feature.minimumWithdrawal) }}。</p>
           <el-form inline><el-form-item label="金额（内部金额单位）"><el-input-number v-model="amount" :min="1" /></el-form-item><el-form-item><el-button @click="transfer">转入平台余额</el-button><el-button type="primary" @click="withdraw">申请人工提现</el-button></el-form-item></el-form>
         </section>
-        <section class="agent-card"><h2>提现记录</h2><el-table :data="summary.withdrawals || []"><el-table-column prop="request_no" label="单号" min-width="190" /><el-table-column prop="amount" label="金额"><template #default="scope">{{ money(scope.row.amount) }}</template></el-table-column><el-table-column prop="status" label="状态" /><el-table-column prop="created_at" label="申请时间" min-width="170" /></el-table></section>
+        <section class="agent-card"><h2>提现记录</h2><PagedTable :data="summary.withdrawals || []" list-id="AgentConsole-1"><el-table-column prop="request_no" label="单号" min-width="190" /><el-table-column prop="amount" label="金额"><template #default="scope">{{ money(scope.row.amount) }}</template></el-table-column><el-table-column prop="status" label="状态" /><el-table-column prop="created_at" label="申请时间" min-width="170" /></PagedTable></section>
       </template>
       <section v-else class="agent-card application-card"><h1>成为 Linknux 代理伙伴</h1><p>按客户真实消费毛利结算，不对充值重复计佣。佣金账本全程幂等、可审计。</p><el-form label-position="top"><el-form-item label="给受邀客户的返利"><el-select v-model="rebateBps"><el-option label="不返利" :value="0"/><el-option label="1%" :value="100"/><el-option label="2%" :value="200"/></el-select></el-form-item><el-button type="primary" :disabled="!summary.feature?.enabled" @click="apply">提交申请</el-button></el-form></section>
     </section>
@@ -30,6 +30,7 @@
 </template>
 
 <script setup lang="ts">
+import PagedTable from '@/components/PagedTable.vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'

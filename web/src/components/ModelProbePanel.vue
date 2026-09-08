@@ -39,7 +39,7 @@
       </div>
     </el-form>
 
-    <el-table v-loading="loadingList" :data="tasks" class="probe-table" empty-text="暂无鉴别任务">
+    <PagedTable v-loading="loadingList" :data="tasks" class="probe-table" empty-text="暂无鉴别任务" list-id="ModelProbePanel-1" pagination="external">
       <el-table-column prop="id" label="ID" width="80" />
       <el-table-column label="状态" width="110">
         <template #default="{ row }">
@@ -67,10 +67,10 @@
           </el-button>
         </template>
       </el-table-column>
-    </el-table>
+    </PagedTable>
 
-    <el-pagination v-if="total > pageSize" class="probe-pagination" background layout="prev, pager, next"
-      :total="total" :page-size="pageSize" :current-page="page" @current-change="changePage" />
+    <SelectablePagination v-if="total" class="probe-pagination" background layout="prev, pager, next"
+      :total="total" v-model:page-size="pageSize" :current-page="page" @current-change="changePage" @size-change="changePage(1)"  list-id="ModelProbePanel-1"/>
 
     <el-dialog v-model="detailVisible" :title="detailTitle" width="820px" class="probe-detail-dialog">
       <el-descriptions v-if="detail" :column="2" border size="small" class="probe-desc">
@@ -103,6 +103,8 @@
 </template>
 
 <script setup lang="ts">
+import SelectablePagination from '@/components/SelectablePagination.vue'
+import PagedTable from '@/components/PagedTable.vue'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { MagicStick, Refresh } from '@element-plus/icons-vue'
@@ -119,7 +121,7 @@ const loadingList = ref(false)
 const tasks = ref<ProbeTask[]>([])
 const total = ref(0)
 const page = ref(1)
-const pageSize = 20
+const pageSize = ref(20)
 
 const form = ref({ baseUrl: '', apiKey: '', modelId: '', claimedModel: '', includeOptional: false })
 const canSubmit = computed(() => !!(form.value.baseUrl && form.value.apiKey && form.value.modelId))
@@ -158,7 +160,7 @@ async function submit() {
 async function loadList() {
   loadingList.value = true
   try {
-    const { data } = await http.get(props.endpoint, { params: { page: page.value, size: pageSize } })
+    const { data } = await http.get(props.endpoint, { params: { page: page.value, size: pageSize.value } })
     tasks.value = data?.items || []
     total.value = Number(data?.total || 0)
   } catch (error) {

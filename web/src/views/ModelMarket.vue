@@ -101,8 +101,8 @@
         <div v-else class="market-empty"><el-empty description="没有找到匹配模型"><el-button @click="clearFilters">清空筛选</el-button></el-empty></div>
 
         <div v-if="total" class="market-pagination">
-          <el-pagination v-model:current-page="page" v-model:page-size="pageSize" :page-sizes="[10, 20, 50]" :total="total"
-            layout="total, sizes, prev, pager, next, jumper" background aria-label="模型列表分页" @current-change="scrollToResults" @size-change="handlePageSizeChange" />
+          <SelectablePagination v-model:current-page="page" v-model:page-size="pageSize" :page-sizes="[10, 20, 50, 100, 200]" :total="total"
+            layout="total, sizes, prev, pager, next, jumper" background aria-label="模型列表分页" @current-change="scrollToResults" @size-change="handlePageSizeChange"  list-id="ModelMarket-1"/>
         </div>
       </div>
     </div>
@@ -115,6 +115,7 @@
 </template>
 
 <script setup lang="ts">
+import SelectablePagination from '@/components/SelectablePagination.vue'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
@@ -137,7 +138,7 @@ const filterDefinitions: Array<{ key: FilterKey; title: string }> = [
 
 const router = useRouter(); const route = useRoute()
 const loading = ref(false); const error = ref(''); const models = ref<PublicModelOffer[]>([]); const facets = ref<ModelFacets>({})
-const total = ref(0); const page = ref(1); const pageSize = ref(10); const filtersOpen = ref(false); const resultsElement = ref<HTMLElement | null>(null)
+const total = ref(0); const page = ref(1); const pageSize = ref(20); const filtersOpen = ref(false); const resultsElement = ref<HTMLElement | null>(null)
 const callVisible = ref(false); const callTarget = ref<PublicModelOffer | null>(null); const compareVisible = ref(false); const compareTarget = ref<PublicModelOffer | null>(null)
 const customerRebateBps = ref(0); let timer: ReturnType<typeof setTimeout> | undefined; let requestVersion = 0; let hydrating = true
 const filters = reactive<FilterState>({ query: '', sort: 'priority', routes: [], publishers: [], categories: [], capabilities: [], inputModalities: [], outputModalities: [], protocols: [], pricingUnits: [], plans: [], priceStatuses: [] })
@@ -180,7 +181,7 @@ function openComparison(model: PublicModelOffer) { compareTarget.value = model; 
 async function fetchRebate() { if (!getToken()) return; try { customerRebateBps.value = Number((await http.get('/api/user/agent')).data?.customerBinding?.customer_rebate_bps || 0) } catch { customerRebateBps.value = 0 } }
 
 function syncUrl() { const query: Record<string, string> = {}; if (filters.query) query.query = filters.query; if (filters.sort !== 'priority') query.sort = filters.sort; for (const group of filterDefinitions) if (filters[group.key].length) query[group.key] = filters[group.key].join(','); if (page.value > 1) query.page = String(page.value); if (pageSize.value !== 10) query.size = String(pageSize.value); void router.replace({ query }) }
-function hydrateFromUrl() { filters.query = String(route.query.query || ''); filters.sort = String(route.query.sort || 'priority'); page.value = Math.max(1, Number(route.query.page || 1)); pageSize.value = [10, 20, 50].includes(Number(route.query.size)) ? Number(route.query.size) : 10; for (const group of filterDefinitions) filters[group.key] = String(route.query[group.key] || '').split(',').filter(Boolean); hydrating = false }
+function hydrateFromUrl() { filters.query = String(route.query.query || ''); filters.sort = String(route.query.sort || 'priority'); page.value = Math.max(1, Number(route.query.page || 1)); pageSize.value = [10, 20, 50, 100, 200].includes(Number(route.query.size)) ? Number(route.query.size) : 20; for (const group of filterDefinitions) filters[group.key] = String(route.query[group.key] || '').split(',').filter(Boolean); hydrating = false }
 
 const icons: Record<string, string> = { nvidia: '/model-icons/nvidia.svg', meta: '/model-icons/meta.svg', google: '/model-icons/google.svg', mistral: '/model-icons/mistral.svg', alibaba: '/model-icons/qwen.svg', deepseek: '/model-icons/deepseek.svg', openai: '/openai-icon.svg', anthropic: '/model-icons/anthropic.svg', xai: '/model-icons/xai.svg', minimax: '/model-icons/minimax.jpg', stepfun: '/model-icons/stepfun.jpg', zai: '/model-icons/z-ai.jpg' }
 function publisherIcon(code?: string | null) { return icons[String(code || '').toLowerCase()] || '' }

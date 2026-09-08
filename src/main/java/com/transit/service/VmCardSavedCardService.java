@@ -121,7 +121,7 @@ public class VmCardSavedCardService {
     public List<Map<String, Object>> recentCards() {
         return cardMapper.selectList(new LambdaQueryWrapper<VmCardSavedCard>()
                         .orderByDesc(VmCardSavedCard::getCreatedAt)
-                        .last("LIMIT 100"))
+                        )
                 .stream()
                 .map(this::toView)
                 .toList();
