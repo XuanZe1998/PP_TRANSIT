@@ -16,6 +16,7 @@ public class GatewaySyncJobs {
  private final TransactionTemplate tx;
  private final NewApiCatalogManagementService catalogs;
  private final GatewaySiteService sites;
+ @org.springframework.beans.factory.annotation.Autowired private GatewayPublicationService publications;
  private final ExecutorService executor=Executors.newFixedThreadPool(4);
  private final Set<String> dispatched=ConcurrentHashMap.newKeySet();
  @jakarta.annotation.PreDestroy public void close(){executor.shutdown();}
@@ -59,6 +60,7 @@ public class GatewaySyncJobs {
     try {
      GatewaySyncProgress.bind(phase->jdbc.update("UPDATE gateway_sync_jobs SET phase=? WHERE id=?",phase,id));
      var result=groupJob?catalogs.synchronizeGroups(((Number)row.get("site_id")).longValue()):catalogs.synchronize(((Number)row.get("channel_id")).longValue(),true);
+     if(!groupJob)publications.afterSync(((Number)row.get("channel_id")).longValue());
      String state=Objects.toString(result.get("status"),"SUCCESS");
      finish(id,state,new Failure(null,null,Objects.toString(result.get("message"),"同步完成"),state.equals("PARTIAL")?"查看分组待配置项":""));
     } catch(Exception error){finish(id,"ERROR",classify(error));}

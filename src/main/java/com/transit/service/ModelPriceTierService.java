@@ -84,13 +84,21 @@ public class ModelPriceTierService {
     }
 
     public ModelPriceTier select(ModelMapping mapping, int contextTokens) {
+        return select(mapping, contextTokens, mapping.getBillingServiceTier());
+    }
+
+    public ModelPriceTier select(ModelMapping mapping, int contextTokens, String serviceTier) {
         List<ModelPriceTier> tiers = mapping.getPriceTiers();
         if (tiers == null || tiers.isEmpty()) {
             tiers = tiersFor(mapping.getId());
             mapping.setPriceTiers(tiers);
         }
         int context = Math.max(0, contextTokens);
-        List<ModelPriceTier> availableTiers = tiers;
+        boolean hasServiceTiers = tiers.stream().anyMatch(t -> "priority".equals(t.getServiceTier()));
+        String branch = hasServiceTiers && "priority".equals(serviceTier) ? "priority" : "base";
+        List<ModelPriceTier> availableTiers = tiers.stream()
+                .filter(t -> branch.equals(t.getServiceTier() == null ? "base" : t.getServiceTier())).toList();
+        if (hasServiceTiers && availableTiers.isEmpty()) throw badRequest("服务档位价格不完整，请重新同步报价");
         return availableTiers.stream()
                 .sorted(Comparator.comparingInt(ModelPriceTier::getSortOrder))
                 .filter(tier -> tier.getMaxContextTokens() == null || context <= tier.getMaxContextTokens())
@@ -109,6 +117,27 @@ public class ModelPriceTierService {
     }
 
     private List<ModelPriceTier> normalize(Long mappingId, List<ModelPriceTier> source) {
+        Map<String, List<ModelPriceTier>> branches = new LinkedHashMap<>();
+        branches.put("base", new ArrayList<>());
+        for (ModelPriceTier tier : source) {
+            if (tier == null) throw badRequest("价格挡位不能为空");
+            String branch = tier.getServiceTier() == null ? "base" : tier.getServiceTier();
+            if (!Set.of("base", "priority").contains(branch)) throw badRequest("未知服务档位");
+            branches.computeIfAbsent(branch, key -> new ArrayList<>()).add(tier);
+        }
+        if (branches.get("base").isEmpty()) throw badRequest("必须配置基础服务档位");
+        List<ModelPriceTier> normalized = new ArrayList<>();
+        branches.forEach((branch, items) -> {
+            for (ModelPriceTier tier : normalizeBranch(mappingId, items)) {
+                tier.setServiceTier(branch);
+                tier.setSortOrder(normalized.size());
+                normalized.add(tier);
+            }
+        });
+        return normalized;
+    }
+
+    private List<ModelPriceTier> normalizeBranch(Long mappingId, List<ModelPriceTier> source) {
         List<ModelPriceTier> result = new ArrayList<>();
         Integer previousMax = null;
         for (int index = 0; index < source.size(); index++) {

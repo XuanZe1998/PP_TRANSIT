@@ -244,6 +244,7 @@ public class TransitService {
             return Mono.error(new ResponseStatusException(HttpStatus.NOT_FOUND, "No available channel for model: " + publicModel));
         }
         priceTierService.attach(mappings);
+        mappings.forEach(mapping -> mapping.setBillingServiceTier(request.getServiceTier()));
 
         List<Route> routes = routePlanner.plan(mappings.stream()
                         .map(candidate -> new ChannelRoutePlanner.Candidate(candidate,

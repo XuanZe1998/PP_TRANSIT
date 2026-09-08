@@ -25,7 +25,14 @@ public class NewApiPricing {
     public record Price(String model, String status, String message, String unit,
                         BigDecimal input, BigDecimal output, BigDecimal cacheRead, BigDecimal cacheWrite,
                         BigDecimal perRequest, BigDecimal saleInput, BigDecimal saleOutput,
-                        BigDecimal saleCacheRead, BigDecimal saleCacheWrite, BigDecimal salePerRequest) {
+                        BigDecimal saleCacheRead, BigDecimal saleCacheWrite, BigDecimal salePerRequest, Price priorityPrice) {
+        public Price(String model, String status, String message, String unit,
+                     BigDecimal input, BigDecimal output, BigDecimal cacheRead, BigDecimal cacheWrite,
+                     BigDecimal perRequest, BigDecimal saleInput, BigDecimal saleOutput,
+                     BigDecimal saleCacheRead, BigDecimal saleCacheWrite, BigDecimal salePerRequest) {
+            this(model, status, message, unit, input, output, cacheRead, cacheWrite, perRequest,
+                    saleInput, saleOutput, saleCacheRead, saleCacheWrite, salePerRequest, null);
+        }
         public boolean supported() { return "READY".equals(status); }
         public boolean quoted() { return supported() || "TIERED".equals(status); }
     }
@@ -102,7 +109,13 @@ public class NewApiPricing {
         if (!price.unit().equals(mapping.getPricingUnit())) mapping.setEnabled(false);
         mapping.setPricingUnit(price.unit());
         mapping.setBillingEnabled(true); mapping.setBillingMode("PAID"); mapping.setPricingStatus("VERIFIED");
-        ModelPriceTier tier = ModelPriceTier.builder().tierName("上游标准计费").sortOrder(0)
+        mapping.setPriceTiers(price.priorityPrice() == null ? List.of(tier(price, group, "base", 0))
+                : List.of(tier(price, group, "base", 0), tier(price.priorityPrice(), group, "priority", 1)));
+    }
+
+    private ModelPriceTier tier(Price price, String group, String serviceTier, int order) {
+        return ModelPriceTier.builder().tierName("priority".equals(serviceTier) ? "优先服务 priority" : "标准服务 base")
+                .serviceTier(serviceTier).sortOrder(order)
                 .officialGroupName("上游分组报价（非模型厂商官网价）")
                 .officialInputPrice(price.input()).officialOutputPrice(price.output())
                 .officialCacheReadPrice(price.cacheRead()).officialCacheWritePrice(price.cacheWrite())
@@ -116,7 +129,6 @@ public class NewApiPricing {
                 .saleCacheWrite1hPrice(price.saleCacheWrite().multiply(new BigDecimal("1.6")))
                 .salePerRequestPrice(price.salePerRequest()).salePriceUnit("M").salePriceSuffix("USD / 1M Token")
                 .build();
-        mapping.setPriceTiers(List.of(tier));
     }
 
     private void applyAmounts(ModelMapping mapping, Price price) {
@@ -147,9 +159,15 @@ public class NewApiPricing {
             BigDecimal saleWrite = money(write.multiply(markup));
             String message = "已读取上游当前分层报价：base " + quote(base, factor)
                     + "；priority " + quote(priority, factor)
-                    + "；USD/百万 Token。需支持 service_tier 分层计费后才可发布";
-            return new Price(model, "TIERED", message, "TOKEN", input, output, read, write, ZERO,
-                    saleInput, saleOutput, saleRead, saleWrite, ZERO);
+                    + "；USD/百万 Token，已支持按请求 service_tier 自动计费";
+            BigDecimal pi = money(priority.get("p").multiply(factor));
+            BigDecimal po = money(priority.get("c").multiply(factor));
+            BigDecimal pr = money(priority.get("cr").multiply(factor));
+            BigDecimal pw = money(priority.get("cc").multiply(factor));
+            Price priorityPrice = new Price(model, "READY", message, "TOKEN", pi, po, pr, pw, ZERO,
+                    money(pi.multiply(markup)), money(po.multiply(markup)), money(pr.multiply(markup)), money(pw.multiply(markup)), ZERO);
+            return new Price(model, "READY", message, "TOKEN", input, output, read, write, ZERO,
+                    saleInput, saleOutput, saleRead, saleWrite, ZERO, priorityPrice);
         } catch (IllegalArgumentException error) {
             return pending(model, "上游动态价格格式未识别，未执行表达式");
         }

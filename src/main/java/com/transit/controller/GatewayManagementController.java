@@ -16,6 +16,7 @@ public class GatewayManagementController {
  private final GatewayPageService pages;
  private final GatewaySyncJobs jobs;
  private final GatewayPricingService pricing;
+ private final GatewayPublicationService publications;
  private final JdbcTemplate jdbc;
  private final TransactionTemplate tx;
  private final AdminAuditService audit;
@@ -165,12 +166,14 @@ public class GatewayManagementController {
   args.add("%"+query+"%");String stateSql=switch(state){case "pending-price"->" AND (mm.pricing_status<>'VERIFIED' OR mm.pricing_status IS NULL)";case "published"->" AND mm.enabled=TRUE";case "pending-publish"->" AND mm.enabled=FALSE AND mm.pricing_status='VERIFIED'";case "disabled"->" AND mm.enabled=FALSE";default->"";};
   return pages.query("""
    SELECT mm.*,s.name site_name,COALESCE(n.upstream_group,g.group_name,c.group_name) group_name,sc.site_id,
-    CASE WHEN o.model_mapping_id IS NOT NULL THEN TRUE ELSE FALSE END manual_price
+    CASE WHEN o.model_mapping_id IS NOT NULL THEN TRUE ELSE FALSE END manual_price,
+    pr.status publication_status,pr.reason publication_reason,pr.next_attempt_at publication_next_attempt_at
    FROM model_mappings mm JOIN channels c ON c.id=mm.channel_id
    JOIN upstream_site_channels sc ON sc.channel_id=c.id JOIN upstream_sites s ON s.id=sc.site_id
    LEFT JOIN new_api_connections n ON n.channel_id=c.id
    LEFT JOIN aiapibank_provider_groups g ON g.channel_id=c.id
-   LEFT JOIN gateway_price_overrides o ON o.model_mapping_id=mm.id WHERE 1=1
+   LEFT JOIN gateway_price_overrides o ON o.model_mapping_id=mm.id
+   LEFT JOIN gateway_publication_requests pr ON pr.model_mapping_id=mm.id WHERE 1=1
    """+where+" AND mm.public_model_name LIKE ?"+stateSql+" ORDER BY mm.id",args,page,size,all);
  }
  public record ImportItem(long channelId,String model){}
@@ -202,17 +205,10 @@ public class GatewayManagementController {
  @PostMapping("/models/publish") public List<Map<String,Object>> publish(@RequestHeader(HttpHeaders.AUTHORIZATION)String auth,@RequestBody Publish body){
   admin(auth);if(body.ids()==null||body.ids().size()>200)throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"每批最多200个模型");
   List<Map<String,Object>> results=new ArrayList<>();for(long id:new LinkedHashSet<>(body.ids())) {
-   String reason=tx.execute(status->{var rows=jdbc.queryForList("SELECT m.*,c.enabled channel_enabled,c.health_status,c.api_key FROM model_mappings m JOIN channels c ON c.id=m.channel_id WHERE m.id=? FOR UPDATE",id);
-    if(rows.isEmpty())return "模型不存在";var m=rows.get(0);
-    if(m.get("api_key")==null||m.get("api_key").toString().isBlank())return "缺少分组 Key";
-    if(!truth(m.get("channel_enabled")))return "分组未启用";
-    if(!Set.of("HEALTHY","DEGRADED").contains(Objects.toString(m.get("health_status"),"")))return "分组尚未通过可用性验证";
-    if(!"VERIFIED".equals(m.get("pricing_status"))||!truth(m.get("billing_enabled")))return "采购价或销售价尚未核验";
-    jdbc.update("UPDATE model_mappings SET enabled=TRUE WHERE id=?",id);return "";
-   });results.add(Map.of("id",id,"success",reason.isBlank(),"reason",reason));
+   results.add(publications.request(id));
   }audit.record(users.requireAdmin(auth),"BATCH_PUBLISH_MODELS","MODEL",null,null,results,null);return results;
  }
- private boolean truth(Object value){return Boolean.TRUE.equals(value)||(value instanceof Number n&&n.intValue()!=0);}
+ @DeleteMapping("/models/{id}/publication") public void cancelPublication(@RequestHeader(HttpHeaders.AUTHORIZATION)String auth,@PathVariable long id){admin(auth);publications.cancel(id);audit.record(users.requireAdmin(auth),"CANCEL_MODEL_PUBLICATION","MODEL",id,null,Map.of("cancelled",true),null);}
  @GetMapping("/pricing/rules")public GatewayPricingService.Rule configured(@RequestHeader(HttpHeaders.AUTHORIZATION)String auth,@RequestParam String scope,@RequestParam long scopeId){admin(auth);return pricing.configured(scope,scopeId);}
  @GetMapping("/models/{id}/configuration")public com.transit.model.ModelMapping configuration(@RequestHeader(HttpHeaders.AUTHORIZATION)String auth,@PathVariable long id){admin(auth);var mapping=modelMapper.selectById(id);if(mapping==null)throw new ResponseStatusException(HttpStatus.NOT_FOUND,"模型不存在");modelTiers.attach(List.of(mapping));return mapping;}
  @PostMapping("/pricing/preview") public Map<String,Object> preview(@RequestHeader(HttpHeaders.AUTHORIZATION)String auth,@RequestBody GatewayPricingService.Rule body){admin(auth);return pricing.preview(body);}

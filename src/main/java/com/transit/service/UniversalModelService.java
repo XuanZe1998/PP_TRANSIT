@@ -533,7 +533,7 @@ public class UniversalModelService {
             return new PricingQuote(unit, quantity, salePrice, costPrice,
                     scaled(salePrice.multiply(quantity)), scaled(costPrice.multiply(quantity)));
         }
-        ModelPriceTier tier = modelPriceTierService == null ? null : modelPriceTierService.select(mapping, input);
+        ModelPriceTier tier = modelPriceTierService == null ? null : modelPriceTierService.select(mapping, input, request.path("service_tier").asText("base"));
         if (tier != null && aiApiBankPricingService != null) tier = aiApiBankPricingService.applyActivePeak(mapping, tier);
         int uncached = Math.max(0, input - cacheRead - cacheWrite);
         BigDecimal saleInput = tier == null ? nonNegative(mapping.getInputPricePerMillion()) : nonNegative(tier.getSaleInputPrice());

@@ -188,8 +188,9 @@ public class NewApiSyncService {
                         decimal(config, "sale_markup"), decimal(config, "unit_usd"));
                 pricing.apply(mapping, price, text(config, "base_url"), group);
                 mappings.updateById(mapping);
-                if (price.supported()) { tiers.synchronize(mapping, mapping.getPriceTiers()); if(gatewayPrices!=null)gatewayPrices.repriceAfterSync(mapping.getId()); updated++; }
+                if (price.supported()) { tiers.synchronize(mapping, mapping.getPriceTiers()); updated++; }
                 else pending++;
+                if(gatewayPrices!=null)gatewayPrices.repriceAfterSync(mapping.getId());
             }
             // Returning models stay disabled if an operator or prior removal disabled them.
         }
