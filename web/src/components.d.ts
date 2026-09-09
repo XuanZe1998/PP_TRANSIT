@@ -56,6 +56,7 @@ declare module 'vue' {
     ElRow: typeof import('element-plus/es')['ElRow']
     ElSelect: typeof import('element-plus/es')['ElSelect']
     ElSkeleton: typeof import('element-plus/es')['ElSkeleton']
+    ElSlider: typeof import('element-plus/es')['ElSlider']
     ElStep: typeof import('element-plus/es')['ElStep']
     ElSteps: typeof import('element-plus/es')['ElSteps']
     ElSubMenu: typeof import('element-plus/es')['ElSubMenu']
@@ -80,6 +81,7 @@ declare module 'vue' {
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     SelectablePagination: typeof import('./components/SelectablePagination.vue')['default']
+    TechBackdrop: typeof import('./components/TechBackdrop.vue')['default']
     UsageTimelineChart: typeof import('./components/UsageTimelineChart.vue')['default']
   }
   export interface GlobalDirectives {

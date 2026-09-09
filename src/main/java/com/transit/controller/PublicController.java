@@ -105,6 +105,11 @@ public class PublicController {
         return Mono.just(response);
     }
 
+    @GetMapping("/models/summary")
+    public Mono<Map<String, Long>> modelSummary() {
+        return Mono.just(publicModelMarketplaceService.summary(loadPublicModels()));
+    }
+
     @GetMapping("/models/facets")
     public Mono<Map<String, List<PublicModelFacetOption>>> modelFacets(
             @RequestParam(value = "query", required = false) String query,

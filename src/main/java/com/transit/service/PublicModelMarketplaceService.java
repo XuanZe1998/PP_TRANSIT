@@ -19,6 +19,13 @@ import java.util.function.Function;
 
 @Service
 public class PublicModelMarketplaceService {
+    public Map<String, Long> summary(List<PublicModel> models) {
+        long publishers = models.stream().map(model -> normalize(model.getPublisherCode()))
+                .filter(code -> !code.isBlank() && !code.equals("unknown") && !code.equals("multi"))
+                .distinct().count();
+        return Map.of("total", (long) models.size(), "publisherCount", publishers);
+    }
+
     public List<PublicModel> filter(List<PublicModel> models, Filters filters) {
         return filter(models, filters, null);
     }

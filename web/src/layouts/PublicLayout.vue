@@ -1,5 +1,5 @@
 <template>
-  <div class="public-site">
+  <div class="public-site" :class="{ 'home-theme': route.path === '/' }">
     <header class="site-nav">
       <div class="site-nav-inner">
         <button class="site-brand" @click="go('/')">
@@ -75,5 +75,30 @@ onBeforeUnmount(() => {
 .site-auth-button:focus-visible {
   border-color: #75acef;
   outline: none;
+}
+
+.home-theme .site-auth-button {
+  border-color: rgba(111, 145, 220, 0.46);
+  background: rgba(8, 16, 39, 0.58);
+  color: #e8f1ff;
+  box-shadow: inset 0 0 0 1px rgba(112, 157, 255, 0.04);
+}
+
+.home-theme .site-auth-button.primary {
+  border-color: rgba(79, 124, 255, 0.92);
+  background: linear-gradient(135deg, #2aa8ff, #4858ff);
+  color: #fff;
+  box-shadow: 0 10px 28px rgba(55, 103, 255, 0.28);
+}
+
+.home-theme .site-auth-button:hover,
+.home-theme .site-auth-button:focus-visible {
+  border-color: #39c7ff;
+  background: rgba(24, 43, 88, 0.72);
+}
+
+.home-theme .site-auth-button.primary:hover,
+.home-theme .site-auth-button.primary:focus-visible {
+  background: linear-gradient(135deg, #42c8ff, #5a64ff);
 }
 </style>
