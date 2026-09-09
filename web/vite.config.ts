@@ -34,10 +34,11 @@ export default defineConfig(({ mode, command }) => {
       rollupOptions: {
         output: {
           manualChunks(id) {
-            if (id.includes('node_modules/axios')) {
+            const moduleId = id.replace(/\\/g, '/')
+            if (moduleId.includes('/node_modules/axios/')) {
               return 'axios'
             }
-            if (id.includes('node_modules/vue') || id.includes('node_modules/vue-router')) {
+            if (/\/node_modules\/(?:vue|vue-router|@vue\/[^/]+)\//.test(moduleId)) {
               return 'vue'
             }
           }

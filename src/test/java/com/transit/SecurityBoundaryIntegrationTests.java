@@ -76,6 +76,7 @@ class SecurityBoundaryIntegrationTests {
     @ValueSource(strings = {
             "/public/models",
             "/public/models/facets",
+            "/public/models/summary",
             "/public/other-services",
             "/platform/user/docs",
             "/v1",

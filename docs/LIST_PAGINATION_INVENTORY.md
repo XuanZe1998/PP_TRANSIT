@@ -2,6 +2,8 @@
 
 默认20，可选10/20/50/100；全部仅限总数≤200，服务端校验。每个列表使用稳定标识记住选择；固定表单选项和导航无需分页。
 
+首页统计使用 `/public/models/summary`，仅返回完整公开模型目录的 `total` 和去重 `publisherCount`；不返回业务列表，不再下载前100条详情推算厂商数量。模型市场列表继续使用原分页接口。
+
 网关使用数据库 COUNT + LIMIT/OFFSET。旧集合接口保留兼容入口：listPage/listPath/listCurrent/listSize/listAll；该兼容层在授权后分页，仍会读取原集合。高容量旧接口后续应逐个下推到数据库，避免集合装载开销。前端派生的小数据集本地分页。
 
 网关自动发布状态、等待原因和下次重试时间随 `/admin/api/gateway/models` 同页返回，保持 COUNT + LIMIT/OFFSET 和相同筛选。批量处理结果沿用 `ModelGateway-4` 的 PagedTable，每批服务端最多200条。服务档位价格沿用 `gateway-model-price-tiers` 分页表格。

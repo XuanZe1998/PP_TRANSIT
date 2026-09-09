@@ -16,6 +16,22 @@ class PublicModelMarketplaceServiceTests {
     private final PublicModelMarketplaceService service = new PublicModelMarketplaceService();
 
     @Test
+    void summaryCountsTheWholeCatalogAndNormalizesPublishers() {
+        var models = new java.util.ArrayList<PublicModel>();
+        for (int index = 0; index < 205; index++) {
+            PublicModel model = new PublicModel();
+            model.setPublisherCode(index < 100 ? " OpenAI " : "openai");
+            models.add(model);
+        }
+        PublicModel other = new PublicModel();
+        other.setPublisherCode("anthropic");
+        models.add(other);
+        models.add(new PublicModel());
+        assertThat(service.summary(models)).containsEntry("total", 207L).containsEntry("publisherCount", 2L);
+        assertThat(service.summary(List.of())).containsEntry("total", 0L).containsEntry("publisherCount", 0L);
+    }
+
+    @Test
     void countsAndFiltersEachPublicUpstreamOfSharedModelsOnce() {
         PublicModel shared = model("claude", "claude", "multi-route", "anthropic", "language", "text", "TOKEN", "3");
         var ahh = new com.transit.dto.PublicUpstream("new-api-35", "ahh", "", "#2563eb");
