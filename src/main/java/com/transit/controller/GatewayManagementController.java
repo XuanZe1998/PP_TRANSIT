@@ -22,7 +22,6 @@ public class GatewayManagementController {
  private final AdminAuditService audit;
  private final AdminChannelService channelService;
  private final com.transit.mapper.ModelMappingMapper modelMapper;
- private final UpstreamDisplayMappingService displays;
  private void admin(String auth){users.requireAdmin(auth);}
  private final ChannelSecretService secrets;
  private final GatewayNativeOnboarding nativeOnboarding;
@@ -58,7 +57,10 @@ public class GatewayManagementController {
     COALESCE(j.status,x.sync_status,n.sync_status,u.sync_status,'PENDING') sync_status,
     COALESCE(j.message,x.last_message,n.last_message,u.last_message,'历史原因未记录') message,
     j.error_code,j.http_status,j.suggestion,j.phase,j.created_at,j.finished_at,
-    COALESCE(d.public_name,s.public_name,'平台智能路由') public_name,d.id display_mapping_id,d.public_code,d.badge_text,d.badge_color,
+    COALESCE(s.public_name,d.public_name,'平台智能路由') public_name,d.id display_mapping_id,
+    COALESCE(s.public_code,CONCAT('site-',s.id)) public_code,
+    COALESCE(s.badge_text,d.badge_text) badge_text,COALESCE(s.badge_color,d.badge_color) badge_color,
+    s.public_name site_public_name,s.public_code site_public_code,s.badge_text site_badge_text,s.badge_color site_badge_color,
     (SELECT COUNT(*) FROM model_mappings mm WHERE mm.channel_id=c.id) model_count
    FROM channels c JOIN upstream_site_channels sc ON sc.channel_id=c.id JOIN upstream_sites s ON s.id=sc.site_id
    LEFT JOIN new_api_connections n ON n.channel_id=c.id
@@ -87,8 +89,9 @@ public class GatewayManagementController {
     jdbc.update("UPDATE channels SET api_key=?,health_status='UNTESTED' WHERE id=?",secrets.encrypt(body.apiKey().trim()),id);
     if(sub2api){jdbc.update("UPDATE sub2api_connections SET sync_status='PENDING',last_message='凭据已更新，待重新读取 Key 可见目录' WHERE channel_id=?",id);jdbc.update("UPDATE sub2api_model_state SET missing_count=0 WHERE channel_id=?",id);}
    }
-   if(body.inheritDisplay())jdbc.update("DELETE FROM upstream_display_mappings WHERE channel_id=?",id);
-   else if(body.publicName()!=null&&!body.publicName().isBlank()) {var d=new com.transit.model.UpstreamDisplayMapping();d.setPublicCode(body.publicCode()==null||body.publicCode().isBlank()?"group-"+id:body.publicCode());d.setPublicName(body.publicName());d.setBadgeText(body.badgeText());d.setBadgeColor(body.badgeColor());displays.save(id,d);}
+   // Public route identity belongs to the site. Group settings only manage
+   // credentials, synchronization and availability.
+   jdbc.update("DELETE FROM upstream_display_mappings WHERE channel_id=?",id);
    if(bank) {
     if(newKey)jdbc.update("UPDATE aiapibank_provider_groups SET credential_status='VERIFYING',sync_status='PENDING' WHERE channel_id=?",id);
     if(newKey||jdbc.queryForObject("SELECT COUNT(*) FROM aiapibank_provider_groups g JOIN channels c ON c.id=g.channel_id WHERE c.id=? AND g.credential_status='READY' AND c.api_key IS NOT NULL AND c.api_key<>''",Integer.class,id)==0)

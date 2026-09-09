@@ -11,7 +11,6 @@ import java.util.*;
 @Service @RequiredArgsConstructor
 public class GatewaySiteService {
  private final JdbcTemplate jdbc;
- private final UpstreamDisplayMappingService displays;
  @EventListener(ApplicationReadyEvent.class)
  @Transactional
  public synchronized void reconcile() {
@@ -36,6 +35,7 @@ public class GatewaySiteService {
    String color=input.badgeColor()==null?"#2563eb":input.badgeColor();
    if(!color.matches("#[a-fA-F0-9]{6}"))throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"颜色格式不正确");
    jdbc.update("UPDATE upstream_sites SET public_code=?,public_name=?,badge_text=?,badge_color=? WHERE id=?",code,input.publicName(),input.badgeText(),color,site);
+   deleteRedundantGroupDisplays(site,input.publicName());
   }
  }
  @Transactional public void attach(long channel,long site) {
@@ -60,10 +60,13 @@ public class GatewaySiteService {
   String current=Objects.toString(rows.get(0).get("public_code"),"").trim();
   String code=current.isBlank()?"site-"+site:current;
   jdbc.update("UPDATE upstream_sites SET public_code=?,public_name=? WHERE id=?",code,name,site);
+  deleteRedundantGroupDisplays(site,name);
+ }
+ private void deleteRedundantGroupDisplays(long site,String publicName) {
   jdbc.update("""
    DELETE FROM upstream_display_mappings
    WHERE channel_id IN (SELECT channel_id FROM upstream_site_channels WHERE site_id=?)
      AND LOWER(TRIM(public_name))=LOWER(TRIM(?))
-   """,site,name);
+   """,site,publicName);
  }
 }
