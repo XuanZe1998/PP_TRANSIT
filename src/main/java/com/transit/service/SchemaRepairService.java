@@ -1643,10 +1643,14 @@ public class SchemaRepairService {
             long siteId = ((Number) candidate.get("site_id")).longValue();
             String publicName = String.valueOf(candidate.get("public_name")).trim();
             Map<String, Object> site = jdbcTemplate.queryForMap(
-                    "SELECT public_code,public_name FROM upstream_sites WHERE id=?", siteId);
+                    "SELECT adapter,public_code,public_name FROM upstream_sites WHERE id=?", siteId);
             String existingName = site.get("public_name") == null ? "" : site.get("public_name").toString().trim();
-            if (!existingName.isBlank() && !existingName.equalsIgnoreCase(publicName)) continue;
             String existingCode = site.get("public_code") == null ? "" : site.get("public_code").toString().trim();
+            String adapter = site.get("adapter") == null ? "" : site.get("adapter").toString().trim();
+            boolean importerDefault = "aiapibank".equalsIgnoreCase(adapter)
+                    && "AiAPIBank".equalsIgnoreCase(existingName)
+                    && (existingCode.isBlank() || "aiapibank".equalsIgnoreCase(existingCode));
+            if (!existingName.isBlank() && !existingName.equalsIgnoreCase(publicName) && !importerDefault) continue;
             jdbcTemplate.update("UPDATE upstream_sites SET public_code=?,public_name=? WHERE id=?",
                     existingCode.isBlank() ? "site-" + siteId : existingCode, publicName, siteId);
             consolidated += jdbcTemplate.update("""

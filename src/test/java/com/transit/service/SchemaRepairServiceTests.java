@@ -16,7 +16,7 @@ class SchemaRepairServiceTests {
         DriverManagerDataSource dataSource = new DriverManagerDataSource(
                 "jdbc:h2:mem:site_public_identity;MODE=MySQL;DB_CLOSE_DELAY=-1", "sa", "");
         JdbcTemplate jdbc = new JdbcTemplate(dataSource);
-        jdbc.execute("CREATE TABLE upstream_sites(id BIGINT PRIMARY KEY,public_code VARCHAR(80),public_name VARCHAR(120),badge_text VARCHAR(40),badge_color VARCHAR(16))");
+        jdbc.execute("CREATE TABLE upstream_sites(id BIGINT PRIMARY KEY,adapter VARCHAR(40),public_code VARCHAR(80),public_name VARCHAR(120),badge_text VARCHAR(40),badge_color VARCHAR(16))");
         jdbc.execute("CREATE TABLE upstream_site_channels(channel_id BIGINT PRIMARY KEY,site_id BIGINT NOT NULL)");
         jdbc.execute("CREATE TABLE upstream_display_mappings(channel_id BIGINT,public_code VARCHAR(80),public_name VARCHAR(120),badge_text VARCHAR(40),badge_color VARCHAR(16),enabled BOOLEAN)");
         jdbc.update("INSERT INTO upstream_sites(id) VALUES (9)");
@@ -32,6 +32,25 @@ class SchemaRepairServiceTests {
         assertThat(new PublicUpstreamMappingService(jdbc).forChannels(List.of(35L, 42L, 43L)).values())
                 .extracting(upstream -> upstream.getCode() + ":" + upstream.getName())
                 .containsOnly("site-9:ahh");
+    }
+
+    @Test
+    void promotesConsensusGroupNameOverImporterGeneratedSiteDefault() {
+        DriverManagerDataSource dataSource = new DriverManagerDataSource(
+                "jdbc:h2:mem:generated_site_public_identity;MODE=MySQL;DB_CLOSE_DELAY=-1", "sa", "");
+        JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+        jdbc.execute("CREATE TABLE upstream_sites(id BIGINT PRIMARY KEY,adapter VARCHAR(40),public_code VARCHAR(80),public_name VARCHAR(120),badge_text VARCHAR(40),badge_color VARCHAR(16))");
+        jdbc.execute("CREATE TABLE upstream_site_channels(channel_id BIGINT PRIMARY KEY,site_id BIGINT NOT NULL)");
+        jdbc.execute("CREATE TABLE upstream_display_mappings(channel_id BIGINT,public_code VARCHAR(80),public_name VARCHAR(120),badge_text VARCHAR(40),badge_color VARCHAR(16),enabled BOOLEAN)");
+        jdbc.update("INSERT INTO upstream_sites(id,adapter,public_code,public_name) VALUES (2,'aiapibank','aiapibank','AiAPIBank')");
+        jdbc.update("INSERT INTO upstream_site_channels(channel_id,site_id) VALUES (24,2),(33,2),(40,2)");
+        jdbc.update("INSERT INTO upstream_display_mappings(channel_id,public_code,public_name,enabled) VALUES (24,'group-24','AAB',TRUE),(33,'group-33','AAB',TRUE),(40,'group-40','AAB',TRUE)");
+        SchemaRepairService service = new SchemaRepairService(jdbc);
+
+        assertThat(service.consolidateDuplicateSitePublicMappings()).isEqualTo(3);
+        assertThat(jdbc.queryForObject("SELECT public_code FROM upstream_sites WHERE id=2", String.class)).isEqualTo("aiapibank");
+        assertThat(jdbc.queryForObject("SELECT public_name FROM upstream_sites WHERE id=2", String.class)).isEqualTo("AAB");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM upstream_display_mappings", Integer.class)).isZero();
     }
 
     @Test
