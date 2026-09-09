@@ -464,7 +464,7 @@ public class AiApiBankCatalogService {
                                    List<JsonNode> available) {
         boolean firstCatalog=existing==null||existing.getModels()==null||existing.getModels().isBlank();
         Channel channel = upsertChannel(group, existing, available);
-        upsertPublicAlias(channel.getId());
+        ensureSitePublicIdentity(channel.getId());
         long groupId = upsertGroup(group, channel.getId(), credential, available.size(), "SUCCESS", null);
         Set<String> seen = new HashSet<>();
         int applied = 0;
@@ -509,16 +509,22 @@ public class AiApiBankCatalogService {
         return channel;
     }
 
-    private void upsertPublicAlias(Long channelId) {
-        Integer count = jdbc.queryForObject("SELECT COUNT(*) FROM upstream_display_mappings WHERE channel_id=?",
-                Integer.class, channelId);
-        if (count != null && count > 0) {
-            jdbc.update("UPDATE upstream_display_mappings SET public_code=?,public_name=?,badge_text=?,badge_color=?,enabled=TRUE,updated_at=? WHERE channel_id=?",
-                    SOURCE_CODE, SOURCE_NAME, SOURCE_NAME, "#6d5dfc", LocalDateTime.now(), channelId);
-        } else {
-            jdbc.update("INSERT INTO upstream_display_mappings(channel_id,public_code,public_name,badge_text,badge_color,sort_order,enabled,created_at,updated_at) VALUES (?,?,?,?,?,10,TRUE,?,?)",
-                    channelId, SOURCE_CODE, SOURCE_NAME, SOURCE_NAME, "#6d5dfc", LocalDateTime.now(), LocalDateTime.now());
-        }
+    private void ensureSitePublicIdentity(Long channelId) {
+        List<Long> sites = jdbc.queryForList(
+                "SELECT site_id FROM upstream_site_channels WHERE channel_id=?", Long.class, channelId);
+        if (sites.isEmpty()) return;
+        jdbc.update("""
+                UPDATE upstream_sites SET
+                    public_code=COALESCE(NULLIF(public_code,''),?),
+                    public_name=COALESCE(NULLIF(public_name,''),?),
+                    badge_text=COALESCE(NULLIF(badge_text,''),?),
+                    badge_color=COALESCE(NULLIF(badge_color,''),?)
+                WHERE id=?
+                """, SOURCE_CODE, SOURCE_NAME, SOURCE_NAME, "#6d5dfc", sites.get(0));
+        // Remove only the importer-owned legacy alias. Administrator-authored
+        // group metadata remains stored, but no longer defines public route identity.
+        jdbc.update("DELETE FROM upstream_display_mappings WHERE channel_id=? AND public_code=? AND public_name=?",
+                channelId, SOURCE_CODE, SOURCE_NAME);
     }
 
     private long upsertGroup(GroupSnapshot group, Long channelId, CredentialSnapshot credential, int modelCount,

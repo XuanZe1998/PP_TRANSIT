@@ -93,11 +93,16 @@ class AiApiBankSyncIntegrationTests {
         model.putObject("pricing").put("input_price",0.000001).put("output_price",0.000002);
         doReturn(root).when(catalog).fetchCatalog();catalog.discoverGroups();sites.reconcile();management.registerAdapters();
         long id=channel(67);
+        jdbc.update("""
+                INSERT INTO upstream_display_mappings(channel_id,public_code,public_name,enabled)
+                VALUES (?,'group-67','AAB',TRUE)
+                """,id);
         Object original=org.springframework.test.util.ReflectionTestUtils.getField(controller,"users");
         org.springframework.test.util.ReflectionTestUtils.setField(controller,"users",org.mockito.Mockito.mock(CurrentUserService.class));
         try {
             controller.group("admin",id,new com.transit.controller.GatewayManagementController.GroupSettings(null,true,true,null,null,null,null,null,true));
             assertThat(jdbc.queryForObject("SELECT enabled FROM channels WHERE id=?",Boolean.class,id)).isFalse();
+            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM upstream_display_mappings WHERE channel_id=?",Integer.class,id)).isZero();
             controller.group("admin",id,new com.transit.controller.GatewayManagementController.GroupSettings(null,true,true,"test-key",null,null,null,null,true));
             assertThat(jdbc.queryForObject("SELECT enabled FROM channels WHERE id=?",Boolean.class,id)).isFalse();
             assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM gateway_sync_jobs WHERE channel_id=? AND status='QUEUED'",Integer.class,id)).isEqualTo(1);
@@ -111,6 +116,11 @@ class AiApiBankSyncIntegrationTests {
         finally {org.springframework.test.util.ReflectionTestUtils.setField(catalog,"webClient",oldClient);}
         assertThat(jdbc.queryForObject("SELECT enabled FROM channels WHERE id=?",Boolean.class,id)).isTrue();
         assertThat(jdbc.queryForObject("SELECT enabled FROM model_mappings WHERE channel_id=?",Boolean.class,id)).isTrue();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM upstream_display_mappings WHERE channel_id=?",Integer.class,id)).isZero();
+        assertThat(jdbc.queryForObject("""
+                SELECT s.public_name FROM upstream_sites s JOIN upstream_site_channels sc ON sc.site_id=s.id
+                WHERE sc.channel_id=?
+                """,String.class,id)).isEqualTo("AiAPIBank");
     }
 
     @Test
