@@ -76,4 +76,11 @@ describe('model gateway administration routes', () => {
     expect(gateway).not.toContain('accountUserAgent')
     expect(gateway).not.toContain('clearAccountAccessToken')
   })
+
+  it('keeps public route identity at site scope instead of creating group aliases', () => {
+    const gateway = source('src/views/ModelGateway.vue')
+    expect(gateway).toContain('前台渠道名称由所属站点统一维护')
+    expect(gateway).toContain('function editPublicName(row:any){editSite(row)}')
+    expect(gateway).not.toContain('settings.inheritDisplay=false')
+  })
 })

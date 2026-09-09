@@ -1636,7 +1636,7 @@ public class SchemaRepairService {
                 JOIN upstream_display_mappings d ON d.channel_id=sc.channel_id AND d.enabled=TRUE
                 WHERE d.public_name IS NOT NULL AND TRIM(d.public_name)<>''
                 GROUP BY sc.site_id
-                HAVING COUNT(*)>1 AND COUNT(DISTINCT LOWER(TRIM(d.public_name)))=1
+                HAVING COUNT(DISTINCT LOWER(TRIM(d.public_name)))=1
                 """);
         int consolidated = 0;
         for (Map<String, Object> candidate : candidates) {
@@ -1649,11 +1649,18 @@ public class SchemaRepairService {
             String existingCode = site.get("public_code") == null ? "" : site.get("public_code").toString().trim();
             jdbcTemplate.update("UPDATE upstream_sites SET public_code=?,public_name=? WHERE id=?",
                     existingCode.isBlank() ? "site-" + siteId : existingCode, publicName, siteId);
+        }
+        // Also clean mappings created after an earlier repair whenever they
+        // merely repeat the site's canonical public identity.
+        for (Map<String,Object> site : jdbcTemplate.queryForList("""
+                SELECT id,public_name FROM upstream_sites
+                WHERE public_name IS NOT NULL AND TRIM(public_name)<>''
+                """)) {
             consolidated += jdbcTemplate.update("""
                     DELETE FROM upstream_display_mappings
                     WHERE channel_id IN (SELECT channel_id FROM upstream_site_channels WHERE site_id=?)
                       AND LOWER(TRIM(public_name))=LOWER(TRIM(?))
-                    """, siteId, publicName);
+                    """, ((Number) site.get("id")).longValue(), String.valueOf(site.get("public_name")).trim());
         }
         if (consolidated > 0) log.info("Consolidated {} duplicate group display mappings into site identities", consolidated);
         return consolidated;
