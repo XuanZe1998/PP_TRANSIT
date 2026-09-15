@@ -1,0 +1,111 @@
+html,
+body,
+#app {
+  min-width: 0;
+  min-height: 100%;
+  background: var(--lnx-bg);
+}
+
+body {
+  color: var(--lnx-text);
+  background-color: var(--lnx-bg);
+  background-image: var(--lnx-page-gradient);
+  background-repeat: no-repeat;
+  font-family: Inter, "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  line-height: 1.6;
+}
+
+*,
+*::before,
+*::after {
+  animation: none !important;
+  transition: none !important;
+  scroll-behavior: auto !important;
+}
+
+:where(button, a, input, textarea, select, [tabindex]):focus-visible {
+  outline: 3px solid rgba(37, 99, 235, 0.26);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: var(--lnx-brand-100);
+  color: var(--lnx-brand-800);
+}
+
+:where(h1, h2, h3, h4) {
+  color: var(--lnx-text);
+  text-wrap: balance;
+}
+
+:where(p, small, .muted, .form-hint, .field-hint) {
+  color: var(--lnx-text-muted);
+}
+
+:where(code, pre) {
+  font-family: "JetBrains Mono", "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+}
+
+.sr-only {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  margin: -1px !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  clip-path: inset(50%) !important;
+  border: 0 !important;
+  white-space: nowrap !important;
+}
+
+.public-page-content {
+  min-width: 0;
+}
+
+.site-section,
+.market-page,
+.pricing-page,
+.other-services-page,
+.docs-page,
+.legal-page article {
+  width: min(var(--lnx-content-width), calc(100% - 48px));
+  margin-inline: auto;
+}
+
+.panel,
+.console-panel,
+.gateway-panel,
+.el-card,
+.market-card,
+.pricing-card,
+.service-card,
+.report-card,
+.settings-card,
+.security-card {
+  border-radius: var(--lnx-radius-card);
+}
+
+.table-scroll,
+.admin-table-shell,
+.usage-table-scroll,
+.el-table__body-wrapper {
+  overscroll-behavior-inline: contain;
+  scrollbar-color: #9aabc0 #edf2f7;
+  scrollbar-width: thin;
+}
+
+@media (max-width: 680px) {
+  .site-section,
+  .market-page,
+  .pricing-page,
+  .other-services-page,
+  .docs-page,
+  .legal-page article {
+    width: min(100% - 32px, var(--lnx-content-width));
+  }
+
+  .el-message-box {
+    width: calc(100vw - 32px);
+  }
+}

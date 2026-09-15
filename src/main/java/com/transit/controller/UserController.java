@@ -227,7 +227,7 @@ public class UserController {
             @RequestParam(value = "startDate", required = false) String startDate,
             @RequestParam(value = "endDate", required = false) String endDate,
             @RequestParam(value = "page", defaultValue = "1") int page,
-            @RequestParam(value = "size", defaultValue = "20") int size) {
+            @RequestParam(value = "size", defaultValue = "10") int size) {
         User user = currentUserService.requireUser(authHeader);
         return Mono.fromCallable(() -> queryBillingLogsPage(user.getId(), model, tokenId, startDate, endDate, page, size));
     }

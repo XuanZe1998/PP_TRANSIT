@@ -7,20 +7,54 @@
           <span>{{ siteConfig.name }}</span>
         </button>
         <nav class="site-links" aria-label="Primary navigation">
-          <button :class="{ active: route.path === '/' }" @click="go('/')">首页</button>
-          <button :class="{ active: route.path === '/market' }" @click="go('/market')">模型广场</button>
-          <button :class="{ active: route.path === '/studio' }" @click="go('/studio')">AI创作</button>
-          <button :class="{ active: route.path === '/services' }" @click="go('/services')">其他服务</button>
-          <button :class="{ active: route.path === '/pricing' }" @click="go('/pricing')">套餐价格</button>
-          <button :class="{ active: route.path === '/docs' }" @click="go('/docs')">开发文档</button>
+          <button v-for="item in navigationItems" :key="item.path" :class="{ active: route.path === item.path }" @click="go(item.path)">
+            {{ item.label }}
+          </button>
         </nav>
-        <AccountMenu v-if="loggedIn" />
+        <div v-if="loggedIn" class="site-account-desktop"><AccountMenu /></div>
         <div v-else class="site-actions">
           <button class="site-auth-button" type="button" @click="openAuth('login')">登录</button>
           <button class="site-auth-button primary" type="button" @click="openAuth('register')">免费接入</button>
         </div>
+        <button class="site-menu-toggle" type="button" aria-label="打开导航菜单" @click="mobileMenuOpen = true">
+          <el-icon><Menu /></el-icon>
+        </button>
       </div>
     </header>
+    <el-drawer
+      v-model="mobileMenuOpen"
+      class="site-mobile-drawer"
+      direction="rtl"
+      size="min(360px, 92vw)"
+      :show-close="false"
+      append-to-body
+    >
+      <template #header><span class="sr-only">站点导航</span></template>
+      <div class="site-mobile-menu">
+        <div class="mobile-menu-head">
+          <button class="site-brand" type="button" @click="go('/')">
+            <img class="site-brand-mark brand-image" :src="siteConfig.logoUrl" alt="" />
+            <span>{{ siteConfig.name }}</span>
+          </button>
+          <button class="mobile-menu-close" type="button" aria-label="关闭导航菜单" @click="mobileMenuOpen = false">
+            <el-icon><Close /></el-icon>
+          </button>
+        </div>
+        <nav class="site-mobile-links" aria-label="移动端导航">
+          <button v-for="item in navigationItems" :key="item.path" :class="{ active: route.path === item.path }" @click="go(item.path)">
+            <el-icon><component :is="item.icon" /></el-icon>
+            {{ item.label }}
+          </button>
+        </nav>
+        <div class="site-mobile-actions">
+          <el-button v-if="loggedIn" type="primary" @click="go('/console')">进入用户工作台</el-button>
+          <template v-else>
+            <el-button @click="openAuth('login')">登录</el-button>
+            <el-button type="primary" @click="openAuth('register')">免费接入</el-button>
+          </template>
+        </div>
+      </div>
+    </el-drawer>
     <main class="public-page-content">
       <router-view />
     </main>
@@ -28,8 +62,9 @@
 </template>
 
 <script setup lang="ts">
-import { defineAsyncComponent, onBeforeUnmount, onMounted, ref } from 'vue'
+import { defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { Close, Coin, Document, HomeFilled, MagicStick, Menu, PriceTag, ShoppingBag } from '@element-plus/icons-vue'
 import { getToken } from '@/utils/auth'
 import { siteConfig } from '@/config/site'
 
@@ -37,12 +72,26 @@ const route = useRoute()
 const router = useRouter()
 const AccountMenu = defineAsyncComponent(() => import('@/components/AccountMenu.vue'))
 const loggedIn = ref(Boolean(getToken()))
+const mobileMenuOpen = ref(false)
+const navigationItems = [
+  { path: '/', label: '首页', icon: HomeFilled },
+  { path: '/market', label: '模型广场', icon: Coin },
+  { path: '/studio', label: 'AI 创作', icon: MagicStick },
+  { path: '/services', label: '其他服务', icon: ShoppingBag },
+  { path: '/pricing', label: '套餐价格', icon: PriceTag },
+  { path: '/docs', label: '开发文档', icon: Document }
+]
 const refreshAuth = () => { loggedIn.value = Boolean(getToken()) }
-const go = (path: string) => router.push(path)
+const go = (path: string) => {
+  mobileMenuOpen.value = false
+  return router.push(path)
+}
 const openAuth = (mode: 'login' | 'register') => router.replace({
   path: route.path,
   query: { ...route.query, auth: mode }
 })
+
+watch(() => route.fullPath, () => { mobileMenuOpen.value = false })
 
 onMounted(() => {
   window.addEventListener('auth-changed', refreshAuth)

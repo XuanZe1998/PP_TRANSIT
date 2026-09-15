@@ -49,7 +49,7 @@ public class ModelProbeController {
     @GetMapping
     public PageResponse<Map<String, Object>> list(@RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authHeader,
                                                   @RequestParam(defaultValue = "1") int page,
-                                                  @RequestParam(defaultValue = "20") int size) {
+                                                  @RequestParam(defaultValue = "10") int size) {
         User user = currentUserService.requireUser(authHeader);
         modelProbeService.ensureEnabled(false);
         PageResponse<ModelProbeTask> result = modelProbeService.list(user.getId(), page, size);

@@ -376,7 +376,7 @@
           :page-sizes="[10, 20, 50, 100]"
           :total="filteredRows.length"
          list-id="AdminConsole-2"/>
-        <SelectablePagination v-if="module === 'audit'" v-model:current-page="auditPage" v-model:page-size="auditPageSize" class="admin-pagination" layout="total, sizes, prev, pager, next" :page-sizes="[20, 50, 100, 200]" :total="auditTotal" @change="loadAuditLogs"  list-id="AdminConsole-3"/>
+        <SelectablePagination v-if="module === 'audit'" v-model:current-page="auditPage" v-model:page-size="auditPageSize" class="admin-pagination" layout="total, sizes, prev, pager, next" :page-sizes="[10, 20, 50, 100, 200]" :total="auditTotal" @change="loadAuditLogs"  list-id="AdminConsole-3"/>
         <el-collapse
           v-if="module === 'channels'"
           v-model="channelLedgerSections"
@@ -912,7 +912,7 @@ const adminUsageError = ref('')
 const auditLogsError = ref('')
 const auditOptions = reactive<{ organizations: any[]; users: any[]; models: any[] }>({ organizations: [], users: [], models: [] })
 const auditPage = ref(1)
-const auditPageSize = ref(50)
+const auditPageSize = ref(20)
 const auditTotal = ref(0)
 const testRows = ref<any[]>([])
 const channelLedgerSections = ref<string[]>([])

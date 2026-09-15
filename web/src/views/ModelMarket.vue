@@ -35,7 +35,7 @@
       </div>
 
       <div class="market-catalog-shell">
-        <aside class="market-filter-panel">
+        <aside class="market-filter-panel" :style="{ height: marketResultsHeight ? `${marketResultsHeight}px` : undefined }">
           <header><div><span class="market-filter-icon">≡</span><h2>筛选</h2></div><button type="button" :disabled="!hasFilters" @click="clearFilters">重置</button></header>
           <div v-for="group in facetGroups" v-show="group.options.length" :key="group.key" class="market-filter-group">
             <h3>{{ group.title }}</h3>
@@ -63,7 +63,7 @@
           <template #footer><el-button :disabled="!hasFilters" @click="clearFilters">清空筛选</el-button><el-button type="primary" @click="filtersOpen = false">查看 {{ total }} 个模型</el-button></template>
         </el-drawer>
 
-        <div class="market-results">
+        <div ref="marketResultsElement" class="market-results">
 
         <div v-if="loading && !models.length" class="market-grid">
           <article v-for="index in 6" :key="index" class="market-card"><el-skeleton :rows="6" animated /></article>
@@ -84,14 +84,21 @@
               <div class="market-tags"><span>{{ categoryLabel(model.category) }}</span><span>{{ capabilityLabel(model.capability) }}</span><span>{{ model.inputModalities || '未声明' }} → {{ model.outputModalities || '未声明' }}</span><span>{{ model.protocols || '未声明' }}</span></div>
             </div>
             <footer>
-              <dl class="market-meta">
-                <div><dt>渠道 / 套餐</dt><dd>{{ model.routeName || '平台智能路由' }} · {{ model.planName || '标准' }}</dd></div>
-                <div><dt>类型 / 能力</dt><dd>{{ categoryLabel(model.category) }} · {{ capabilityLabel(model.capability) }}</dd></div>
-                <div><dt>输入 / 输出模态</dt><dd>{{ model.inputModalities || '未声明' }} → {{ model.outputModalities || '未声明' }}</dd></div>
-                <div><dt>协议 / 计费单位</dt><dd>{{ model.protocols || '未声明' }} · {{ unitLabel(model.pricingUnit) }}</dd></div>
-                <div><dt>价格状态 / 核价时间</dt><dd>{{ priceStatusLabel(model) }} · {{ dateLabel(model.pricingVerifiedAt) }}</dd></div>
-              </dl>
-              <ModelSalePricing :model="model" :rebate-bps="customerRebateBps" compact public-only class="market-sale-pricing" />
+              <details class="market-card-details">
+                <summary>
+                  <span class="market-details-closed">展开模型参数与价格</span>
+                  <span class="market-details-open">收起模型参数与价格</span>
+                  <span class="market-details-chevron" aria-hidden="true">⌄</span>
+                </summary>
+                <dl class="market-meta">
+                  <div><dt>渠道 / 套餐</dt><dd>{{ model.routeName || '平台智能路由' }} · {{ model.planName || '标准' }}</dd></div>
+                  <div><dt>类型 / 能力</dt><dd>{{ categoryLabel(model.category) }} · {{ capabilityLabel(model.capability) }}</dd></div>
+                  <div><dt>输入 / 输出模态</dt><dd>{{ model.inputModalities || '未声明' }} → {{ model.outputModalities || '未声明' }}</dd></div>
+                  <div><dt>协议 / 计费单位</dt><dd>{{ model.protocols || '未声明' }} · {{ unitLabel(model.pricingUnit) }}</dd></div>
+                  <div><dt>价格状态 / 核价时间</dt><dd>{{ priceStatusLabel(model) }} · {{ dateLabel(model.pricingVerifiedAt) }}</dd></div>
+                </dl>
+                <ModelSalePricing :model="model" :rebate-bps="customerRebateBps" compact public-only class="market-sale-pricing" />
+              </details>
               <div class="market-card-actions">
                 <el-button @click="openComparison(model)">比价</el-button>
                 <el-button @click="copyModel(model.publicName)">复制模型名</el-button>
@@ -103,7 +110,7 @@
         <div v-else class="market-empty"><el-empty description="没有找到匹配模型"><el-button @click="clearFilters">清空筛选</el-button></el-empty></div>
 
         <div v-if="total" class="market-pagination">
-          <SelectablePagination v-model:current-page="page" v-model:page-size="pageSize" :page-sizes="[10, 20, 50, 100, 200]" :total="total"
+          <SelectablePagination v-model:current-page="page" v-model:page-size="pageSize" :total="total"
             layout="total, sizes, prev, pager, next, jumper" background aria-label="模型列表分页" @current-change="scrollToResults" @size-change="handlePageSizeChange"  list-id="ModelMarket-1"/>
         </div>
       </div>
@@ -119,7 +126,7 @@
 
 <script setup lang="ts">
 import SelectablePagination from '@/components/SelectablePagination.vue'
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import http from '@/utils/http'
@@ -142,6 +149,7 @@ const filterDefinitions: Array<{ key: FilterKey; title: string }> = [
 const router = useRouter(); const route = useRoute()
 const loading = ref(false); const error = ref(''); const models = ref<PublicModelOffer[]>([]); const facets = ref<ModelFacets>({})
 const total = ref(0); const page = ref(1); const pageSize = ref(20); const filtersOpen = ref(false); const resultsElement = ref<HTMLElement | null>(null)
+const marketResultsElement = ref<HTMLElement | null>(null); const marketResultsHeight = ref(0); let marketResultsObserver: ResizeObserver | undefined
 const callVisible = ref(false); const callTarget = ref<PublicModelOffer | null>(null); const compareVisible = ref(false); const compareTarget = ref<PublicModelOffer | null>(null)
 const customerRebateBps = ref(0); let timer: ReturnType<typeof setTimeout> | undefined; let requestVersion = 0; let hydrating = true
 const filters = reactive<FilterState>({ query: '', sort: 'priority', routes: [], publishers: [], categories: [], capabilities: [], inputModalities: [], outputModalities: [], protocols: [], pricingUnits: [], plans: [], priceStatuses: [] })
@@ -183,7 +191,7 @@ function callModel(model: PublicModelOffer) { callTarget.value = model; callVisi
 function openComparison(model: PublicModelOffer) { compareTarget.value = model; compareVisible.value = true }
 async function fetchRebate() { if (!getToken()) return; try { customerRebateBps.value = Number((await http.get('/api/user/agent')).data?.customerBinding?.customer_rebate_bps || 0) } catch { customerRebateBps.value = 0 } }
 
-function syncUrl() { const query: Record<string, string> = {}; if (filters.query) query.query = filters.query; if (filters.sort !== 'priority') query.sort = filters.sort; for (const group of filterDefinitions) if (filters[group.key].length) query[group.key] = filters[group.key].join(','); if (page.value > 1) query.page = String(page.value); if (pageSize.value !== 10) query.size = String(pageSize.value); void router.replace({ query }) }
+function syncUrl() { const query: Record<string, string> = {}; if (filters.query) query.query = filters.query; if (filters.sort !== 'priority') query.sort = filters.sort; for (const group of filterDefinitions) if (filters[group.key].length) query[group.key] = filters[group.key].join(','); if (page.value > 1) query.page = String(page.value); if (pageSize.value !== 20) query.size = String(pageSize.value); void router.replace({ query }) }
 function hydrateFromUrl() { filters.query = String(route.query.query || ''); filters.sort = String(route.query.sort || 'priority'); page.value = Math.max(1, Number(route.query.page || 1)); pageSize.value = [10, 20, 50, 100, 200].includes(Number(route.query.size)) ? Number(route.query.size) : 20; for (const group of filterDefinitions) filters[group.key] = String(route.query[group.key] || '').split(',').filter(Boolean); hydrating = false }
 
 const icons: Record<string, string> = { nvidia: '/model-icons/nvidia.svg', meta: '/model-icons/meta.svg', google: '/model-icons/google.svg', mistral: '/model-icons/mistral.svg', alibaba: '/model-icons/qwen.svg', deepseek: '/model-icons/deepseek.svg', openai: '/openai-icon.svg', anthropic: '/model-icons/anthropic.svg', xai: '/model-icons/xai.svg', minimax: '/model-icons/minimax.jpg', stepfun: '/model-icons/stepfun.jpg', zai: '/model-icons/z-ai.jpg' }
@@ -196,5 +204,13 @@ function dateLabel(value?: string | null) { if (!value) return '未记录'; cons
 
 watch(filters, () => { if (hydrating) return; page.value = 1; syncUrl(); scheduleFetch() }, { deep: true })
 watch([page, pageSize], () => { if (hydrating) return; syncUrl(); scheduleFetch() })
-onMounted(() => { hydrateFromUrl(); void Promise.all([fetchCatalog(), fetchRebate()]) })
+onMounted(() => {
+  hydrateFromUrl()
+  if (typeof ResizeObserver !== 'undefined' && marketResultsElement.value) {
+    marketResultsObserver = new ResizeObserver(([entry]) => { marketResultsHeight.value = Math.ceil(entry?.borderBoxSize?.[0]?.blockSize || entry?.contentRect.height || 0) })
+    marketResultsObserver.observe(marketResultsElement.value)
+  }
+  void Promise.all([fetchCatalog(), fetchRebate()])
+})
+onBeforeUnmount(() => marketResultsObserver?.disconnect())
 </script>

@@ -1,5 +1,7 @@
 package com.transit.service;
 
+import jakarta.mail.Session;
+import jakarta.mail.internet.MimeMessage;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.mail.MailSendException;
@@ -24,7 +26,8 @@ class VerificationDeliveryServiceTests {
         JavaMailSender sender = mock(JavaMailSender.class);
         when(provider.getIfAvailable()).thenReturn(sender);
         when(provider.getObject()).thenReturn(sender);
-        doThrow(new MailSendException("SMTP unavailable")).when(sender).send(any(org.springframework.mail.SimpleMailMessage.class));
+        when(sender.createMimeMessage()).thenReturn(new MimeMessage((Session) null));
+        doThrow(new MailSendException("SMTP unavailable")).when(sender).send(any(MimeMessage.class));
 
         VerificationDeliveryService service = new VerificationDeliveryService(
                 provider, WebClient.builder().build());

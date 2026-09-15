@@ -73,7 +73,7 @@ public class PublicController {
 
     @GetMapping("/models")
     public Mono<PageResponse<PublicModel>> models(@RequestParam(value = "page", required = false, defaultValue = "1") int page,
-                                                  @RequestParam(value = "size", required = false, defaultValue = "20") int size,
+                                                  @RequestParam(value = "size", required = false, defaultValue = "10") int size,
                                                   @RequestParam(value = "query", required = false) String query,
                                                   @RequestParam(value = "type", required = false) String type,
                                                   @RequestParam(value = "source", required = false) String source,

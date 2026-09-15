@@ -1,5 +1,4 @@
 <template>
-  <TechBackdrop :home="route.path === '/'" :quiet="route.path.startsWith('/admin') || route.path.startsWith('/console')" />
   <router-view />
   <AuthDialog v-if="showAuthDialog" />
   <AgreementGate v-if="showAgreementGate" />
@@ -8,7 +7,6 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent } from 'vue'
 import { useRoute } from 'vue-router'
-import TechBackdrop from '@/components/TechBackdrop.vue'
 
 const route = useRoute()
 const AuthDialog = defineAsyncComponent(() => import('@/components/AuthDialog.vue'))

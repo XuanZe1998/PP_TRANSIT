@@ -1,5 +1,8 @@
 import { createApp } from 'vue'
 import './style.css'
+import './styles/tokens.css'
+import './styles/foundation.css'
+import './styles/components.css'
 import App from './App.vue'
 import router from './router'
 import { initInactivityGuard } from './utils/auth'

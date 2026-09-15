@@ -344,6 +344,10 @@ verification:
   debug-code-enabled: ${VERIFICATION_DEBUG_CODE_ENABLED:false}
   email:
     from: ${VERIFICATION_EMAIL_FROM:}
+    subject: ${VERIFICATION_EMAIL_SUBJECT:Linknux 安全验证码}
+    brand-name: ${VERIFICATION_EMAIL_BRAND_NAME:Linknux}
+    website-url: ${VERIFICATION_EMAIL_WEBSITE_URL:https://linknux.com}
+    support-email: ${VERIFICATION_EMAIL_SUPPORT_EMAIL:support@linknux.com}
   sms:
     provider: ${SMS_PROVIDER:}
     endpoint: ${SMS_PROVIDER_ENDPOINT:}

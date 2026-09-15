@@ -22,8 +22,49 @@
       </el-menu>
     </el-aside>
 
+    <el-drawer
+      v-model="mobileNavigationOpen"
+      class="admin-mobile-drawer"
+      direction="ltr"
+      size="min(340px, 90vw)"
+      :show-close="false"
+      append-to-body
+    >
+      <template #header><span class="sr-only">管理后台导航</span></template>
+      <div class="workspace-mobile-menu">
+        <div class="mobile-menu-head">
+          <div class="brand" @click="$router.push('/')">
+            <div class="brand-mark"><img :src="siteConfig.logoUrl" alt="" /></div>
+            <div class="brand-copy">
+              <div class="brand-title">{{ siteConfig.name }}</div>
+              <div class="brand-subtitle">商业运营后台</div>
+            </div>
+          </div>
+          <button class="mobile-menu-close" type="button" aria-label="关闭管理后台菜单" @click="mobileNavigationOpen = false">
+            <el-icon><Close /></el-icon>
+          </button>
+        </div>
+        <el-menu :default-active="activeRoute" class="admin-menu admin-mobile-menu" router @select="mobileNavigationOpen = false">
+          <template v-for="item in navItems" :key="item.path">
+            <el-sub-menu v-if="item.children" :index="item.path">
+              <template #title><el-icon><component :is="item.icon" /></el-icon><span>{{ item.label }}</span></template>
+              <el-menu-item v-for="child in item.children" :key="child.path" :index="child.path">{{ child.label }}</el-menu-item>
+            </el-sub-menu>
+            <el-menu-item v-else :index="item.path">
+              <el-icon><component :is="item.icon" /></el-icon><span>{{ item.label }}</span>
+            </el-menu-item>
+          </template>
+        </el-menu>
+        <div class="workspace-mobile-actions">
+          <el-button @click="$router.push('/market'); mobileNavigationOpen = false">前台模型市场</el-button>
+          <el-button type="danger" plain @click="logout">退出登录</el-button>
+        </div>
+      </div>
+    </el-drawer>
+
     <el-container>
       <el-header class="admin-header">
+        <el-button class="admin-menu-toggle" :icon="Menu" circle aria-label="打开管理后台菜单" @click="mobileNavigationOpen = true" />
         <div class="header-copy">
           <h1>{{ currentTitle }}</h1>
           <p>统一管理渠道、模型、用户、计费、安全、审计和履约。</p>
@@ -43,9 +84,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, type Component } from 'vue'
+import { computed, onMounted, ref, watch, type Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Connection, DataBoard, Grid, Lock, Setting, User, Wallet } from '@element-plus/icons-vue'
+import { Close, Connection, DataBoard, Grid, Lock, Menu, Setting, User, Wallet } from '@element-plus/icons-vue'
 import http from '@/utils/http'
 import { clearAuth } from '@/utils/auth'
 import { siteConfig } from '@/config/site'
@@ -53,6 +94,7 @@ import { siteConfig } from '@/config/site'
 const route = useRoute()
 const router = useRouter()
 const verificationWarning = ref('')
+const mobileNavigationOpen = ref(false)
 
 type NavItem = { path: string; label: string; icon?: Component; children?: Array<{ path: string; label: string }> }
 const navItems: NavItem[] = [
@@ -79,6 +121,8 @@ const activeRoute = computed(() => {
   return route.path
 })
 const currentTitle = computed(() => navItems.flatMap(item => item.children || [item]).find(item => item.path === activeRoute.value)?.label || '管理员后台')
+
+watch(() => route.fullPath, () => { mobileNavigationOpen.value = false })
 
 onMounted(async () => {
   try {
@@ -245,37 +289,11 @@ const logout = async () => {
 
 @media (max-width: 900px) {
   .admin-aside {
-    flex: 0 0 76px;
-    width: 76px !important;
-    padding: 16px 10px;
-    overflow-x: hidden;
-    overflow-y: auto;
-  }
-
-  .brand {
-    justify-content: center;
-  }
-
-  .brand-copy,
-  .admin-menu :deep(.el-menu-item span),
-  .admin-menu :deep(.el-sub-menu__title span),
-  .admin-menu :deep(.el-sub-menu__icon-arrow) {
     display: none;
   }
 
-  .admin-menu :deep(.el-menu-item),
-  .admin-menu :deep(.el-sub-menu__title) {
-    justify-content: center;
-    padding: 0 !important;
-  }
-
-  .admin-menu :deep(.el-menu-item .el-icon),
-  .admin-menu :deep(.el-sub-menu__title .el-icon) {
-    margin-right: 0;
-  }
-
   .admin-header {
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     padding: 16px 20px;
   }
 

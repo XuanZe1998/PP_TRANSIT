@@ -2437,7 +2437,7 @@ textarea {
   display: grid;
   grid-template-columns: 244px minmax(0, 1fr);
   gap: 18px;
-  align-items: start;
+  align-items: stretch;
 }
 
 .market-catalog {
@@ -2447,7 +2447,8 @@ textarea {
 .market-filter-panel {
   position: sticky;
   top: 82px;
-  max-height: calc(100vh - 100px);
+  align-self: stretch;
+  max-height: none;
   overflow-x: hidden;
   overflow-y: auto;
   border: 1px solid #dfe6e1;
@@ -2611,6 +2612,7 @@ textarea {
 
 .market-results {
   min-width: 0;
+  height: fit-content;
 }
 
 .market-toolbar {
@@ -2886,11 +2888,74 @@ textarea {
   background: #fbfcfb;
 }
 
+.market-card footer .market-card-details,
 .market-card footer .market-meta,
 .market-card footer .market-sale-pricing,
 .market-card footer .market-card-actions {
   grid-column: 1;
   width: 100%;
+}
+
+.market-card-details {
+  min-width: 0;
+}
+
+.market-card-details > summary {
+  display: flex;
+  min-height: 32px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 10px;
+  border: 1px solid #d9e5ef;
+  border-radius: 8px;
+  background: #f3f7fb;
+  color: #244a70;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+  list-style: none;
+}
+
+.market-card-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.market-card-details > summary:focus-visible {
+  outline: 2px solid #2d75c7;
+  outline-offset: 2px;
+}
+
+.market-details-open {
+  display: none;
+}
+
+.market-card-details[open] .market-details-closed {
+  display: none;
+}
+
+.market-card-details[open] .market-details-open {
+  display: inline;
+}
+
+.market-card-details:not([open]) > .market-meta,
+.market-card-details:not([open]) > .market-sale-pricing {
+  display: none !important;
+}
+
+.market-details-chevron {
+  font-size: 16px;
+  line-height: 1;
+  transition: transform 160ms ease;
+}
+
+.market-card-details[open] .market-details-chevron {
+  transform: rotate(180deg);
+}
+
+.market-card-details > .market-meta,
+.market-card-details > .market-sale-pricing {
+  margin-top: 7px;
 }
 
 .market-card-actions {
@@ -3494,6 +3559,7 @@ textarea {
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .market-card footer .market-card-details,
   .market-card footer .market-meta,
   .market-card footer .market-sale-pricing,
   .market-card footer .market-card-actions { grid-column: 1; grid-row: auto; }
@@ -3560,6 +3626,10 @@ textarea {
 }
 
 @media (max-width: 980px) {
+  .market-filter-panel {
+    height: auto !important;
+  }
+
   .market-results,
   .market-toolbar,
   .market-card,
@@ -4987,6 +5057,330 @@ code,
   }
 }
 
+/* Filled controls and labels: light surfaces with WCAG-readable foregrounds. */
+#app .site-auth-button,
+#app .el-button.is-plain {
+  border-color: var(--tech-line) !important;
+  background: #ffffff !important;
+  background-image: none !important;
+  color: #294766 !important;
+  box-shadow: none !important;
+}
+
+#app .el-button--primary:not(.is-link):not(.is-plain):not(.is-text),
+#app .el-button--primary:not(.is-link):not(.is-plain):not(.is-text):hover,
+#app .el-button--primary:not(.is-link):not(.is-plain):not(.is-text):focus-visible {
+  border-color: #9fc5f5 !important;
+  background: #e2efff !important;
+  background-image: none !important;
+  color: #0d4f9f !important;
+  box-shadow: none !important;
+}
+
+#app .el-button--success:not(.is-link):not(.is-plain):not(.is-text) {
+  border-color: #9bd9c0 !important;
+  background: #e7f8f0 !important;
+  color: #09633f !important;
+}
+
+#app .el-button--warning:not(.is-link):not(.is-plain):not(.is-text) {
+  border-color: #ead090 !important;
+  background: #fff6d9 !important;
+  color: #76520a !important;
+}
+
+#app .el-button--danger:not(.is-link):not(.is-plain):not(.is-text) {
+  border-color: #efb1b9 !important;
+  background: #fff0f2 !important;
+  color: #9f2636 !important;
+}
+
+#app .el-input__wrapper,
+#app .el-select__wrapper,
+#app .el-textarea__inner,
+#app .el-input-number .el-input__wrapper,
+#app .el-date-editor.el-input__wrapper,
+#app .el-input-group__append,
+#app .el-input-group__prepend,
+#app .el-input-number__decrease,
+#app .el-input-number__increase {
+  border-color: var(--tech-line) !important;
+  background: #ffffff !important;
+  color: #294766 !important;
+  box-shadow: 0 0 0 1px var(--tech-line) inset !important;
+}
+
+#app .el-input__inner,
+#app .el-textarea__inner,
+#app .el-select__selected-item,
+#app .el-input-number__decrease,
+#app .el-input-number__increase,
+#app .el-dialog__title,
+#app .el-drawer__header,
+#app .el-message-box__title,
+#app .el-form-item__label,
+#app .el-descriptions__label,
+#app .el-descriptions__content,
+#app .el-select-dropdown__item,
+#app .el-dropdown-menu__item {
+  color: #294766 !important;
+}
+
+#app .el-select-dropdown__item.is-hovering,
+#app .el-select-dropdown__item.is-selected,
+#app .el-dropdown-menu__item:hover,
+#app .el-tabs__item:hover,
+#app .el-tabs__item.is-active {
+  background: #eaf2ff !important;
+  color: #174b8f !important;
+}
+
+#app .el-tabs__item { color: #52657e !important; }
+#app .el-tabs__active-bar { background: #2563eb !important; }
+#app .el-tabs__nav-wrap::after { background: var(--tech-line) !important; }
+
+#app .el-radio-button__original-radio:checked + .el-radio-button__inner,
+#app .el-radio-button.is-active .el-radio-button__inner {
+  border-color: #93b5df !important;
+  background: #dbeafe !important;
+  color: #174b8f !important;
+  box-shadow: -1px 0 0 0 #93b5df !important;
+}
+
+#app .el-tag,
+#app .market-badge,
+#app .console-status-note,
+#app .services-count,
+#app .route-chip,
+#app .model-tag {
+  border-color: #bfd5ee !important;
+  background: #eaf2ff !important;
+  color: #174b8f !important;
+}
+
+#app .market-badge.available,
+#app .status-chip.succeeded {
+  border-color: #a9ddc8 !important;
+  background: #e8f8f1 !important;
+  color: #08734f !important;
+}
+
+#app .status-chip.failed {
+  border-color: #efb7bf !important;
+  background: #fff0f2 !important;
+  color: #9f2636 !important;
+}
+
+#app .el-alert {
+  border-color: #bfd5ee !important;
+  background: #eef5ff !important;
+}
+
+#app .el-alert__title,
+#app .el-alert__description {
+  color: #294766 !important;
+}
+
+#app .el-table,
+#app .el-table__expanded-cell,
+#app .paged-table,
+#app .admin-table-shell {
+  --el-table-bg-color: #ffffff;
+  --el-table-tr-bg-color: #ffffff;
+  --el-table-header-bg-color: #eef5ff;
+  --el-table-row-hover-bg-color: #f4f8fd;
+  --el-table-border-color: #dce6f2;
+  --el-table-text-color: #294766;
+  --el-table-header-text-color: #385270;
+  color: #294766 !important;
+  background: #ffffff !important;
+}
+
+#app .el-table th.el-table__cell,
+#app .el-table tr,
+#app .el-table td.el-table__cell {
+  border-color: #dce6f2 !important;
+  background: #ffffff !important;
+  color: #294766 !important;
+}
+
+#app .el-table th.el-table__cell {
+  background: #eef5ff !important;
+  color: #385270 !important;
+}
+
+#app .el-pagination button,
+#app .el-pager li {
+  border-color: var(--tech-line) !important;
+  background: #ffffff !important;
+  color: #294766 !important;
+}
+
+#app .el-pagination button:disabled {
+  background: #f1f5f9 !important;
+  color: #52657e !important;
+}
+
+#app .el-pager li.is-active {
+  border-color: #93b5df !important;
+  background: #dbeafe !important;
+  background-image: none !important;
+  color: #174b8f !important;
+}
+
+#app .user-console-page .user-sidebar,
+#app .admin-shell .admin-aside {
+  border-color: var(--tech-line) !important;
+  background: #ffffff !important;
+  background-image: none !important;
+  color: var(--tech-text) !important;
+  box-shadow: 4px 0 16px rgba(51, 75, 105, 0.07) !important;
+}
+
+#app .user-console-page .user-nav button,
+#app .admin-shell .admin-menu .el-menu-item,
+#app .admin-shell .admin-menu .el-sub-menu__title {
+  color: #52657e !important;
+}
+
+#app .user-console-page .user-nav button.active,
+#app .user-console-page .user-nav button:hover,
+#app .admin-shell .admin-menu .el-menu-item.is-active,
+#app .admin-shell .admin-menu .el-menu-item:hover,
+#app .admin-shell .admin-menu .el-sub-menu__title:hover {
+  border-color: #bfd5ee !important;
+  background: #eaf2ff !important;
+  background-image: none !important;
+  color: #174b8f !important;
+}
+
+#app .user-console-page .sidebar-balance,
+#app .user-console-page .console-toolbar,
+#app .user-console-page .console-hero,
+#app .console-toolbar,
+#app .admin-table-shell,
+#app .security-card,
+#app .settings-card,
+#app .report-card,
+#app .quick-action,
+#app .activity-list > div,
+#app .session-list > div,
+#app .oauth-binding,
+#app .wallet-plan,
+#app .access-item,
+#app .response-content,
+#app .playground-raw-collapse,
+#app .playground-usage-summary,
+#app .recharge-drawer-plans button {
+  border-color: var(--tech-line) !important;
+  background: #ffffff !important;
+  background-image: none !important;
+  color: var(--tech-text) !important;
+}
+
+#app .market-filter-icon {
+  background: #eaf2ff !important;
+  color: #174b8f !important;
+}
+
+#app .market-tags span {
+  border-color: #d5e0ec !important;
+  background: #f1f5f9 !important;
+  color: #334155 !important;
+}
+
+#app .public-site.home-theme .product-toolbar em {
+  background: #e8f8f1 !important;
+  color: #08734f !important;
+}
+
+#app .public-site.home-theme .product-toolbar button > span {
+  width: auto;
+  height: auto;
+  border-radius: 0;
+  background: transparent !important;
+  color: inherit !important;
+}
+
+#app .creative-studio .first-time-card > span {
+  background: #fff0ed !important;
+  color: #943f33 !important;
+}
+
+#app .creative-studio .mode-icon,
+#app .creative-studio .login-empty > span {
+  background: #eee9ff !important;
+  color: #5540a0 !important;
+}
+
+#app .creative-studio .template-grid > button > span {
+  background: #f1eafa !important;
+  color: #60458b !important;
+}
+
+#app .el-divider__text {
+  background: #ffffff !important;
+  color: #52657e !important;
+}
+
+#app code,
+#app .code-block,
+#app .response-code {
+  border-color: var(--tech-line) !important;
+  background: #f1f5f9 !important;
+  color: #1e3a5f !important;
+}
+
+#app .el-loading-mask {
+  background: rgba(255, 255, 255, 0.88) !important;
+  backdrop-filter: none !important;
+}
+
+#app .public-site .site-links button,
+#app .market-filter-panel > header button,
+#app .market-filter-options button {
+  color: #3f536c !important;
+}
+
+#app .market-filter-panel > header button:disabled,
+#app .market-filter-options button:disabled {
+  color: #52657e !important;
+}
+
+#app .creative-studio .studio-nav nav button,
+#app .creative-studio .composer-head button,
+#app .creative-studio .mode-rail > button,
+#app .creative-studio .prompt-box button {
+  color: #4b5568 !important;
+}
+
+#app .creative-studio .studio-nav nav button.active,
+#app .creative-studio .studio-nav nav button:hover,
+#app .creative-studio .composer-head button:hover,
+#app .creative-studio .prompt-box button:hover {
+  color: #49358a !important;
+}
+
+#app .creative-studio .prompt-box button:disabled {
+  color: #52657e !important;
+}
+
+#app .el-button.is-link.el-button--primary,
+#app .el-button.is-link.el-button--primary:hover,
+#app .el-button.is-link.el-button--primary:focus-visible {
+  color: #0d4f9f !important;
+}
+
+#app .creative-studio .brand-orb {
+  background: #eee9ff !important;
+  background-image: none !important;
+  color: #49358a !important;
+}
+
+#app .creative-studio .studio-brand small {
+  color: #52657e !important;
+}
+
 /* The animated data field lives once at app level. Page roots stay translucent
    so particles, neural nodes, energy ribbons and circuit traces remain visible. */
 #app {
@@ -5460,4 +5854,1241 @@ code,
   .routing-chart { display: none; }
   .public-site.home-theme .product-toolbar { padding-inline: 14px; }
   .public-site.home-theme .product-toolbar button { display: none; }
+}
+
+/* --------------------------------------------------------------------------
+   Static light appearance
+   Motion is disabled for every visitor, rather than only for operating-system
+   reduced-motion preferences. This also neutralizes component-library motion.
+   -------------------------------------------------------------------------- */
+:root {
+  color-scheme: light;
+  --tech-bg: #f4f7fb;
+  --tech-surface: #ffffff;
+  --tech-surface-strong: #ffffff;
+  --tech-line: #d8e3f0;
+  --tech-line-strong: #bfd0e4;
+  --tech-text: #18314f;
+  --tech-muted: #52657e;
+  --tech-blue: #2563eb;
+  --tech-cyan: #0891b2;
+  --tech-indigo: #6366f1;
+  --tech-glow: 0 8px 24px rgba(51, 75, 105, 0.08);
+  --el-bg-color: #ffffff;
+  --el-bg-color-page: #f4f7fb;
+  --el-bg-color-overlay: #ffffff;
+  --el-fill-color: #eef3f8;
+  --el-fill-color-light: #f4f7fb;
+  --el-fill-color-lighter: #f7f9fc;
+  --el-fill-color-extra-light: #fafbfd;
+  --el-fill-color-dark: #e2e8f0;
+  --el-border-color: #d8e3f0;
+  --el-border-color-light: #e2e8f0;
+  --el-border-color-lighter: #edf1f5;
+  --el-text-color-primary: #18314f;
+  --el-text-color-regular: #475569;
+  --el-text-color-secondary: #64748b;
+  --el-text-color-placeholder: #94a3b8;
+  --el-mask-color: rgba(15, 23, 42, 0.32);
+  --el-color-primary: #2563eb;
+  --el-color-primary-light-3: #60a5fa;
+  --el-color-primary-light-5: #93c5fd;
+  --el-color-primary-light-7: #bfdbfe;
+  --el-color-primary-light-8: #dbeafe;
+  --el-color-primary-light-9: #eff6ff;
+}
+
+html {
+  scroll-behavior: auto !important;
+}
+
+*,
+*::before,
+*::after {
+  animation: none !important;
+  animation-delay: 0s !important;
+  transition: none !important;
+  transition-delay: 0s !important;
+  scroll-behavior: auto !important;
+}
+
+body {
+  color: var(--tech-text);
+  background: var(--tech-bg) !important;
+}
+
+.public-site,
+.public-site.home-theme,
+.user-console-page,
+.organization-page,
+.creative-studio,
+.item-page,
+.redemption-redirect,
+.flow-shell,
+.admin-shell,
+.admin-login,
+.agent-page,
+.legal-page {
+  color: var(--tech-text) !important;
+  background: var(--tech-bg) !important;
+  background-image: none !important;
+}
+
+.site-nav,
+.studio-nav,
+.item-nav,
+.flow-topbar,
+.admin-header,
+.agent-header,
+.admin-aside,
+.flow-sidebar {
+  border-color: var(--tech-line) !important;
+  background: #ffffff !important;
+  color: var(--tech-text) !important;
+  box-shadow: 0 4px 16px rgba(51, 75, 105, 0.07) !important;
+  backdrop-filter: none !important;
+}
+
+.panel,
+.console-panel,
+.gateway-panel,
+.pricing-card,
+.model-tile,
+.feature-card,
+.other-service-card,
+.redirect-card,
+.el-card,
+.market-hero,
+.market-filter-panel,
+.market-card,
+.service-orders,
+.developer-docs,
+.model-sale-pricing,
+.sale-price-grid article,
+.unit-sale-price,
+.price-tier,
+.pricing-pending,
+.pricing-free,
+.context-price-note,
+.creative-studio .mode-rail,
+.creative-studio .composer-card,
+.creative-studio .template-grid > button,
+.creative-studio .login-empty,
+.creative-studio .no-works,
+.creative-studio .connection-list article,
+.public-site.home-theme .hero-product,
+.hero-feature-grid article,
+.source-stack article,
+.output-stack article,
+.routing-stats {
+  border-color: var(--tech-line) !important;
+  background: #ffffff !important;
+  background-image: none !important;
+  color: var(--tech-text) !important;
+  box-shadow: 0 8px 24px rgba(51, 75, 105, 0.08) !important;
+  backdrop-filter: none !important;
+}
+
+.metric-card,
+.console-stat,
+.services-count,
+.market-stats article,
+.market-meta,
+.market-card footer,
+.market-empty,
+.docs-endpoints div,
+.creative-studio .newbie-guide,
+.creative-studio .storyboard-helper,
+.creative-studio .storyboard-helper li,
+.creative-studio .connection-help,
+.creative-studio .prompt-box,
+.creative-studio .works-skeleton i,
+.service-image-placeholder,
+.pricing-disclosure,
+.market-error,
+.market-fallback-note {
+  border-color: var(--tech-line) !important;
+  background: #f8fafc !important;
+  background-image: none !important;
+  color: var(--tech-text) !important;
+  box-shadow: none !important;
+}
+
+.public-site.home-theme .site-nav,
+.public-site:not(.home-theme) .site-nav,
+.public-site.home-theme .product-toolbar,
+.public-site.home-theme .product-toolbar button,
+.creative-studio .back-main-button,
+.el-dialog,
+.el-drawer,
+.el-popper,
+.el-message-box {
+  border-color: var(--tech-line) !important;
+  background: #ffffff !important;
+  color: var(--tech-text) !important;
+  box-shadow: 0 10px 30px rgba(51, 75, 105, 0.12) !important;
+  backdrop-filter: none !important;
+}
+
+.public-site.home-theme .site-brand,
+.public-site.home-theme .hero-copy > p.hero-brandline,
+.public-site.home-theme .hero-copy h1,
+.public-site.home-theme .hero-copy > p:not(.hero-brandline),
+.public-site:not(.home-theme) .site-brand,
+.studio-brand,
+.item-brand,
+.brand-title,
+.console-brand,
+.admin-header h1,
+.site-section h1,
+.site-section h2,
+.site-section h3,
+.market-page h1,
+.pricing-page h1,
+.docs-page h1,
+.services-hero h1,
+.creative-studio h1,
+.creative-studio .studio-brand,
+.creative-studio .studio-intro h1,
+.creative-studio .composer-head h2,
+.creative-studio .section-title h2,
+.creative-studio .template-grid h3,
+.creative-studio .work-card-body h3,
+.creative-studio .field-label label,
+.creative-studio .mode-rail b,
+.item-page h1,
+.legal-page h1,
+.organization-page h1,
+.agent-page h1,
+.admin-login h1,
+.admin-shell h1,
+.admin-shell h2,
+.admin-shell h3,
+.user-console-page h1,
+.user-console-page h2,
+.user-console-page h3,
+.market-publisher strong,
+.market-card h3,
+.market-meta dd,
+.model-sale-pricing header strong,
+.sale-price-grid strong,
+.unit-sale-price strong,
+.pricing-pending strong,
+.pricing-free strong,
+.context-price-note strong,
+.source-stack strong,
+.output-stack strong,
+.routing-core strong,
+.routing-stats strong {
+  color: var(--tech-text) !important;
+  text-shadow: none !important;
+}
+
+.site-section p,
+.market-page p,
+.pricing-page p,
+.other-services-page p,
+.docs-page p,
+.legal-page p,
+.organization-page p,
+.agent-page p,
+.admin-header p,
+.brand-subtitle,
+.panel-head p,
+.console-hero p,
+.public-site.home-theme .hero-copy > p:not(.hero-brandline),
+.market-stats span,
+.market-result-count,
+.market-publisher small,
+.market-public-id,
+.market-meta dt,
+.creative-studio .intro-copy,
+.creative-studio .mode-rail small,
+.creative-studio .rail-tip,
+.creative-studio .field-label small,
+.creative-studio .reference-section p,
+.creative-studio .settings-grid label > span,
+.creative-studio .composer-bottom small,
+.creative-studio .template-grid p,
+.creative-studio .login-empty p,
+.source-stack small,
+.routing-stats small {
+  color: var(--tech-muted) !important;
+}
+
+.flow-brand strong,
+.flow-brand span,
+.nav-item,
+.health-card span,
+.health-card small,
+.health-card strong {
+  color: var(--tech-text) !important;
+}
+
+.nav-item:hover,
+.nav-item.active,
+.public-site:not(.home-theme) .site-links button:hover,
+.public-site:not(.home-theme) .site-links button.active,
+.creative-studio .mode-rail > button:hover,
+.creative-studio .mode-rail > button.active,
+.market-filter-options button:hover,
+.market-filter-options button.active {
+  background: #eaf2ff !important;
+  background-image: none !important;
+  color: #174b8f !important;
+}
+
+.routing-core span {
+  border-color: #93c5fd !important;
+  background: #eff6ff !important;
+  color: #2563eb !important;
+  box-shadow: none !important;
+  text-shadow: none !important;
+}
+
+.routing-lines path,
+.source-stack i,
+.output-stack i,
+.routing-chart i,
+.market-status-dot,
+.provider-pill i {
+  filter: none !important;
+  box-shadow: none !important;
+}
+
+.public-site.home-theme .site-brand::before,
+.public-site.home-theme .hero-brandline span,
+.brand-mark,
+.brand-orb {
+  filter: none !important;
+  box-shadow: none !important;
+}
+
+.code-panel,
+pre,
+.developer-docs > pre,
+.test-io,
+.playground-answer-scroll,
+.playground-raw-collapse {
+  border-color: var(--tech-line) !important;
+  background: #f8fafc !important;
+  color: #1e3a5f !important;
+  box-shadow: none !important;
+}
+
+.el-skeleton__item,
+.creative-studio .works-skeleton i {
+  background: #e8eef6 !important;
+  background-image: none !important;
+}
+
+.template-grid > button:hover,
+.model-tile:hover,
+.pricing-card:hover,
+.feature-card:hover,
+.other-service-card:hover,
+.market-card:hover,
+.metric-card.clickable:hover,
+.metric-card.clickable:focus {
+  transform: none !important;
+}
+
+/* High-specificity cleanup for the former app-level dark backdrop and homepage. */
+#app {
+  background: var(--tech-bg) !important;
+}
+
+#app > .public-site,
+#app > .user-console-page,
+#app > .organization-page,
+#app > .creative-studio,
+#app > .item-page,
+#app > .redemption-redirect,
+#app > .flow-shell,
+#app > .admin-shell,
+#app > .admin-login,
+#app > .agent-page,
+#app > .legal-page,
+#app > .public-site.home-theme,
+.public-site.home-theme .site-hero,
+.public-site:not(.home-theme),
+.public-page-content,
+.site-section,
+.market-page,
+.pricing-page,
+.other-services-page,
+.docs-page {
+  background-color: var(--tech-bg) !important;
+  background-image: none !important;
+}
+
+.admin-shell .admin-main,
+.user-console-page .user-main {
+  background: var(--tech-bg) !important;
+  backdrop-filter: none !important;
+}
+
+.public-site.home-theme .site-hero::before,
+.public-site.home-theme .site-hero::after,
+.hero-atmosphere,
+.model-constellations {
+  display: none !important;
+  background: none !important;
+  content: none !important;
+}
+
+.public-site.home-theme .site-links button {
+  color: #64748b !important;
+}
+
+.public-site.home-theme .site-links button.active,
+.public-site.home-theme .site-links button:hover {
+  background: #eaf2ff !important;
+  color: #174b8f !important;
+}
+
+#app .public-site.home-theme .site-auth-button,
+#app .public-site.home-theme .hero-actions button.el-button.hero-secondary,
+#app .el-button:not(.el-button--primary):not(.el-button--success):not(.el-button--warning):not(.el-button--danger):not(.is-link) {
+  border-color: var(--tech-line) !important;
+  background: #ffffff !important;
+  color: #294766 !important;
+  box-shadow: none !important;
+}
+
+#app .el-button:not(.el-button--primary):not(.el-button--success):not(.el-button--warning):not(.el-button--danger):not(.is-link):hover,
+#app .el-button:not(.el-button--primary):not(.el-button--success):not(.el-button--warning):not(.el-button--danger):not(.is-link):focus-visible {
+  border-color: #93b5df !important;
+  background: #eef5ff !important;
+  color: #174b8f !important;
+}
+
+#app pre,
+#app .code-panel,
+#app .developer-docs > pre,
+#app .test-io,
+#app .playground-answer-scroll,
+#app .playground-raw-collapse {
+  border: 1px solid var(--tech-line) !important;
+  background: #f8fafc !important;
+  background-image: none !important;
+  color: #1e3a5f !important;
+  box-shadow: none !important;
+}
+
+#app .legal-page article {
+  border-color: var(--tech-line) !important;
+  background: #ffffff !important;
+  background-image: none !important;
+  color: var(--tech-text) !important;
+  box-shadow: 0 8px 24px rgba(51, 75, 105, 0.08) !important;
+}
+
+.public-site.home-theme .hero-feature-grid article strong,
+.public-site.home-theme .product-toolbar strong,
+.public-site.home-theme .product-card strong,
+.public-site.home-theme .route-list strong {
+  color: var(--tech-text) !important;
+}
+
+.public-site.home-theme .hero-feature-grid article small,
+.public-site.home-theme .product-toolbar small,
+.public-site.home-theme .product-card small,
+.public-site.home-theme .route-list small,
+.public-site.home-theme .hero-footnote p,
+.public-site.home-theme .hero-footnote small {
+  color: var(--tech-muted) !important;
+}
+
+@media (max-width: 700px) {
+  #app > .public-site,
+  #app > .user-console-page,
+  #app > .creative-studio,
+  #app > .admin-shell {
+    background: var(--tech-bg) !important;
+  }
+}
+
+/* Contrast and color harmony audit: final foreground/background guarantees. */
+:root {
+  --ui-text: #18314f;
+  --ui-muted: #52657e;
+  --ui-subtle: #5f7087;
+  --ui-primary-surface: #e2efff;
+  --ui-primary-text: #0d4f9f;
+  --ui-success-surface: #e8f8f1;
+  --ui-success-text: #09633f;
+  --ui-warning-surface: #fff7df;
+  --ui-warning-text: #714b00;
+  --ui-danger-surface: #fff0f2;
+  --ui-danger-text: #9f2636;
+}
+
+/* Text inside a filled control must follow the control's verified foreground. */
+#app .el-button > span,
+#app .el-button .el-icon,
+#app .el-button .el-icon svg,
+#app .el-tag__content,
+#app .el-radio-button__inner,
+#app .el-checkbox__label,
+#app .el-alert__content,
+#app .el-alert__title,
+#app .el-alert__description {
+  color: inherit !important;
+}
+
+#app .el-button:not(.is-disabled):not(.is-link):not(.is-text) {
+  text-shadow: none !important;
+}
+
+#app .el-button.is-disabled,
+#app .el-button.is-disabled:hover,
+#app .el-button.is-disabled:focus {
+  border-color: #cbd8e7 !important;
+  background: #edf2f7 !important;
+  background-image: none !important;
+  color: #5b6d83 !important;
+  opacity: 1 !important;
+}
+
+#app .el-button.is-link,
+#app .el-button.is-text {
+  color: #174b8f !important;
+}
+
+/* Semantic filled surfaces use explicit, readable foreground/background pairs. */
+#app .el-alert {
+  border: 1px solid #bfd5ee !important;
+  background: #eef5ff !important;
+  color: #294766 !important;
+}
+
+#app .el-alert--info.is-light {
+  border-color: #bfd5ee !important;
+  background: #eef5ff !important;
+  color: #294766 !important;
+}
+
+#app .el-alert--success.is-light {
+  border-color: #a9ddc8 !important;
+  background: var(--ui-success-surface) !important;
+  color: var(--ui-success-text) !important;
+}
+
+#app .el-alert--warning.is-light {
+  border-color: #ead090 !important;
+  background: var(--ui-warning-surface) !important;
+  color: var(--ui-warning-text) !important;
+}
+
+#app .el-alert--error.is-light {
+  border-color: #efb7bf !important;
+  background: var(--ui-danger-surface) !important;
+  color: var(--ui-danger-text) !important;
+}
+
+#app .el-alert .el-alert__icon,
+#app .el-alert .el-alert__close-btn {
+  color: inherit !important;
+}
+
+#app .el-tag--info {
+  border-color: #bfd5ee !important;
+  background: #eef5ff !important;
+  color: #294766 !important;
+}
+
+#app .el-tag--success {
+  border-color: #a9ddc8 !important;
+  background: var(--ui-success-surface) !important;
+  color: var(--ui-success-text) !important;
+}
+
+#app .el-tag--warning {
+  border-color: #ead090 !important;
+  background: var(--ui-warning-surface) !important;
+  color: var(--ui-warning-text) !important;
+}
+
+#app .el-tag--danger {
+  border-color: #efb7bf !important;
+  background: var(--ui-danger-surface) !important;
+  color: var(--ui-danger-text) !important;
+}
+
+#app .el-checkbox__input.is-checked .el-checkbox__inner,
+#app .el-checkbox__input.is-indeterminate .el-checkbox__inner,
+#app .el-switch.is-checked .el-switch__core {
+  border-color: #2563eb !important;
+  background: #2563eb !important;
+}
+
+#app .el-checkbox__input.is-checked + .el-checkbox__label,
+#app .el-radio__input.is-checked + .el-radio__label {
+  color: #174b8f !important;
+}
+
+/* Numbers and headings that previously inherited the former dark-theme white. */
+#app .metric-card strong,
+#app .console-stat strong,
+#app .services-count strong,
+#app .market-stats strong,
+#app .market-result-count strong,
+#app .account-summary-grid strong,
+#app .report-summary strong,
+#app .gateway-metrics strong,
+#app .vmcard-status-grid strong,
+#app .studio-stat strong,
+#app .item-stat strong,
+#app .service-order-row strong {
+  color: var(--ui-text) !important;
+  text-shadow: none !important;
+}
+
+#app .metric-card > span,
+#app .console-stat > span:not(.console-status-note),
+#app .services-count > span,
+#app .list-pagination,
+#app .el-pagination__total,
+#app .el-pagination__jump,
+#app .el-empty__description p,
+#app .el-table__empty-text,
+#app .admin-login p {
+  color: var(--ui-muted) !important;
+}
+
+/* Keep major modules on one calm light palette; reserve color fills for status. */
+#app .market-guide,
+#app .account-summary-grid > div,
+#app .report-summary > div,
+#app .gateway-metrics > div,
+#app .vmcard-status-grid > article,
+#app .studio-stat,
+#app .item-stat {
+  border-color: var(--tech-line) !important;
+  background: #ffffff !important;
+  background-image: none !important;
+  color: var(--ui-text) !important;
+  box-shadow: 0 8px 24px rgba(51, 75, 105, 0.08) !important;
+}
+
+#app .market-guide pre {
+  border-color: var(--tech-line) !important;
+  background: #f8fafc !important;
+  color: #1e3a5f !important;
+}
+
+/* Model market. */
+#app .market-hero-label span,
+#app .market-filter-panel > header button {
+  color: #0d5b9f !important;
+}
+
+#app .market-filter-panel h2,
+#app .market-filter-group h3,
+#app .market-guide h2 {
+  color: var(--ui-text) !important;
+}
+
+#app .market-guide p:not(.eyebrow),
+#app .market-availability-row,
+#app .market-result-count,
+#app .market-public-id,
+#app .market-meta dt {
+  color: var(--ui-muted) !important;
+}
+
+#app .market-filter-options button {
+  color: #40566f !important;
+}
+
+#app .market-filter-options button:hover,
+#app .market-filter-options button.active {
+  border-color: #bfd5ee !important;
+  background: #eaf2ff !important;
+  color: #174b8f !important;
+}
+
+#app .market-filter-options i {
+  background: #e4edf8 !important;
+  color: #385270 !important;
+}
+
+#app .market-card-details > summary {
+  border-color: #c9d9ea !important;
+  background: #eef5fc !important;
+  color: #174b78 !important;
+}
+
+#app .market-card-details > summary:hover {
+  border-color: #9dbddd !important;
+  background: #e3effb !important;
+  color: #0d4f9f !important;
+}
+
+/* Developer documentation. */
+#app .developer-docs header h2,
+#app .docs-code-head strong,
+#app .docs-checklist b {
+  color: var(--ui-text) !important;
+}
+
+#app .docs-config-grid label > span,
+#app .docs-endpoints span,
+#app .docs-checklist {
+  color: var(--ui-muted) !important;
+}
+
+#app .docs-endpoints code {
+  color: #0d5b9f !important;
+}
+
+/* Creative Studio retains a restrained violet accent without pale text. */
+#app .creative-studio .studio-eyebrow,
+#app .creative-studio .provider-pill,
+#app .creative-studio .section-title > span,
+#app .creative-studio .work-card-body > p {
+  color: #6648a1 !important;
+}
+
+#app .creative-studio .intro-copy,
+#app .creative-studio .mode-rail small,
+#app .creative-studio .rail-tip,
+#app .creative-studio .rail-tip p,
+#app .creative-studio .field-label small,
+#app .creative-studio .reference-section p,
+#app .creative-studio .settings-grid label > span,
+#app .creative-studio .composer-bottom small,
+#app .creative-studio .prompt-box > div,
+#app .creative-studio .template-grid p,
+#app .creative-studio .login-empty p,
+#app .creative-studio .first-time-card p,
+#app .creative-studio .work-card footer > span,
+#app .creative-studio .work-card footer small {
+  color: var(--ui-muted) !important;
+}
+
+#app .creative-studio .mode-rail > button {
+  color: #40566f !important;
+}
+
+#app .creative-studio .mode-rail > button:hover,
+#app .creative-studio .mode-rail > button.active {
+  border-color: #cabee9 !important;
+  background: #f1edfb !important;
+  background-image: none !important;
+  color: #563b91 !important;
+}
+
+#app .creative-studio .mode-rail > button:hover small,
+#app .creative-studio .mode-rail > button.active small {
+  color: #6648a1 !important;
+}
+
+#app .creative-studio .provider-pill,
+#app .creative-studio .first-time-card,
+#app .creative-studio .newbie-guide,
+#app .creative-studio .storyboard-helper,
+#app .creative-studio .connection-help {
+  border-color: #d8cfee !important;
+  background: #f8f5ff !important;
+  background-image: none !important;
+}
+
+/* Remaining small-print and teleported-overlay contrast corrections. */
+#app .el-button span,
+#app .sidebar-balance .el-button span {
+  color: inherit !important;
+}
+
+#app .el-input__prefix,
+#app .el-input__prefix-inner,
+#app .el-input__suffix,
+#app .el-input__suffix-inner,
+#app .el-input__count {
+  color: var(--ui-muted) !important;
+}
+
+#app .creative-studio .composer-head p {
+  color: #6648a1 !important;
+}
+
+#app .creative-studio .newbie-guide > span {
+  color: #5c4198 !important;
+}
+
+#app .developer-docs .eyebrow {
+  color: #0d5b9f !important;
+}
+
+#app .playground-billing-panel .playground-result-head p,
+#app .usage-visual-card header span,
+#app .usage-pie small,
+#app .usage-kpis span,
+#app .usage-chart-toolbar span,
+#app .usage-table-title span,
+#app .gateway-workbench .heading p,
+#app .panel-head small,
+#app .organization-page .page-heading p,
+#app .agent-card > p,
+#app .vmcard-title-row p {
+  color: var(--ui-muted) !important;
+}
+
+/* Element Plus overlays are teleported outside #app. */
+.el-overlay .el-dialog,
+.el-overlay .el-drawer,
+.el-popper,
+.el-message-box {
+  color: var(--ui-text) !important;
+}
+
+.el-overlay .el-dialog .el-dialog__title,
+.el-overlay .el-dialog .el-form-item__label,
+.el-overlay .el-dialog .el-input__inner,
+.el-overlay .el-dialog .el-select__selected-item,
+.el-overlay .el-dialog .el-checkbox__label {
+  color: var(--ui-text) !important;
+}
+
+.el-overlay .el-dialog .el-input__prefix,
+.el-overlay .el-dialog .el-input__suffix,
+.el-overlay .el-dialog .el-input__count,
+.auth-dialog .auth-security-note {
+  color: var(--ui-muted) !important;
+}
+
+.auth-dialog .auth-dialog-head p {
+  color: #0d5b9f !important;
+}
+
+.el-message {
+  border: 1px solid #bfd5ee !important;
+  background: #eef5ff !important;
+  color: #294766 !important;
+}
+
+.el-message .el-message__content,
+.el-message .el-message__icon,
+.el-message .el-message__closeBtn {
+  color: inherit !important;
+}
+
+.el-message--success {
+  border-color: #a9ddc8 !important;
+  background: var(--ui-success-surface) !important;
+  color: var(--ui-success-text) !important;
+}
+
+.el-message--warning {
+  border-color: #ead090 !important;
+  background: var(--ui-warning-surface) !important;
+  color: var(--ui-warning-text) !important;
+}
+
+.el-message--error {
+  border-color: #efb7bf !important;
+  background: var(--ui-danger-surface) !important;
+  color: var(--ui-danger-text) !important;
+}
+
+#app .services-count small {
+  color: var(--ui-muted) !important;
+}
+
+#app .public-site.home-theme .product-toolbar .product-logo {
+  background-color: #315bda !important;
+}
+
+/* --------------------------------------------------------------------------
+   Model market toolbar and administration palette
+   Keep these rules last: both areas previously inherited the retired dark
+   surface treatment, which left dark copy on dark filled backgrounds.
+   -------------------------------------------------------------------------- */
+#app .market-toolbar {
+  padding: 12px 14px;
+  border: 1px solid #d8e3f0 !important;
+  border-radius: 12px;
+  background: #ffffff !important;
+  background-image: none !important;
+  color: var(--ui-text) !important;
+  box-shadow: 0 8px 24px rgba(51, 75, 105, 0.08) !important;
+  backdrop-filter: none !important;
+}
+
+#app .market-toolbar .market-result-count,
+#app .market-toolbar .market-result-count span {
+  color: var(--ui-muted) !important;
+}
+
+#app .market-toolbar .market-result-count strong {
+  color: var(--ui-text) !important;
+}
+
+#app .market-toolbar .el-input__wrapper,
+#app .market-toolbar .el-select__wrapper {
+  border-color: #d8e3f0 !important;
+  background: #f8fafc !important;
+  box-shadow: 0 0 0 1px #d8e3f0 inset !important;
+}
+
+#app .market-toolbar .el-input__inner,
+#app .market-toolbar .el-select__selected-item,
+#app .market-toolbar .el-input__icon,
+#app .market-toolbar .el-select__caret {
+  color: #294766 !important;
+}
+
+/* Other-services cards must stay on the shared light palette. */
+#app .other-services-page .service-card {
+  border-color: #d8e3f0 !important;
+  background: #ffffff !important;
+  background-image: none !important;
+  color: var(--ui-text) !important;
+  box-shadow: 0 8px 24px rgba(51, 75, 105, 0.08) !important;
+  backdrop-filter: none !important;
+}
+
+#app .other-services-page .service-card:hover {
+  border-color: #a9c4e3 !important;
+  background: #ffffff !important;
+  box-shadow: 0 14px 32px rgba(51, 75, 105, 0.12) !important;
+}
+
+#app .other-services-page .service-card-body {
+  background: #ffffff !important;
+  background-image: none !important;
+  color: var(--ui-text) !important;
+}
+
+#app .other-services-page .service-image,
+#app .other-services-page .service-image-placeholder {
+  background: #f4f8fd !important;
+  background-image: none !important;
+}
+
+#app .other-services-page .service-image-placeholder {
+  color: var(--ui-muted) !important;
+}
+
+#app .other-services-page .service-image-placeholder span,
+#app .other-services-page .service-index {
+  color: #0d5b9f !important;
+}
+
+#app .other-services-page .service-image-placeholder small,
+#app .other-services-page .service-card-meta,
+#app .other-services-page .service-order-row small {
+  color: var(--ui-muted) !important;
+}
+
+#app .other-services-page .service-order-row {
+  border-color: #d8e3f0 !important;
+}
+
+#app .other-services-page .service-orders {
+  border-color: #d8e3f0 !important;
+  background: #ffffff !important;
+  background-image: none !important;
+  color: var(--ui-text) !important;
+}
+
+/* The complete admin area uses one calm, high-contrast light palette. */
+#app > .admin-shell,
+#app > .admin-login {
+  --admin-bg: #f3f7fc;
+  --admin-surface: #ffffff;
+  --admin-surface-soft: #f7faff;
+  --admin-line: #d8e3f0;
+  --admin-line-strong: #bfd0e4;
+  --admin-text: #18314f;
+  --admin-muted: #52657e;
+  --admin-primary: #2563eb;
+  --admin-primary-hover: #1d4ed8;
+  color: var(--admin-text) !important;
+}
+
+#app > .admin-login {
+  background:
+    radial-gradient(circle at 18% 12%, rgba(37, 99, 235, 0.09), transparent 30%),
+    radial-gradient(circle at 86% 88%, rgba(8, 145, 178, 0.07), transparent 28%),
+    var(--admin-bg) !important;
+}
+
+#app .admin-login .login-panel {
+  border: 1px solid var(--admin-line) !important;
+  background: var(--admin-surface) !important;
+  background-image: none !important;
+  color: var(--admin-text) !important;
+  box-shadow: 0 24px 64px rgba(51, 75, 105, 0.14) !important;
+  backdrop-filter: none !important;
+}
+
+#app .admin-login .brand-mark,
+#app .admin-shell .brand-mark {
+  border: 1px solid #cfe0f6 !important;
+  background: #eef5ff !important;
+  background-image: none !important;
+}
+
+#app .admin-login h1,
+#app .admin-login .el-form-item__label {
+  color: var(--admin-text) !important;
+}
+
+#app .admin-login p {
+  color: var(--admin-muted) !important;
+}
+
+#app .admin-login .el-input__wrapper {
+  border-color: var(--admin-line) !important;
+  background: var(--admin-surface-soft) !important;
+  box-shadow: 0 0 0 1px var(--admin-line) inset !important;
+}
+
+#app .admin-login .el-input__wrapper:hover,
+#app .admin-login .el-input__wrapper.is-focus {
+  background: #ffffff !important;
+  box-shadow: 0 0 0 1px #7da9df inset !important;
+}
+
+#app .admin-login .submit-btn.el-button--primary:not(.is-link):not(.is-plain):not(.is-text) {
+  border-color: var(--admin-primary) !important;
+  background: var(--admin-primary) !important;
+  background-image: none !important;
+  color: #ffffff !important;
+  box-shadow: 0 10px 22px rgba(37, 99, 235, 0.2) !important;
+}
+
+#app .admin-login .submit-btn.el-button--primary:not(.is-link):not(.is-plain):not(.is-text):hover,
+#app .admin-login .submit-btn.el-button--primary:not(.is-link):not(.is-plain):not(.is-text):focus-visible {
+  border-color: var(--admin-primary-hover) !important;
+  background: var(--admin-primary-hover) !important;
+  color: #ffffff !important;
+}
+
+#app .admin-shell {
+  background: var(--admin-bg) !important;
+  background-image: none !important;
+}
+
+#app .admin-shell .admin-aside,
+#app .admin-shell .admin-header {
+  border-color: var(--admin-line) !important;
+  background: var(--admin-surface) !important;
+  background-image: none !important;
+  color: var(--admin-text) !important;
+  backdrop-filter: none !important;
+}
+
+#app .admin-shell .admin-aside {
+  box-shadow: 5px 0 20px rgba(51, 75, 105, 0.07) !important;
+}
+
+#app .admin-shell .admin-header {
+  box-shadow: 0 4px 16px rgba(51, 75, 105, 0.06) !important;
+}
+
+#app .admin-shell .admin-main {
+  background: var(--admin-bg) !important;
+  background-image: none !important;
+  color: var(--admin-text) !important;
+}
+
+#app .admin-shell .brand-title,
+#app .admin-shell .admin-header h1,
+#app .admin-shell h2,
+#app .admin-shell h3,
+#app .admin-shell h4,
+#app .admin-shell .panel-title,
+#app .admin-shell .channel-ledger-title,
+#app .admin-shell .price-group-head,
+#app .admin-shell .report-title {
+  color: var(--admin-text) !important;
+  text-shadow: none !important;
+}
+
+#app .admin-shell .brand-subtitle,
+#app .admin-shell .admin-header p,
+#app .admin-shell .panel-head p,
+#app .admin-shell .heading p,
+#app .admin-shell .toolbar p,
+#app .admin-shell .field-hint,
+#app .admin-shell .form-hint,
+#app .admin-shell .form-tip,
+#app .admin-shell .price-hint,
+#app .admin-shell .security-hint,
+#app .admin-shell .muted {
+  color: var(--admin-muted) !important;
+}
+
+#app .admin-shell .admin-menu {
+  --el-menu-bg-color: transparent;
+  --el-menu-text-color: var(--admin-muted);
+  --el-menu-hover-bg-color: #eaf2ff;
+  --el-menu-active-color: #174b8f;
+  background: transparent !important;
+}
+
+#app .admin-shell .admin-menu .el-menu-item,
+#app .admin-shell .admin-menu .el-sub-menu__title,
+#app .admin-shell .admin-menu .el-menu-item .el-icon,
+#app .admin-shell .admin-menu .el-sub-menu__title .el-icon,
+#app .admin-shell .admin-menu .el-sub-menu__icon-arrow {
+  color: var(--admin-muted) !important;
+}
+
+#app .admin-shell .admin-menu .el-menu-item:hover,
+#app .admin-shell .admin-menu .el-sub-menu__title:hover,
+#app .admin-shell .admin-menu .el-sub-menu.is-opened > .el-sub-menu__title,
+#app .admin-shell .admin-menu .el-menu-item.is-active {
+  background: #eaf2ff !important;
+  background-image: none !important;
+  color: #174b8f !important;
+}
+
+#app .admin-shell .admin-menu .el-menu-item:hover .el-icon,
+#app .admin-shell .admin-menu .el-sub-menu__title:hover .el-icon,
+#app .admin-shell .admin-menu .el-sub-menu.is-opened > .el-sub-menu__title .el-icon,
+#app .admin-shell .admin-menu .el-sub-menu.is-opened > .el-sub-menu__title .el-sub-menu__icon-arrow,
+#app .admin-shell .admin-menu .el-menu-item.is-active .el-icon {
+  color: #2563eb !important;
+}
+
+#app .admin-shell :is(
+  .console-toolbar,
+  .panel,
+  .gateway-panel,
+  .admin-table-shell,
+  .security-card,
+  .settings-card,
+  .report-card,
+  .admin-evolution,
+  .config-tabs,
+  .form-card,
+  .service-card,
+  .vmcard-panel,
+  .probe-form,
+  .credential-pool-card,
+  .channel-model-pricing-card,
+  .price-tier-card,
+  .unit-price-card,
+  .usage-visual-card,
+  .test-result-panel,
+  .el-card
+) {
+  border-color: var(--admin-line) !important;
+  background: var(--admin-surface) !important;
+  background-image: none !important;
+  color: var(--admin-text) !important;
+  box-shadow: 0 8px 24px rgba(51, 75, 105, 0.08) !important;
+  backdrop-filter: none !important;
+}
+
+#app .admin-shell :is(
+  .metric-card,
+  .ops-grid article,
+  .sensitive-test-box,
+  .sensitive-guide-grid article,
+  .price-group,
+  .service-image-placeholder,
+  .vmcard-status-grid > article,
+  .account-summary-grid > div,
+  .report-summary > div,
+  .gateway-metrics > div
+) {
+  border-color: var(--admin-line) !important;
+  background: var(--admin-surface-soft) !important;
+  background-image: none !important;
+  color: var(--admin-text) !important;
+  box-shadow: none !important;
+}
+
+#app .admin-shell :is(.metric-card, .ops-grid article):hover {
+  border-color: var(--admin-line-strong) !important;
+  background: #f1f6fd !important;
+  box-shadow: 0 10px 24px rgba(51, 75, 105, 0.08) !important;
+}
+
+#app .admin-shell .el-button--primary:not(.is-link):not(.is-plain):not(.is-text) {
+  border-color: var(--admin-primary) !important;
+  background: var(--admin-primary) !important;
+  background-image: none !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
+}
+
+#app .admin-shell .el-button--primary:not(.is-link):not(.is-plain):not(.is-text):hover,
+#app .admin-shell .el-button--primary:not(.is-link):not(.is-plain):not(.is-text):focus-visible {
+  border-color: var(--admin-primary-hover) !important;
+  background: var(--admin-primary-hover) !important;
+  color: #ffffff !important;
+}
+
+#app .admin-shell .el-button--danger.is-plain {
+  border-color: #efb7bf !important;
+  background: #fff0f2 !important;
+  color: #9f2636 !important;
+}
+
+#app .admin-shell .el-button--danger.is-plain:hover,
+#app .admin-shell .el-button--danger.is-plain:focus-visible {
+  border-color: #dc7685 !important;
+  background: #ffe4e8 !important;
+  color: #84202e !important;
+}
+
+#app .admin-shell .el-input__wrapper,
+#app .admin-shell .el-select__wrapper,
+#app .admin-shell .el-textarea__inner,
+#app .admin-shell .el-input-number .el-input__wrapper,
+#app .admin-shell .el-date-editor.el-input__wrapper {
+  border-color: var(--admin-line) !important;
+  background: #ffffff !important;
+  color: var(--admin-text) !important;
+  box-shadow: 0 0 0 1px var(--admin-line) inset !important;
+}
+
+#app .admin-shell .el-input__wrapper:hover,
+#app .admin-shell .el-select__wrapper:hover,
+#app .admin-shell .el-textarea__inner:hover,
+#app .admin-shell .el-input__wrapper.is-focus,
+#app .admin-shell .el-select__wrapper.is-focused,
+#app .admin-shell .el-textarea__inner:focus {
+  box-shadow: 0 0 0 1px #7da9df inset !important;
+}
+
+#app .admin-shell .el-table {
+  --el-table-bg-color: #ffffff;
+  --el-table-tr-bg-color: #ffffff;
+  --el-table-header-bg-color: #eef5ff;
+  --el-table-row-hover-bg-color: #f4f8fd;
+  --el-table-border-color: #dce6f2;
+  --el-table-text-color: var(--admin-text);
+  --el-table-header-text-color: #385270;
+}
+
+#app .admin-shell .el-table th.el-table__cell {
+  background: #eef5ff !important;
+  color: #385270 !important;
+}
+
+#app .admin-shell .el-table tr,
+#app .admin-shell .el-table td.el-table__cell {
+  background: #ffffff !important;
+  color: var(--admin-text) !important;
+}
+
+#app .admin-shell :is(.event-json, .response-json, .report-json, .issued-secret) {
+  border: 1px solid var(--admin-line) !important;
+  background: #f8fafc !important;
+  background-image: none !important;
+  color: #1e3a5f !important;
+  box-shadow: none !important;
+}
+
+@media (max-width: 640px) {
+  #app .market-toolbar {
+    padding: 12px;
+  }
 }

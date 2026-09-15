@@ -50,7 +50,7 @@ public class ModelProbeAdminController {
     @GetMapping
     public PageResponse<Map<String, Object>> list(@RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authHeader,
                                                   @RequestParam(defaultValue = "1") int page,
-                                                  @RequestParam(defaultValue = "20") int size) {
+                                                  @RequestParam(defaultValue = "10") int size) {
         currentUserService.requireAdmin(authHeader);
         modelProbeService.ensureEnabled(true);
         PageResponse<ModelProbeTask> result = modelProbeService.list(null, page, size);

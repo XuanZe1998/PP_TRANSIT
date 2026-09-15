@@ -40,6 +40,7 @@ web/.vue-global-types/
 web/vite-dev.log
 web/test-results/
 web/playwright-report/
+web/.codex-artifacts/
 .wrangler/
 *~
 

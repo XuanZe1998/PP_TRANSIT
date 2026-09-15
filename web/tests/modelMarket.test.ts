@@ -24,10 +24,23 @@ describe('model marketplace helpers', () => {
 
   it('resets pagination when filters or page size change', () => {
     const market = source('src/views/ModelMarket.vue')
-    expect(market).toContain(':page-sizes="[10, 20, 50, 100, 200]"')
+    expect(market).toContain('const pageSize = ref(20)')
+    expect(market).not.toContain(':page-sizes="[10, 20, 50, 100, 200]"')
     expect(market).toContain('function handlePageSizeChange() { page.value = 1')
     expect(market).toContain('watch(filters, () => { if (hydrating) return; page.value = 1')
     expect(market).toContain('const safePage = clampPage(page.value, total.value, pageSize.value)')
+  })
+
+  it('keeps card metadata and pricing collapsed until requested and synchronizes column heights', () => {
+    const market = source('src/views/ModelMarket.vue')
+    const css = source('src/style.css')
+    expect(market).toContain('<details class="market-card-details">')
+    expect(market).toContain('<dl class="market-meta">')
+    expect(market).toContain('<ModelSalePricing')
+    expect(market).toContain('new ResizeObserver')
+    expect(market).toContain('height: marketResultsHeight')
+    expect(css).toMatch(/\.market-catalog-shell\s*\{[\s\S]*?align-items:\s*stretch/)
+    expect(css).toContain('.market-card-details[open] .market-details-open')
   })
 
   it('exposes unified facets, public-only pricing and channel comparison', () => {

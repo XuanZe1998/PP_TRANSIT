@@ -13,7 +13,7 @@ test('home loads summary without chart renderer and keeps login available', asyn
   await expect(page.locator('.routing-stats')).toContainText('207')
   await expect(page.locator('.routing-stats')).toContainText('2')
   expect(scripts.some(url => url.includes('installCanvasRenderer'))).toBe(false)
-  await expect(page.locator('.particle-canvas')).toBeVisible()
+  await expect(page.locator('.particle-canvas')).toHaveCount(0)
   await page.getByRole('button', { name: '登录', exact: true }).click()
   await expect(page).toHaveURL(/auth=login/)
   await expect(page.locator('.el-dialog')).toBeVisible()

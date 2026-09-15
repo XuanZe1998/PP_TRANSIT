@@ -32,7 +32,7 @@ public class AnyiPayAdminController {
     @GetMapping("/orders")
     public Mono<JsonNode> orders(@RequestHeader(HttpHeaders.AUTHORIZATION) String authorization,
                                  @RequestParam(defaultValue = "0") int offset,
-                                 @RequestParam(defaultValue = "50") int limit,
+                                 @RequestParam(defaultValue = "10") int limit,
                                  @RequestParam(required = false) Integer status) {
         requireAdmin(authorization);
         return Mono.fromCallable(() -> anyiPayClient.merchantOrders(offset, limit, status));
