@@ -193,7 +193,7 @@ verification:
   hmac-secret: ""
   debug-code-enabled: false
   email:
-    from: "linknux@linknux.com"
+    sender-address: "linknux@linknux.com"
     subject: "Linknux 安全验证码"
     brand-name: "Linknux"
     website-url: "https://linknux.com"

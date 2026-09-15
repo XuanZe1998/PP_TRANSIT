@@ -26,7 +26,8 @@ public class VerificationDeliveryService {
     private final ObjectProvider<JavaMailSender> mailSenderProvider;
     private final WebClient webClient;
 
-    @Value("${verification.email.from:}") private String emailFrom;
+    @Value("${verification.email.sender-address:linknux@linknux.com}")
+    private String emailSenderAddress = "linknux@linknux.com";
     @Value("${verification.email.subject:Linknux 安全验证码}") private String emailSubject = "Linknux 安全验证码";
     @Value("${verification.email.brand-name:Linknux}") private String emailBrandName = "Linknux";
     @Value("${verification.email.website-url:https://linknux.com}") private String emailWebsiteUrl = "https://linknux.com";
@@ -41,7 +42,7 @@ public class VerificationDeliveryService {
 
     public boolean emailConfigured() {
         return mailSenderProvider.getIfAvailable() != null
-                && emailFrom != null && !emailFrom.isBlank()
+                && emailSenderAddress != null && !emailSenderAddress.isBlank()
                 && mailHost != null && !mailHost.isBlank()
                 && mailUsername != null && !mailUsername.isBlank()
                 && mailPassword != null && !mailPassword.isBlank();
@@ -62,7 +63,7 @@ public class VerificationDeliveryService {
             MimeMessage message = mailSender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(
                     message, MimeMessageHelper.MULTIPART_MODE_MIXED_RELATED, StandardCharsets.UTF_8.name());
-            helper.setFrom(emailFrom, valueOrDefault(emailBrandName, "Linknux"));
+            helper.setFrom(emailSenderAddress, valueOrDefault(emailBrandName, "Linknux"));
             helper.setTo(recipient);
             helper.setSubject(valueOrDefault(emailSubject, "Linknux 安全验证码"));
             helper.setText(plainText(code), renderHtml(code));

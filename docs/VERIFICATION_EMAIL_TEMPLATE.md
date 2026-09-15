@@ -17,7 +17,7 @@
 
 | 环境变量 | 默认值 | 用途 |
 | --- | --- | --- |
-| `VERIFICATION_EMAIL_FROM` | 无 | 发件地址，必须是 Resend 中已验证的域名 |
+| `VERIFICATION_EMAIL_SENDER_ADDRESS` | `linknux@linknux.com` | 发件地址，必须是 Resend 中已验证的域名 |
 | `VERIFICATION_EMAIL_SUBJECT` | `Linknux 安全验证码` | 邮件主题 |
 | `VERIFICATION_EMAIL_BRAND_NAME` | `Linknux` | 品牌名 |
 | `VERIFICATION_EMAIL_WEBSITE_URL` | `https://linknux.com` | 邮件底部官网链接 |

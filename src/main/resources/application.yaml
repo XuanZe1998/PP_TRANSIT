@@ -343,7 +343,9 @@ verification:
   hmac-secret: ${VERIFICATION_HMAC_SECRET:${JWT_SECRET:local-development-verification-secret-change-me}}
   debug-code-enabled: ${VERIFICATION_DEBUG_CODE_ENABLED:false}
   email:
-    from: ${VERIFICATION_EMAIL_FROM:}
+    # sender-address replaces the legacy "from" key so the branded sender is
+    # deterministic even when an older private production file is still present.
+    sender-address: ${VERIFICATION_EMAIL_SENDER_ADDRESS:linknux@linknux.com}
     subject: ${VERIFICATION_EMAIL_SUBJECT:Linknux 安全验证码}
     brand-name: ${VERIFICATION_EMAIL_BRAND_NAME:Linknux}
     website-url: ${VERIFICATION_EMAIL_WEBSITE_URL:https://linknux.com}
