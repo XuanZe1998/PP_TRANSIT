@@ -31,7 +31,7 @@ class VerificationDeliveryServiceTests {
 
         VerificationDeliveryService service = new VerificationDeliveryService(
                 provider, WebClient.builder().build());
-        ReflectionTestUtils.setField(service, "emailFrom", "no-reply@example.com");
+        ReflectionTestUtils.setField(service, "emailSenderAddress", "linknux@linknux.com");
         ReflectionTestUtils.setField(service, "mailHost", "smtp.example.com");
         ReflectionTestUtils.setField(service, "mailUsername", "smtp-user");
         ReflectionTestUtils.setField(service, "mailPassword", "smtp-password");
