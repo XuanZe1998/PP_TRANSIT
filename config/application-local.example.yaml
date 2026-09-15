@@ -193,7 +193,11 @@ verification:
   hmac-secret: ""
   debug-code-enabled: false
   email:
-    from: "no-reply@example.com"
+    from: "linknux@linknux.com"
+    subject: "Linknux 安全验证码"
+    brand-name: "Linknux"
+    website-url: "https://linknux.com"
+    support-email: "support@linknux.com"
   sms:
     # Supported values: tencent, aliyun. endpoint points to your secured adapter endpoint.
     provider: ""

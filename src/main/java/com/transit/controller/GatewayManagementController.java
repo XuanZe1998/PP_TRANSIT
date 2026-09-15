@@ -34,7 +34,7 @@ public class GatewayManagementController {
   return jdbc.queryForMap("SELECT COUNT(*) models,COALESCE(SUM(CASE WHEN mm.enabled=TRUE THEN 1 ELSE 0 END),0) published,COALESCE(SUM(CASE WHEN mm.pricing_status<>'VERIFIED' OR mm.pricing_status IS NULL THEN 1 ELSE 0 END),0) pending_price,COALESCE(SUM(CASE WHEN mm.enabled=FALSE AND mm.pricing_status='VERIFIED' THEN 1 ELSE 0 END),0) pending_publish FROM model_mappings mm JOIN channels c ON c.id=mm.channel_id JOIN upstream_site_channels sc ON sc.channel_id=c.id JOIN upstream_sites s ON s.id=sc.site_id WHERE 1=1"+where,args.toArray());
  }
  @GetMapping("/sites") public PageResponse<Map<String,Object>> sites(@RequestHeader(HttpHeaders.AUTHORIZATION)String auth,
-    @RequestParam(defaultValue="1")int page,@RequestParam(defaultValue="20")int size,@RequestParam(defaultValue="false")boolean all,@RequestParam(defaultValue="")String query){
+    @RequestParam(defaultValue="1")int page,@RequestParam(defaultValue="10")int size,@RequestParam(defaultValue="false")boolean all,@RequestParam(defaultValue="")String query){
   admin(auth);return pages.query("""
    SELECT s.*, (SELECT COUNT(*) FROM upstream_site_channels sc WHERE sc.site_id=s.id) group_count,
     CASE WHEN a.encrypted_refresh_token IS NOT NULL AND a.encrypted_refresh_token<>'' THEN TRUE ELSE FALSE END account_authenticated,
@@ -46,7 +46,7 @@ public class GatewayManagementController {
  }
  @GetMapping("/groups") public PageResponse<Map<String,Object>> groups(@RequestHeader(HttpHeaders.AUTHORIZATION)String auth,
     @RequestParam(required=false)Long siteId,@RequestParam(required=false)Long groupId,@RequestParam(defaultValue="")String query,
-    @RequestParam(defaultValue="1")int page,@RequestParam(defaultValue="20")int size,@RequestParam(defaultValue="false")boolean all){
+    @RequestParam(defaultValue="1")int page,@RequestParam(defaultValue="10")int size,@RequestParam(defaultValue="false")boolean all){
   admin(auth);List<Object> args=new ArrayList<>();String where=filters(siteId,groupId,"c.id",args);
   args.add("%"+query+"%");
   return pages.query("""
@@ -141,14 +141,14 @@ public class GatewayManagementController {
  }
  @GetMapping("/jobs") public PageResponse<Map<String,Object>> records(@RequestHeader(HttpHeaders.AUTHORIZATION)String auth,
    @RequestParam(required=false)Long siteId,@RequestParam(required=false)Long groupId,@RequestParam(defaultValue="")String status,
-   @RequestParam(defaultValue="1")int page,@RequestParam(defaultValue="20")int size,@RequestParam(defaultValue="false")boolean all){
+   @RequestParam(defaultValue="1")int page,@RequestParam(defaultValue="10")int size,@RequestParam(defaultValue="false")boolean all){
   admin(auth);List<Object> args=new ArrayList<>();String where=filters(siteId,groupId,"j.channel_id",args);
   if(!status.isBlank()){where+=" AND j.status=?";args.add(status);}
   return pages.query("SELECT j.*,s.name site_name,CASE WHEN j.job_type='GROUPS' THEN '上游分组目录' ELSE c.name END group_name FROM gateway_sync_jobs j LEFT JOIN upstream_sites s ON s.id=j.site_id LEFT JOIN channels c ON c.id=j.channel_id WHERE 1=1"+where+" ORDER BY j.created_at DESC,j.id",args,page,size,all);
  }
  @GetMapping("/models") public PageResponse<Map<String,Object>> models(@RequestHeader(HttpHeaders.AUTHORIZATION)String auth,
    @RequestParam(required=false)Long siteId,@RequestParam(required=false)Long groupId,@RequestParam(defaultValue="")String state,@RequestParam(defaultValue="")String query,
-   @RequestParam(defaultValue="1")int page,@RequestParam(defaultValue="20")int size,@RequestParam(defaultValue="false")boolean all){
+   @RequestParam(defaultValue="1")int page,@RequestParam(defaultValue="10")int size,@RequestParam(defaultValue="false")boolean all){
   admin(auth);
   if(state.equals("pending-import")) {
    List<Object> parameters=new ArrayList<>();String selection=filters(siteId,groupId,"c.id",parameters);parameters.add("%"+query+"%");
@@ -200,7 +200,7 @@ public class GatewayManagementController {
    }catch(Exception e){results.add(Map.of("id",item.channelId(),"success",false,"reason",e instanceof IllegalArgumentException?Objects.toString(e.getMessage(),"导入失败"):"导入失败，请刷新目录后重试"));}
   }return results;
  }
- @GetMapping("/tests")public PageResponse<Map<String,Object>> tests(@RequestHeader(HttpHeaders.AUTHORIZATION)String auth,@RequestParam(required=false)Long siteId,@RequestParam(required=false)Long groupId,@RequestParam(defaultValue="1")int page,@RequestParam(defaultValue="20")int size,@RequestParam(defaultValue="false")boolean all){
+ @GetMapping("/tests")public PageResponse<Map<String,Object>> tests(@RequestHeader(HttpHeaders.AUTHORIZATION)String auth,@RequestParam(required=false)Long siteId,@RequestParam(required=false)Long groupId,@RequestParam(defaultValue="1")int page,@RequestParam(defaultValue="10")int size,@RequestParam(defaultValue="false")boolean all){
   admin(auth);List<Object> args=new ArrayList<>();String where=filters(siteId,groupId,"j.channel_id",args);
   return pages.query("SELECT j.id,j.channel_id,j.status,j.model_name,j.latency_ms,j.exit_code,j.error_message,j.tested_at created_at,j.tested_at finished_at,CASE WHEN j.status='SUCCESS' THEN '测试完成' ELSE CONCAT('连通性测试失败：',COALESCE(NULLIF(j.error_message,''),j.status)) END message,s.name site_name,c.name group_name,'TEST' phase FROM channel_test_logs j LEFT JOIN channels c ON c.id=j.channel_id LEFT JOIN upstream_site_channels sc ON sc.channel_id=c.id LEFT JOIN upstream_sites s ON s.id=sc.site_id WHERE 1=1"+where+" ORDER BY j.tested_at DESC,j.id DESC",args,page,size,all);
  }

@@ -604,7 +604,7 @@ public class AdminApiController {
             @RequestParam(value = "query", required = false) String query,
             @RequestParam(value = "outcome", required = false) String outcome,
             @RequestParam(value = "page", defaultValue = "1") int page,
-            @RequestParam(value = "pageSize", defaultValue = "50") int pageSize) {
+            @RequestParam(value = "pageSize", defaultValue = "10") int pageSize) {
         requireAdmin(authHeader);
         return Mono.fromCallable(() -> auditQueryService.requestLogs(
                 audienceType, organizationId, userId, model, from, to, query, outcome, page, pageSize));
@@ -642,7 +642,7 @@ public class AdminApiController {
     public Mono<com.transit.dto.PageResponse<Map<String, Object>>> financeTransactionsPage(
             @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
             @RequestParam(value = "page", defaultValue = "1") int page,
-            @RequestParam(value = "size", defaultValue = "20") int size,
+            @RequestParam(value = "size", defaultValue = "10") int size,
             @RequestParam(value = "query", required = false) String query) {
         requireAdmin(authHeader);
         return Mono.fromCallable(() -> billingService.transactionsPage(page, size, query));

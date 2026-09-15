@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light only">
+  <title>{{brandName}} 安全验证码</title>
+</head>
+<body style="margin:0;padding:0;background:#f2f6fc;color:#142e4d;font-family:Inter,'Noto Sans SC','PingFang SC','Microsoft YaHei',Arial,sans-serif;">
+  <div style="display:none;max-height:0;overflow:hidden;opacity:0;">您的 {{brandName}} 验证码已送达，5 分钟内有效。</div>
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background:#f2f6fc;">
+    <tr>
+      <td align="center" style="padding:40px 16px;">
+        <table role="presentation" width="600" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:600px;border:1px solid #d6e2ef;border-radius:18px;background:#ffffff;box-shadow:0 16px 40px rgba(35,67,104,.10);overflow:hidden;">
+          <tr>
+            <td style="height:5px;background:#2563eb;background-image:linear-gradient(90deg,#2563eb,#1f66d4,#0e7490);font-size:0;line-height:0;">&nbsp;</td>
+          </tr>
+          <tr>
+            <td style="padding:30px 36px 22px;background:#ffffff;background-image:linear-gradient(135deg,#ffffff 30%,#f3f9ff 100%);">
+              <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                <tr>
+                  <td width="48" height="48" align="center" valign="middle" style="width:48px;height:48px;border-radius:14px;background:#2563eb;background-image:linear-gradient(135deg,#2563eb,#0e7490);color:#ffffff;font-size:21px;font-weight:800;letter-spacing:-1px;">L</td>
+                  <td style="padding-left:14px;">
+                    <div style="color:#142e4d;font-size:20px;font-weight:800;line-height:1.2;">{{brandName}}</div>
+                    <div style="padding-top:4px;color:#0e7490;font-size:11px;font-weight:700;letter-spacing:1.4px;line-height:1.2;">ACCOUNT SECURITY</div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:8px 36px 36px;">
+              <h1 style="margin:0 0 12px;color:#142e4d;font-size:26px;line-height:1.35;font-weight:800;">确认是你本人操作</h1>
+              <p style="margin:0 0 8px;color:#245f91;font-size:15px;font-weight:700;line-height:1.8;">欢迎使用 {{brandName}}！</p>
+              <p style="margin:0 0 12px;color:#52657e;font-size:15px;line-height:1.8;">感谢你选择我们的 AI 能力平台。我们希望帮助你更轻松地连接主流模型、开发应用与释放创意。</p>
+              <p style="margin:0;color:#52657e;font-size:15px;line-height:1.8;">你正在进行账号验证，请在页面中输入下方验证码：</p>
+              <div style="margin:24px 0;padding:23px 18px;border:1px solid #bdd3eb;border-radius:14px;background:#edf5ff;background-image:linear-gradient(135deg,#edf5ff,#eefcff);text-align:center;">
+                <div style="margin-bottom:7px;color:#245f91;font-size:11px;font-weight:700;letter-spacing:1.6px;">一次性验证码</div>
+                <div style="color:#1e40af;font-family:'SFMono-Regular',Consolas,'Liberation Mono',monospace;font-size:36px;font-weight:800;letter-spacing:8px;line-height:1.25;">{{verificationCode}}</div>
+                <div style="margin-top:8px;color:#52657e;font-size:12px;line-height:1.5;">5 分钟内有效 · 仅能使用一次</div>
+              </div>
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;border:1px solid #ead090;border-radius:12px;background:#fff7df;">
+                <tr>
+                  <td width="42" valign="top" style="padding:15px 0 15px 16px;color:#714b00;font-size:18px;">◆</td>
+                  <td style="padding:14px 16px 14px 0;color:#714b00;font-size:13px;line-height:1.7;">如非本人操作，请忽略此邮件。{{brandName}} 工作人员不会向你索要此验证码。</td>
+                </tr>
+              </table>
+              <p style="margin:24px 0 0;color:#64748b;font-size:12px;line-height:1.75;">遇到问题？请联系 <a href="mailto:{{supportEmail}}" style="color:#1d4ed8;text-decoration:none;">{{supportEmail}}</a></p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:20px 36px;border-top:1px solid #e2eaf3;background:#f7fafd;color:#718096;font-size:11px;line-height:1.7;text-align:center;">
+              此邮件由系统自动发送，请勿直接回复。<br>
+              <a href="{{websiteUrl}}" style="color:#245f91;text-decoration:none;">{{websiteUrl}}</a>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

@@ -1,6 +1,17 @@
 <template>
   <div class="public-site user-console-page">
     <div class="user-console user-console-embedded">
+      <header class="user-mobile-header">
+        <button class="site-menu-toggle" type="button" aria-label="打开用户工作台菜单" @click="mobileMenuOpen = true">
+          <el-icon><Menu /></el-icon>
+        </button>
+        <div>
+          <strong>{{ current.label }}</strong>
+          <small>{{ currentUser?.username || '用户工作台' }}</small>
+        </div>
+        <el-button size="small" type="primary" @click="openRechargePanel">充值</el-button>
+      </header>
+
       <aside class="user-sidebar">
         <button class="site-brand console-brand" title="用户工作台" aria-label="用户工作台" @click="go('/console')">
           <img class="site-brand-mark brand-image" src="/brand/linknux-mark-192.png" alt="" />
@@ -32,6 +43,45 @@
           <el-button class="sidebar-logout" size="small" text aria-label="退出登录" title="退出登录" @click="logout"><el-icon><SwitchButton /></el-icon><span>退出登录</span></el-button>
         </section>
       </aside>
+
+      <el-drawer
+        v-model="mobileMenuOpen"
+        class="user-mobile-drawer"
+        direction="ltr"
+        size="min(340px, 90vw)"
+        :show-close="false"
+        append-to-body
+      >
+        <template #header><span class="sr-only">用户工作台导航</span></template>
+        <div class="workspace-mobile-menu">
+          <div class="mobile-menu-head">
+            <button class="site-brand console-brand" type="button" @click="go('/console')">
+              <img class="site-brand-mark brand-image" src="/brand/linknux-mark-192.png" alt="" />
+              <span><strong>用户工作台</strong><small>{{ currentUser?.username || '已登录账号' }}</small></span>
+            </button>
+            <button class="mobile-menu-close" type="button" aria-label="关闭用户工作台菜单" @click="mobileMenuOpen = false">
+              <el-icon><Close /></el-icon>
+            </button>
+          </div>
+          <div class="workspace-mobile-balance">
+            <span>账户余额</span>
+            <strong>{{ money(balance) }}</strong>
+          </div>
+          <nav class="workspace-mobile-links" aria-label="用户工作台移动导航">
+            <button v-for="item in navItems" :key="item.path" :class="{ active: isActive(item.path) }" @click="go(item.path)">
+              <component :is="item.icon" />
+              <span>{{ item.label }}</span>
+            </button>
+          </nav>
+          <div class="workspace-mobile-actions">
+            <el-button type="primary" @click="openRechargePanel(); mobileMenuOpen = false">
+              <el-icon><Wallet /></el-icon>充值 / 购买
+            </el-button>
+            <el-button @click="go('/')"><el-icon><HomeFilled /></el-icon>返回首页</el-button>
+            <el-button type="danger" plain @click="logout"><el-icon><SwitchButton /></el-icon>退出登录</el-button>
+          </div>
+        </div>
+      </el-drawer>
 
       <main class="user-main">
         <header class="console-hero">
@@ -673,7 +723,7 @@ import SelectablePagination from '@/components/SelectablePagination.vue'
 import PagedTable from '@/components/PagedTable.vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Compass, DataLine, Document, HomeFilled, Key, MagicStick, Monitor, Promotion, ShoppingCart, SwitchButton, Tickets, Wallet, User } from '@element-plus/icons-vue'
+import { Close, Compass, DataLine, Document, HomeFilled, Key, MagicStick, Menu, Monitor, Promotion, ShoppingCart, SwitchButton, Tickets, Wallet, User } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { clearAuth, getUser } from '@/utils/auth'
 import http, { createIdempotencyKey, getHttpErrorMessage, getHttpErrorNotice } from '@/utils/http'
@@ -693,6 +743,7 @@ import {
 
 const router = useRouter()
 const route = useRoute()
+const mobileMenuOpen = ref(false)
 const currentUser = computed(() => getUser())
 const dashboard = ref<any>({ stats: {}, tokens: [], recentLogs: [], models: [], modelCatalog: [] as CallableModel[] })
 const billingRows = ref<any[]>([])
@@ -841,7 +892,10 @@ const primaryAction = computed(() => {
   return { label: current.value.action, path: current.value.actionPath, icon: current.value.icon }
 })
 
-const go = (path: string) => router.push(path)
+const go = (path: string) => {
+  mobileMenuOpen.value = false
+  return router.push(path)
+}
 const copyText = async (value: string, message = '已复制') => {
   if (!value) return
   try {

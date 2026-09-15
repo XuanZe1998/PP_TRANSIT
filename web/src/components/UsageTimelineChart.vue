@@ -48,7 +48,7 @@ const option = computed(() => {
     { name: '输出', key: 'completion_tokens', color: '#f59e0b' }
   ]
   return {
-    animationDuration: 350,
+    animation: false,
     color: series.map(item => item.color),
     grid: { left: 54, right: 22, top: 42, bottom: 74 },
     legend: { top: 4, textStyle: { color: '#52627a' } },
