@@ -46,6 +46,7 @@
 <script setup lang="ts">
 import PagedTable from '@/components/PagedTable.vue'
 import { computed, ref, watch } from 'vue'
+import { formatUsd } from '@/utils/money'
 import VChart from 'vue-echarts'
 import { use } from 'echarts/core'
 import { BarChart, PieChart } from 'echarts/charts'
@@ -78,9 +79,9 @@ watch(() => props.data, () => { tablePage.value = 1 }, { deep: false })
 
 function metric(row: any, key: string) { return Number(row?.[key] ?? row?.[key.toUpperCase()] ?? 0) }
 function integer(value: number) { return Math.round(value || 0).toLocaleString('zh-CN') }
-function usd(value: number) { return new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 6 }).format((value || 0) / 10_000) }
+function usd(value: number) { return formatUsd(value || 0) }
 function chartValue(value: number) { return measure.value === 'total_tokens' ? value : value / 10_000 }
-function chartLabel(value: number) { return measure.value === 'total_tokens' ? integer(value) : `$${Number(value).toLocaleString('zh-CN', { maximumFractionDigits: 6 })}` }
+function chartLabel(value: number) { return measure.value === 'total_tokens' ? integer(value) : formatUsd(Math.round(Number(value) * 10_000)) }
 
 const grouped = computed(() => {
   const totalsByModel = new Map<string, number>()

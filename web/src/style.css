@@ -5765,6 +5765,7 @@ code,
 .public-site.home-theme .hero-brandline span { color: transparent; background: linear-gradient(96deg, #4b9cff, #32dcf2 72%); background-clip: text; -webkit-background-clip: text; }
 .public-site.home-theme .hero-copy h1 { max-width: 680px; margin: 0; font-size: clamp(30px, 2.45vw, 40px); letter-spacing: -.035em; line-height: 1.3; white-space: nowrap; }
 .public-site.home-theme .hero-copy > p:not(.hero-brandline) { max-width: 610px; margin: 24px 0 0; color: #aebcd3; font-size: 18px; line-height: 1.9; }
+.public-site.home-theme .hero-copy > p.hero-promise { margin-top: 8px; color: #d8e5f8; font-size: 15px; font-weight: 650; letter-spacing: .01em; }
 .public-site.home-theme .hero-actions { margin-top: 30px; }
 .public-site.home-theme .hero-actions .el-button { min-width: 190px; min-height: 56px; border-radius: 12px; font-size: 17px; }
 .hero-feature-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 11px; margin-top: 36px; }

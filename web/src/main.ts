@@ -7,11 +7,14 @@ import App from './App.vue'
 import router from './router'
 import { initInactivityGuard } from './utils/auth'
 import { loadSiteConfig } from './config/site'
+import { initLocale, installDomLocalization } from './i18n/locale'
 
 const app = createApp(App)
 
+initLocale()
 app.use(router)
 app.mount('#app')
+installDomLocalization()
 void loadSiteConfig()
 
 const configuredIdleTimeout = Number(import.meta.env.VITE_AUTH_IDLE_TIMEOUT_MS)

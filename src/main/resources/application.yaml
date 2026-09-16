@@ -171,7 +171,7 @@ features:
 
 site:
   name: ${SITE_NAME:Linknux}
-  description: ${SITE_DESCRIPTION:面向开发者与团队的一站式 AI 能力平台，统一连接主流模型，提供智能路由、用量治理、创作工具与企业协作。}
+  description: ${SITE_DESCRIPTION:一个接口，万般智能。以 OpenAI 兼容协议接入不断生长的全球模型生态。}
 
 # Provider OAuth endpoints and client credentials are deployment secrets. No
 # vendor client identifier or secret is shipped in the repository.

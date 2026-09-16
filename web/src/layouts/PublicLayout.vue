@@ -13,10 +13,10 @@
         </nav>
         <div v-if="loggedIn" class="site-account-desktop"><AccountMenu /></div>
         <div v-else class="site-actions">
-          <button class="site-auth-button" type="button" @click="openAuth('login')">登录</button>
-          <button class="site-auth-button primary" type="button" @click="openAuth('register')">免费接入</button>
+          <button class="site-auth-button" type="button" @click="openAuth('login')">{{ t('login') }}</button>
+          <button class="site-auth-button primary" type="button" @click="openAuth('register')">{{ t('register') }}</button>
         </div>
-        <button class="site-menu-toggle" type="button" aria-label="打开导航菜单" @click="mobileMenuOpen = true">
+        <button class="site-menu-toggle" type="button" :aria-label="t('openMenu')" @click="mobileMenuOpen = true">
           <el-icon><Menu /></el-icon>
         </button>
       </div>
@@ -36,7 +36,7 @@
             <img class="site-brand-mark brand-image" :src="siteConfig.logoUrl" alt="" />
             <span>{{ siteConfig.name }}</span>
           </button>
-          <button class="mobile-menu-close" type="button" aria-label="关闭导航菜单" @click="mobileMenuOpen = false">
+          <button class="mobile-menu-close" type="button" :aria-label="t('closeMenu')" @click="mobileMenuOpen = false">
             <el-icon><Close /></el-icon>
           </button>
         </div>
@@ -47,10 +47,10 @@
           </button>
         </nav>
         <div class="site-mobile-actions">
-          <el-button v-if="loggedIn" type="primary" @click="go('/console')">进入用户工作台</el-button>
+          <el-button v-if="loggedIn" type="primary" @click="go('/console')">{{ t('console') }}</el-button>
           <template v-else>
-            <el-button @click="openAuth('login')">登录</el-button>
-            <el-button type="primary" @click="openAuth('register')">免费接入</el-button>
+            <el-button @click="openAuth('login')">{{ t('login') }}</el-button>
+            <el-button type="primary" @click="openAuth('register')">{{ t('register') }}</el-button>
           </template>
         </div>
       </div>
@@ -62,25 +62,26 @@
 </template>
 
 <script setup lang="ts">
-import { defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Close, Coin, Document, HomeFilled, MagicStick, Menu, PriceTag, ShoppingBag } from '@element-plus/icons-vue'
 import { getToken } from '@/utils/auth'
 import { siteConfig } from '@/config/site'
+import { t } from '@/i18n/locale'
 
 const route = useRoute()
 const router = useRouter()
 const AccountMenu = defineAsyncComponent(() => import('@/components/AccountMenu.vue'))
 const loggedIn = ref(Boolean(getToken()))
 const mobileMenuOpen = ref(false)
-const navigationItems = [
-  { path: '/', label: '首页', icon: HomeFilled },
-  { path: '/market', label: '模型广场', icon: Coin },
-  { path: '/studio', label: 'AI 创作', icon: MagicStick },
-  { path: '/services', label: '其他服务', icon: ShoppingBag },
-  { path: '/pricing', label: '套餐价格', icon: PriceTag },
-  { path: '/docs', label: '开发文档', icon: Document }
-]
+const navigationItems = computed(() => [
+  { path: '/', label: t('home'), icon: HomeFilled },
+  { path: '/market', label: t('market'), icon: Coin },
+  { path: '/studio', label: t('studio'), icon: MagicStick },
+  { path: '/services', label: t('services'), icon: ShoppingBag },
+  { path: '/pricing', label: t('pricing'), icon: PriceTag },
+  { path: '/docs', label: t('docs'), icon: Document }
+])
 const refreshAuth = () => { loggedIn.value = Boolean(getToken()) }
 const go = (path: string) => {
   mobileMenuOpen.value = false

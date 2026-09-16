@@ -727,7 +727,8 @@ import { Close, Compass, DataLine, Document, HomeFilled, Key, MagicStick, Menu, 
 import { ElMessage } from 'element-plus'
 import { clearAuth, getUser } from '@/utils/auth'
 import http, { createIdempotencyKey, getHttpErrorMessage, getHttpErrorNotice } from '@/utils/http'
-import { formatCny, formatPerMillionUsd, formatSignedCny, formatUsd, type AmountUnits } from '@/utils/money'
+import { formatCny, formatMoneyDto as formatLocalizedMoneyDto, formatPerMillionUsd, formatSignedCny, formatUsd, type AmountUnits } from '@/utils/money'
+import { getDisplayCurrency } from '@/i18n/locale'
 import ModelSalePricing from '@/components/ModelSalePricing.vue'
 import DeveloperDocs from '@/components/DeveloperDocs.vue'
 import ProfileCenter from '@/components/ProfileCenter.vue'
@@ -1259,7 +1260,7 @@ async function loadWallet() {
 
 function formatMoneyDto(money?: MoneyDto | null) {
   if (!money || !Number(money.scale)) return '—'
-  return `${money.currency || 'CNY'} ${(Number(money.amount) / Number(money.scale)).toFixed(2)}`
+  return formatLocalizedMoneyDto(money)
 }
 
 function openRecharge(plan: RechargePlan) {
@@ -1314,7 +1315,7 @@ async function submitRecharge() {
   const paymentWindow = window.open('', '_blank')
   try {
     const rechargeTarget = customRecharge.value
-      ? { customAmount: customRechargeAmount.value }
+      ? { customAmount: customRechargeAmount.value, currency: getDisplayCurrency() }
       : { planId: selectedRechargePlan.value!.id }
     const created = await http.post('/api/platform/user/recharge-orders',
       { ...rechargeTarget, ...rechargeForm.value, needInvoice: wallet.value.invoiceEnabled && rechargeForm.value.needInvoice },

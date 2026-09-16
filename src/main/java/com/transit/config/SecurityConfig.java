@@ -93,8 +93,8 @@ public class SecurityConfig {
         config.setAllowedOrigins(Arrays.stream(origins.split(","))
                 .map(String::trim).filter(value -> !value.isBlank()).toList());
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
-        config.setAllowedHeaders(List.of("Authorization", "Content-Type", "Idempotency-Key", "X-Requested-With", "x-api-key", "anthropic-version", "anthropic-beta", "session_id", "X-Session-Id"));
-        config.setExposedHeaders(List.of("X-Request-Id", "Retry-After", "X-RateLimit-Limit", "X-RateLimit-Remaining"));
+        config.setAllowedHeaders(List.of("Authorization", "Content-Type", "Idempotency-Key", "X-Requested-With", "Accept-Language", "X-Display-Currency", "x-api-key", "anthropic-version", "anthropic-beta", "session_id", "X-Session-Id"));
+        config.setExposedHeaders(List.of("X-Request-Id", "Retry-After", "X-RateLimit-Limit", "X-RateLimit-Remaining", "Content-Language", "X-Display-Currency"));
         config.setAllowCredentials(false);
         config.setMaxAge(3600L);
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();

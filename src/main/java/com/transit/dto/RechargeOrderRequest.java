@@ -8,6 +8,7 @@ import java.math.BigDecimal;
 public class RechargeOrderRequest {
     private Long planId;
     private BigDecimal customAmount;
+    private String currency;
     private String paymentMethod;
     private Boolean needInvoice;
     private String contactEmail;

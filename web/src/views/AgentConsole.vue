@@ -35,6 +35,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import http, { getHttpErrorMessage } from '@/utils/http'
+import { formatCny } from '@/utils/money'
 
 const router=useRouter(),summary=reactive<any>({feature:{},profile:{},withdrawals:[]}),rebateBps=ref(0),amount=ref(0)
 const inviteLink=computed(()=>`${location.origin}/?auth=register&aff=${encodeURIComponent(summary.profile?.invite_code||'')}`)
@@ -43,7 +44,7 @@ async function apply(){try{await http.post('/api/user/agent/apply',{customerReba
 async function transfer(){try{await http.post('/api/user/agent/transfer',{amount:amount.value,eventKey:crypto.randomUUID()});ElMessage.success('已转入余额');await load()}catch(e){ElMessage.error(getHttpErrorMessage(e,'佣金转入失败'))}}
 async function withdraw(){try{await http.post('/api/user/agent/withdrawals',{amount:amount.value,destinationType:'MANUAL'});ElMessage.success('提现申请已提交');await load()}catch(e){ElMessage.error(getHttpErrorMessage(e,'提现申请失败'))}}
 async function copyInvite(){await navigator.clipboard.writeText(inviteLink.value);ElMessage.success('邀请链接已复制')}
-const money=(v:unknown)=>`¥${(Number(v||0)/Number(summary.feature?.amountScale||10000)).toFixed(2)}`
+const money=(v:unknown)=>formatCny(Number(v || 0) * 10_000 / Number(summary.feature?.amountScale || 10_000))
 const bps=(v:unknown)=>`${(Number(v||0)/100).toFixed(2)}%`
 const statusLabel=(v:string)=>({PENDING:'待审核',ACTIVE:'合作中',SUSPENDED:'已暂停',REJECTED:'未通过'} as any)[v]||v
 onMounted(load)

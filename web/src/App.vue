@@ -2,11 +2,13 @@
   <router-view />
   <AuthDialog v-if="showAuthDialog" />
   <AgreementGate v-if="showAgreementGate" />
+  <LocaleSwitch />
 </template>
 
 <script setup lang="ts">
 import { computed, defineAsyncComponent } from 'vue'
 import { useRoute } from 'vue-router'
+import LocaleSwitch from '@/components/LocaleSwitch.vue'
 
 const route = useRoute()
 const AuthDialog = defineAsyncComponent(() => import('@/components/AuthDialog.vue'))

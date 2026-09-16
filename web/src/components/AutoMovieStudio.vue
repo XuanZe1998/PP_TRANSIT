@@ -56,6 +56,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import http, { getHttpErrorMessage } from '@/utils/http'
+import { formatCny } from '@/utils/money'
 
 type Connection = { id: number; provider: string; capability?: string; displayName: string }
 const catalog = reactive<any>({ enabled: false }); const connections = ref<Connection[]>([]); const projects = ref<any[]>([]); const project = ref<any>(null); const scriptText = ref(''); const showProjects = ref(false); const busy = ref(false); const txtFile = ref<File | null>(null)
@@ -96,7 +97,7 @@ async function uploadAsset(asset: any, event: Event) { const file = (event.targe
 async function saveShot(shot: any) { try { setProject((await http.put(`/creative/projects/${project.value.id}/shots/${shot.id}`, { version: project.value.version, duration: shot.duration, dialogue: shot.dialogue, narration: shot.narration, videoPrompt: shot.video_prompt, characterRefs: shot.characterRefs || [], sceneRef: shot.scene_ref })).data) } catch (e) { ElMessage.error(getHttpErrorMessage(e, '镜头保存失败')) } }
 async function retryShot(shot: any) { try { await confirmQuote('VIDEO'); setProject((await http.post(`/creative/projects/${project.value.id}/shots/${shot.id}/retry`, { version: project.value.version })).data) } catch (e) { if (e !== 'cancel') ElMessage.error(getHttpErrorMessage(e, '重试失败')) } }
 async function cancelProject() { try { await ElMessageBox.confirm('取消尚未提交的任务并释放冻结余额？', '取消项目', { type: 'warning' }); setProject((await http.post(`/creative/projects/${project.value.id}/cancel`, { version: project.value.version })).data) } catch { /* cancelled */ } }
-function money(value: any) { return `¥${(Number(value || 0) / 10000).toFixed(4)}` }
+function money(value: any) { return formatCny(Number(value || 0)) }
 function statusText(status: string) { return ({ DRAFT:'草稿',SCRIPT_GENERATING:'正在生成剧本',SCRIPT_REVIEW:'待确认剧本',VISUALS_GENERATING:'正在生成画像',VISUALS_REVIEW:'待确认画像',VIDEO_GENERATING:'正在生成视频',COMPOSING:'正在合成',SUCCEEDED:'已完成',FAILED:'失败',PARTIAL_FAILED:'部分失败',CANCELLED:'已取消',PENDING:'待处理',QUEUED:'排队中',RUNNING:'生成中',STALE:'需重新生成' } as Record<string,string>)[status] || status }
 </script>
 
