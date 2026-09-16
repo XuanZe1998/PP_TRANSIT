@@ -1,6 +1,6 @@
 <template>
   <button class="locale-switch" type="button" :title="t('switchLanguage')" :aria-label="t('switchLanguage')" data-no-auto-i18n @click="toggleLocale">
-    <span :class="{ active: !isEnglish }">中</span>
+    <span :class="{ active: !isEnglish }">ZH</span>
     <i aria-hidden="true"></i>
     <span :class="{ active: isEnglish }">EN</span>
   </button>

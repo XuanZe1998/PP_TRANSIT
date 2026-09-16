@@ -73,6 +73,7 @@ declare module 'vue' {
     GatewayModelEditor: typeof import('./components/GatewayModelEditor.vue')['default']
     GatewayPricingEditor: typeof import('./components/GatewayPricingEditor.vue')['default']
     ListPagination: typeof import('./components/ListPagination.vue')['default']
+    LocaleSwitch: typeof import('./components/LocaleSwitch.vue')['default']
     ModelCallDialog: typeof import('./components/ModelCallDialog.vue')['default']
     ModelPriceComparisonDialog: typeof import('./components/ModelPriceComparisonDialog.vue')['default']
     ModelProbePanel: typeof import('./components/ModelProbePanel.vue')['default']

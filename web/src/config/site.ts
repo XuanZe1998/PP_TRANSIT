@@ -1,6 +1,6 @@
 import { reactive, readonly } from 'vue'
 import http from '@/utils/http'
-import { setUsdCnyRate } from '@/i18n/locale'
+import { localizeCopy, setUsdCnyRate } from '@/i18n/locale'
 
 export type SiteConfig = { name: string; description: string; descriptionEn: string; logoUrl: string; faviconUrl: string; usdCnyRate: number }
 
@@ -30,7 +30,7 @@ export async function loadSiteConfig() {
   } catch {
     Object.assign(state, SITE_FALLBACK)
   }
-  document.title = `${document.title.split(' - ')[0] || '首页'} - ${state.name}`
+  document.title = `${localizeCopy(document.title.split(' - ')[0] || '首页')} - ${state.name}`
   const icon = document.querySelector<HTMLLinkElement>('link[rel="icon"]')
   if (icon) icon.href = state.faviconUrl
 }

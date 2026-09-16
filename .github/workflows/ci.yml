@@ -64,6 +64,8 @@ jobs:
         run: npm ci
       - name: Run frontend tests
         run: npm test
+      - name: Verify complete English copy coverage
+        run: npm run i18n:check
       - name: Build production frontend
         run: npm run build
       - name: Prepare frontend deployment artifact
