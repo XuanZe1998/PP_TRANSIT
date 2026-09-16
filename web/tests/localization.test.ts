@@ -30,5 +30,7 @@ describe('bilingual product contract', () => {
     expect(toEnglishCopy('✦ 帮我写得更好')).toBe('✦ Help me write better')
     expect(toEnglishCopy('5 秒')).toBe('5 seconds')
     expect(toEnglishCopy('其他服务加载失败，请稍后重试')).toBe('Other services failed to load, please try again later.')
+    expect(toEnglishCopy('Claude Code Max 20x组')).toBe('Claude Code Max 20x Plan')
+    expect(toEnglishCopy('服务按实际用量计费，第三方模型提供方可能按请求处理数据。')).toBe('Services are billed by actual usage. Third-party model providers may process request data.')
   })
 })
