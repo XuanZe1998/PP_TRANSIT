@@ -17,6 +17,7 @@ const DocsPage=()=>import('@/views/DocsPage.vue')
 const AgentConsole=()=>import('@/views/AgentConsole.vue')
 const AdminAgents=()=>import('@/views/AdminAgents.vue')
 const AdminModelProbe=()=>import('@/views/AdminModelProbe.vue')
+const AdminContactMethods=()=>import('@/views/AdminContactMethods.vue')
 
 export const shopGptEnabled = import.meta.env.VITE_ENABLE_SHOPGPT === 'true'
 const ProductItem = () => import('@/views/ProductItem.vue')
@@ -86,6 +87,7 @@ const routes: RouteRecordRaw[] = [
       { path: 'agents', component: AdminAgents, meta: { title: '代理、号池与运维', role: 'admin' } },
       { path: 'model-probe', component: AdminModelProbe, meta: { title: '模型鉴别', role: 'admin' } },
       { path: 'other-services', component: AdminOtherServices, meta: { title: '服务与订单', role: 'admin' } },
+      { path: 'contact-methods', component: AdminContactMethods, meta: { title: '联系方式', role: 'admin' } },
       { path: 'vmcard-test', component: AdminVmCardTest, meta: { title: 'VMCard 接口测试', role: 'admin' } },
       adminChild('security', 'security', '安全策略'),
       adminChild('settings', 'settings', '系统配置与报表'),

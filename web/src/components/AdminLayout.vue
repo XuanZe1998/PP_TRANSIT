@@ -86,7 +86,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch, type Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Close, Connection, DataBoard, Grid, Lock, Menu, Setting, User, Wallet } from '@element-plus/icons-vue'
+import { ChatDotRound, Close, Connection, DataBoard, Grid, Lock, Menu, Setting, User, Wallet } from '@element-plus/icons-vue'
 import http from '@/utils/http'
 import { clearAuth } from '@/utils/auth'
 import { siteConfig } from '@/config/site'
@@ -106,6 +106,7 @@ const navItems: NavItem[] = [
   { path: 'content-services', label: '内容与服务', icon: Grid, children: [
     { path: '/admin/creative-config', label: 'AI 创作配置' }, { path: '/admin/other-services', label: '服务与订单' }
   ] },
+  { path: '/admin/contact-methods', label: '联系方式', icon: ChatDotRound },
   { path: 'finance-payment', label: '财务与支付', icon: Wallet, children: [
     { path: '/admin/finance', label: '钱包财务' }, { path: '/admin/agents', label: '代理、号池与运维' }, { path: '/admin/vmcard-test', label: 'VMCard 测试' }
   ] },
