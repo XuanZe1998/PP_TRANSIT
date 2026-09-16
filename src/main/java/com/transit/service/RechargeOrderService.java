@@ -38,6 +38,7 @@ public class RechargeOrderService {
     private final JdbcTemplate jdbcTemplate;
     private final PaymentIntentService paymentIntentService;
     private final AccountVerificationPolicy verificationPolicy;
+    private final MoneyService moneyService;
 
     @Value("${payment.documents.merchant.legal-name:}") private String merchantName;
     @Value("${payment.documents.merchant.address-line-1:}") private String merchantAddress1;
@@ -57,6 +58,7 @@ public class RechargeOrderService {
         if (!custom && request.getPlanId() == null) throw badRequest("planId or customAmount is required");
 
         long base;
+        MoneyAmount checkoutMoney;
         BigDecimal bonusPercent;
         String planName;
         Long planId;
@@ -64,7 +66,17 @@ public class RechargeOrderService {
             BigDecimal amount;
             try {
                 amount = request.getCustomAmount().setScale(2, RoundingMode.UNNECESSARY);
-                base = amount.multiply(BigDecimal.valueOf(WALLET_SCALE)).longValueExact();
+                String requestedCurrency = request.getCurrency() == null ? "CNY" : request.getCurrency().trim().toUpperCase(Locale.ROOT);
+                if (!List.of("CNY", "USD").contains(requestedCurrency)) {
+                    throw badRequest("currency must be CNY or USD");
+                }
+                BigDecimal cnyAmount = "USD".equals(requestedCurrency)
+                        ? amount.multiply(moneyService.usdCnyRate()) : amount;
+                base = cnyAmount.multiply(BigDecimal.valueOf(WALLET_SCALE))
+                        .setScale(0, RoundingMode.HALF_UP).longValueExact();
+                checkoutMoney = "USD".equals(requestedCurrency)
+                        ? MoneyAmount.cents(amount.multiply(BigDecimal.valueOf(100)).longValueExact(), "USD")
+                        : new MoneyAmount(base, "CNY", WALLET_SCALE);
             } catch (ArithmeticException exception) {
                 throw badRequest("customAmount must have at most 2 decimal places and be within the supported range");
             }
@@ -77,6 +89,7 @@ public class RechargeOrderService {
             if (rows.isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Recharge plan not found or unavailable");
             Map<String,Object> plan = rows.get(0);
             base = ((Number)plan.get("amount")).longValue();
+            checkoutMoney = new MoneyAmount(base, "CNY", WALLET_SCALE);
             bonusPercent = new BigDecimal(plan.get("bonus_percent").toString()).setScale(3, RoundingMode.UNNECESSARY);
             planName = String.valueOf(plan.get("name"));
             planId = request.getPlanId();
@@ -113,7 +126,7 @@ public class RechargeOrderService {
         order.setCreatedAt(now); order.setUpdatedAt(now); mapper.insert(order);
         PaymentIntent intent = paymentIntentService.create(user.getId(), PaymentBusinessSettlementService.WALLET_RECHARGE,
                 order.getId(), orderNo, "Wallet recharge - " + order.getPlanName(),
-                new MoneyAmount(base, "CNY", WALLET_SCALE), order.getPaymentMethod(), now.plusMinutes(15));
+                checkoutMoney, order.getPaymentMethod(), now.plusMinutes(15));
         order.setPaymentIntent(intent);
         return enrich(order);
     }
@@ -153,7 +166,10 @@ public class RechargeOrderService {
         LocalDateTime date=receipt&&order.getPaidAt()!=null?order.getPaidAt():order.getCreatedAt();
         String formatted=date.atZone(ZoneOffset.UTC).withZoneSameInstant(ZoneId.of(receiptTimeZone))
                 .format(DateTimeFormatter.ofPattern("MMMM d, uuuu",Locale.ENGLISH));
-        String amount=BigDecimal.valueOf(order.getPaymentAmountUnits()).divide(BigDecimal.valueOf(WALLET_SCALE),2,RoundingMode.HALF_UP).toPlainString()+" CNY";
+        PaymentIntent intent=order.getPaymentIntent();
+        String amount=intent!=null&&intent.getSourceAmount()!=null&&intent.getSourceScale()!=null
+                ? BigDecimal.valueOf(intent.getSourceAmount()).divide(BigDecimal.valueOf(intent.getSourceScale()),2,RoundingMode.HALF_UP).toPlainString()+" "+intent.getSourceCurrency()
+                : BigDecimal.valueOf(order.getPaymentAmountUnits()).divide(BigDecimal.valueOf(WALLET_SCALE),2,RoundingMode.HALF_UP).toPlainString()+" CNY";
         String description="Wallet recharge: "+order.getPlanName();
         BillingPdfRenderer.DocumentData data=new BillingPdfRenderer.DocumentData(order.getInvoiceNumber(),order.getReceiptNumber(),formatted,
                 merchantName,merchantAddress1,merchantAddress2,merchantCountry,merchantEmail,

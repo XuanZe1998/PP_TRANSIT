@@ -223,6 +223,7 @@
 import PagedList from "@/components/PagedList.vue"
 import PagedTable from '@/components/PagedTable.vue'
 import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { formatCurrencyCents } from '@/utils/money'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
@@ -356,7 +357,7 @@ const orderRules: FormRules<typeof orderForm> = {
 
 const formatMoney = (cents?: number, currency?: string) => {
   if (cents === null || cents === undefined) return '-'
-  return `${currency || 'CNY'} ${(cents / 100).toFixed(2)}`
+  return formatCurrencyCents(cents, currency)
 }
 
 const canPay = (order: ServiceOrder) => ['PENDING', 'CONFIRMED'].includes(order.status)

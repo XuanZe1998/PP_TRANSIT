@@ -3,6 +3,8 @@
  * Ledger values should be supplied as integer units (prefer a string for values
  * outside JavaScript's safe-integer range).
  */
+import { getLocale, getUsdCnyRate, type DisplayCurrency } from '@/i18n/locale'
+
 export const AMOUNT_UNITS_PER_CNY = 10_000
 export const TOKENS_PER_MILLION = 1_000_000
 
@@ -128,6 +130,22 @@ function formatDecimal(
   return `${sign}¥${integer}${fraction.length > 0 ? `.${fraction}` : ''} CNY`
 }
 
+function decimalToNumber(value: DecimalValue, sourceScale = 0): number {
+  const coefficient = Number(value.coefficient)
+  const result = coefficient / 10 ** (value.scale + sourceScale)
+  return value.negative ? -result : result
+}
+
+function localizedMoney(value: number, currency: DisplayCurrency, minimum = 4, maximum = 4, signed = false) {
+  const absolute = Math.abs(value)
+  const number = new Intl.NumberFormat(getLocale(), {
+    minimumFractionDigits: minimum,
+    maximumFractionDigits: maximum,
+  }).format(absolute)
+  const sign = value < 0 ? '-' : signed && value > 0 ? '+' : ''
+  return `${sign}${currency === 'USD' ? '$' : '¥'}${number} ${currency}`
+}
+
 /** Convert integer backend amount units to a JavaScript CNY number. */
 export function amountUnitsToCny(amountUnits: AmountUnits): number {
   const value = requireIntegerUnits(amountUnits)
@@ -141,11 +159,13 @@ export function amountUnitsToCny(amountUnits: AmountUnits): number {
 
 /** Format an integer ledger value with its explicit symbol and ISO currency. */
 export function formatCny(amountUnits: AmountUnits): string {
+  if (getLocale() === 'en-US') return localizedMoney(amountUnitsToCny(amountUnits) / getUsdCnyRate(), 'USD')
   return formatDecimal(requireIntegerUnits(amountUnits), 4, 4, false)
 }
 
 /** As formatCny, with a leading plus sign for positive credits/refunds. */
 export function formatSignedCny(amountUnits: AmountUnits): string {
+  if (getLocale() === 'en-US') return localizedMoney(amountUnitsToCny(amountUnits) / getUsdCnyRate(), 'USD', 4, 4, true)
   return formatDecimal(requireIntegerUnits(amountUnits), 4, 4, true)
 }
 
@@ -157,6 +177,10 @@ export function formatSignedCny(amountUnits: AmountUnits): string {
  */
 export function formatPerMillionCny(cnyPerMillion: AmountUnits, unit = 'M', suffix?: string): string {
   const normalizedUnit = String(unit || 'M').toUpperCase() === 'KB' ? 'KB' : 'M'
+  if (getLocale() === 'en-US') {
+    const usd = decimalToNumber(parseDecimal(cnyPerMillion)) / getUsdCnyRate()
+    return `${localizedMoney(usd, 'USD', 4, 6)} / 1${normalizedUnit} token${normalizedUnit === 'M' ? 's' : ''}`
+  }
   const formatted = formatDecimal(parseDecimal(cnyPerMillion), 4, 6, false, 0)
   const normalizedSuffix = String(suffix || '').trim()
   if (!normalizedSuffix && normalizedUnit === 'M') return `${formatted} / 1M tokens`
@@ -165,13 +189,55 @@ export function formatPerMillionCny(cnyPerMillion: AmountUnits, unit = 'M', suff
 
 /** Format model-usage amount units. Model prices use USD; wallet values use CNY. */
 export function formatUsd(amountUnits: AmountUnits): string {
+  if (getLocale() === 'zh-CN') {
+    const cny = decimalToNumber(requireIntegerUnits(amountUnits), 4) * getUsdCnyRate()
+    return localizedMoney(cny, 'CNY')
+  }
   const formatted = formatDecimal(requireIntegerUnits(amountUnits), 4, 4, false)
   return formatted.replace('¥', '$').replace('CNY', 'USD')
 }
 
 export function formatPerMillionUsd(usdPrice: AmountUnits, unit = 'M', suffix?: string): string {
   const normalizedUnit = String(unit || 'M').toUpperCase() === 'KB' ? 'KB' : 'M'
+  if (getLocale() === 'zh-CN') {
+    const cny = decimalToNumber(parseDecimal(usdPrice)) * getUsdCnyRate()
+    return `${localizedMoney(cny, 'CNY', 4, 6)} / 1${normalizedUnit} Token`
+  }
   const formatted = formatDecimal(parseDecimal(usdPrice), 4, 6, false, 0).replace('¥', '$').replace('CNY', 'USD')
   const normalizedSuffix = String(suffix || '').trim()
   return `${formatted} ${normalizedSuffix || `USD / 1${normalizedUnit} Token`}`
 }
+
+/** Format a cent-based API amount in the active locale's settlement currency. */
+export function formatCurrencyCents(cents: number | string | null | undefined, sourceCurrency = 'CNY'): string {
+  const numeric = Number(cents || 0) / 100
+  const source = String(sourceCurrency || 'CNY').toUpperCase()
+  const target: DisplayCurrency = getLocale() === 'en-US' ? 'USD' : 'CNY'
+  const converted = source === target ? numeric
+    : source === 'CNY' && target === 'USD' ? numeric / getUsdCnyRate()
+      : source === 'USD' && target === 'CNY' ? numeric * getUsdCnyRate() : numeric
+  return localizedMoney(converted, target, 2, 2)
+}
+
+export function formatMoneyDto(money?: { amount?: AmountUnits; currency?: string; scale?: number } | null): string {
+  if (!money) return formatCurrencyCents(0)
+  const scale = Number(money.scale || 100)
+  const amount = decimalToNumber(requireIntegerUnits(money.amount || 0)) / scale
+  const source = String(money.currency || 'CNY').toUpperCase()
+  const target: DisplayCurrency = getLocale() === 'en-US' ? 'USD' : 'CNY'
+  const converted = source === target ? amount
+    : source === 'CNY' && target === 'USD' ? amount / getUsdCnyRate()
+      : source === 'USD' && target === 'CNY' ? amount * getUsdCnyRate() : amount
+  return localizedMoney(converted, target, 2, 4)
+}
+
+/** Format a decimal price (not ledger units) in the active settlement currency. */
+export function formatCurrencyValue(value: AmountUnits, sourceCurrency: DisplayCurrency = 'USD', minimum = 0, maximum = 6): string {
+  const numeric = decimalToNumber(parseDecimal(value))
+  const target: DisplayCurrency = getLocale() === 'en-US' ? 'USD' : 'CNY'
+  const converted = sourceCurrency === target ? numeric
+    : sourceCurrency === 'CNY' ? numeric / getUsdCnyRate() : numeric * getUsdCnyRate()
+  return localizedMoney(converted, target, minimum, maximum).replace(` ${target}`, '')
+}
+
+export function activeCurrencyCode(): DisplayCurrency { return getLocale() === 'en-US' ? 'USD' : 'CNY' }

@@ -40,7 +40,8 @@ import java.time.Duration;
 @RequestMapping("/public")
 @RequiredArgsConstructor
 public class PublicController {
-    private static final String SITE_DESCRIPTION = "面向开发者与团队的一站式 AI 能力平台，统一连接主流模型，提供智能路由、用量治理、创作工具与企业协作。";
+    private static final String SITE_DESCRIPTION = "一个接口，万般智能。以 OpenAI 兼容协议接入不断生长的全球模型生态。";
+    private static final String SITE_DESCRIPTION_EN = "Access GPT, Claude, Gemini, DeepSeek, Qwen, GLM, Kimi and more through one OpenAI-compatible API.";
     private final ModelMappingMapper modelMappingMapper;
     private final OtherServiceCatalogService otherServiceCatalogService;
     private final OtherServiceImageStorageService otherServiceImageStorageService;
@@ -62,13 +63,25 @@ public class PublicController {
     @Value("${site.description:" + SITE_DESCRIPTION + "}")
     private String siteDescription;
 
+    @Value("${payment.usd-cny-rate:6.76693506}")
+    private java.math.BigDecimal usdCnyRate;
+
     @GetMapping("/site-config")
-    public Mono<java.util.Map<String, String>> siteConfig() {
+    public Mono<java.util.Map<String, Object>> siteConfig(
+            @org.springframework.web.bind.annotation.RequestHeader(value = "Accept-Language", required = false) String language,
+            @org.springframework.web.bind.annotation.RequestHeader(value = "X-Display-Currency", required = false) String requestedCurrency) {
+        boolean english = (language != null && language.toLowerCase(Locale.ROOT).startsWith("en"))
+                || "USD".equalsIgnoreCase(requestedCurrency);
         return Mono.just(java.util.Map.of(
                 "name", siteName,
                 "description", siteDescription,
+                "descriptionEn", SITE_DESCRIPTION_EN,
                 "logoUrl", "/brand/linknux-mark-192.png",
-                "faviconUrl", "/favicon.png"));
+                "faviconUrl", "/favicon.png",
+                "locale", english ? "en-US" : "zh-CN",
+                "displayCurrency", english ? "USD" : "CNY",
+                "currencySymbol", english ? "$" : "¥",
+                "usdCnyRate", usdCnyRate));
     }
 
     @GetMapping("/models")

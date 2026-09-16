@@ -86,6 +86,7 @@
 <script setup lang="ts">
 import PagedTable from '@/components/PagedTable.vue'
 import { computed, onMounted, ref } from 'vue'
+import { formatCurrencyCents } from '@/utils/money'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import http, { getHttpErrorMessage } from '@/utils/http'
@@ -125,7 +126,7 @@ const form = ref({
   deliveryContent: ''
 })
 
-const formatMoney = (cents: number, currency?: string) => `${currency || 'CNY'} ${((cents || 0) / 100).toFixed(2)}`
+const formatMoney = (cents: number, currency?: string) => formatCurrencyCents(cents, currency)
 const statusType = (status: string) => {
   if (['PAID', 'CONFIRMED'].includes(status)) return 'success'
   if (status === 'FULFILLED') return 'primary'

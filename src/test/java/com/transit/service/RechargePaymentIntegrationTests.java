@@ -27,6 +27,7 @@ class RechargePaymentIntegrationTests {
     @Autowired AdminUserService adminUserService;
     @Autowired UserMapper userMapper;
     @Autowired JdbcTemplate jdbcTemplate;
+    @Autowired MoneyService moneyService;
 
     @Test void fixedPlanCreditsBaseAndGiftOnceAndFullRefundReversesBoth(){
         User user=User.builder().username("recharge-"+UUID.randomUUID()).password("test").email("buyer@example.com")
@@ -70,6 +71,19 @@ class RechargePaymentIntegrationTests {
         assertThatThrownBy(() -> rechargeOrderService.create(user,invalid))
                 .isInstanceOf(org.springframework.web.server.ResponseStatusException.class)
                 .hasMessageContaining("greater than 0");
+    }
+
+    @Test void usdCustomRechargeUsesTheServerRateBeforeCreatingTheCnyPaymentIntent(){
+        User user=verifiedUser(false);
+        RechargeOrderRequest request=new RechargeOrderRequest();
+        request.setCustomAmount(new BigDecimal("10.00")); request.setCurrency("USD"); request.setPaymentMethod("alipay");
+        WalletRechargeOrder order=rechargeOrderService.create(user,request);
+        long expected=new BigDecimal("10.00").multiply(moneyService.usdCnyRate())
+                .multiply(BigDecimal.valueOf(10_000)).setScale(0,java.math.RoundingMode.HALF_UP).longValueExact();
+        assertThat(order.getPaymentAmountUnits()).isEqualTo(expected);
+        assertThat(order.getPaymentIntent().getSourceCurrency()).isEqualTo("USD");
+        assertThat(order.getPaymentIntent().getSourceAmount()).isEqualTo(1_000L);
+        assertThat(order.getPaymentIntent().getSettlementCurrency()).isEqualTo("CNY");
     }
 
     @Test void invoiceRequestRequiresAdministratorAccess(){

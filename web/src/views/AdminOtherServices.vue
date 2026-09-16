@@ -214,6 +214,7 @@
 <script setup lang="ts">
 import PagedTable from '@/components/PagedTable.vue'
 import { computed, onMounted, reactive, ref } from 'vue'
+import { formatCurrencyCents } from '@/utils/money'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import http, { getHttpErrorMessage, resolveApiResourceUrl } from '@/utils/http'
@@ -289,7 +290,7 @@ const recognizedInventoryItems = computed(() => Array.from(new Set(
 
 const formatMoney = (cents?: number, currency?: string) => cents === null || cents === undefined
   ? '-'
-  : `${currency || 'CNY'} ${(cents / 100).toFixed(2)}`
+  : formatCurrencyCents(cents, currency)
 
 function syncTab(tab: string | number) {
   const value = String(tab)

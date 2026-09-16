@@ -9,16 +9,17 @@
     </div>
 
     <div class="hero-copy">
-      <p class="hero-brandline">Linknux <i>•</i> <span>AI 能力平台</span></p>
-      <h1>连接主流模型，让团队专注创造。</h1>
-      <p>面向开发者与团队的一站式 AI 能力平台，统一连接主流模型，提供智能路由、用量治理、创作工具与企业协作。</p>
+      <p class="hero-brandline">Linknux <i>•</i> <span>{{ hero.eyebrow }}</span></p>
+      <h1>{{ hero.title }}</h1>
+      <p>{{ hero.description }}</p>
+      <p class="hero-promise">{{ hero.promise }}</p>
       <div class="hero-actions">
         <el-button class="hero-primary" type="primary" size="large" @click="openAuth('register')">
-          立即创建账号 <span aria-hidden="true">→</span>
+          {{ hero.primary }} <span aria-hidden="true">→</span>
         </el-button>
         <el-button class="hero-secondary" size="large" @click="router.push('/market')">
           <span class="grid-icon" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
-          查看模型广场
+          {{ hero.secondary }}
         </el-button>
       </div>
       <div class="hero-feature-grid">
@@ -85,9 +86,10 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import http from '@/utils/http'
+import { isEnglish } from '@/i18n/locale'
 
 type ModelSummary = { total: number; publisherCount: number }
 
@@ -96,6 +98,22 @@ const router = useRouter()
 const loading = ref(false)
 const total = ref<number | string>('—')
 const publisherCount = ref<number | string>('—')
+
+const hero = computed(() => isEnglish.value ? {
+  eyebrow: 'ONE OPENAI-COMPATIBLE API',
+  title: 'One API. Every AI Model.',
+  description: 'Access GPT, Claude, Gemini, DeepSeek, Qwen, GLM, Kimi and more through one OpenAI-compatible API.',
+  promise: 'One API key. One endpoint. One bill.',
+  primary: 'Get your API key',
+  secondary: 'Explore models',
+} : {
+  eyebrow: '一个接口 · 万般智能',
+  title: '一个接口，万般智能。',
+  description: '从 GPT、Claude、Gemini 到 DeepSeek、通义千问、智谱 GLM、Kimi，以 OpenAI 兼容协议接入不断生长的全球模型生态。',
+  promise: '一把密钥，一个端点，一张清晰账单。',
+  primary: '立即获取 API Key',
+  secondary: '查看模型广场',
+})
 
 const heroFeatures = [
   { icon: 'ϟ', title: '多模型接入', meta: '一次接入，全面覆盖' },

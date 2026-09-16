@@ -29,3 +29,15 @@ test('mobile summary failure leaves page usable and does not claim zero models',
   await expect(page.locator('.routing-stats strong').first()).toHaveText('—')
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
 })
+
+test('language switch presents the approved English campaign and persists the choice', async ({ page }) => {
+  await page.route('**/public/models/summary', route => route.fulfill({ json: { total: 207, publisherCount: 8 } }))
+  await page.route('**/public/site-config', route => route.fulfill({ json: { usdCnyRate: 7 } }))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Switch to English' }).click()
+  await expect(page.getByRole('heading', { name: 'One API. Every AI Model.' })).toBeVisible()
+  await expect(page.locator('.hero-copy')).toContainText('One API key. One endpoint. One bill.')
+  await expect(page.getByRole('button', { name: 'Log in', exact: true })).toBeVisible()
+  await page.reload()
+  await expect(page.getByRole('heading', { name: 'One API. Every AI Model.' })).toBeVisible()
+})

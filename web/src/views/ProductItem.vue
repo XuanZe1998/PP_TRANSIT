@@ -58,7 +58,7 @@
 
           <div class="price-block">
             <span>到手价</span>
-            <strong>{{ product.price === null ? '待实时询价' : `¥${product.price.toFixed(2)} CNY` }}</strong>
+            <strong>{{ product.price === null ? '待实时询价' : formatCurrencyValue(product.price, 'CNY', 2, 2) }}</strong>
             <small>价格和库存均以外部服务端本次会话的返回值为准。</small>
           </div>
 
@@ -91,7 +91,7 @@
 
             <div class="order-summary">
               <span>订单合计</span>
-              <strong>{{ product.price === null ? '待询价' : `¥${totalPrice.toFixed(2)} CNY` }}</strong>
+              <strong>{{ product.price === null ? '待询价' : formatCurrencyValue(totalPrice, 'CNY', 2, 2) }}</strong>
             </div>
 
             <el-button type="primary" size="large" native-type="submit" class="submit-button" :loading="submitting" :disabled="!canOrder">
@@ -157,6 +157,7 @@ import {
 } from '@element-plus/icons-vue'
 import http from '@/utils/http'
 import BillingCheckoutFields, { type BillingCheckout } from '@/components/BillingCheckoutFields.vue'
+import { formatCurrencyValue } from '@/utils/money'
 
 type PayMethod = {
   id: number
@@ -329,7 +330,7 @@ const submitOrder = async () => {
 
   try {
     await ElMessageBox.confirm(
-      `确认按服务端最新询价创建 ${form.quantity} 件本站订单，当前合计 ¥${totalPrice.value.toFixed(2)} CNY？`,
+      `确认按服务端最新询价创建 ${form.quantity} 件本站订单，当前合计 ${formatCurrencyValue(totalPrice.value, 'CNY', 2, 2)}？`,
       '本站 AnyiPay 结账',
       { type: 'warning', confirmButtonText: '确认提交', cancelButtonText: '取消' }
     )

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 
 import {
   AMOUNT_UNITS_PER_CNY,
@@ -6,9 +6,15 @@ import {
   formatCny,
   formatPerMillionCny,
   formatSignedCny,
+  formatUsd,
 } from '../src/utils/money'
+import { setLocale, setUsdCnyRate } from '../src/i18n/locale'
 
 describe('money amount-unit contract', () => {
+  afterEach(() => {
+    setLocale('zh-CN')
+    setUsdCnyRate(6.76693506)
+  })
   it('uses 10,000 backend amount units per CNY', () => {
     expect(AMOUNT_UNITS_PER_CNY).toBe(10_000)
     expect(amountUnitsToCny(10_000)).toBe(1)
@@ -36,5 +42,14 @@ describe('money amount-unit contract', () => {
   it('rejects fractional ledger units and unsafe numeric integers', () => {
     expect(() => formatCny('1.5')).toThrow(/whole amount units/)
     expect(() => formatCny(Number.MAX_SAFE_INTEGER + 1)).toThrow(/Unsafe integer/)
+  })
+
+  it('switches both symbols and converted values with the active locale', () => {
+    setUsdCnyRate(7)
+    setLocale('en-US')
+    expect(formatCny(70_000)).toBe('$1.0000 USD')
+    expect(formatUsd(10_000)).toBe('$1.0000 USD')
+    setLocale('zh-CN')
+    expect(formatUsd(10_000)).toBe('¥7.0000 CNY')
   })
 })

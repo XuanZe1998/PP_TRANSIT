@@ -51,6 +51,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { activeCurrencyCode, formatCurrencyValue } from '@/utils/money'
 
 const props = withDefaults(defineProps<{ model: Record<string, any>; compact?: boolean; rebateBps?: number; publicOnly?: boolean }>(), { compact: false, rebateBps: 0, publicOnly: false })
 const rebateBps = computed(() => Math.max(0, Math.min(10000, Number(props.rebateBps || 0))))
@@ -60,7 +61,7 @@ const billingMode = computed(() => String(props.model.pricing?.billingMode || pr
 const pricingStatus = computed(() => String(props.model.pricing?.status || props.model.pricingStatus || 'PENDING').toUpperCase())
 const pricingMessage = computed(() => String(props.model.pricing?.message || props.model.pricingMessage || ''))
 const unitSalePrice = computed(() => props.model.pricing?.saleUnitPrice ?? props.model.saleUnitPrice)
-const unitLabel = computed(() => props.model.pricing?.unitLabel || ({ TOKEN: 'USD / 1M Token', SECOND: 'USD / 秒', IMAGE: 'USD / 张', MINUTE: 'USD / 分钟', CHARACTER: 'USD / 千字符', TASK: 'USD / 次' } as Record<string, string>)[pricingUnit.value] || 'USD / 单位')
+const unitLabel = computed(() => ({ TOKEN: `${activeCurrencyCode()} / 1M Token`, SECOND: `${activeCurrencyCode()} / 秒`, IMAGE: `${activeCurrencyCode()} / 张`, MINUTE: `${activeCurrencyCode()} / 分钟`, CHARACTER: `${activeCurrencyCode()} / 千字符`, TASK: `${activeCurrencyCode()} / 次` } as Record<string, string>)[pricingUnit.value] || `${activeCurrencyCode()} / 单位`)
 const freePreview = computed(() => billingMode.value === 'FREE_PREVIEW' || pricingStatus.value === 'FREE_PREVIEW')
 const contextPricing = computed(() => props.model.contextPricing || {})
 const priceTiers = computed<Array<Record<string, any>>>(() => Array.isArray(props.model.priceTiers) ? props.model.priceTiers : [])
@@ -84,12 +85,12 @@ function decimal(value: unknown) {
 function salePrice(value: unknown) {
   const price = decimal(value)
   return price > 0
-    ? `$${price.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 6 })}`
+    ? formatCurrencyValue(price, 'USD')
     : '不计费'
 }
 function netPrice(value: unknown) {
   const price = decimal(value) * (10000 - rebateBps.value) / 10000
-  return price > 0 ? `$${price.toLocaleString('en-US', { maximumFractionDigits: 6 })}` : '不计费'
+  return price > 0 ? formatCurrencyValue(price, 'USD') : '不计费'
 }
 function tierRange(tier: Record<string, any>) {
   const min = Number(tier.minTokens || 0)

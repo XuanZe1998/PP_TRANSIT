@@ -1,6 +1,7 @@
 import { rememberLists } from './listOrigin'
 import axios, { AxiosError, type InternalAxiosRequestConfig } from 'axios'
 import { clearAuth, getRefreshToken, getToken, getUser, setAuth, type AuthScope } from './auth'
+import { getDisplayCurrency, getLocale } from '@/i18n/locale'
 
 const productionApiBaseUrl = typeof window !== 'undefined' && window.location.hostname === 'linknux.com'
   ? 'https://api.linknux.com' : ''
@@ -69,6 +70,9 @@ http.interceptors.request.use(config => {
   const scoped = config as ScopedConfig
   normalizeUrl(scoped)
   scoped._authScope = authScope(scoped.url || '')
+  scoped.headers = scoped.headers || {}
+  scoped.headers['Accept-Language'] = getLocale()
+  scoped.headers['X-Display-Currency'] = getDisplayCurrency()
   if (scoped._authScope !== 'public') {
     const token = getToken(scoped._authScope)
     if (token) {
