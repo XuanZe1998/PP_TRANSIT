@@ -8,6 +8,7 @@
     "build": "vue-tsc && vite build",
     "preview": "vite preview",
     "test": "vitest run",
+    "i18n:check": "node scripts/generate-english-copy.mjs --check",
     "test:e2e": "playwright test --project=webkit"
   },
   "dependencies": {
