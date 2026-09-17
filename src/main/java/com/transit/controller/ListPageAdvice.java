@@ -27,7 +27,7 @@ public class ListPageAdvice implements ResponseBodyAdvice<Object> {
   if(!collectionPage)return body;
   String path=params.getParameter("listPath");if(path!=null&&!path.isBlank())for(String key:path.split("\\.")){if(!key.matches("[A-Za-z0-9_]+"))throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"列表路径无效");node=node.path(key);}
   if(!node.isArray())return body;
-  int page=parse(params.getParameter("listCurrent"),1),size=parse(params.getParameter("listSize"),20);
+  int page=parse(params.getParameter("listCurrent"),1),size=parse(params.getParameter("listSize"),10);
   if(page<1||!Set.of(10,20,50,100).contains(size))throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"分页参数无效");
   String search=Objects.toString(params.getParameter("listQuery"),"").strip().toLowerCase(Locale.ROOT);
   List<JsonNode> rows=new ArrayList<>();for(JsonNode row:node)if(search.isBlank()||row.toString().toLowerCase(Locale.ROOT).contains(search))rows.add(row);

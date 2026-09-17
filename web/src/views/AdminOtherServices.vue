@@ -1,15 +1,11 @@
 <template>
   <section class="other-services-admin">
-    <div class="admin-service-head">
-      <div>
-        <h2>服务与订单</h2>
-        <p>每项服务统一配置展示信息、价格、服务费、币种和购买状态，并在这里处理服务订单。</p>
-      </div>
-      <div class="admin-service-actions">
+    <AdminPageToolbar title="服务与订单" description="每项服务统一配置展示信息、价格、服务费、币种和购买状态，并在这里处理服务订单。">
+      <template #actions>
         <el-button plain @click="router.push('/admin/payment-link')">打开支付链接工具</el-button>
         <el-button v-if="activeTab === 'catalog'" type="primary" @click="openCreate">新增服务</el-button>
-      </div>
-    </div>
+      </template>
+    </AdminPageToolbar>
 
     <el-tabs v-model="activeTab" @tab-change="syncTab">
       <el-tab-pane label="服务目录" name="catalog">
@@ -213,6 +209,7 @@
 
 <script setup lang="ts">
 import PagedTable from '@/components/PagedTable.vue'
+import AdminPageToolbar from '@/components/AdminPageToolbar.vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { formatCurrencyCents } from '@/utils/money'
 import { useRoute, useRouter } from 'vue-router'
@@ -551,33 +548,9 @@ onMounted(load)
 
 <style scoped>
 .other-services-admin {
-  padding: 24px;
-  border-radius: 8px;
-  background: #fff;
-}
-
-.admin-service-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
+  display: grid;
   gap: 20px;
-  margin-bottom: 20px;
-}
-
-.admin-service-head h2 {
-  margin: 0;
-  color: #111827;
-}
-
-.admin-service-head p {
-  margin: 8px 0 0;
-  color: #64748b;
-}
-
-.admin-service-actions {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
+  min-width: 0;
 }
 
 .supplier-picker {
@@ -661,10 +634,6 @@ onMounted(load)
 }
 
 @media (max-width: 640px) {
-  .admin-service-head {
-    flex-direction: column;
-  }
-
   .service-image-editor {
     align-items: flex-start;
     flex-direction: column;

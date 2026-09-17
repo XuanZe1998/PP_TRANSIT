@@ -3618,7 +3618,6 @@ textarea {
     max-width: 100%;
   }
 
-  .console-toolbar,
   .user-header,
   .section-head {
     flex-wrap: wrap;
@@ -4374,8 +4373,6 @@ textarea {
     max-width: 100%;
   }
 
-  .toolbar-actions,
-  .console-toolbar,
   .header-actions {
     width: 100%;
   }
@@ -4883,7 +4880,6 @@ small,
 }
 
 .user-console-page .sidebar-balance,
-.user-console-page .console-toolbar,
 .user-console-page .console-hero {
   border-color: rgba(103, 143, 216, .22) !important;
   background: rgba(10, 23, 49, .72) !important;
@@ -4951,7 +4947,6 @@ small,
   background-size: auto, 56px 56px, 56px 56px, auto !important;
 }
 
-.console-toolbar,
 .admin-table-shell,
 .security-card,
 .settings-card,
@@ -5255,9 +5250,7 @@ code,
 }
 
 #app .user-console-page .sidebar-balance,
-#app .user-console-page .console-toolbar,
 #app .user-console-page .console-hero,
-#app .console-toolbar,
 #app .admin-table-shell,
 #app .security-card,
 #app .settings-card,
@@ -6957,7 +6950,6 @@ pre,
 }
 
 #app .admin-shell :is(
-  .console-toolbar,
   .panel,
   .gateway-panel,
   .admin-table-shell,

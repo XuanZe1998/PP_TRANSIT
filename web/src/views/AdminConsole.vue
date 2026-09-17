@@ -1,24 +1,22 @@
 <template>
   <div class="admin-console">
-    <section class="console-toolbar">
-      <div>
-        <h2>{{ config.title }}</h2>
-        <p>{{ config.description }}</p>
-      </div>
-      <div class="toolbar-actions">
-        <el-select v-if="module === 'dashboard'" v-model="dashboardPeriod" style="width: 130px" @change="handleDashboardPeriodChange">
+    <AdminPageToolbar :title="config.title" :description="config.description">
+      <template #filters>
+        <el-select v-if="module === 'dashboard'" v-model="dashboardPeriod" class="toolbar-period" @change="handleDashboardPeriodChange">
           <el-option label="今天" value="today" /><el-option label="近 7 天" value="7" />
           <el-option label="近 30 天" value="30" /><el-option label="自定义" value="custom" />
         </el-select>
         <el-date-picker v-if="module === 'dashboard' && dashboardPeriod === 'custom'" v-model="dashboardCustomRange" type="daterange" value-format="YYYY-MM-DD" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" @change="handleDashboardCustomRange" />
-        <el-input v-model="query" clearable :placeholder="module === 'audit' ? '搜索 Trace、用户或模型' : '搜索当前列表'" :prefix-icon="Search" @keyup.enter="handleToolbarSearch" @clear="handleToolbarSearch" />
+        <el-input class="toolbar-search" v-model="query" clearable :placeholder="module === 'audit' ? '搜索 Trace、用户或模型' : '搜索当前列表'" :prefix-icon="Search" @keyup.enter="handleToolbarSearch" @clear="handleToolbarSearch" />
+      </template>
+      <template #actions>
         <el-button :icon="Refresh" @click="load">刷新</el-button>
         <NewApiConnect v-if="module === 'channels'" @connected="load()" />
         <el-button v-if="config.createLabel" type="primary" :icon="Plus" @click="openCreate">
           {{ config.createLabel }}
         </el-button>
-      </div>
-    </section>
+      </template>
+    </AdminPageToolbar>
 
 
     <section v-if="metrics.length" class="metric-grid admin-metrics">
@@ -841,12 +839,14 @@
 <script setup lang="ts">
 import SelectablePagination from '@/components/SelectablePagination.vue'
 import PagedTable from '@/components/PagedTable.vue'
+import AdminPageToolbar from '@/components/AdminPageToolbar.vue'
 import { computed, defineAsyncComponent, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Refresh, Search } from '@element-plus/icons-vue'
 import { useRoute, useRouter } from 'vue-router'
 import http, { getHttpErrorMessage, getHttpErrorNotice } from '@/utils/http'
 import { formatCny, formatPerMillionUsd, formatUsd } from '@/utils/money'
+import { DEFAULT_PAGE_SIZE } from '@/utils/listPage'
 const AdminUsageCharts = defineAsyncComponent(() => import('@/components/AdminUsageCharts.vue'))
 const NewApiConnect = defineAsyncComponent(() => import('@/components/NewApiConnect.vue'))
 
@@ -887,7 +887,7 @@ const rechargePlans = ref<any[]>([])
 type FinanceSection = 'summary' | 'transactions' | 'codes' | 'plans'
 const financeErrors = reactive<Record<FinanceSection, string>>({ summary: '', transactions: '', codes: '', plans: '' })
 const financePage = ref(1)
-const financePageSize = ref(20)
+const financePageSize = ref(DEFAULT_PAGE_SIZE)
 const financeTotal = ref(0)
 const rechargePlanVisible = ref(false)
 const rechargePlanSaving = ref(false)
@@ -912,7 +912,7 @@ const adminUsageError = ref('')
 const auditLogsError = ref('')
 const auditOptions = reactive<{ organizations: any[]; users: any[]; models: any[] }>({ organizations: [], users: [], models: [] })
 const auditPage = ref(1)
-const auditPageSize = ref(20)
+const auditPageSize = ref(DEFAULT_PAGE_SIZE)
 const auditTotal = ref(0)
 const testRows = ref<any[]>([])
 const channelLedgerSections = ref<string[]>([])
@@ -948,7 +948,7 @@ const editorDiscoveryError = ref('')
 const providerCatalog = ref<any[]>([])
 const modelProviderFilter = ref('')
 const modelPage = ref(1)
-const modelPageSize = ref(20)
+const modelPageSize = ref(DEFAULT_PAGE_SIZE)
 const modelMarketDisplayVisible = ref(false)
 const modelMarketDisplayLoading = ref(false)
 const modelMarketDisplaySaving = ref(false)
@@ -2776,38 +2776,12 @@ function healthType(value: string) {
   min-width: 0;
 }
 
-.console-toolbar {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 18px;
-}
-
-.console-toolbar > div {
-  min-width: 0;
-}
-
-.console-toolbar h2 {
-  margin: 0;
-  font-size: 24px;
-  color: #111827;
-}
-
-.console-toolbar p {
-  margin: 8px 0 0;
-  color: #6b7280;
-}
-
-.toolbar-actions {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10px;
-  max-width: 100%;
-}
-
-.toolbar-actions .el-input {
+.toolbar-search {
   width: 260px;
+}
+
+.toolbar-period {
+  width: 130px;
 }
 
 .admin-metrics {
@@ -3332,16 +3306,7 @@ function healthType(value: string) {
 }
 
 @media (max-width: 1200px) {
-  .console-toolbar {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .toolbar-actions {
-    width: 100%;
-  }
-
-  .toolbar-actions .el-input {
+  .toolbar-search {
     flex: 1 1 260px;
     width: auto;
     min-width: 0;
@@ -3365,11 +3330,6 @@ function healthType(value: string) {
 }
 
 @media (max-width: 680px) {
-  .toolbar-actions > * {
-    flex: 1 1 100%;
-    margin-left: 0 !important;
-  }
-
   .discovery-summary,
   .report-summary,
   .issued-secret {

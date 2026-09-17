@@ -1,6 +1,6 @@
 # 业务列表分页清单
 
-默认20，可选10/20/50/100；全部仅限总数≤200，服务端校验。每个列表使用稳定标识记住选择；固定表单选项和导航无需分页。
+默认10，可选10/20/50/100；全部仅限总数≤200，服务端校验。每个列表使用稳定标识记住选择；固定表单选项和导航无需分页。
 
 首页统计使用 `/public/models/summary`，仅返回完整公开模型目录的 `total` 和去重 `publisherCount`；不返回业务列表，不再下载前100条详情推算厂商数量。模型市场列表继续使用原分页接口。
 
@@ -51,7 +51,7 @@
 | web/src/views/AdminVmCardTest.vue | AdminVmCardTest-1 | `productCodes` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
 | web/src/views/AdminVmCardTest.vue | AdminVmCardTest-2 | `savedCards` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
 | web/src/views/AdminVmCardTest.vue | AdminVmCardTest-3 | `events` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
-| web/src/views/AdminContactMethods.vue | AdminContactMethods-1 | `contact_methods` | 独立接口数据库 COUNT + LIMIT/OFFSET；默认20，可选10/20/50/100，全部上限200 |
+| web/src/views/AdminContactMethods.vue | AdminContactMethods-1 | `contact_methods` | 独立接口数据库 COUNT + LIMIT/OFFSET；默认10，可选10/20/50/100，全部上限200 |
 | web/src/views/AgentConsole.vue | AgentConsole-1 | `summary.withdrawals || []` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
 | web/src/views/FlowScreen.vue | FlowScreen.vue-1 | `screen.cards` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
 | web/src/views/FlowScreen.vue | FlowScreen-1 | `tableRows` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
@@ -78,7 +78,7 @@
 | web/src/views/UserConsole.vue | UserConsole.vue-3 | `wallet.plans` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
 | web/src/views/UserConsole.vue | UserConsole-6 | `genericRows` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
 | web/src/components/ModelPriceComparisonDialog.vue | model-comparison-offers | `comparison.offers` | 统一分页；按报价列翻页 |
-| web/src/components/ContactWidget.vue | contact-widget-public | `contact_methods` | 公共接口数据库 COUNT + LIMIT/OFFSET；默认20，可选10/20/50/100，全部上限200 |
+| web/src/components/ContactWidget.vue | contact-widget-public | `contact_methods` | 公共接口数据库 COUNT + LIMIT/OFFSET；默认10，可选10/20/50/100，全部上限200 |
 
 2026-09-06：模型网关分组列表增加前台名称直接编辑、测试健康状态；继续使用 ModelGateway-1 服务端 COUNT 分页。加价预览继续使用 GatewayPricingEditor-1 与阶梯 PagedTable，增加采购价、实际变价数与规则覆盖原因，不改变分页上限。
 
@@ -88,7 +88,7 @@
 
 ### AiAPIBank 模型广场分组发现
 
-- 网关站点/分组仍使用服务端 COUNT + LIMIT/OFFSET 和现有分页组件，默认20，可选10/20/50/100，全部上限200。
+- 网关站点/分组仍使用服务端 COUNT + LIMIT/OFFSET 和现有分页组件，默认10，可选10/20/50/100，全部上限200。
 - 分组发现读取 `/api/v1/model-plaza`。站点未授权时使用匿名响应；管理员完成 AiAPIBank 账号授权后，任务使用短期 Access Token 读取账号可见目录，包括账号已获权限的“对接专用”分组。
 - 账号密码只用于首次登录请求，不写入配置或数据库。登录成功后仅以用途绑定 AES-GCM 加密保存 Refresh Token；Access Token 只在内存中短期缓存。TOTP 登录只暂存加密挑战令牌，验证成功后立即清除。
 - AiAPIBank 分组发现按 `aiapibank.sync-cron` 定时执行，默认每天 03:20（Asia/Tokyo）。刷新令牌失效时任务失败并要求管理员重新授权，不降级为匿名响应以免把不完整目录误报为完整结果。

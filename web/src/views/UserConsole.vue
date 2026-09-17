@@ -729,6 +729,7 @@ import { clearAuth, getUser } from '@/utils/auth'
 import http, { createIdempotencyKey, getHttpErrorMessage, getHttpErrorNotice } from '@/utils/http'
 import { formatCny, formatMoneyDto as formatLocalizedMoneyDto, formatPerMillionUsd, formatSignedCny, formatUsd, type AmountUnits } from '@/utils/money'
 import { getDisplayCurrency } from '@/i18n/locale'
+import { DEFAULT_PAGE_SIZE } from '@/utils/listPage'
 import ModelSalePricing from '@/components/ModelSalePricing.vue'
 import DeveloperDocs from '@/components/DeveloperDocs.vue'
 import ProfileCenter from '@/components/ProfileCenter.vue'
@@ -750,7 +751,7 @@ const dashboard = ref<any>({ stats: {}, tokens: [], recentLogs: [], models: [], 
 const billingRows = ref<any[]>([])
 const billingSummary = ref<any[]>([])
 const billingPage = ref(1)
-const billingPageSize = ref(20)
+const billingPageSize = ref(DEFAULT_PAGE_SIZE)
 const billingTotal = ref(0)
 const usageAnalytics = ref<any>({ daily: [], totals: {}, tokenComposition: [] })
 const billingLoading = ref(false)
@@ -833,7 +834,7 @@ const modelGrantOptions = computed(() => {
 })
 const walletLoading = ref(false)
 const walletTransactionPage = ref(1)
-const walletTransactionPageSize = ref(20)
+const walletTransactionPageSize = ref(DEFAULT_PAGE_SIZE)
 const walletTransactionTotal = ref(0)
 const redeeming = ref(false)
 const redeemCode = ref('')

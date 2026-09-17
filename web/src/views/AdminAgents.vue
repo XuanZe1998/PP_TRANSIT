@@ -1,5 +1,9 @@
 <template>
-  <section class="admin-evolution">
+  <div class="admin-agents-page">
+    <AdminPageToolbar title="代理、号池与运维" description="管理代理审核、上游账号、出站代理、实时运维、公告与备份。">
+      <template #actions><el-button @click="load">刷新</el-button></template>
+    </AdminPageToolbar>
+    <section class="admin-evolution">
     <el-tabs v-model="tab" @tab-change="load">
       <el-tab-pane label="代理与提现" name="agents">
         <h3>代理资料</h3><PagedTable :data="agents" list-id="AdminAgents-1"><el-table-column prop="username" label="用户"/><el-table-column prop="tier_code" label="等级"/><el-table-column prop="status" label="状态"/><el-table-column prop="customer_count" label="客户"/><el-table-column label="操作" min-width="260"><template #default="scope"><el-button size="small" type="success" @click="review(scope.row.id,'ACTIVE')">通过</el-button><el-button size="small" @click="review(scope.row.id,'SUSPENDED')">暂停</el-button><el-button size="small" type="danger" @click="review(scope.row.id,'REJECTED')">拒绝</el-button></template></el-table-column></PagedTable>
@@ -41,11 +45,13 @@
       <el-tab-pane label="实时运维" name="ops"><div class="ops-grid"><article v-for="(value,key) in opsCards" :key="key"><span>{{ key }}</span><strong>{{ value }}</strong></article></div><PagedTable :data="ops.heartbeats||[]" list-id="AdminAgents-8"><el-table-column prop="task_key" label="任务"/><el-table-column prop="status" label="状态"/><el-table-column prop="updated_at" label="心跳"/></PagedTable></el-tab-pane>
       <el-tab-pane label="公告与备份" name="platform"><div class="platform-actions"><el-input v-model="announcement.title" placeholder="公告标题"/><el-input v-model="announcement.content" type="textarea" placeholder="公告内容"/><el-button type="primary" @click="createAnnouncement">发布公告</el-button><el-button @click="requestBackup">登记手工备份</el-button></div><h3>备份记录</h3><PagedTable :data="backups" list-id="AdminAgents-9"><el-table-column prop="request_no" label="请求号"/><el-table-column prop="status" label="状态"/><el-table-column prop="created_at" label="创建时间"/></PagedTable></el-tab-pane>
     </el-tabs>
-  </section>
+    </section>
+  </div>
 </template>
 
 <script setup lang="ts">
 import PagedTable from '@/components/PagedTable.vue'
+import AdminPageToolbar from '@/components/AdminPageToolbar.vue'
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import http,{getHttpErrorMessage} from '@/utils/http'
@@ -82,5 +88,5 @@ onUnmounted(()=>window.removeEventListener('message',oauthMessage))
 </script>
 
 <style scoped>
-.admin-evolution{min-width:0;padding:22px;border:1px solid #d7e4f7;border-radius:12px;background:#fff}.account-actions{display:flex;flex-wrap:wrap;gap:10px;margin:14px 0}.platform-status{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px}.oauth-client-table{margin-bottom:18px}.oauth-client-form{margin-top:18px}.ops-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:18px}.ops-grid article{padding:18px;border-radius:10px;background:#f3f8ff}.ops-grid span,.ops-grid strong{display:block}.ops-grid span{color:#647792}.ops-grid strong{margin-top:6px;font-size:24px}.platform-actions{display:grid;max-width:720px;gap:12px;margin-bottom:26px}@media(max-width:760px){.ops-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.admin-evolution{padding:12px;overflow-x:auto;-webkit-overflow-scrolling:touch}}
+.admin-agents-page{display:grid;gap:18px;min-width:0}.admin-evolution{min-width:0;padding:22px;border:1px solid #d7e4f7;border-radius:12px;background:#fff}.account-actions{display:flex;flex-wrap:wrap;gap:10px;margin:14px 0}.platform-status{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px}.oauth-client-table{margin-bottom:18px}.oauth-client-form{margin-top:18px}.ops-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:18px}.ops-grid article{padding:18px;border-radius:10px;background:#f3f8ff}.ops-grid span,.ops-grid strong{display:block}.ops-grid span{color:#647792}.ops-grid strong{margin-top:6px;font-size:24px}.platform-actions{display:grid;max-width:720px;gap:12px;margin-bottom:26px}@media(max-width:760px){.ops-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.admin-evolution{padding:12px;overflow-x:auto;-webkit-overflow-scrolling:touch}}
 </style>

@@ -43,9 +43,29 @@ describe('Linknux UI design system', () => {
   })
 
   it('keeps all shared business lists on the approved default page size', () => {
-    expect(source('src/utils/listPage.ts')).toContain(': 20')
-    expect(source('src/components/SelectablePagination.vue')).toContain('pageSize:20')
-    expect(source('src/components/ModelProbePanel.vue')).toContain('const pageSize = ref(20)')
-    expect(source('src/views/ModelMarket.vue')).toContain('const pageSize = ref(20)')
+    expect(source('src/utils/listPage.ts')).toContain('DEFAULT_PAGE_SIZE = 10')
+    expect(source('src/components/SelectablePagination.vue')).toContain('pageSize:DEFAULT_PAGE_SIZE')
+    expect(source('src/components/ModelProbePanel.vue')).toContain('const pageSize = ref(DEFAULT_PAGE_SIZE)')
+    expect(source('src/views/ModelMarket.vue')).toContain('const pageSize = ref(DEFAULT_PAGE_SIZE)')
+  })
+
+  it('uses the shared layered toolbar on every authenticated admin page', () => {
+    const adminViews = [
+      'src/views/AdminConsole.vue',
+      'src/views/ModelGateway.vue',
+      'src/views/AdminCreativeConfig.vue',
+      'src/views/AdminAgents.vue',
+      'src/views/AdminModelProbe.vue',
+      'src/views/AdminOtherServices.vue',
+      'src/views/AdminContactMethods.vue',
+      'src/views/AdminVmCardTest.vue',
+    ]
+    for (const view of adminViews) expect(source(view), view).toContain('<AdminPageToolbar')
+    const toolbar = source('src/components/AdminPageToolbar.vue')
+    expect(toolbar).toContain('name="filters"')
+    expect(toolbar).toContain('name="actions"')
+    expect(toolbar).toContain('@media (max-width: 980px)')
+    expect(toolbar).toContain('@media (max-width: 700px)')
+    expect(source('src/components/AdminLayout.vue')).not.toContain('{{ currentTitle }}')
   })
 })

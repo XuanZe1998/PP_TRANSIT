@@ -3676,5 +3676,9 @@
   "新增联系方式后未返回 ID": "No ID was returned after creating the contact method",
   "页码超出允许范围": "Page number is out of range",
   "有问题，随时找我们": "We are here when you need help",
+  "对 OpenAI 兼容端点执行质量、安全、完整性与身份探针，识别模型调包或降级。": "Run quality, safety, completeness, and identity probes against OpenAI-compatible endpoints to detect model substitution or degradation.",
+  "管理代理审核、上游账号、出站代理、实时运维、公告与备份。": "Manage partner reviews, upstream accounts, outbound proxies, live operations, announcements, and backups.",
+  "管理平台模型连接、自动成片参数、素材存储与运行诊断。": "Manage platform model connections, automated video settings, asset storage, and runtime diagnostics.",
+  "刷新任务": "Refresh tasks",
   "editingId ? '编辑联系方式' : '新增联系方式'": "Edit contact method / Add contact method"
 }
