@@ -5756,7 +5756,7 @@ code,
 .public-site.home-theme .site-hero {
   grid-template-columns: minmax(500px, .88fr) minmax(590px, 1.12fr);
   width: min(1510px, 100%); min-height: calc(100vh - 78px); min-height: calc(100dvh - 78px);
-  margin: 0 auto; padding: clamp(80px, 10vh, 118px) 3.6vw 72px;
+  margin: 0 auto; padding: clamp(20px, 8vh, 118px) 3.6vw 72px;
   gap: clamp(44px, 5vw, 88px); align-items: center; overflow: visible;
 }
 .public-site.home-theme .hero-copy { z-index: 4; max-width: 680px; align-self: center; }
@@ -5818,7 +5818,7 @@ code,
 @keyframes routing-core-glow { 50% { box-shadow: 0 0 48px rgba(49, 184, 255, .5), inset 0 0 30px rgba(71, 90, 255, .34); } }
 @keyframes chart-level { to { transform: scaleY(.45); opacity: .55; } }
 @media (min-width: 901px) {
-  .public-site.home-theme .hero-copy, .public-site.home-theme .hero-product { transform: translateY(34px); }
+  .public-site.home-theme .hero-copy, .public-site.home-theme .hero-product { transform: translateY(0); }
   .tech-backdrop.is-home .energy-ribbons { width: 128%; height: 112%; left: -14%; top: -8%; opacity: .9; transform: rotate(-10deg) scale(1.08); transform-origin: 50% 62%; }
   .tech-backdrop.is-home .particle-wave { transform: rotate(-10deg) scale(1.08); }
 }
