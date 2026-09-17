@@ -1,16 +1,20 @@
 <template>
  <div class="gateway-workbench">
-  <header class="heading"><div><p>上游站点 → 分组 → 模型，统一管理同步、定价与发布。</p></div><div class="actions"><NewApiConnect @connected="reloadAll"/><el-button :loading="loading" @click="load">刷新</el-button></div></header>
+  <AdminPageToolbar title="模型网关" description="上游站点 → 分组 → 模型，统一管理同步、定价与发布。">
+   <template #filters>
+    <el-select class="gateway-filter" v-model="siteId" clearable filterable remote :remote-method="searchSites" placeholder="全部上游" @change="siteChanged"><el-option v-for="s in siteOptions" :key="s.id" :value="s.id" :label="s.name"/><template #footer><el-button v-if="siteOptions.length<siteTotal" link @click="searchSites(siteQuery,true)">加载更多</el-button></template></el-select>
+    <el-select class="gateway-filter" v-model="groupId" clearable filterable remote :remote-method="searchGroups" placeholder="全部上游分组" @change="filterChanged"><el-option v-for="g in groupOptions" :key="g.id" :value="g.id" :label="g.group_name"/><template #footer><el-button v-if="groupOptions.length<groupTotal" link @click="searchGroups(groupQuery,true)">加载更多</el-button></template></el-select>
+    <el-input class="gateway-search" v-model="query" clearable placeholder="搜索名称" @keyup.enter="filterChanged" @clear="filterChanged"/>
+   </template>
+   <template #actions>
+    <NewApiConnect @connected="reloadAll"/><el-button :loading="loading" @click="load">刷新</el-button>
+    <el-button type="primary" :loading="working" @click="synchronize()">同步目录</el-button>
+    <el-button v-if="siteOptions.find(s=>s.id===siteId)?.adapter==='aiapibank'" :loading="working" @click="syncGroups(siteId)">同步上游分组</el-button>
+    <el-button v-if="siteId" @click="editSite">站点设置</el-button>
+    <el-button @click="pricingEditor?.show()">销售加价设置</el-button>
+   </template>
+  </AdminPageToolbar>
   <div class="actions"><el-button v-for="metric in metrics" :key="metric.key" text @click="showMetric(metric.state)">{{metric.label}} {{summary[metric.key] ?? 0}}</el-button></div>
-  <section class="filters">
-   <el-select v-model="siteId" clearable filterable remote :remote-method="searchSites" placeholder="全部上游" @change="siteChanged"><el-option v-for="s in siteOptions" :key="s.id" :value="s.id" :label="s.name"/><template #footer><el-button v-if="siteOptions.length<siteTotal" link @click="searchSites(siteQuery,true)">加载更多</el-button></template></el-select>
-   <el-select v-model="groupId" clearable filterable remote :remote-method="searchGroups" placeholder="全部上游分组" @change="filterChanged"><el-option v-for="g in groupOptions" :key="g.id" :value="g.id" :label="g.group_name"/><template #footer><el-button v-if="groupOptions.length<groupTotal" link @click="searchGroups(groupQuery,true)">加载更多</el-button></template></el-select>
-   <el-input v-model="query" clearable placeholder="搜索名称" @keyup.enter="filterChanged" @clear="filterChanged"/>
-   <el-button type="primary" :loading="working" @click="synchronize()">同步目录</el-button>
-   <el-button v-if="siteOptions.find(s=>s.id===siteId)?.adapter==='aiapibank'" :loading="working" @click="syncGroups(siteId)">同步上游分组</el-button>
-   <el-button v-if="siteId" @click="editSite">站点设置</el-button>
-   <el-button @click="pricingEditor?.show()">销售加价设置</el-button>
-  </section>
   <el-tabs v-model="tab" @tab-change="tabChanged"><el-tab-pane label="上游与分组" name="channels"/><el-tab-pane label="模型与定价" name="models"/><el-tab-pane label="运行记录" name="records"/></el-tabs>
   <el-alert v-if="error" :title="error" type="error" :closable="false"/>
   <section class="panel">
@@ -47,6 +51,7 @@
 </template>
 <script setup lang="ts">
 import PagedTable from '@/components/PagedTable.vue'
+import AdminPageToolbar from '@/components/AdminPageToolbar.vue'
 import {ref,reactive,onMounted,onBeforeUnmount} from 'vue'
 import {useRoute,useRouter} from 'vue-router'
 import {ElMessage} from 'element-plus'
@@ -104,5 +109,5 @@ onMounted(async()=>{await reloadAll();timer=setInterval(()=>{if(pendingGroupJobs
 onBeforeUnmount(()=>{if(timer)clearInterval(timer)})
 </script>
 <style scoped>
-.gateway-workbench { display:grid; gap:16px; }.heading,.actions,.filters { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }.heading{justify-content:space-between}.heading h2{margin:0}.heading p{color:var(--el-text-color-secondary)}.filters .el-select{width:210px}.filters .el-input{max-width:250px}.panel{min-width: 0;padding:18px;border:1px solid var(--el-border-color);border-radius:12px;background:var(--el-bg-color)}.failure-text{color:var(--el-color-danger)}small{color:var(--el-text-color-secondary)}
+.gateway-workbench { display:grid; gap:16px; }.actions { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }.gateway-filter{width:210px}.gateway-search{width:250px}.panel{min-width: 0;padding:18px;border:1px solid var(--el-border-color);border-radius:12px;background:var(--el-bg-color)}.failure-text{color:var(--el-color-danger)}small{color:var(--el-text-color-secondary)}
 </style>

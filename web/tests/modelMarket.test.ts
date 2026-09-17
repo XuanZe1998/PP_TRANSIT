@@ -24,7 +24,8 @@ describe('model marketplace helpers', () => {
 
   it('resets pagination when filters or page size change', () => {
     const market = source('src/views/ModelMarket.vue')
-    expect(market).toContain('const pageSize = ref(20)')
+    expect(market).toContain('const pageSize = ref(DEFAULT_PAGE_SIZE)')
+    expect(market).toContain('pageSize.value !== DEFAULT_PAGE_SIZE')
     expect(market).not.toContain(':page-sizes="[10, 20, 50, 100, 200]"')
     expect(market).toContain('function handlePageSizeChange() { page.value = 1')
     expect(market).toContain('watch(filters, () => { if (hydrating) return; page.value = 1')

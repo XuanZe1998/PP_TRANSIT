@@ -1,5 +1,9 @@
 <template>
   <div class="creative-admin" v-loading="loading">
+    <AdminPageToolbar
+      title="AI 创作配置"
+      description="管理平台模型连接、自动成片参数、素材存储与运行诊断。"
+    />
     <el-alert title="AI 创作配置只保存在数据库中；密钥加密后存储，页面不会回显原文。" type="info" show-icon :closable="false" />
     <el-tabs v-model="tab" class="config-tabs">
       <el-tab-pane label="平台模型" name="connections">

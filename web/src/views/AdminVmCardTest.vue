@@ -1,17 +1,16 @@
 <template>
   <div class="vmcard-page">
-    <section class="vmcard-panel vmcard-overview">
-      <div class="vmcard-title-row">
-        <div>
-          <p class="vmcard-eyebrow">VMCARDIO API</p>
-          <h2>虚拟卡接口测试台</h2>
-          <p>覆盖 accessToken、12 个卡操作以及交易/3DS Webhook。所有第三方密钥与 RSA 运算均在服务端完成。</p>
-        </div>
+    <AdminPageToolbar
+      title="虚拟卡接口测试台"
+      description="覆盖 accessToken、12 个卡操作以及交易/3DS Webhook。所有第三方密钥与 RSA 运算均在服务端完成。"
+    >
+      <template #actions>
         <el-button :loading="tokenChecking" :disabled="!configuration.configured" @click="checkToken">
           验证 accessToken
         </el-button>
-      </div>
-
+      </template>
+    </AdminPageToolbar>
+    <section class="vmcard-panel vmcard-overview">
       <div class="vmcard-status-grid">
         <article>
           <span>集成状态</span>
@@ -232,6 +231,7 @@
 
 <script setup lang="ts">
 import PagedTable from '@/components/PagedTable.vue'
+import AdminPageToolbar from '@/components/AdminPageToolbar.vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import http, { getHttpErrorMessage } from '@/utils/http'
@@ -530,7 +530,6 @@ onMounted(async () => {
   box-shadow: 0 12px 30px rgba(15, 23, 42, 0.05);
 }
 
-.vmcard-title-row,
 .request-head,
 .response-head,
 .webhook-head,
@@ -542,15 +541,6 @@ onMounted(async () => {
   gap: 18px;
 }
 
-.vmcard-eyebrow {
-  margin: 0 0 6px;
-  color: #2563eb;
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-}
-
-.vmcard-title-row h2,
 .request-head h3,
 .webhook-head h3,
 .saved-card-head h3,
@@ -561,7 +551,6 @@ onMounted(async () => {
   color: #111827;
 }
 
-.vmcard-title-row > div > p:last-child,
 .webhook-head p,
 .saved-card-head p,
 .product-code-head p {
@@ -573,7 +562,7 @@ onMounted(async () => {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
-  margin: 22px 0;
+  margin: 0 0 22px;
 }
 
 .vmcard-status-grid article {
@@ -726,7 +715,6 @@ onMounted(async () => {
 }
 
 @media (max-width: 640px) {
-  .vmcard-title-row,
   .request-head,
   .webhook-head,
   .saved-card-head,

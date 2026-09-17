@@ -1,12 +1,9 @@
 <template>
   <div class="contact-admin">
-    <section class="contact-toolbar">
-      <div>
-        <h2>联系方式</h2>
-        <p>维护前台悬浮联系卡展示的渠道与号码。</p>
-      </div>
-      <div class="contact-actions">
+    <AdminPageToolbar title="联系方式" description="维护前台悬浮联系卡展示的渠道与号码。">
+      <template #filters>
         <el-input
+          class="contact-search"
           v-model="query"
           clearable
           placeholder="搜索渠道或号码"
@@ -14,10 +11,12 @@
           @keyup.enter="search"
           @clear="search"
         />
+      </template>
+      <template #actions>
         <el-button :icon="Refresh" @click="load">刷新</el-button>
         <el-button type="primary" :icon="Plus" @click="openCreate">新增联系方式</el-button>
-      </div>
-    </section>
+      </template>
+    </AdminPageToolbar>
 
     <section class="contact-panel">
       <PagedTable :data="rows" :pagination="'external'" list-id="AdminContactMethods-1" v-loading="loading">
@@ -63,6 +62,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Refresh, Search } from '@element-plus/icons-vue'
 import PagedTable from '@/components/PagedTable.vue'
 import ListPagination from '@/components/ListPagination.vue'
+import AdminPageToolbar from '@/components/AdminPageToolbar.vue'
 import http, { getHttpErrorMessage } from '@/utils/http'
 import { useListPage } from '@/utils/listPage'
 
@@ -161,15 +161,10 @@ onMounted(load)
 
 <style scoped>
 .contact-admin { display: grid; gap: 20px; }
-.contact-toolbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
-.contact-toolbar h2 { margin: 0; color: #111827; }
-.contact-toolbar p { margin: 8px 0 0; color: #6b7280; }
-.contact-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; }
-.contact-actions .el-input { width: 240px; }
+.contact-search { width: 240px; }
 .contact-panel { padding: 20px; border: 1px solid #dce6f2; border-radius: 14px; background: #fff; box-shadow: 0 12px 28px rgba(51, 75, 105, .07); }
 @media (max-width: 760px) {
-  .contact-toolbar, .contact-actions { flex-direction: column; align-items: stretch; }
-  .contact-actions .el-input { width: 100%; }
+  .contact-search { width: 100%; }
   .contact-panel { padding: 12px; }
 }
 </style>

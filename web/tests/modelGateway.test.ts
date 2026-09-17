@@ -14,7 +14,7 @@ describe('model marketplace layout', () => {
     expect(publicSite).toContain('<SelectablePagination')
     expect(publicSite).toContain('layout="total, sizes, prev, pager, next, jumper"')
     expect(publicSite).not.toContain(':page-sizes="[10, 20, 50, 100, 200]"')
-    expect(publicSite).toContain('const pageSize = ref(20)')
+    expect(publicSite).toContain('const pageSize = ref(DEFAULT_PAGE_SIZE)')
     expect(publicSite).not.toContain('加载更多（已显示')
     expect(css).toContain('.market-pagination')
     expect(css).toMatch(/\.site-nav\s*\{[\s\S]*?width:\s*100%/)

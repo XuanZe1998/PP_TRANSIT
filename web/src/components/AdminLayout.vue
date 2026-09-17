@@ -66,7 +66,7 @@
       <el-header class="admin-header">
         <el-button class="admin-menu-toggle" :icon="Menu" circle aria-label="打开管理后台菜单" @click="mobileNavigationOpen = true" />
         <div class="header-copy">
-          <h1>{{ currentTitle }}</h1>
+          <strong>管理后台</strong>
           <p>统一管理渠道、模型、用户、计费、安全、审计和履约。</p>
         </div>
         <div class="header-actions">
@@ -121,7 +121,6 @@ const activeRoute = computed(() => {
   if (route.path === '/admin/reports') return '/admin/settings'
   return route.path
 })
-const currentTitle = computed(() => navItems.flatMap(item => item.children || [item]).find(item => item.path === activeRoute.value)?.label || '管理员后台')
 
 watch(() => route.fullPath, () => { mobileNavigationOpen.value = false })
 
@@ -262,7 +261,8 @@ const logout = async () => {
   border-bottom: 1px solid #e5e7eb;
 }
 
-.header-copy h1 {
+.header-copy strong {
+  display: block;
   margin: 0;
   font-size: 24px;
   color: #111827;

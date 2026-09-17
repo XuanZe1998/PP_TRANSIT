@@ -625,7 +625,7 @@
     flex: 1;
   }
 
-  #app .admin-header .header-copy h1,
+  #app .admin-header .header-copy strong,
   #app .admin-header .header-copy p {
     overflow: hidden;
     text-overflow: ellipsis;
@@ -713,16 +713,9 @@
     padding: 18px 14px 36px;
   }
 
-  #app :is(.console-toolbar, .toolbar-actions, .panel-head) {
+  #app .panel-head {
     align-items: stretch;
     flex-direction: column;
-  }
-
-  #app .toolbar-actions > *,
-  #app .toolbar-actions .el-input,
-  #app .toolbar-actions .el-select,
-  #app .toolbar-actions .el-date-editor {
-    width: 100% !important;
   }
 
   #app .el-dialog {

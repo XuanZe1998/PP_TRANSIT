@@ -1,6 +1,6 @@
 <template>
   <section class="model-probe-panel">
-    <div class="probe-head">
+    <div v-if="showHeader" class="probe-head">
       <div>
         <h2>模型鉴别</h2>
         <p>对任意 OpenAI 兼容端点执行质量、安全、完整性与身份探针，产出具 0-100 评分报告与身份鉴别结论（用于检测模型调包 / 降级）。</p>
@@ -109,9 +109,11 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { MagicStick, Refresh } from '@element-plus/icons-vue'
 import http, { createIdempotencyKey, getHttpErrorNotice } from '@/utils/http'
+import { DEFAULT_PAGE_SIZE } from '@/utils/listPage'
 
-const props = withDefaults(defineProps<{ endpoint: string }>(), {
-  endpoint: '/user/model-probe'
+const props = withDefaults(defineProps<{ endpoint: string; showHeader?: boolean }>(), {
+  endpoint: '/user/model-probe',
+  showHeader: true,
 })
 
 type ProbeTask = Record<string, any>
@@ -121,7 +123,7 @@ const loadingList = ref(false)
 const tasks = ref<ProbeTask[]>([])
 const total = ref(0)
 const page = ref(1)
-const pageSize = ref(20)
+const pageSize = ref(DEFAULT_PAGE_SIZE)
 
 const form = ref({ baseUrl: '', apiKey: '', modelId: '', claimedModel: '', includeOptional: false })
 const canSubmit = computed(() => !!(form.value.baseUrl && form.value.apiKey && form.value.modelId))
@@ -169,6 +171,8 @@ async function loadList() {
     loadingList.value = false
   }
 }
+
+defineExpose({ refresh: loadList })
 
 let pollTimer: number | null = null
 function startPolling() {

@@ -31,7 +31,7 @@ public class ContactMethodController {
     @GetMapping("/public/contact-methods")
     public PageResponse<Map<String, Object>> publicPage(
             @RequestParam(defaultValue = "1") int page,
-            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(defaultValue = "10") int size,
             @RequestParam(defaultValue = "false") boolean all) {
         return contactMethods.page(page, size, all, null);
     }
@@ -40,7 +40,7 @@ public class ContactMethodController {
     public PageResponse<Map<String, Object>> adminPage(
             @RequestHeader(HttpHeaders.AUTHORIZATION) String authorization,
             @RequestParam(defaultValue = "1") int page,
-            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(defaultValue = "10") int size,
             @RequestParam(defaultValue = "false") boolean all,
             @RequestParam(required = false) String query) {
         currentUserService.requireAdmin(authorization);
