@@ -87,6 +87,8 @@ class ServiceCommerceServiceIntegrationTests {
 
         ServiceOrderResponse created = orderService.createOrder(user, orderRequest);
         ServiceOrder order = created.getOrder();
+        assertThat(order.getOrderNo()).startsWith("LNX-ORD-").doesNotStartWith("PLUS");
+        assertThat(order.getInvoiceNumber()).startsWith("LNX-INV-").doesNotStartWith("PLUS");
         assertThat(order.getAmountCents()).isEqualTo(1_400L);
         assertThat(order.getQuantity()).isEqualTo(2);
         assertThat(order.getFulfillmentStatus()).isEqualTo("PENDING");

@@ -175,7 +175,7 @@ public class ServiceOrderService {
                 .status(PENDING)
                 .contactEmail(contactEmail)
                 .contactNote(optionalText(request.getContactNote(), "contactNote", 1000))
-                .invoiceNumber(orderNo)
+                .invoiceNumber(generateInvoiceNumber())
                 .receiptNumber(generateReceiptNumber())
                 .billingName(requiredText(request.getBillingName(), "billingName", 160))
                 .billingAddressLine1(requiredText(request.getBillingAddressLine1(), "billingAddressLine1", 255))
@@ -225,7 +225,7 @@ public class ServiceOrderService {
                 .merchandiseSubtotalCents(totalCents).wholesaleDiscountCents(0L).couponDiscountCents(0L).serviceFeeCents(0L)
                 .amountCents(totalCents).currency("CNY").paymentAmountCents(paymentQuote.amountCents()).paymentCurrency("CNY")
                 .exchangeRate(paymentQuote.exchangeRate()).status(PENDING).contactEmail(normalizeContactEmail(request.getContactEmail(),user))
-                .invoiceNumber(orderNo).receiptNumber(generateReceiptNumber()).billingName(requiredText(request.getBillingName(),"billingName",160))
+                .invoiceNumber(generateInvoiceNumber()).receiptNumber(generateReceiptNumber()).billingName(requiredText(request.getBillingName(),"billingName",160))
                 .billingAddressLine1(requiredText(request.getBillingAddressLine1(),"billingAddressLine1",255))
                 .billingDistrict(requiredText(request.getBillingDistrict(),"billingDistrict",120)).billingCity(requiredText(request.getBillingCity(),"billingCity",120))
                 .billingProvince(requiredText(request.getBillingProvince(),"billingProvince",120)).billingPostalCode(postal).billingCountry(country)
@@ -594,8 +594,13 @@ public class ServiceOrderService {
     }
 
     private String generateOrderNo() {
-        return "PLUS" + nowUtc().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"))
-                + UUID.randomUUID().toString().replace("-", "").substring(0, 8).toUpperCase(Locale.ROOT);
+        return "LNX-ORD-" + nowUtc().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"))
+                + "-" + UUID.randomUUID().toString().replace("-", "").substring(0, 8).toUpperCase(Locale.ROOT);
+    }
+
+    private String generateInvoiceNumber() {
+        return "LNX-INV-" + nowUtc().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"))
+                + "-" + UUID.randomUUID().toString().replace("-", "").substring(0, 8).toUpperCase(Locale.ROOT);
     }
 
     private String generateReceiptNumber() {
