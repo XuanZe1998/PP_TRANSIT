@@ -142,7 +142,7 @@ curl -N http://127.0.0.1:8089/v1/chat/completions \
 
 ## 卡密自动发货
 
-1. 生产私有配置中设置 `service-orders.redemption-allowed-hosts`，只填写可信兑换站域名。
+1. 后台进入“服务与订单 → 兑换域名”，添加可信兑换站域名（只填域名，不填 `https://`）。增删即时生效，无需修改 YAML 或重启；删除后现有服务的兑换跳转也会失效。旧 `service-orders.redemption-allowed-hosts` 仅在升级后首次启动时导入一次，以后由数据库管理。
 2. 后台进入“服务与订单”，新增服务时选择“卡密自动发货”并导入库存。
 3. 卡密用 `DATA_ENCRYPTION_KEY` 加密，以指纹去重；仅在服务端确认付款后交付，管理列表不返回明文。
 

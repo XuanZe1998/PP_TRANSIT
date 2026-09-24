@@ -28,6 +28,7 @@ import com.transit.service.AdminTokenService;
 import com.transit.service.AdminUserService;
 import com.transit.service.CurrentUserService;
 import com.transit.service.OtherServiceCatalogService;
+import com.transit.service.RedemptionHostService;
 import com.transit.service.ServiceOrderService;
 import com.transit.service.ServiceCommerceService;
 import com.transit.service.UsageAnalyticsService;
@@ -78,6 +79,7 @@ public class AdminApiController {
     private final AdminSecurityService securityService;
     private final AdminReportService reportService;
     private final OtherServiceCatalogService otherServiceCatalogService;
+    private final RedemptionHostService redemptionHostService;
     private final OtherServiceImageStorageService otherServiceImageStorageService;
     private final ServiceCommerceService serviceCommerceService;
     private final UsageAnalyticsService usageAnalyticsService;
@@ -722,6 +724,43 @@ public class AdminApiController {
         requireAdmin(authHeader);
         return Mono.fromCallable(() -> otherServiceCatalogService.listPage(false, page, size, query));
     }
+
+    @GetMapping("/other-services/redemption-hosts")
+    public Mono<PageResponse<RedemptionHostService.AllowedHost>> redemptionHosts(
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) String query) {
+        requireAdmin(authHeader);
+        return Mono.fromCallable(() -> redemptionHostService.list(page, size, query));
+    }
+
+    @PostMapping("/other-services/redemption-hosts")
+    public Mono<RedemptionHostService.AllowedHost> addRedemptionHost(
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+            @RequestBody RedemptionHostRequest request,
+            HttpServletRequest servletRequest) {
+        User admin = requireAdmin(authHeader);
+        return Mono.fromCallable(() -> {
+            RedemptionHostService.AllowedHost added = redemptionHostService.add(request.host());
+            audit(admin, "ADD_REDEMPTION_HOST", "REDEMPTION_HOST", added.id(), null, added.host(), servletRequest);
+            return added;
+        });
+    }
+
+    @DeleteMapping("/other-services/redemption-hosts/{id}")
+    public Mono<Void> deleteRedemptionHost(
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+            @PathVariable long id,
+            HttpServletRequest servletRequest) {
+        User admin = requireAdmin(authHeader);
+        return Mono.fromRunnable(() -> {
+            redemptionHostService.delete(id);
+            audit(admin, "DELETE_REDEMPTION_HOST", "REDEMPTION_HOST", id, null, null, servletRequest);
+        });
+    }
+
+    public record RedemptionHostRequest(String host) {}
 
     @GetMapping("/other-services/{id}")
     public Mono<Map<String,Object>> otherServiceDetail(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,

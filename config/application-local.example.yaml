@@ -227,6 +227,7 @@ payment:
 service-orders:
   reservation-minutes: 15
   expiry-scan-ms: 60000
+  # Legacy one-time import only. Manage domains in admin -> Services & Orders -> Redemption Domains.
   redemption-allowed-hosts: ""
 
 # 16688 Open API subscription-service integration. Never commit real credentials.
