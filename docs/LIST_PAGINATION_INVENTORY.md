@@ -103,3 +103,5 @@
 | `AdminPaymentIntents.vue` / `GET /admin/payment-intents` | 支付记录 | `PagedTable` + `ListPagination`，服务端搜索/状态筛选，返回 `total/page/size/items` |
 
 订单交付内容是单个订单的有界结果，仅在不超过 200 条时允许本地“全部”展示。
+
+2026-09-24：服务兑换域名后台列表 `AdminOtherServices.vue` / `GET /admin/api/other-services/redemption-hosts` 使用 `PagedTable` + `ListPagination`，数据库按相同搜索条件 COUNT + LIMIT/OFFSET，默认10，仅接受10/20/50/100，不提供“全部”；增删单条域名即时生效。

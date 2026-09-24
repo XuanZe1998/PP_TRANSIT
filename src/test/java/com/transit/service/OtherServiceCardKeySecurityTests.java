@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.transit.mapper.OtherServiceMapper;
 import com.transit.model.OtherService;
 import org.junit.jupiter.api.Test;
-import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.net.URI;
@@ -18,8 +17,9 @@ class OtherServiceCardKeySecurityTests {
     @Test
     void cardKeyServiceForcesAutomaticDeliveryAndDoesNotSerializeDestination() throws Exception {
         OtherServiceMapper mapper = mock(OtherServiceMapper.class);
-        OtherServiceCatalogService service = new OtherServiceCatalogService(mapper);
-        ReflectionTestUtils.setField(service, "redemptionAllowedHosts", "redeem.example.com");
+        RedemptionHostService hosts = mock(RedemptionHostService.class);
+        when(hosts.allows("redeem.example.com")).thenReturn(true);
+        OtherServiceCatalogService service = new OtherServiceCatalogService(mapper, hosts);
         OtherService created = service.create(cardRequest("https://redeem.example.com/start?channel=modelhub"));
         assertThat(created.getFulfillmentMode()).isEqualTo("AUTOMATIC_DELIVERY");
         assertThat(created.getRedemptionConfigured()).isTrue();
@@ -29,8 +29,9 @@ class OtherServiceCardKeySecurityTests {
 
     @Test
     void rejectsInsecureOrUnapprovedRedemptionDestinations() {
-        OtherServiceCatalogService service = new OtherServiceCatalogService(mock(OtherServiceMapper.class));
-        ReflectionTestUtils.setField(service, "redemptionAllowedHosts", "redeem.example.com");
+        RedemptionHostService hosts = mock(RedemptionHostService.class);
+        when(hosts.allows("redeem.example.com")).thenReturn(true);
+        OtherServiceCatalogService service = new OtherServiceCatalogService(mock(OtherServiceMapper.class), hosts);
         assertThatThrownBy(() -> service.create(cardRequest("http://redeem.example.com/start")))
                 .isInstanceOfSatisfying(ResponseStatusException.class,
                         exception -> assertThat(exception.getStatusCode().value()).isEqualTo(400));
@@ -41,15 +42,17 @@ class OtherServiceCardKeySecurityTests {
                 .isInstanceOf(ResponseStatusException.class);
         assertThatThrownBy(() -> service.create(cardRequest("https://redeem.example.com:8443/start")))
                 .isInstanceOf(ResponseStatusException.class);
-        ReflectionTestUtils.setField(service, "redemptionAllowedHosts", "");
-        assertThat(service.create(cardRequest("https://redeem.example.com/start")).getRedemptionConfigured()).isTrue();
+        when(hosts.allows("redeem.example.com")).thenReturn(false);
+        assertThatThrownBy(() -> service.create(cardRequest("https://redeem.example.com/start")))
+                .isInstanceOf(ResponseStatusException.class);
     }
 
     @Test
     void resolvesOnlyEnabledCardKeyServices() {
         OtherServiceMapper mapper = mock(OtherServiceMapper.class);
-        OtherServiceCatalogService service = new OtherServiceCatalogService(mapper);
-        ReflectionTestUtils.setField(service, "redemptionAllowedHosts", "redeem.example.com");
+        RedemptionHostService hosts = mock(RedemptionHostService.class);
+        when(hosts.allows("redeem.example.com")).thenReturn(true);
+        OtherServiceCatalogService service = new OtherServiceCatalogService(mapper, hosts);
         OtherService stored = cardRequest("https://redeem.example.com/start");
         stored.setId(7L);
         stored.setEnabled(true);
