@@ -346,6 +346,18 @@
   margin-bottom: 24px;
 }
 
+/* Buttons keep a definite 40px height, so they fall back to flex-start inside a
+   stretched row. Centering the row and matching the account pill height keeps
+   every header action on one vertical center line. */
+#app .console-hero-actions {
+  align-items: center;
+  row-gap: 10px;
+}
+
+#app .console-hero-actions .account-menu {
+  min-height: 40px;
+}
+
 #app .console-stat.polished {
   min-height: 128px;
   padding: 18px;
@@ -725,4 +737,234 @@
   #app .creative-studio .studio-main {
     width: calc(100% - 32px);
   }
+}
+
+/* ------------------------------------------------------------------
+   User console polish — personal workspace header, metric cards,
+   activity feed and usage charts kept on the light design system.
+   Loaded last, so these rules win equal-specificity legacy overrides.
+------------------------------------------------------------------ */
+
+/* Page hero: turn the flat text strip into a branded summary card. */
+#app .user-console-page .console-hero {
+  padding: 22px 26px 24px;
+  border: 1px solid var(--lnx-line) !important;
+  border-radius: var(--lnx-radius-card) !important;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(8, 145, 178, .07), transparent 34%),
+    radial-gradient(circle at 88% 118%, rgba(37, 99, 235, .08), transparent 40%),
+    linear-gradient(120deg, #ffffff 0%, #f8fbff 62%, #f3f9ff 100%) !important;
+  box-shadow: var(--lnx-shadow-card) !important;
+}
+
+#app .console-hero .eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  width: fit-content;
+  margin: 0 0 12px;
+  padding: 4px 12px 4px 10px;
+  border: 1px solid #cfe1fb;
+  border-radius: 999px;
+  background: #eef5ff;
+  color: #1d5fc2 !important;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .05em;
+  line-height: 1.5;
+}
+
+#app .console-hero .eyebrow-dot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--lnx-brand-600);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, .14);
+}
+
+#app .console-hero h1 {
+  margin: 0;
+  color: var(--lnx-text) !important;
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: -.02em;
+  line-height: 1.2;
+}
+
+#app .console-hero .console-hero-sub {
+  margin-top: 8px;
+  color: var(--lnx-text-muted) !important;
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+/* Metric cards: tone-matched icon chip in the top-right corner. */
+#app .console-stat .console-stat-icon {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border-radius: 11px;
+  font-size: 19px;
+}
+
+#app .console-stat[data-tone='green'] .console-stat-icon { background: #e8f8f1; color: #0f7a55; }
+#app .console-stat[data-tone='blue'] .console-stat-icon { background: #e9f2ff; color: #1d5fc2; }
+#app .console-stat[data-tone='orange'] .console-stat-icon { background: #fff4e8; color: #a85c14; }
+#app .console-stat[data-tone='purple'] .console-stat-icon { background: #f3f0ff; color: #6446b8; }
+
+/* Narrow overview column: stack the panel head instead of wrapping the title. */
+#app .console-overview .account-panel .panel-head {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+
+#app .console-overview .account-panel h2 {
+  font-size: 17px;
+}
+
+/* Activity feed: style real rows only — a bare `.activity-list div` also
+   matched el-empty and the pagination bar, squeezing them to a 12px column
+   and rendering their text vertically. */
+#app .activity-list .activity-row {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  padding: 12px 14px;
+  border: 1px solid var(--lnx-line) !important;
+  border-radius: 10px;
+  background: var(--lnx-surface-soft) !important;
+  color: var(--lnx-text) !important;
+}
+
+#app .activity-list .activity-row p {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+}
+
+#app .activity-list .activity-row strong {
+  color: var(--lnx-text);
+  font-size: 13px;
+}
+
+#app .activity-list .activity-row small {
+  color: var(--lnx-text-muted);
+  font-size: 12px;
+}
+
+#app .activity-list :is(.el-empty, .list-pagination) {
+  grid-column: 1 / -1;
+}
+
+#app .activity-list .el-empty {
+  display: block;
+  padding: 22px 0;
+  border: 0 !important;
+  background: transparent !important;
+}
+
+/* The legacy `.activity-list div` row rule also hit el-empty's inner image and
+   description wrappers, squeezing them into a 12px grid column. */
+#app .activity-list .el-empty div {
+  display: block;
+}
+
+#app .activity-list .list-pagination {
+  display: flex;
+}
+
+/* Usage analytics: the billing charts still carried the retired dark skin. */
+#app .user-console-page :is(.usage-visual-card, .usage-stacked-chart, .overview-usage-chart) {
+  border-color: var(--lnx-line) !important;
+  background: #ffffff !important;
+  background-image: none !important;
+  color: var(--lnx-text) !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+}
+
+#app .user-console-page .usage-visual-card header strong {
+  color: var(--lnx-text) !important;
+}
+
+#app .user-console-page .usage-visual-card header span,
+#app .user-console-page .usage-day-column small {
+  color: var(--lnx-text-muted) !important;
+}
+
+#app .user-console-page .usage-pie {
+  border: 1px solid var(--lnx-line);
+}
+
+#app .user-console-page .usage-pie::after {
+  background: #ffffff !important;
+}
+
+#app .user-console-page .usage-pie b {
+  color: var(--lnx-text) !important;
+}
+
+#app .user-console-page .usage-pie-card footer {
+  border-top: 1px solid var(--lnx-line) !important;
+}
+
+#app .user-console-page .usage-pie-card footer strong {
+  color: var(--lnx-text) !important;
+}
+
+#app .user-console-page .usage-pie-wrap li span {
+  color: var(--lnx-text-regular);
+}
+
+#app .user-console-page .usage-pie-wrap li b {
+  color: var(--lnx-text);
+}
+
+/* Wallet plan cards: the grid had no styling at all, so name, price, note and
+   the buy button collapsed into one inline text line. */
+#app .wallet-plan-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 14px;
+}
+
+#app .wallet-plan-grid article {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  padding: 18px;
+  border: 1px solid var(--lnx-line);
+  border-radius: var(--lnx-radius-card);
+  background: var(--lnx-surface-soft);
+  box-shadow: none;
+}
+
+#app .wallet-plan-grid article strong {
+  color: var(--lnx-text);
+  font-size: 15px;
+}
+
+#app .wallet-plan-grid article > span {
+  color: var(--lnx-brand-700);
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -.01em;
+}
+
+#app .wallet-plan-grid article small {
+  color: var(--lnx-text-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+#app .wallet-plan-grid article .el-button {
+  justify-self: start;
+  margin-top: 8px;
 }
