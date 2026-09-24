@@ -6,6 +6,7 @@ import './styles/components.css'
 import App from './App.vue'
 import router from './router'
 import { initInactivityGuard } from './utils/auth'
+import { shouldPromptUserLogin } from './utils/authNavigation'
 import { loadSiteConfig } from './config/site'
 import { initLocale, installDomLocalization } from './i18n/locale'
 
@@ -42,6 +43,7 @@ window.addEventListener('auth-timeout', async () => {
 })
 
 window.addEventListener('user-auth-required', (event: Event) => {
+  if (!shouldPromptUserLogin(router.currentRoute.value.path, router.currentRoute.value.query.auth)) return
   const redirect = (event as CustomEvent<{ redirect?: string }>).detail?.redirect
   router.push({ path: '/', query: { auth: 'login', ...(redirect ? { redirect } : {}) } })
 })

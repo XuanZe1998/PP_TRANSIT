@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import http, {
+  authScope,
   createIdempotencyKey,
   getHttpErrorMessage,
   getHttpErrorNotice,
@@ -8,6 +9,13 @@ import http, {
 } from '../src/utils/http'
 
 describe('HTTP client production defaults', () => {
+  it('uses the administrator token for nested service-order administration endpoints', () => {
+    expect(authScope('/api/service-orders/admin/orders')).toBe('admin')
+    expect(authScope('/api/service-orders/admin/coupons')).toBe('admin')
+    expect(authScope('/api/admin/api/other-services')).toBe('admin')
+    expect(authScope('/api/service-orders')).toBe('user')
+  })
+
   it('uses a finite default timeout', () => {
     expect(http.defaults.timeout).toBe(30_000)
   })

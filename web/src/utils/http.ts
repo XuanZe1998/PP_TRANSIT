@@ -55,10 +55,10 @@ export function getHttpErrorNotice(error: unknown, fallback = '请求失败，�
   return requestId ? `${message}（请求 ID：${requestId}）` : message
 }
 
-function authScope(url = ''): AuthScope | 'public' {
+export function authScope(url = ''): AuthScope | 'public' {
   url=url.replace(/^\/api(?=\/)/, '')
   if (/^\/(public\/|ops\/catalog|auth\/(login|register|refresh|validate)|oauth\/|admin\/auth\/login)/.test(url)) return 'public'
-  if (/^\/(admin\/|platform\/admin\/|channels\/|tokens\/|mappings\/)/.test(url)) return 'admin'
+  if (/^\/(admin\/|platform\/admin\/|service-orders\/admin\/|channels\/|tokens\/|mappings\/)/.test(url)) return 'admin'
   return 'user'
 }
 
@@ -118,7 +118,10 @@ http.interceptors.response.use(response => {
   clearAuth(scope)
   const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`
   if (scope === 'user') {
-    window.dispatchEvent(new CustomEvent('user-auth-required', { detail: { redirect: currentPath } }))
+    // A background user-scoped request must not replace the administrator login flow.
+    if (!window.location.pathname.startsWith('/admin')) {
+      window.dispatchEvent(new CustomEvent('user-auth-required', { detail: { redirect: currentPath } }))
+    }
     return Promise.reject(error)
   }
   const loginPath = scope === 'admin' ? '/admin/login' : '/login'
