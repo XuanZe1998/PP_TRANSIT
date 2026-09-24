@@ -64,7 +64,7 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Close, Coin, Document, HomeFilled, MagicStick, Menu, PriceTag, ShoppingBag } from '@element-plus/icons-vue'
+import { Bell, Close, Coin, Document, HomeFilled, MagicStick, Menu, ShoppingBag } from '@element-plus/icons-vue'
 import { getToken } from '@/utils/auth'
 import { siteConfig } from '@/config/site'
 import { t } from '@/i18n/locale'
@@ -79,7 +79,7 @@ const navigationItems = computed(() => [
   { path: '/market', label: t('market'), icon: Coin },
   { path: '/studio', label: t('studio'), icon: MagicStick },
   { path: '/services', label: t('services'), icon: ShoppingBag },
-  { path: '/pricing', label: t('pricing'), icon: PriceTag },
+  { path: '/subscriptions', label: t('subscriptions'), icon: Bell },
   { path: '/docs', label: t('docs'), icon: Document }
 ])
 const refreshAuth = () => { loggedIn.value = Boolean(getToken()) }

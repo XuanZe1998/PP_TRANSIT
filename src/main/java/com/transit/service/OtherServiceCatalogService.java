@@ -7,6 +7,7 @@ import com.transit.mapper.OtherServiceMapper;
 import com.transit.mapper.ServiceInventoryItemMapper;
 import com.transit.model.OtherService;
 import com.transit.dto.MoneyAmount;
+import com.transit.dto.PageResponse;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.beans.factory.annotation.Value;
@@ -62,6 +63,32 @@ public class OtherServiceCatalogService {
         return enrich(otherServiceMapper.selectList(new LambdaQueryWrapper<OtherService>()
                 .orderByAsc(OtherService::getSortOrder)
                 .orderByAsc(OtherService::getId)));
+    }
+
+    public PageResponse<OtherService> listPage(boolean publicOnly, int page, int size, String query) {
+        if (page < 1 || page > 1_000_000) throw badRequest("page is out of range");
+        if (!List.of(10, 20, 50, 100).contains(size)) {
+            throw badRequest("size must be one of 10, 20, 50, 100");
+        }
+        LambdaQueryWrapper<OtherService> count = serviceFilter(publicOnly, query);
+        long total = otherServiceMapper.selectCount(count);
+        List<OtherService> items = enrich(otherServiceMapper.selectList(serviceFilter(publicOnly, query)
+                .orderByAsc(OtherService::getSortOrder).orderByAsc(OtherService::getId)
+                .last("LIMIT " + size + " OFFSET " + ((page - 1L) * size))));
+        PageResponse<OtherService> response = new PageResponse<>();
+        response.setPage(page); response.setSize(size); response.setTotal(total); response.setItems(items);
+        return response;
+    }
+
+    private LambdaQueryWrapper<OtherService> serviceFilter(boolean publicOnly, String query) {
+        LambdaQueryWrapper<OtherService> wrapper = new LambdaQueryWrapper<>();
+        if (publicOnly) wrapper.eq(OtherService::getEnabled, true);
+        if (query != null && !query.isBlank()) {
+            String needle = requiredText(query, "query", 160);
+            wrapper.and(group -> group.like(OtherService::getName, needle)
+                    .or().like(OtherService::getDescription, needle));
+        }
+        return wrapper;
     }
 
     public Map<String,Object> adminDetail(Long id) {

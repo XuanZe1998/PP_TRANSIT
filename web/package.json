@@ -16,6 +16,7 @@
     "axios": "^1.6.7",
     "echarts": "^6.1.0",
     "element-plus": "^2.6.0",
+    "qrcode.vue": "^3.11.0",
     "vue": "^3.4.21",
     "vue-echarts": "^8.1.0",
     "vue-router": "^4.3.0"

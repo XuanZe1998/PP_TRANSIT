@@ -51,12 +51,12 @@ export function initLocale() { setLocale(localeState.value) }
 const messages = {
   'zh-CN': {
     languageName: '中文', switchLanguage: 'Switch to English', home: '首页', market: '模型广场',
-    studio: 'AI 创作', services: '其他服务', pricing: '套餐价格', docs: '开发文档', login: '登录',
+    studio: 'AI 创作', services: '其他服务', subscriptions: '订阅服务', docs: '开发文档', login: '登录',
     register: '免费接入', console: '进入用户工作台', openMenu: '打开导航菜单', closeMenu: '关闭导航菜单',
   },
   'en-US': {
     languageName: 'EN', switchLanguage: '切换到中文', home: 'Home', market: 'Models', studio: 'AI Studio',
-    services: 'Services', pricing: 'Pricing', docs: 'Docs', login: 'Log in', register: 'Get started',
+    services: 'Services', subscriptions: 'Subscriptions', docs: 'Docs', login: 'Log in', register: 'Get started',
     console: 'Open console', openMenu: 'Open navigation', closeMenu: 'Close navigation',
   },
 } as const
@@ -69,17 +69,14 @@ export function t(key: MessageKey) { return messages[localeState.value][key] }
 // incrementally migrated to keyed copy.
 const curatedEnglishCopy: Record<string, string> = {
   '首页': 'Home', '模型市场': 'Model market', '模型广场': 'Models', 'AI 创作': 'AI Studio',
-  '其他服务': 'Services', '成品服务': 'Services', '套餐价格': 'Pricing', '开发文档': 'Documentation',
+  '其他服务': 'Services', '成品服务': 'Services', '订阅服务': 'Subscription services', '开发文档': 'Documentation',
   '登录': 'Log in', '退出登录': 'Log out', '注册': 'Sign up', '免费接入': 'Get started', '立即创建账号': 'Create an account',
   '进入用户工作台': 'Open console', '查看模型广场': 'Explore models', '查看详情': 'View details',
   '用户总览': 'Overview', 'API Key 管理': 'API keys', '在线调试': 'Playground', '用量日志': 'Usage',
-  '钱包充值': 'Wallet', '个人中心': 'Profile', '企业账户': 'Organization', '代理中心': 'Partner center',
+  '账户余额': 'Balance', '个人中心': 'Profile', '企业账户': 'Organization', '代理中心': 'Partner center',
   '管理后台': 'Admin', '运营总览': 'Operations', '用户与分组': 'Users & groups', '模型网关': 'Model gateway',
-  '安全策略': 'Security', '系统配置与报表': 'Settings & reports', '服务与订单': 'Services & orders',
-  '充值': 'Add funds', '充值 / 购买': 'Add funds / Buy', '充值方案': 'Funding options', '自定义金额': 'Custom amount',
-  '充值金额（CNY）': 'Amount (USD)', '支付方式': 'Payment method', '立即支付': 'Pay now', '取消': 'Cancel',
-  '支付宝': 'Alipay', '微信支付': 'WeChat Pay', '购买': 'Buy', '订单': 'Orders', '账单': 'Invoice', '收据': 'Receipt',
-  '余额': 'Balance', '本月消费': 'Spent this month', '赠送余额': 'Bonus balance', '可开票金额': 'Invoiceable',
+  '安全策略': 'Security', '系统配置与报表': 'Settings & reports', '服务目录': 'Service catalog',
+  '购买': 'Buy', '订单': 'Orders', '余额': 'Balance', '本月消费': 'Spent this month', '赠送余额': 'Bonus balance',
   '全部': 'All', '搜索': 'Search', '查询': 'Search', '重置': 'Reset', '刷新': 'Refresh', '保存': 'Save', '确定': 'Confirm',
   '共': 'Total', '个': 'items', '条': 'items',
   '新建': 'Create', '编辑': 'Edit', '删除': 'Delete', '操作': 'Actions', '状态': 'Status', '名称': 'Name', '创建时间': 'Created',

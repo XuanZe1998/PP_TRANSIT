@@ -550,7 +550,7 @@
 
           <section class="console-panel wallet-transactions">
             <div class="panel-head"><div><h2>充值订单</h2><p>金额由服务端套餐快照确定，付款后可下载账单和收据。</p></div></div>
-            <PagedTable :data="rechargeOrders" border empty-text="暂无充值订单" list-id="UserConsole-4">
+            <PagedTable :data="rechargeOrders" border empty-text="暂无充值订单" list-id="UserConsole-4" pagination="external">
               <el-table-column prop="orderNo" label="订单号" min-width="220" />
               <el-table-column prop="planName" label="套餐" min-width="130" />
               <el-table-column label="实付" width="130"><template #default="{ row }">{{ formatMoneyDto(row.paymentMoney) }}</template></el-table-column>
@@ -561,6 +561,16 @@
                 <el-button v-if="['PAID','REFUNDED'].includes(row.status)" link type="success" @click="downloadRecharge(row.id, 'receipt')">收据</el-button>
               </template></el-table-column>
             </PagedTable>
+            <SelectablePagination
+              v-model:current-page="rechargeOrderPage"
+              v-model:page-size="rechargeOrderPageSize"
+              layout="total, sizes, prev, pager, next, jumper"
+              :page-sizes="[10, 20, 50, 100]"
+              :total="rechargeOrderTotal"
+              list-id="UserConsole-recharge-orders"
+              @current-change="loadWallet"
+              @size-change="handleRechargeOrderPageSizeChange"
+            />
           </section>
 
           <section class="console-panel wallet-transactions">
@@ -713,6 +723,7 @@
           <el-button type="primary" @click="createdKeyVisible = false">我已安全保存</el-button>
         </template>
       </el-dialog>
+      <PaymentActionDialog v-model="paymentDialogVisible" :action="paymentAction" :payment-method="rechargeForm.paymentMethod" />
     </div>
   </div>
 </template>
@@ -721,6 +732,8 @@
 import PagedList from "@/components/PagedList.vue"
 import SelectablePagination from '@/components/SelectablePagination.vue'
 import PagedTable from '@/components/PagedTable.vue'
+import PaymentActionDialog, { type PaymentAction } from '@/components/PaymentActionDialog.vue'
+import { paymentActionOf } from '@/utils/payment'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Close, Compass, DataLine, Document, HomeFilled, Key, MagicStick, Menu, Monitor, Promotion, ShoppingCart, SwitchButton, Tickets, Wallet, User } from '@element-plus/icons-vue'
@@ -846,6 +859,11 @@ const selectedRechargePlan = ref<RechargePlan | null>(null)
 const customRecharge = ref(false)
 const customRechargeAmount = ref(1)
 const rechargeOrders = ref<Array<Record<string, any>>>([])
+const rechargeOrderPage = ref(1)
+const rechargeOrderPageSize = ref(DEFAULT_PAGE_SIZE)
+const rechargeOrderTotal = ref(0)
+const paymentDialogVisible = ref(false)
+const paymentAction = ref<PaymentAction | null>(null)
 const rechargeForm = ref({ needInvoice: false, billingName: '', contactEmail: '', billingAddressLine1: '', billingDistrict: '', billingCity: '', billingProvince: '', billingPostalCode: '', billingCountry: 'China', paymentMethod: 'alipay' })
 let paymentPollTimer: number | null = null
 const wallet = ref({
@@ -1238,7 +1256,7 @@ async function loadWallet() {
   try {
     const [response, ordersResponse] = await Promise.all([
       http.get('/api/platform/user/wallet', { params: { page: walletTransactionPage.value, pageSize: walletTransactionPageSize.value } }),
-      http.get('/api/platform/user/recharge-orders')
+      http.get('/api/platform/user/recharge-orders', { params: { listPage: true, page: rechargeOrderPage.value, size: rechargeOrderPageSize.value } })
     ])
     wallet.value = {
       balance: amountValue(response.data?.balance),
@@ -1251,7 +1269,8 @@ async function loadWallet() {
     }
     if (!wallet.value.invoiceEnabled) rechargeForm.value.needInvoice = false
     walletTransactionTotal.value = Number(response.data?.transactionTotal || 0)
-    rechargeOrders.value = Array.isArray(ordersResponse.data) ? ordersResponse.data : []
+    rechargeOrders.value = Array.isArray(ordersResponse.data?.items) ? ordersResponse.data.items : []
+    rechargeOrderTotal.value = Number(ordersResponse.data?.total || 0)
   } catch (error: unknown) {
     ElMessage.error(getHttpErrorMessage(error, '钱包数据加载失败'))
   } finally {
@@ -1273,6 +1292,11 @@ function openRecharge(plan: RechargePlan) {
 
 async function handleWalletTransactionPageSizeChange() {
   walletTransactionPage.value = 1
+  await loadWallet()
+}
+
+async function handleRechargeOrderPageSizeChange() {
+  rechargeOrderPage.value = 1
   await loadWallet()
 }
 
@@ -1313,7 +1337,6 @@ async function submitRecharge() {
     return
   }
   rechargeSubmitting.value = true
-  const paymentWindow = window.open('', '_blank')
   try {
     const rechargeTarget = customRecharge.value
       ? { customAmount: customRechargeAmount.value, currency: getDisplayCurrency() }
@@ -1326,13 +1349,13 @@ async function submitRecharge() {
     const started = await http.post(`/api/payment-intents/${intentId}/start`, {},
       { headers: { 'Idempotency-Key': createIdempotencyKey(`payment-start-${intentId}`) } })
     rechargeVisible.value = false
-    if (started.data?.paymentUrl) paymentWindow?.location.replace(started.data.paymentUrl)
-    else paymentWindow?.close()
-    ElMessage.success(started.data?.status === 'PAID' ? '充值已到账' : '充值订单已创建，请完成付款')
+    paymentAction.value = paymentActionOf(started.data)
+    paymentDialogVisible.value = Boolean(paymentAction.value)
+    const status = started.data?.intent?.status
+    ElMessage.success(status === 'PAID' ? '充值已到账' : '充值订单已创建，请完成付款')
     await Promise.all([loadWallet(), loadDashboard()])
-    if (started.data?.status !== 'PAID') pollPayment(intentId)
+    if (status !== 'PAID') pollPayment(intentId)
   } catch (error: unknown) {
-    paymentWindow?.close()
     ElMessage.error(getHttpErrorMessage(error, error instanceof Error ? error.message : '充值订单创建失败'))
   } finally {
     rechargeSubmitting.value = false
@@ -1349,8 +1372,7 @@ function pollPayment(intentId: number) {
       return
     }
     try {
-      const response = await http.post(`/api/payment-intents/${intentId}/query`, {},
-        { headers: { 'Idempotency-Key': createIdempotencyKey(`payment-query-${intentId}`) } })
+      const response = await http.get(`/api/payment-intents/${intentId}`)
       if (response.data?.status === 'PAID') {
         if (paymentPollTimer !== null) window.clearInterval(paymentPollTimer)
         paymentPollTimer = null

@@ -17,7 +17,6 @@ declare module 'vue' {
     AgreementGate: typeof import('./src/components/AgreementGate.vue')['default']
     AuthDialog: typeof import('./src/components/AuthDialog.vue')['default']
     AutoMovieStudio: typeof import('./src/components/AutoMovieStudio.vue')['default']
-    BillingCheckoutFields: typeof import('./src/components/BillingCheckoutFields.vue')['default']
     DeveloperDocs: typeof import('./src/components/DeveloperDocs.vue')['default']
     ElAlert: typeof import('element-plus/es')['ElAlert']
     ElAside: typeof import('element-plus/es')['ElAside']

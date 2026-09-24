@@ -46,7 +46,7 @@ describe('HTTP client production defaults', () => {
   })
 
   it('creates an idempotency key accepted by the gateway filter', () => {
-    const key = createIdempotencyKey('service-order')
+    const key = createIdempotencyKey('business-operation')
     expect(key).toMatch(/^[A-Za-z0-9._:-]{8,160}$/)
     expect(createIdempotencyKey('unsafe scope')).toMatch(/^unsafe-scope-/)
   })

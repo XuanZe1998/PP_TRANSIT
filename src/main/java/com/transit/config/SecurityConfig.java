@@ -49,26 +49,26 @@ public class SecurityConfig {
                         .requestMatchers("/auth/register", "/auth/login", "/auth/login/ip-verify", "/auth/refresh", "/auth/validate-identifier", "/auth/verification/**", "/auth/password-reset/**").permitAll()
                         .requestMatchers("/oauth/authorize", "/oauth/callback/**", "/oauth/token", "/oauth/refresh", "/upstream/oauth/callback/**").permitAll()
                         .requestMatchers("/admin/auth/login").permitAll()
-                        .requestMatchers("/webhooks/vmcard/**").permitAll()
-                        .requestMatchers("/webhooks/anyipay").permitAll()
-                        .requestMatchers("/api/v1/upstream/callback").permitAll()
+                        .requestMatchers("/webhooks/vmcard/**", "/webhooks/mapay",
+                                "/api/v1/upstream/callback").permitAll()
                         .requestMatchers("/public/**", "/ops/catalog", "/platform/user/docs",
                                 "/creative/catalog", "/creative/templates", "/creative/auto-movie/catalog",
                                 "/public/creative-assets/**").permitAll()
                         .requestMatchers("/v1", "/v1/**", "/v1beta/**", "/antigravity/**", "/backend-api/codex/**", "/models", "/chat/completions").permitAll()
                         .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info").permitAll()
-                        .requestMatchers("/admin/api/**", "/platform/admin/**", "/admin/payment/**",
+                        .requestMatchers("/admin/api/**", "/platform/admin/**",
+                                "/admin/payment/**", "/admin/payment-intents/**",
                                 "/service-orders/admin/**",
-                                "/admin/payment-intents/**",
                                 "/channels/**", "/tokens/**", "/mappings/**", "/ops/overview",
                                 "/actuator/prometheus").hasRole("ADMIN")
-                        .requestMatchers("/user/**", "/platform/user/**", "/service-orders/**",
+                        .requestMatchers("/user/**", "/platform/user/**",
+                                "/subscription-services/**",
+                                "/service-orders/**", "/payment-intents/**", "/shopgpt/**",
                                 "/organizations/**",
-                                "/payment-intents/**",
                                 "/creative/tasks/**",
                                 "/creative/projects/**",
                                 "/creative/prompt/**", "/creative/connections/**",
-                                "/shopgpt/**", "/auth/logout", "/oauth/logout", "/oauth/revoke").hasAnyRole("USER", "ADMIN")
+                                "/auth/logout", "/oauth/logout", "/oauth/revoke").hasAnyRole("USER", "ADMIN")
                         .requestMatchers("/admin/auth/logout").hasRole("ADMIN")
                         .anyRequest().denyAll())
                 .exceptionHandling(errors -> errors

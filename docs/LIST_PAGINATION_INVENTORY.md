@@ -19,7 +19,6 @@
 | web/src/components/NewApiConnect.vue | NewApiConnect-1 | `selectedPrices`（New API / sub2api 导入预览） | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
 | web/src/views/AdminAgents.vue | AdminAgents-1 | `agents` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
 | web/src/views/AdminAgents.vue | AdminAgents-2 | `withdrawals` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
-| web/src/views/AdminAgents.vue | AdminAgents-3 | `serviceCosts` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
 | web/src/views/AdminAgents.vue | AdminAgents-4 | `oauthClients` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
 | web/src/views/AdminAgents.vue | AdminAgents-5 | `accounts` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
 | web/src/views/AdminAgents.vue | AdminAgents-6 | `priceTemplates` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
@@ -30,7 +29,6 @@
 | web/src/views/AdminConsole.vue | AdminConsole-2 | `rows` | 页面服务端分页 |
 | web/src/views/AdminConsole.vue | AdminConsole-1 | `页面数据` | 页面服务端分页 |
 | web/src/views/AdminConsole.vue | AdminConsole-3 | `secondaryRows` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
-| web/src/views/AdminConsole.vue | AdminConsole-4 | `rechargePlans` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
 | web/src/views/AdminConsole.vue | AdminConsole-5 | `filteredRows` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
 | web/src/views/AdminConsole.vue | AdminConsole-6 | `report.models || []` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
 | web/src/views/AdminConsole.vue | AdminConsole-7 | `rows` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
@@ -45,9 +43,6 @@
 | web/src/views/AdminConsole.vue | AdminConsole-14 | `discoveryResult.missingModels || []` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
 | web/src/views/AdminCreativeConfig.vue | AdminCreativeConfig-1 | `connections` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
 | web/src/views/AdminOtherServices.vue | AdminOtherServices-1 | `services` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
-| web/src/views/AdminProductCommerce.vue | AdminProductCommerce-1 | `inventory` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
-| web/src/views/AdminProductCommerce.vue | AdminProductCommerce-2 | `coupons` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
-| web/src/views/AdminServiceOrders.vue | AdminServiceOrders-1 | `displayOrders` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
 | web/src/views/AdminVmCardTest.vue | AdminVmCardTest-1 | `productCodes` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
 | web/src/views/AdminVmCardTest.vue | AdminVmCardTest-2 | `savedCards` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
 | web/src/views/AdminVmCardTest.vue | AdminVmCardTest-3 | `events` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
@@ -64,18 +59,13 @@
 | web/src/views/OrganizationConsole.vue | OrganizationConsole-2 | `tokens` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
 | web/src/views/OrganizationConsole.vue | OrganizationConsole-3 | `usage` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
 | web/src/views/OtherServices.vue | OtherServices.vue-1 | `services` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
-| web/src/views/OtherServices.vue | OtherServices-1 | `orders` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
-| web/src/views/OtherServices.vue | OtherServices.vue-2 | `orderDetail.deliveryItems` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
 | web/src/views/UserConsole.vue | UserConsole.vue-1 | `activities` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
 | web/src/views/UserConsole.vue | UserConsole-1 | `keys` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
 | web/src/views/UserConsole.vue | UserConsole-2 | `billingSummary` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
 | web/src/views/UserConsole.vue | UserConsole-3 | `billingRows` | 页面服务端分页 |
 | web/src/views/UserConsole.vue | UserConsole-1 | `页面数据` | 页面服务端分页 |
-| web/src/views/UserConsole.vue | UserConsole.vue-2 | `wallet.plans` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
-| web/src/views/UserConsole.vue | UserConsole-4 | `rechargeOrders` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
 | web/src/views/UserConsole.vue | UserConsole-5 | `wallet.transactions` | 页面服务端分页 |
 | web/src/views/UserConsole.vue | UserConsole-2 | `页面数据` | 页面服务端分页 |
-| web/src/views/UserConsole.vue | UserConsole.vue-3 | `wallet.plans` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
 | web/src/views/UserConsole.vue | UserConsole-6 | `genericRows` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
 | web/src/components/ModelPriceComparisonDialog.vue | model-comparison-offers | `comparison.offers` | 统一分页；按报价列翻页 |
 | web/src/components/ContactWidget.vue | contact-widget-public | `contact_methods` | 公共接口数据库 COUNT + LIMIT/OFFSET；默认10，可选10/20/50/100，全部上限200 |
@@ -96,3 +86,20 @@
 - 新发现分组只创建待配置占位；每个分组仍需单独配置调用 Key，再核验模型与采购价后开放调用。
 
 2026-09-09：公共模型目录的“渠道 / 路由”筛选统一以 `upstream_sites` 站点身份聚合；分组只保留凭据、同步、套餐与定价职责，不再生成独立公开渠道代号。`GET /public/models` 及 `/public/models/facets` 继续在同一完整候选集上做服务端筛选与分页，路由筛选值不再因同站点分组数量膨胀；启动修复会把同站点同名历史分组映射收敛到站点身份。
+
+2026-09-20：新增“订阅服务”模块。商品、商品分类、卡密、批次、采购、订单和投诉集合接口统一将 `page_no/page_size` 校验为默认 10、可选 10/20/50/100，由上游服务端完成搜索与分页，本站返回 `total/page/size/items`。前台目录使用 `ListPagination`，管理工作台结果使用 `PagedTable` + `ListPagination`。上游不提供分页的投诉留言列表限制最多 200 条，超限拒绝标记为完整结果；货源分类树属固定导航选项。
+
+2026-09-22：MaPay 替换后恢复钱包充值和完整服务商城。以下列表均使用数据库 `COUNT + LIMIT/OFFSET`，授权/筛选条件在 COUNT 和数据查询中一致，默认 10，只接受 10/20/50/100：
+
+| 页面 / 接口 | 列表 | 分页方式 |
+| --- | --- | --- |
+| `OtherServices.vue` / `GET /public/other-services` | 公开服务目录 | `ListPagination`，`listPage=true` |
+| `OtherServices.vue` / `GET /service-orders` | 用户服务订单 | `PagedTable` + `ListPagination`，服务端状态筛选 |
+| `UserConsole.vue` / `GET /platform/user/recharge-orders` | 用户充值订单 | `PagedTable` + `SelectablePagination` |
+| `AdminOtherServices.vue` / `GET /admin/api/other-services` | 管理服务目录 | `PagedTable` + `ListPagination` |
+| `AdminServiceOrders.vue` / `GET /service-orders/admin/orders` | 管理服务订单 | `PagedTable` + `ListPagination`，服务端搜索/状态筛选 |
+| `AdminProductCommerce.vue` / inventory API | 加密库存 | `PagedTable` + `ListPagination` |
+| `AdminProductCommerce.vue` / coupons API | 优惠码 | `PagedTable` + `ListPagination` |
+| `AdminPaymentIntents.vue` / `GET /admin/payment-intents` | 支付记录 | `PagedTable` + `ListPagination`，服务端搜索/状态筛选，返回 `total/page/size/items` |
+
+订单交付内容是单个订单的有界结果，仅在不超过 200 条时允许本地“全部”展示。

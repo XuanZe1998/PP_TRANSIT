@@ -1,5 +1,6 @@
 package com.transit.controller;
 
+import com.transit.dto.PageResponse;
 import com.transit.model.Channel;
 import com.transit.model.ModelMapping;
 import com.transit.model.OtherService;
@@ -712,9 +713,14 @@ public class AdminApiController {
     }
 
     @GetMapping("/other-services")
-    public Flux<OtherService> otherServices(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+    public Mono<com.transit.dto.PageResponse<OtherService>> otherServices(
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+            @RequestParam(defaultValue = "true") boolean listPage,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) String query) {
         requireAdmin(authHeader);
-        return Flux.fromIterable(otherServiceCatalogService.listAllServices());
+        return Mono.fromCallable(() -> otherServiceCatalogService.listPage(false, page, size, query));
     }
 
     @GetMapping("/other-services/{id}")
@@ -789,12 +795,15 @@ public class AdminApiController {
     }
 
     @GetMapping("/other-services/{id}/inventory")
-    public Flux<ServiceInventoryItem> otherServiceInventory(
+    public Mono<PageResponse<ServiceInventoryItem>> otherServiceInventory(
             @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
             @PathVariable Long id,
+            @RequestParam(defaultValue = "true") boolean listPage,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "10") int size,
             @RequestParam(required = false) String status) {
         requireAdmin(authHeader);
-        return Flux.fromIterable(serviceCommerceService.listInventory(id, status));
+        return Mono.fromCallable(() -> serviceCommerceService.listInventoryPage(id, status, page, size));
     }
 
     @GetMapping("/other-services/{id}/inventory/stats")

@@ -3,6 +3,7 @@ package com.transit.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.transit.mapper.ServiceCouponMapper;
 import com.transit.model.ServiceCoupon;
+import com.transit.dto.PageResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -25,6 +26,23 @@ public class ServiceCouponAdminService {
         List<ServiceCoupon> coupons = couponMapper.selectList(new LambdaQueryWrapper<ServiceCoupon>().orderByDesc(ServiceCoupon::getCreatedAt));
         coupons.forEach(c -> c.setServiceIds(jdbcTemplate.queryForList("SELECT service_id FROM service_coupon_services WHERE coupon_id=? ORDER BY service_id", Long.class, c.getId())));
         return coupons;
+    }
+
+    public PageResponse<ServiceCoupon> listPage(int page, int size) {
+        if (page < 1 || page > 1_000_000) throw badRequest("page is out of range");
+        if (!List.of(10, 20, 50, 100).contains(size)) {
+            throw badRequest("size must be one of 10, 20, 50, 100");
+        }
+        long total = couponMapper.selectCount(null);
+        List<ServiceCoupon> coupons = couponMapper.selectList(new LambdaQueryWrapper<ServiceCoupon>()
+                .orderByDesc(ServiceCoupon::getCreatedAt)
+                .last("LIMIT " + size + " OFFSET " + ((page - 1L) * size)));
+        coupons.forEach(c -> c.setServiceIds(jdbcTemplate.queryForList(
+                "SELECT service_id FROM service_coupon_services WHERE coupon_id=? ORDER BY service_id",
+                Long.class, c.getId())));
+        PageResponse<ServiceCoupon> response = new PageResponse<>();
+        response.setPage(page); response.setSize(size); response.setTotal(total); response.setItems(coupons);
+        return response;
     }
 
     @Transactional

@@ -13,6 +13,7 @@ declare module 'vue' {
   export interface GlobalComponents {
     AccountMenu: typeof import('./components/AccountMenu.vue')['default']
     AdminLayout: typeof import('./components/AdminLayout.vue')['default']
+    AdminPageToolbar: typeof import('./components/AdminPageToolbar.vue')['default']
     AdminUsageCharts: typeof import('./components/AdminUsageCharts.vue')['default']
     AgreementGate: typeof import('./components/AgreementGate.vue')['default']
     AuthDialog: typeof import('./components/AuthDialog.vue')['default']
@@ -84,6 +85,7 @@ declare module 'vue' {
     NewApiSyncPanel: typeof import('./components/NewApiSyncPanel.vue')['default']
     PagedList: typeof import('./components/PagedList.vue')['default']
     PagedTable: typeof import('./components/PagedTable.vue')['default']
+    PaymentActionDialog: typeof import('./components/PaymentActionDialog.vue')['default']
     ProfileCenter: typeof import('./components/ProfileCenter.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']

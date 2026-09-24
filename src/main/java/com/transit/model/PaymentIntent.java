@@ -31,9 +31,12 @@ public class PaymentIntent {
     @TableField("payment_provider") private String paymentProvider;
     @TableField("provider_trade_no") private String providerTradeNo;
     @TableField("payment_type") private String paymentType;
+    @TableField("payment_action_type") private String paymentActionType;
     @TableField("payment_url") private String paymentUrl;
     @TableField("expires_at") private LocalDateTime expiresAt;
     @TableField("paid_at") private LocalDateTime paidAt;
+    @TableField("last_queried_at") private LocalDateTime lastQueriedAt;
+    @TableField("last_error") private String lastError;
     @TableField("refund_status") private String refundStatus;
     @TableField("refund_no") private String refundNo;
     @TableField("provider_refund_no") private String providerRefundNo;

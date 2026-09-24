@@ -15,15 +15,12 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 class OtherServiceCardKeySecurityTests {
-
     @Test
     void cardKeyServiceForcesAutomaticDeliveryAndDoesNotSerializeDestination() throws Exception {
         OtherServiceMapper mapper = mock(OtherServiceMapper.class);
         OtherServiceCatalogService service = new OtherServiceCatalogService(mapper);
         ReflectionTestUtils.setField(service, "redemptionAllowedHosts", "redeem.example.com");
-
         OtherService created = service.create(cardRequest("https://redeem.example.com/start?channel=modelhub"));
-
         assertThat(created.getFulfillmentMode()).isEqualTo("AUTOMATIC_DELIVERY");
         assertThat(created.getRedemptionConfigured()).isTrue();
         assertThat(new ObjectMapper().findAndRegisterModules().writeValueAsString(created))
@@ -34,7 +31,6 @@ class OtherServiceCardKeySecurityTests {
     void rejectsInsecureOrUnapprovedRedemptionDestinations() {
         OtherServiceCatalogService service = new OtherServiceCatalogService(mock(OtherServiceMapper.class));
         ReflectionTestUtils.setField(service, "redemptionAllowedHosts", "redeem.example.com");
-
         assertThatThrownBy(() -> service.create(cardRequest("http://redeem.example.com/start")))
                 .isInstanceOfSatisfying(ResponseStatusException.class,
                         exception -> assertThat(exception.getStatusCode().value()).isEqualTo(400));
@@ -45,7 +41,6 @@ class OtherServiceCardKeySecurityTests {
                 .isInstanceOf(ResponseStatusException.class);
         assertThatThrownBy(() -> service.create(cardRequest("https://redeem.example.com:8443/start")))
                 .isInstanceOf(ResponseStatusException.class);
-
         ReflectionTestUtils.setField(service, "redemptionAllowedHosts", "");
         assertThat(service.create(cardRequest("https://redeem.example.com/start")).getRedemptionConfigured()).isTrue();
     }
@@ -59,10 +54,8 @@ class OtherServiceCardKeySecurityTests {
         stored.setId(7L);
         stored.setEnabled(true);
         when(mapper.selectById(7L)).thenReturn(stored);
-
         assertThat(service.requireRedemptionDestination(7L))
                 .isEqualTo(URI.create("https://redeem.example.com/start"));
-
         stored.setEnabled(false);
         assertThatThrownBy(() -> service.requireRedemptionDestination(7L))
                 .isInstanceOfSatisfying(ResponseStatusException.class,
@@ -70,16 +63,8 @@ class OtherServiceCardKeySecurityTests {
     }
 
     private OtherService cardRequest(String destination) {
-        return OtherService.builder()
-                .name("Secure card")
-                .enabled(true)
-                .purchaseEnabled(true)
-                .productType("CARD_KEY")
-                .fulfillmentMode("MANUAL_PROCESSING")
-                .redemptionUrl(destination)
-                .priceCents(1000L)
-                .serviceFeeCents(0L)
-                .currency("CNY")
-                .build();
+        return OtherService.builder().name("Secure card").enabled(true).purchaseEnabled(true)
+                .productType("CARD_KEY").fulfillmentMode("MANUAL_PROCESSING")
+                .redemptionUrl(destination).priceCents(1000L).serviceFeeCents(0L).currency("CNY").build();
     }
 }

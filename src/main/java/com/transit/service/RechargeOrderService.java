@@ -2,6 +2,7 @@ package com.transit.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.transit.dto.MoneyAmount;
+import com.transit.dto.PageResponse;
 import com.transit.dto.RechargeOrderRequest;
 import com.transit.mapper.WalletRechargeOrderMapper;
 import com.transit.model.PaymentIntent;
@@ -137,6 +138,22 @@ public class RechargeOrderService {
                 .orderByDesc(WalletRechargeOrder::getCreatedAt)).stream().map(this::enrich).toList();
     }
 
+    public PageResponse<WalletRechargeOrder> listPage(User user, int page, int size) {
+        requireUser(user);
+        validatePage(page, size);
+        LambdaQueryWrapper<WalletRechargeOrder> filter = new LambdaQueryWrapper<WalletRechargeOrder>()
+                .eq(WalletRechargeOrder::getUserId, user.getId());
+        long total = mapper.selectCount(filter);
+        List<WalletRechargeOrder> items = mapper.selectList(new LambdaQueryWrapper<WalletRechargeOrder>()
+                        .eq(WalletRechargeOrder::getUserId, user.getId())
+                        .orderByDesc(WalletRechargeOrder::getCreatedAt)
+                        .last("LIMIT " + size + " OFFSET " + ((page - 1L) * size)))
+                .stream().map(this::enrich).toList();
+        PageResponse<WalletRechargeOrder> response = new PageResponse<>();
+        response.setPage(page); response.setSize(size); response.setTotal(total); response.setItems(items);
+        return response;
+    }
+
     public WalletRechargeOrder get(User user, Long id) {
         requireUser(user); WalletRechargeOrder order=mapper.selectById(id);
         if(order==null||!Objects.equals(order.getUserId(),user.getId())) throw new ResponseStatusException(HttpStatus.NOT_FOUND,"Recharge order not found");
@@ -198,6 +215,7 @@ public class RechargeOrderService {
     private String emailOrFallback(String raw,String fallback){return raw==null||raw.isBlank()?email(fallback):email(raw);}
     private String optional(String raw,String fallback,int max){if(raw==null||raw.isBlank())return fallback;String v=raw.trim();if(v.length()>max)throw badRequest("billing field is too long");return v;}
     private String required(String raw,String field,int max){if(raw==null||raw.isBlank())throw badRequest(field+" is required");String v=raw.trim();if(v.length()>max)throw badRequest(field+" is too long");return v;}
+    private void validatePage(int page,int size){if(page<1||page>1_000_000)throw badRequest("page is out of range");if(!List.of(10,20,50,100).contains(size))throw badRequest("size must be one of 10, 20, 50, 100");}
     private void requireUser(User user){if(user==null||user.getId()==null)throw new ResponseStatusException(HttpStatus.UNAUTHORIZED,"Authenticated user is required");}
     private LocalDateTime now(){return LocalDateTime.now(ZoneOffset.UTC);}
     private ResponseStatusException badRequest(String m){return new ResponseStatusException(HttpStatus.BAD_REQUEST,m);}

@@ -18,7 +18,6 @@ async function openMockedUserConsole(page: import('@playwright/test').Page, path
       return route.fulfill({ json: { total: 1, page: 1, size: 20, items: [{ created_at: '2026-08-31 12:00:00', trace_id: 'trace-e2e', token_name: 'E2E Key', model: 'e2e-model', prompt_tokens: 100, completion_tokens: 20, cached_tokens: 0, total_amount: 10, status: 'SUCCESS' }] } })
     }
     if (url.pathname.endsWith('/user/usage/analytics')) return route.fulfill({ json: { daily: [], totals: {}, tokenComposition: [] } })
-    if (url.pathname.endsWith('/platform/user/recharge-orders')) return route.fulfill({ json: [] })
     return route.fulfill({ json: {} })
   })
   await page.goto(path)

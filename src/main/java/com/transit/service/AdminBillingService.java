@@ -35,7 +35,9 @@ public class AdminBillingService {
 
     public PageResponse<Map<String, Object>> transactionsPage(int page, int size, String query) {
         if (page < 1 || page > 1_000_000) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "page is out of range");
-        if (size < 1 || (size > 100 && size != 200)) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "size must be between 1 and 100");
+        if (!List.of(10, 20, 50, 100).contains(size)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "size must be one of 10, 20, 50, 100");
+        }
         String needle = query == null ? "" : query.trim().toLowerCase();
         if (needle.length() > 160) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "query is too long");
         String filter = needle.isBlank() ? "" : """
@@ -80,12 +82,13 @@ public class AdminBillingService {
 
     public Map<String, Object> financeSummary() {
         long rechargeAmount = queryLong("SELECT COALESCE(SUM(amount), 0) FROM wallet_transactions WHERE type IN ('RECHARGE', 'REDEEM') AND amount > 0");
+        long creditedAmount = queryLong("SELECT COALESCE(SUM(amount), 0) FROM wallet_transactions WHERE amount > 0");
         long spending = queryLong("SELECT ABS(COALESCE(SUM(amount), 0)) FROM wallet_transactions WHERE type = 'CONSUME'");
         long balance = queryLong("SELECT COALESCE(SUM(balance), 0) FROM users");
         long codes = queryLong("SELECT COUNT(*) FROM redeem_codes WHERE enabled = TRUE");
         Map<String,Object> result=new LinkedHashMap<>();
-        result.put("rechargeAmount",rechargeAmount);result.put("spending",spending);result.put("userBalance",balance);result.put("activeRedeemCodes",codes);
-        result.put("rechargeAmountMoney",new MoneyAmount(rechargeAmount,"CNY",10000));result.put("spendingMoney",new MoneyAmount(spending,"CNY",10000));result.put("userBalanceMoney",new MoneyAmount(balance,"CNY",10000));
+        result.put("rechargeAmount",rechargeAmount);result.put("creditedAmount",creditedAmount);result.put("spending",spending);result.put("userBalance",balance);result.put("activeRedeemCodes",codes);
+        result.put("rechargeAmountMoney",new MoneyAmount(rechargeAmount,"CNY",10000));result.put("creditedAmountMoney",new MoneyAmount(creditedAmount,"CNY",10000));result.put("spendingMoney",new MoneyAmount(spending,"CNY",10000));result.put("userBalanceMoney",new MoneyAmount(balance,"CNY",10000));
         return result;
     }
 

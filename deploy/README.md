@@ -50,17 +50,19 @@ After a production release, run these quick checks:
 curl -sS -I https://linknux.com/
 curl -sS -H "Authorization: Bearer <admin-or-user-token>" \
   "https://api.linknux.com/platform/user/wallet?page=1&pageSize=10"
-curl -sS -H "Authorization: Bearer <admin-or-user-token>" \
-  https://api.linknux.com/platform/user/recharge-orders
+curl -sS -H "Authorization: Bearer <user-token>" \
+  "https://api.linknux.com/platform/user/recharge-orders?listPage=true&page=1&size=10"
 ```
 
-For wallet/recharge-specific quality checks, use:
+Before enabling MaPay, set `MAPAY_PID`, `MAPAY_KEY`, `MAPAY_NOTIFY_URL` and
+`MAPAY_RETURN_URL` through the deployment secret manager, then set
+`MAPAY_ENABLED=true`. The notify URL must be publicly reachable over HTTPS and
+must not pass through a login redirect. Verify `GET|POST /webhooks/mapay` reaches
+the application, then complete one minimum-value payment, callback and order
+query cycle. See [MaPay integration](../docs/MAPAY_INTEGRATION.md).
 
-- `POST /platform/user/recharge-orders` with `customAmount > 0` (expect success).
-- `customAmount <= 0` (expect 400).
-- `needInvoice=true` denied when user invoice access is disabled.
-- `needInvoice=true` works after admin sets user `invoiceEnabled=true`.
-- wallet pagination query `page=1,pageSize=10/20/50/100` and unsupported `pageSize` fallback.
+For wallet and commerce quality checks, verify server pagination with
+`page=1,size=10/20/50/100`; unsupported sizes must return 400.
 
 ## Load test execution
 

@@ -13,17 +13,21 @@ const HomePage=()=>import('@/views/HomePage.vue')
 const ModelMarket=()=>import('@/views/ModelMarket.vue')
 const OtherServices=()=>import('@/views/OtherServices.vue')
 const PricingPage=()=>import('@/views/PricingPage.vue')
+const SubscriptionServices=()=>import('@/views/SubscriptionServices.vue')
+const AdminSubscriptionServices=()=>import('@/views/AdminSubscriptionServices.vue')
 const DocsPage=()=>import('@/views/DocsPage.vue')
 const AgentConsole=()=>import('@/views/AgentConsole.vue')
 const AdminAgents=()=>import('@/views/AdminAgents.vue')
 const AdminModelProbe=()=>import('@/views/AdminModelProbe.vue')
 const AdminContactMethods=()=>import('@/views/AdminContactMethods.vue')
 
-export const shopGptEnabled = import.meta.env.VITE_ENABLE_SHOPGPT === 'true'
-const ProductItem = () => import('@/views/ProductItem.vue')
 const CreativeStudio = () => import('@/views/CreativeStudio.vue')
 const OrganizationConsole = () => import('@/views/OrganizationConsole.vue')
+const ProductItem = () => import('@/views/ProductItem.vue')
 const CardRedemptionRedirect = () => import('@/views/CardRedemptionRedirect.vue')
+const PaymentResult = () => import('@/views/PaymentResult.vue')
+
+export const shopGptEnabled = import.meta.env.VITE_ENABLE_SHOPGPT === 'true'
 
 const adminChild = (path: string, module: string, title: string): RouteRecordRaw => ({
   path,
@@ -49,19 +53,21 @@ const routes: RouteRecordRaw[] = [
       { path: '', component: HomePage, meta: { title: '首页', role: 'public' } },
       { path: 'market', component: ModelMarket, meta: { title: '模型市场', role: 'public' } },
       { path: 'services', component: OtherServices, meta: { title: '成品服务', role: 'public' } },
+      { path: 'subscriptions', component: SubscriptionServices, meta: { title: '订阅服务', role: 'public' } },
       { path: 'pricing', component: PricingPage, meta: { title: '套餐价格', role: 'public' } },
       { path: 'docs', component: DocsPage, meta: { title: '开发文档', role: 'public' } }
     ]
   },
   { path: '/studio', component: CreativeStudio, meta: { title: 'AI 创作工作台', role: 'public' } },
   { path: '/services/:id/redeem', component: CardRedemptionRedirect, meta: { title: '卡密兑换', role: 'public' } },
+  { path: '/payment/result', component: PaymentResult, meta: { title: '支付结果', role: 'user' } },
   { path: '/terms', component: LegalPage, meta: { title: '用户协议', role: 'public', legalKind: 'terms' } },
   { path: '/privacy', component: LegalPage, meta: { title: '隐私政策', role: 'public', legalKind: 'privacy' } },
   { path: '/console', component: UserConsole, meta: { title: '用户总览', role: 'user' } },
   { path: '/console/keys', component: UserConsole, meta: { title: 'API Key 管理', role: 'user' } },
   { path: '/console/playground', component: UserConsole, meta: { title: '在线调试', role: 'user' } },
   { path: '/console/logs', component: UserConsole, meta: { title: '用量日志', role: 'user' } },
-  { path: '/console/wallet', component: UserConsole, meta: { title: '钱包充值', role: 'user' } },
+  { path: '/console/wallet', component: UserConsole, meta: { title: '账户余额', role: 'user' } },
   { path: '/console/profile', component: UserConsole, meta: { title: '个人中心', role: 'user' } },
   { path: '/console/docs', component: UserConsole, meta: { title: '开发文档', role: 'user' } },
   { path: '/console/model-probe', component: UserConsole, meta: { title: '模型鉴别', role: 'user' } },
@@ -87,6 +93,7 @@ const routes: RouteRecordRaw[] = [
       { path: 'agents', component: AdminAgents, meta: { title: '代理、号池与运维', role: 'admin' } },
       { path: 'model-probe', component: AdminModelProbe, meta: { title: '模型鉴别', role: 'admin' } },
       { path: 'other-services', component: AdminOtherServices, meta: { title: '服务与订单', role: 'admin' } },
+      { path: 'subscription-services', component: AdminSubscriptionServices, meta: { title: '订阅服务', role: 'admin' } },
       { path: 'contact-methods', component: AdminContactMethods, meta: { title: '联系方式', role: 'admin' } },
       { path: 'vmcard-test', component: AdminVmCardTest, meta: { title: 'VMCard 接口测试', role: 'admin' } },
       adminChild('security', 'security', '安全策略'),

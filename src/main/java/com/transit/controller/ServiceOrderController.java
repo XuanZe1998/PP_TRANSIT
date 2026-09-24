@@ -4,6 +4,7 @@ import com.transit.dto.ServiceOrderResponse;
 import com.transit.dto.ServiceOrderRequest;
 import com.transit.dto.ServiceOrderQuoteRequest;
 import com.transit.dto.ServiceOrderQuoteResponse;
+import com.transit.dto.PageResponse;
 import com.transit.model.ServiceOrder;
 import com.transit.model.User;
 import com.transit.service.CurrentUserService;
@@ -21,7 +22,6 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import jakarta.servlet.http.HttpServletRequest;
@@ -78,11 +78,25 @@ public class ServiceOrderController {
     }
 
     @PostMapping("/service-orders/{id}/payment")
-    public Mono<ServiceOrderResponse> startPayment(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+    public Mono<Object> startPayment(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+                                                @RequestHeader("Idempotency-Key") String idempotencyKey,
                                                 @PathVariable Long id,
                                                 HttpServletRequest httpRequest) {
         User user = currentUserService.requireUser(authHeader);
-        return Mono.fromCallable(() -> serviceOrderService.startPayment(user, id, clientIp(httpRequest)));
+        return Mono.fromCallable(() -> {
+            IdempotencyService.Claim claim = idempotencyService.claim(
+                    "USER", user.getId(), "START_SERVICE_ORDER_PAYMENT:" + id,
+                    idempotencyKey, java.util.Map.of("id", id), true);
+            if (claim.replay()) return claim.response();
+            try {
+                ServiceOrderResponse response = serviceOrderService.startPayment(user, id, clientIp(httpRequest));
+                idempotencyService.complete(claim, 200, response, "SERVICE_ORDER", id);
+                return response;
+            } catch (RuntimeException exception) {
+                idempotencyService.fail(claim, exception);
+                throw exception;
+            }
+        });
     }
 
     @PostMapping("/service-orders/{id}/payment/query")
@@ -93,9 +107,13 @@ public class ServiceOrderController {
     }
 
     @GetMapping("/service-orders")
-    public Flux<ServiceOrder> userOrders(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+    public Mono<PageResponse<ServiceOrder>> userOrders(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+                                                       @RequestParam(defaultValue = "true") boolean listPage,
+                                                       @RequestParam(defaultValue = "1") int page,
+                                                       @RequestParam(defaultValue = "10") int size,
+                                                       @RequestParam(required = false) String status) {
         User user = currentUserService.requireUser(authHeader);
-        return Flux.fromIterable(serviceOrderService.listUserOrders(user));
+        return Mono.fromCallable(() -> serviceOrderService.listUserOrdersPage(user, page, size, status));
     }
 
     @GetMapping("/service-orders/{id}")
@@ -140,9 +158,14 @@ public class ServiceOrderController {
     }
 
     @GetMapping("/service-orders/admin/orders")
-    public Flux<ServiceOrder> adminOrders(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+    public Mono<PageResponse<ServiceOrder>> adminOrders(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+                                                        @RequestParam(defaultValue = "true") boolean listPage,
+                                                        @RequestParam(defaultValue = "1") int page,
+                                                        @RequestParam(defaultValue = "10") int size,
+                                                        @RequestParam(required = false) String status,
+                                                        @RequestParam(required = false) String query) {
         currentUserService.requireAdmin(authHeader);
-        return Flux.fromIterable(serviceOrderService.listAllOrders());
+        return Mono.fromCallable(() -> serviceOrderService.listAllOrdersPage(page, size, status, query));
     }
 
     @GetMapping("/service-orders/admin/orders/{id}")
@@ -190,11 +213,14 @@ public class ServiceOrderController {
     }
 
     @GetMapping("/service-orders/admin/services/{serviceId}/inventory")
-    public Flux<ServiceInventoryItem> inventory(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+    public Mono<PageResponse<ServiceInventoryItem>> inventory(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
                                                 @PathVariable Long serviceId,
-                                                @RequestParam(required = false) String status) {
+                                                @RequestParam(required = false) String status,
+                                                @RequestParam(defaultValue = "true") boolean listPage,
+                                                @RequestParam(defaultValue = "1") int page,
+                                                @RequestParam(defaultValue = "10") int size) {
         currentUserService.requireAdmin(authHeader);
-        return Flux.fromIterable(serviceCommerceService.listInventory(serviceId, status));
+        return Mono.fromCallable(() -> serviceCommerceService.listInventoryPage(serviceId, status, page, size));
     }
 
     @GetMapping("/service-orders/admin/services/{serviceId}/inventory/stats")
@@ -213,9 +239,12 @@ public class ServiceOrderController {
     }
 
     @GetMapping("/service-orders/admin/coupons")
-    public Flux<ServiceCoupon> coupons(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+    public Mono<PageResponse<ServiceCoupon>> coupons(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+                                                     @RequestParam(defaultValue = "true") boolean listPage,
+                                                     @RequestParam(defaultValue = "1") int page,
+                                                     @RequestParam(defaultValue = "10") int size) {
         currentUserService.requireAdmin(authHeader);
-        return Flux.fromIterable(couponAdminService.list());
+        return Mono.fromCallable(() -> couponAdminService.listPage(page, size));
     }
 
     @PostMapping("/service-orders/admin/coupons")

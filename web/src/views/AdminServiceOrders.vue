@@ -9,7 +9,7 @@
     </div>
 
     <el-alert v-if="pendingOnly" type="warning" :closable="false" title="当前仅显示待处理（PENDING / CONFIRMED）订单" />
-    <PagedTable v-loading="loading" :data="displayOrders" empty-text="暂无服务订单" list-id="AdminServiceOrders-1">
+    <PagedTable v-loading="loading" :data="orders" empty-text="暂无服务订单" list-id="AdminServiceOrders-1" pagination="external">
       <el-table-column prop="orderNo" label="订单号" min-width="190" />
       <el-table-column prop="userId" label="用户 ID" width="90" />
       <el-table-column prop="productName" label="服务名称" min-width="180" />
@@ -30,10 +30,11 @@
       <el-table-column label="操作" width="150" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" @click="openEdit(row)">处理</el-button>
-          <el-button link type="danger" @click="deleteOrder(row)">删除</el-button>
+          <el-button v-if="['PENDING','CONFIRMED','FAILED','CANCELLED'].includes(row.status)" link type="danger" @click="deleteOrder(row)">删除</el-button>
         </template>
       </el-table-column>
     </PagedTable>
+    <ListPagination v-if="total > 0" v-model:page="page" v-model:size="size" :total="total" :allow-all="false" @change="fetchOrders" />
 
     <el-dialog v-model="dialogVisible" title="处理服务订单" width="620px">
       <el-form label-position="top">
@@ -66,6 +67,12 @@
           <el-descriptions-item label="采购金额">{{ selectedOrder.supplierDetails.amount || '-' }} {{ selectedOrder.supplierDetails.currency || '' }}</el-descriptions-item>
           <el-descriptions-item v-if="selectedOrder.supplierDetails.lastError" label="最近错误" :span="2">{{ selectedOrder.supplierDetails.lastError }}</el-descriptions-item>
         </el-descriptions>
+        <el-descriptions v-if="paymentIntent" title="MaPay 支付" :column="2" border>
+          <el-descriptions-item label="支付意图">{{ paymentIntent.orderNo }}</el-descriptions-item>
+          <el-descriptions-item label="状态">{{ paymentIntent.status }}</el-descriptions-item>
+          <el-descriptions-item label="方式">{{ paymentIntent.paymentMethod }}</el-descriptions-item>
+          <el-descriptions-item label="平台交易号">{{ paymentIntent.providerTradeNo || '-' }}</el-descriptions-item>
+        </el-descriptions>
         <el-form-item v-if="selectedOrder?.fulfillmentMode === 'MANUAL_PROCESSING' && selectedOrder?.status === 'PAID'" label="交付内容" required>
           <el-input v-model="form.deliveryContent" type="textarea" :rows="6" placeholder="仅在订单详情中展示给订单所属用户" />
         </el-form-item>
@@ -73,11 +80,10 @@
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
         <el-button type="primary" :loading="saving" @click="saveOrder">保存</el-button>
-        <el-button v-if="['PENDING','CONFIRMED'].includes(selectedOrder?.status || '')" type="success" :loading="saving" @click="applyAction('PAID')">确认付款</el-button>
+        <el-button v-if="paymentIntent && ['PENDING','EXPIRED'].includes(paymentIntent.status)" type="success" :loading="queryingPayment" @click="queryPayment">手动查单</el-button>
         <el-button v-if="selectedOrder?.fulfillmentMode === 'MANUAL_PROCESSING' && selectedOrder?.status === 'PAID'" type="primary" :loading="saving" @click="completeManual">完成交付</el-button>
-        <el-button v-if="selectedOrder?.fulfillmentMode === 'AUTOMATIC_DELIVERY' && selectedOrder?.fulfillmentStatus === 'FAILED'" type="primary" :loading="saving" @click="retryAutomatic">重试自动发货</el-button>
-        <el-button v-if="selectedOrder?.status === 'PAID' && selectedOrder?.fulfillmentStatus !== 'COMPLETED'" type="danger" :loading="saving" @click="refundOrder">全额退款</el-button>
-        <el-button v-if="!['FULFILLED','FAILED','CANCELLED'].includes(selectedOrder?.status || '')" type="danger" plain :loading="saving" @click="applyAction('FAILED')">标记失败</el-button>
+        <el-button v-if="selectedOrder?.fulfillmentMode === 'AUTOMATIC_DELIVERY' && ['FAILED','REVIEW_REQUIRED'].includes(selectedOrder?.fulfillmentStatus || '')" type="primary" :loading="saving" @click="retryAutomatic">重试自动发货</el-button>
+        <el-button v-if="['PENDING','CONFIRMED'].includes(selectedOrder?.status || '')" type="danger" plain :loading="saving" @click="applyAction('FAILED')">标记失败</el-button>
       </template>
     </el-dialog>
   </section>
@@ -85,6 +91,7 @@
 
 <script setup lang="ts">
 import PagedTable from '@/components/PagedTable.vue'
+import ListPagination from '@/components/ListPagination.vue'
 import { computed, onMounted, ref } from 'vue'
 import { formatCurrencyCents } from '@/utils/money'
 import { useRoute } from 'vue-router'
@@ -113,7 +120,12 @@ type ServiceOrder = {
 }
 
 const orders = ref<ServiceOrder[]>([])
-const route=useRoute(),pendingOnly=computed(()=>route.query.status==='pending'),displayOrders=computed(()=>pendingOnly.value?orders.value.filter(item=>['PENDING','CONFIRMED'].includes(item.status)):orders.value)
+const route=useRoute(),pendingOnly=computed(()=>route.query.status==='pending')
+const page = ref(1)
+const size = ref(10)
+const total = ref(0)
+const paymentIntent = ref<Record<string, any> | null>(null)
+const queryingPayment = ref(false)
 const selectedOrder = ref<ServiceOrder | null>(null)
 const loading = ref(false)
 const saving = ref(false)
@@ -145,8 +157,12 @@ const statusLabel = (status: string) => ({
 async function fetchOrders() {
   loading.value = true
   try {
-    const response = await http.get<ServiceOrder[]>('/api/service-orders/admin/orders')
-    orders.value = response.data || []
+    const response = await http.get('/api/service-orders/admin/orders', { params: {
+      listPage: true, page: page.value, size: size.value,
+      status: pendingOnly.value ? 'PENDING,CONFIRMED' : undefined
+    } })
+    orders.value = response.data?.items || []
+    total.value = Number(response.data?.total || 0)
   } catch (error: unknown) {
     ElMessage.error(getHttpErrorMessage(error, '服务订单加载失败'))
   } finally {
@@ -161,6 +177,9 @@ async function openEdit(order: ServiceOrder) {
   } catch {
     selectedOrder.value = order
   }
+  try {
+    paymentIntent.value = (await http.get(`/api/admin/payment-intents/business/SERVICE_ORDER/${order.id}`)).data
+  } catch { paymentIntent.value = null }
   form.value = {
     status: order.status,
     fulfillmentNote: order.fulfillmentNote || '',
@@ -186,13 +205,22 @@ async function saveOrder() {
   }
 }
 
-async function applyAction(status: 'PAID' | 'FAILED') {
+async function applyAction(status: 'FAILED') {
   form.value.status = status
-  if (status === 'PAID' && !form.value.paymentReference.trim()) {
-    ElMessage.warning('请填写付款凭证号')
-    return
-  }
   await saveOrder()
+}
+
+async function queryPayment() {
+  if (!paymentIntent.value?.id) return
+  queryingPayment.value = true
+  try {
+    paymentIntent.value = (await http.post(`/api/admin/payment-intents/${paymentIntent.value.id}/query`)).data
+    await fetchOrders()
+    if (selectedOrder.value) await openEdit(selectedOrder.value)
+    ElMessage.success(paymentIntent.value?.status === 'PAID' ? '已确认付款' : '查单完成，当前未支付')
+  } catch (error: unknown) {
+    ElMessage.error(getHttpErrorMessage(error, '查单失败'))
+  } finally { queryingPayment.value = false }
 }
 
 async function completeManual() {
@@ -229,22 +257,6 @@ async function retryAutomatic() {
   } finally {
     saving.value = false
   }
-}
-
-async function refundOrder() {
-  if (!selectedOrder.value) return
-  try {
-    const prompt = await ElMessageBox.prompt('请输入退款原因（将写入审计记录）', '全额退款', { inputValidator: value => Boolean(value?.trim()) || '退款原因不能为空', type: 'warning' })
-    saving.value = true
-    const intent = await http.get(`/api/admin/payment-intents/business/SERVICE_ORDER/${selectedOrder.value.id}`)
-    await http.post(`/api/admin/payment-intents/${intent.data.id}/refund`, { reason: prompt.value })
-    ElMessage.success('退款已完成')
-    dialogVisible.value = false
-    await fetchOrders()
-  } catch (error: any) {
-    if (error === 'cancel' || error === 'close') return
-    ElMessage.error(getHttpErrorMessage(error, '退款失败'))
-  } finally { saving.value = false }
 }
 
 async function deleteOrder(order: ServiceOrder) {

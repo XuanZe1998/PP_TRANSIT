@@ -40,7 +40,7 @@ describe('static light theme', () => {
     const css = source('src/style.css')
     expect(css).toMatch(/#app \.other-services-page \.service-card\s*\{[\s\S]*?background:\s*#ffffff\s*!important/)
     expect(css).toMatch(/#app \.other-services-page \.service-card-body\s*\{[\s\S]*?background:\s*#ffffff\s*!important[\s\S]*?color:\s*var\(--ui-text\)\s*!important/)
-    expect(css).toMatch(/#app \.other-services-page \.service-order-row\s*\{[\s\S]*?border-color:\s*#d8e3f0\s*!important/)
+    expect(css).not.toContain('.service-order-row')
   })
 
   it('turns off chart rendering animation', () => {

@@ -126,7 +126,7 @@
             <li>账号为一号一绑欧洲渠道，该商品无质保，请谨慎购买。</li>
             <li>非日抛号，但建议尽快做好账号与会话数据备份。</li>
             <li>请尽快使用剩余额度，重要会话内容及时保存。</li>
-            <li>本站只读取供应商实时价格和库存；付款统一通过本站 AnyiPay，付款后由管理员人工采购并交付。</li>
+            <li>本站只读取供应商实时价格和库存；付款统一通过本站 MaPay，付款后由管理员人工采购并交付。</li>
           </ul>
         </article>
 
@@ -136,6 +136,7 @@
         </article>
       </section>
     </main>
+    <PaymentActionDialog v-model="paymentDialogVisible" :action="paymentAction" :payment-method="checkout.paymentMethod" />
   </div>
 </template>
 
@@ -155,8 +156,10 @@ import {
   User,
   Warning
 } from '@element-plus/icons-vue'
-import http from '@/utils/http'
+import http, { createIdempotencyKey } from '@/utils/http'
 import BillingCheckoutFields, { type BillingCheckout } from '@/components/BillingCheckoutFields.vue'
+import PaymentActionDialog, { type PaymentAction } from '@/components/PaymentActionDialog.vue'
+import { paymentActionOf } from '@/utils/payment'
 import { formatCurrencyValue } from '@/utils/money'
 
 type PayMethod = {
@@ -193,6 +196,8 @@ const userEmail = ref('')
 const captchaUrl = ref('')
 const captchaLoading = ref(false)
 const submitting = ref(false)
+const paymentDialogVisible = ref(false)
+const paymentAction = ref<PaymentAction | null>(null)
 const syncing = ref(false)
 const syncError = ref(false)
 const syncMessage = ref('正在建立第三方下单会话...')
@@ -331,7 +336,7 @@ const submitOrder = async () => {
   try {
     await ElMessageBox.confirm(
       `确认按服务端最新询价创建 ${form.quantity} 件本站订单，当前合计 ${formatCurrencyValue(totalPrice.value, 'CNY', 2, 2)}？`,
-      '本站 AnyiPay 结账',
+      '本站 MaPay 结账',
       { type: 'warning', confirmButtonText: '确认提交', cancelButtonText: '取消' }
     )
   } catch {
@@ -339,20 +344,20 @@ const submitOrder = async () => {
   }
 
   submitting.value = true
-  const paymentWindow = window.open('', '_blank')
   try {
     const res = await http.post('/api/shopgpt/item-68/order', {
       quantity: form.quantity,
       ...checkout.value
-    })
+    }, { headers: { 'Idempotency-Key': createIdempotencyKey('shopgpt-order') } })
     const intentId = res.data?.paymentIntent?.id
     if (!intentId) throw new Error('支付意图创建失败')
-    const started = await http.post(`/api/payment-intents/${intentId}/start`)
-    if (started.data?.paymentUrl) paymentWindow?.location.replace(started.data.paymentUrl)
-    else paymentWindow?.close()
-    ElMessage.success(started.data?.status === 'PAID' ? '付款成功，订单已进入人工采购' : '订单已创建，请完成付款')
+    const started = await http.post(`/api/payment-intents/${intentId}/start`, {}, {
+      headers: { 'Idempotency-Key': createIdempotencyKey(`payment-start-${intentId}`) }
+    })
+    paymentAction.value = paymentActionOf(started.data)
+    paymentDialogVisible.value = Boolean(paymentAction.value)
+    ElMessage.success(started.data?.intent?.status === 'PAID' ? '付款成功，订单已进入人工采购' : '订单已创建，请完成付款')
   } catch (error) {
-    paymentWindow?.close()
     ElMessage.error(errorMessage(error, error instanceof Error ? error.message : '本站订单创建失败'))
   } finally {
     submitting.value = false
