@@ -85,10 +85,10 @@
 
       <main class="user-main">
         <header class="console-hero">
-          <div>
-            <p class="eyebrow">{{ current.eyebrow }}</p>
+          <div class="console-hero-copy">
+            <p class="eyebrow"><i class="eyebrow-dot" aria-hidden="true"></i>{{ current.eyebrow }}</p>
             <h1>{{ current.title }}</h1>
-            <span>{{ current.subtitle }}</span>
+            <span class="console-hero-sub">{{ current.subtitle }}</span>
           </div>
           <div class="console-hero-actions">
             <el-button @click="go('/market')">
@@ -105,10 +105,11 @@
 
         <section v-if="current.key === 'overview'" class="console-overview">
           <div class="console-metrics">
-            <article v-for="metric in metrics" :key="metric.label" class="console-stat polished">
+            <article v-for="metric in metrics" :key="metric.label" class="console-stat polished" :data-tone="metric.tone">
               <span>{{ metric.label }}</span>
               <strong>{{ metric.value }}</strong>
               <span :class="['console-status-note', `is-${metric.tone}`]">{{ metric.badge }}</span>
+              <el-icon class="console-stat-icon" aria-hidden="true"><component :is="metric.icon" /></el-icon>
             </article>
           </div>
 
@@ -192,8 +193,8 @@
               </div>
             </div>
             <div class="activity-list">
-              <el-empty v-if="activities.length === 0" description="暂无调用记录" />
-              <PagedList :data="activities" list-id="UserConsole.vue-1" v-slot="{items:pagedItems}"><div v-for="item in pagedItems" :key="item.title">
+              <el-empty v-if="activities.length === 0" description="暂无调用记录" :image-size="72" />
+              <PagedList v-else :data="activities" list-id="UserConsole.vue-1" v-slot="{items:pagedItems}"><div class="activity-row" v-for="item in pagedItems" :key="item.title">
                 <span :class="item.tone"></span>
                 <p>
                   <strong>{{ item.title }}</strong>
@@ -207,7 +208,7 @@
         <section v-else-if="current.key === 'keys'" class="console-panel">
           <div class="panel-head">
             <div>
-              <h2>API Key 管理</h2>
+              <h2>Key 列表</h2>
               <p>按环境拆分 Key，控制额度、模型范围和启停状态。</p>
             </div>
             <el-button type="primary" @click="openCreateKey">新建 Key</el-button>
@@ -1461,10 +1462,10 @@ const formatDateTime = (value: string) => {
 }
 
 const metrics = computed(() => [
-  { label: '当前余额', value: money(balance.value), badge: '可用', tone: 'green' },
-  { label: '今日请求', value: number(todayRequestCount.value), badge: `${number(requestCount.value)} 总请求`, tone: 'blue' },
-  { label: 'Token 消耗', value: compactNumber(totalTokensUsed.value), badge: '累计', tone: 'orange' },
-  { label: '可用 Key', value: number(enabledTokenCount.value), badge: `${number(tokenCount.value)} 总数`, tone: 'purple' }
+  { label: '当前余额', value: money(balance.value), badge: '可用', tone: 'green', icon: Wallet },
+  { label: '今日请求', value: number(todayRequestCount.value), badge: `${number(requestCount.value)} 总请求`, tone: 'blue', icon: DataLine },
+  { label: 'Token 消耗', value: compactNumber(totalTokensUsed.value), badge: '累计', tone: 'orange', icon: Tickets },
+  { label: '可用 Key', value: number(enabledTokenCount.value), badge: `${number(tokenCount.value)} 总数`, tone: 'purple', icon: Key }
 ])
 
 const quickActions = [
