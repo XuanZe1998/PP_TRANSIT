@@ -59,7 +59,7 @@
 | web/src/views/OrganizationConsole.vue | OrganizationConsole-2 | `tokens` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
 | web/src/views/OrganizationConsole.vue | OrganizationConsole-3 | `usage` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
 | web/src/views/OtherServices.vue | OtherServices.vue-1 | `services` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
-| web/src/views/UserConsole.vue | UserConsole.vue-1 | `activities` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
+| web/src/views/UserConsole.vue | UserConsole.vue-1 | `activities` | 统一组件 `PagedList`；空状态单独显示，非空记录维持默认10条分页；集合来源使用兼容分页，本地派生数据分页 |
 | web/src/views/UserConsole.vue | UserConsole-1 | `keys` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
 | web/src/views/UserConsole.vue | UserConsole-2 | `billingSummary` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
 | web/src/views/UserConsole.vue | UserConsole-3 | `billingRows` | 页面服务端分页 |

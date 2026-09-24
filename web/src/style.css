@@ -1675,7 +1675,10 @@ textarea {
   letter-spacing: 0;
 }
 
-.console-hero span {
+/* Scope to the subtitle only: a bare `.console-hero span` also matched the
+   Element Plus button content spans and the account avatar, pushing them 4px
+   below the button/pill center line. */
+.console-hero .console-hero-sub {
   display: block;
   margin-top: 8px;
   color: #536273;
