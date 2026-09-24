@@ -56,6 +56,25 @@
         <AdminServiceOrders />
         <AdminProductCommerce />
       </el-tab-pane>
+      <el-tab-pane label="兑换域名" name="redemption-hosts">
+        <div class="redemption-host-toolbar">
+          <el-input v-model="hostInput" maxlength="253" placeholder="兑换站域名，例如 redeem.example.com（不要填写 https://）" @keyup.enter="addHost" />
+          <el-button type="primary" :loading="hostSaving" @click="addHost">添加域名</el-button>
+        </div>
+        <el-alert title="只填写可信的 HTTPS 兑换站域名；添加或删除后立即生效，无需重启。" type="info" :closable="false" show-icon />
+        <div class="redemption-host-toolbar">
+          <el-input v-model="hostQuery" clearable placeholder="搜索域名" @keyup.enter="searchHosts" @clear="searchHosts" />
+          <el-button @click="searchHosts">搜索</el-button>
+        </div>
+        <PagedTable v-loading="hostLoading" :data="hosts" empty-text="暂无兑换域名" list-id="AdminOtherServices-RedemptionHosts" pagination="external">
+          <el-table-column prop="host" label="域名" min-width="250" />
+          <el-table-column prop="createdAt" label="添加时间" min-width="180" />
+          <el-table-column label="操作" width="110">
+            <template #default="{ row }"><el-button link type="danger" @click="removeHost(row)">删除</el-button></template>
+          </el-table-column>
+        </PagedTable>
+        <ListPagination v-if="hostTotal > 0" v-model:page="hostPage" v-model:size="hostSize" :total="hostTotal" :allow-all="false" @change="loadHosts" />
+      </el-tab-pane>
       <el-tab-pane label="支付记录" name="payments">
         <AdminPaymentIntents />
       </el-tab-pane>
@@ -172,9 +191,10 @@
           <el-form-item label="卡密兑换网站" required>
             <el-input v-model="form.redemptionUrl" maxlength="2000" placeholder="https://redeem.example.com/" />
             <span class="form-tip">
-              只接受 HTTPS 且域名必须在服务端白名单中。前台通过本站 /services/:id/redeem 安全跳转，不使用 iframe，也不会携带卡密参数。
+              只接受 HTTPS 且域名必须先在后台兑换域名列表中添加。前台通过本站 /services/:id/redeem 安全跳转，不使用 iframe，也不会携带卡密参数。
               {{ form.id && form.redemptionConfigured ? '留空则保留当前地址。' : '' }}
             </span>
+            <el-button link type="primary" @click="openHostManager">在新标签页管理兑换域名</el-button>
           </el-form-item>
           <el-form-item label="单笔最多购买">
             <el-input-number v-model="form.maxPurchaseQuantity" :min="1" :max="1000" />
@@ -263,7 +283,16 @@ const supplierTesting = ref(false)
 const supplierOptions = ref<SupplierOption[]>([])
 const imageFileInput = ref<HTMLInputElement | null>(null)
 const dialogVisible = ref(false)
-const allowedTabs = ['catalog', 'orders']
+type RedemptionHost = { id: number; host: string; createdAt: string }
+const hosts = ref<RedemptionHost[]>([])
+const hostInput = ref('')
+const hostQuery = ref('')
+const hostPage = ref(1)
+const hostSize = ref(10)
+const hostTotal = ref(0)
+const hostLoading = ref(false)
+const hostSaving = ref(false)
+const allowedTabs = ['catalog', 'orders', 'payments', 'redemption-hosts']
 const initialTab = typeof route.query.tab === 'string' && allowedTabs.includes(route.query.tab) ? route.query.tab : 'catalog'
 const activeTab = ref(initialTab)
 const form = reactive({
@@ -300,6 +329,7 @@ const formatMoney = (cents?: number, currency?: string) => cents === null || cen
 function syncTab(tab: string | number) {
   const value = String(tab)
   router.replace({ query: value === 'catalog' ? {} : { tab: value } })
+  if (value === 'redemption-hosts') loadHosts()
 }
 
 async function load() {
@@ -313,6 +343,53 @@ async function load() {
   } finally {
     loading.value = false
   }
+}
+
+async function loadHosts() {
+  hostLoading.value = true
+  try {
+    const { data } = await http.get('/api/admin/api/other-services/redemption-hosts', {
+      params: { page: hostPage.value, size: hostSize.value, query: hostQuery.value.trim() }
+    })
+    hosts.value = data?.items || []
+    hostTotal.value = Number(data?.total || 0)
+  } catch (error: unknown) {
+    ElMessage.error(getHttpErrorMessage(error, '兑换域名加载失败'))
+  } finally {
+    hostLoading.value = false
+  }
+}
+function searchHosts() { hostPage.value = 1; loadHosts() }
+async function addHost() {
+  if (!hostInput.value.trim()) { ElMessage.warning('请输入兑换站域名'); return }
+  hostSaving.value = true
+  try {
+    await http.post('/api/admin/api/other-services/redemption-hosts', { host: hostInput.value.trim() })
+    hostInput.value = ''
+    ElMessage.success('域名已添加，即时生效')
+    hostPage.value = 1
+    await loadHosts()
+  } catch (error: unknown) {
+    ElMessage.error(getHttpErrorMessage(error, '添加域名失败'))
+  } finally {
+    hostSaving.value = false
+  }
+}
+async function removeHost(host: RedemptionHost) {
+  try {
+    await ElMessageBox.confirm(`删除“${host.host}”后，已有使用该域名的服务兑换跳转将失效。确定删除？`, '删除兑换域名', { type: 'warning' })
+    await http.delete(`/api/admin/api/other-services/redemption-hosts/${host.id}`)
+    ElMessage.success('域名已删除，即时生效')
+    if (hosts.value.length === 1 && hostPage.value > 1) hostPage.value--
+    await loadHosts()
+  } catch (error: unknown) {
+    if (error === 'cancel' || error === 'close') return
+    ElMessage.error(getHttpErrorMessage(error, '删除域名失败'))
+  }
+}
+
+function openHostManager() {
+  window.open(router.resolve({ query: { ...route.query, tab: 'redemption-hosts' } }).href, '_blank', 'noopener,noreferrer')
 }
 
 function resetForm() {
@@ -552,7 +629,7 @@ async function remove(service: OtherService) {
   }
 }
 
-onMounted(load)
+onMounted(() => { load(); if (activeTab.value === 'redemption-hosts') loadHosts() })
 </script>
 
 <style scoped>
@@ -560,6 +637,13 @@ onMounted(load)
   display: grid;
   gap: 20px;
   min-width: 0;
+}
+
+.redemption-host-toolbar {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 12px;
+  max-width: 700px;
 }
 
 .supplier-picker {

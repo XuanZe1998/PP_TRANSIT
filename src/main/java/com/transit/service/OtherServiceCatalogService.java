@@ -10,7 +10,6 @@ import com.transit.dto.MoneyAmount;
 import com.transit.dto.PageResponse;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
@@ -35,21 +34,21 @@ public class OtherServiceCatalogService {
     private final OtherServiceMapper otherServiceMapper;
     private final ServiceInventoryItemMapper inventoryItemMapper;
     private final ObjectMapper objectMapper;
-
-    @Value("${service-orders.redemption-allowed-hosts:}")
-    private String redemptionAllowedHosts = "";
+    private final RedemptionHostService redemptionHostService;
 
     @Autowired
     public OtherServiceCatalogService(OtherServiceMapper otherServiceMapper,
                                       ServiceInventoryItemMapper inventoryItemMapper,
-                                      ObjectMapper objectMapper) {
+                                      ObjectMapper objectMapper,
+                                      RedemptionHostService redemptionHostService) {
         this.otherServiceMapper = otherServiceMapper;
         this.inventoryItemMapper = inventoryItemMapper;
         this.objectMapper = objectMapper;
+        this.redemptionHostService = redemptionHostService;
     }
 
-    OtherServiceCatalogService(OtherServiceMapper otherServiceMapper) {
-        this(otherServiceMapper, null, new ObjectMapper());
+    OtherServiceCatalogService(OtherServiceMapper otherServiceMapper, RedemptionHostService redemptionHostService) {
+        this(otherServiceMapper, null, new ObjectMapper(), redemptionHostService);
     }
 
     public List<OtherService> listPublicServices() {
@@ -346,15 +345,11 @@ public class OtherServiceCatalogService {
                 throw new IllegalArgumentException();
             }
             String host = uri.getHost().toLowerCase(Locale.ROOT);
-            List<String> allowedHosts = java.util.Arrays.stream(redemptionAllowedHosts.split(","))
-                    .map(String::trim).map(valueHost -> valueHost.toLowerCase(Locale.ROOT))
-                    .filter(valueHost -> !valueHost.isBlank()).toList();
             if (uri.getPort() != -1 && uri.getPort() != 443) {
                 throw badRequest("redemptionUrl must use the standard HTTPS port");
             }
-            if (!allowedHosts.isEmpty() && allowedHosts.stream().noneMatch(allowed ->
-                    host.equals(allowed) || host.endsWith("." + allowed))) {
-                throw badRequest("redemptionUrl host is not in service-orders.redemption-allowed-hosts");
+            if (redemptionHostService == null || !redemptionHostService.allows(host)) {
+                throw badRequest("redemptionUrl host is not in the admin redemption domain list");
             }
             return uri.normalize().toASCIIString();
         } catch (ResponseStatusException exception) {
