@@ -108,39 +108,6 @@ public class DujiaoNextProcurementService {
         applySupplierState(order, callback);
     }
 
-    /** Cancels or fences upstream work before the local payment refund starts. */
-    public void prepareRefund(ServiceOrder order) {
-        if (order == null || !SUPPLIER.equals(normalize(order.getSupplierType()))) return;
-        if ("COMPLETED".equals(order.getFulfillmentStatus()) || "FULFILLED".equals(order.getStatus())) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Delivered Dujiao-Next orders cannot be refunded automatically");
-        }
-        if (order.getSupplierOrderId() == null) {
-            int fenced = jdbcTemplate.update("""
-                    UPDATE service_orders SET fulfillment_status='PROCUREMENT_CANCELLED',next_procurement_at=NULL,updated_at=?
-                    WHERE id=? AND supplier_order_id IS NULL
-                      AND fulfillment_status IN ('PROCUREMENT_PENDING','PROCUREMENT_RETRY','FAILED')
-                    """, now(), order.getId());
-            if (fenced != 1 && !"PROCUREMENT_CANCELLED".equals(order.getFulfillmentStatus())) {
-                throw new ResponseStatusException(HttpStatus.CONFLICT,
-                        "Dujiao-Next procurement is currently being submitted; retry the refund shortly");
-            }
-            order.setFulfillmentStatus("PROCUREMENT_CANCELLED");
-            order.setNextProcurementAt(null);
-            return;
-        }
-        if ("canceled".equals(normalizeLower(order.getSupplierStatus()))) return;
-        JsonNode canceled = client.cancel(order.getSupplierOrderId());
-        String status = normalizeLower(canceled.path("status").asText());
-        if (!"canceled".equals(status)) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Dujiao-Next order was not canceled; local refund stopped");
-        }
-        order.setSupplierStatus(status);
-        order.setFulfillmentStatus("PROCUREMENT_CANCELLED");
-        order.setNextProcurementAt(null);
-        order.setUpdatedAt(now());
-        orderMapper.updateById(order);
-    }
-
     private void create(Long id) {
         int claimed = jdbcTemplate.update("""
                 UPDATE service_orders SET fulfillment_status='PROCUREMENT_PROCESSING',updated_at=?
@@ -233,7 +200,7 @@ public class DujiaoNextProcurementService {
             }
         } else if ("canceled".equals(status)) {
             order.setFulfillmentStatus("FAILED");
-            order.setFulfillmentNote("Dujiao-Next canceled the procurement order; customer payment requires administrator review/refund.");
+            order.setFulfillmentNote("Dujiao-Next canceled the procurement order; paid order requires administrator review and manual delivery.");
             order.setNextProcurementAt(null);
         } else {
             order.setFulfillmentStatus("PROCUREMENT_ACCEPTED");
@@ -254,7 +221,7 @@ public class DujiaoNextProcurementService {
         order.setFulfillmentStatus(retry ? "PROCUREMENT_RETRY" : "FAILED");
         order.setFulfillmentNote(retry
                 ? "Dujiao-Next procurement failed temporarily; retry scheduled."
-                : "Dujiao-Next procurement failed; administrator review/refund required.");
+                : "Dujiao-Next procurement failed; administrator review and manual delivery required.");
         order.setNextProcurementAt(retry ? now().plusSeconds(backoff(attempts)) : null);
         order.setUpdatedAt(now());
         orderMapper.updateById(order);

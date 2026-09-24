@@ -2,14 +2,13 @@
   <section class="other-services-admin">
     <AdminPageToolbar title="服务与订单" description="每项服务统一配置展示信息、价格、服务费、币种和购买状态，并在这里处理服务订单。">
       <template #actions>
-        <el-button plain @click="router.push('/admin/payment-link')">打开支付链接工具</el-button>
         <el-button v-if="activeTab === 'catalog'" type="primary" @click="openCreate">新增服务</el-button>
       </template>
     </AdminPageToolbar>
 
     <el-tabs v-model="activeTab" @tab-change="syncTab">
       <el-tab-pane label="服务目录" name="catalog">
-    <PagedTable v-loading="loading" :data="services" empty-text="暂无服务" list-id="AdminOtherServices-1">
+    <PagedTable v-loading="loading" :data="services" empty-text="暂无服务" list-id="AdminOtherServices-1" pagination="external">
       <el-table-column label="图片" width="116">
         <template #default="{ row }">
           <div class="admin-service-thumb">
@@ -51,10 +50,14 @@
         </template>
       </el-table-column>
     </PagedTable>
+    <ListPagination v-if="serviceTotal > 0" v-model:page="servicePage" v-model:size="serviceSize" :total="serviceTotal" :allow-all="false" @change="load" />
       </el-tab-pane>
       <el-tab-pane label="服务订单" name="orders">
         <AdminServiceOrders />
         <AdminProductCommerce />
+      </el-tab-pane>
+      <el-tab-pane label="支付记录" name="payments">
+        <AdminPaymentIntents />
       </el-tab-pane>
     </el-tabs>
 
@@ -209,6 +212,7 @@
 
 <script setup lang="ts">
 import PagedTable from '@/components/PagedTable.vue'
+import ListPagination from '@/components/ListPagination.vue'
 import AdminPageToolbar from '@/components/AdminPageToolbar.vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { formatCurrencyCents } from '@/utils/money'
@@ -218,6 +222,7 @@ import http, { getHttpErrorMessage, resolveApiResourceUrl } from '@/utils/http'
 import { compressServiceImage } from '@/utils/serviceImage'
 import AdminServiceOrders from '@/views/AdminServiceOrders.vue'
 import AdminProductCommerce from '@/views/AdminProductCommerce.vue'
+import AdminPaymentIntents from '@/views/AdminPaymentIntents.vue'
 
 type OtherService = {
   id: number
@@ -247,6 +252,9 @@ type SupplierOption = { value: string; label: string; productId: number; skuId: 
 const route = useRoute()
 const router = useRouter()
 const services = ref<OtherService[]>([])
+const servicePage = ref(1)
+const serviceSize = ref(10)
+const serviceTotal = ref(0)
 const loading = ref(false)
 const saving = ref(false)
 const uploadingImage = ref(false)
@@ -297,8 +305,9 @@ function syncTab(tab: string | number) {
 async function load() {
   loading.value = true
   try {
-    const response = await http.get<OtherService[]>('/api/admin/api/other-services')
-    services.value = response.data || []
+    const response = await http.get('/api/admin/api/other-services', { params: { listPage: true, page: servicePage.value, size: serviceSize.value } })
+    services.value = response.data?.items || []
+    serviceTotal.value = Number(response.data?.total || 0)
   } catch (error: any) {
     ElMessage.error(error?.response?.data?.message || '其他服务加载失败')
   } finally {

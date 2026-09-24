@@ -20,7 +20,7 @@ Linknux 保持 Spring Boot、Vue、MySQL、Redis 与现有部署链路。本文�
 | Ops Dashboard / Realtime / Alerts | Adopt | 新增 5 分钟 QPS/TPS、P50/P95/P99、成功率、账号健康、开放告警、任务心跳和 SSE 实时接口。 |
 | Channel Monitor | Adopt | 新增渠道健康快照、7/15 天可用率数据、分钟汇总和 `/public/status`；主动外部探测仍复用经过 SSRF 校验的现有渠道测试。 |
 | Usage / Audit / Cleanup | Merge | 继续使用 `logs` 与 `usage_hourly`；新增账号维度分钟指标、任务心跳和 31/90 天保留任务。 |
-| Payments / Promo / Redeem | Keep | 保留 AnyiPay、支付意图、兑换码和优惠券；仅采用唯一业务事件和幂等审计思想。 |
+| Redeem | Keep | 保留兑换码和幂等审计；不引入收款、订单或优惠券模块。 |
 | Announcements | Adopt | 新增定向公告、有效期、用户已读状态及用户/管理员接口。 |
 | Backup / Data Management | Adopt with boundary | 后台可查看并登记备份请求；真正的数据库备份继续由受限服务器发布脚本执行，恢复只允许服务器运维，Web 应用不持有恢复权限。 |
 | Risk Control / Error Passthrough | Merge | 新增鉴权、限流、配额、过载、代理、请求、不确定结果分类；仅明确安全的前置错误允许切换，可能已被上游接受的请求不重放。继续使用现有敏感词、安全事件和脱敏。 |

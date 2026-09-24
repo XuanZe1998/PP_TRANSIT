@@ -116,8 +116,6 @@ class SecurityBoundaryIntegrationTests {
             "/user/profile",
             "/user/tokens",
             "/platform/user/wallet",
-            "/service-orders",
-            "/service-orders/admin/orders",
             "/admin/api/dashboard",
             "/platform/admin/dashboard",
             "/channels",
@@ -136,8 +134,7 @@ class SecurityBoundaryIntegrationTests {
             "/user/tokens",
             "/user/logs",
             "/user/stats",
-            "/user/usage/analytics",
-            "/service-orders"
+            "/user/usage/analytics"
     })
     void ordinaryUsersCanUseUserRoutes(String path) {
         client.get().uri(path)
@@ -167,12 +164,10 @@ class SecurityBoundaryIntegrationTests {
             "/admin/api/finance/summary",
             "/admin/api/finance/transactions",
             "/admin/api/finance/redeem-codes",
-            "/admin/api/finance/recharge-plans",
             "/platform/admin/dashboard",
             "/channels",
             "/tokens",
             "/mappings",
-            "/service-orders/admin/orders",
             "/actuator/prometheus"
     })
     void ordinaryUsersCannotCrossTheAdministratorBoundary(String path) {
@@ -188,12 +183,10 @@ class SecurityBoundaryIntegrationTests {
             "/admin/api/finance/summary",
             "/admin/api/finance/transactions",
             "/admin/api/finance/redeem-codes",
-            "/admin/api/finance/recharge-plans",
             "/platform/admin/dashboard",
             "/channels",
             "/tokens",
             "/mappings",
-            "/service-orders/admin/orders",
             "/actuator/prometheus"
     })
     void administratorsCanUseAdministratorRoutes(String path) {
@@ -208,13 +201,40 @@ class SecurityBoundaryIntegrationTests {
             "/plus/products",
             "/plus/orders",
             "/plus/admin/products",
-            "/service-07/order",
-            "/payment-service/api/regions"
+            "/service-07/order"
     })
-    void removedLegacyRoutesAreInaccessible(String path) {
+    void blockedLegacyRoutesRemainForbidden(String path) {
         client.get().uri(path)
                 .header(HttpHeaders.AUTHORIZATION, bearer(adminToken))
                 .exchange().expectStatus().isForbidden();
+    }
+
+    @ParameterizedTest(name = "user payment list is protected and available: {0}")
+    @ValueSource(strings = {
+            "/service-orders?listPage=true&page=1&size=10",
+            "/platform/user/recharge-orders?listPage=true&page=1&size=10"
+    })
+    void paymentListsRequireTheirOwningUser(String path) {
+        client.get().uri(path).exchange().expectStatus().isUnauthorized();
+        client.get().uri(path)
+                .header(HttpHeaders.AUTHORIZATION, bearer(userToken))
+                .exchange().expectStatus().isOk()
+                .expectBody().jsonPath("$.items").isArray();
+    }
+
+    @Test
+    void mapayWebhookIsPublicButRejectsUnsignedCallbacks() {
+        client.get().uri("/webhooks/mapay")
+                .exchange().expectStatus().isOk()
+                .expectBody(String.class).isEqualTo("fail");
+    }
+
+    @Test
+    void paymentRefundApiIsNotExposed() {
+        client.post().uri("/admin/payment-intents/1/refund")
+                .header(HttpHeaders.AUTHORIZATION, bearer(adminToken))
+                .bodyValue(Map.of("reason", "must not exist"))
+                .exchange().expectStatus().isNotFound();
     }
 
     @Test

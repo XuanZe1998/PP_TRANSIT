@@ -10,13 +10,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class ShopGptItemServiceSafetyTests {
-
     @Test
     void featureIsDisabledByDefaultAndEveryOperationStopsBeforeCreatingHttpClient() {
         ShopGptItemService service = new ShopGptItemService(new ObjectMapper());
         service.initializeClient();
         User user = User.builder().id(1L).email("user@example.com").build();
-
         assertDisabled(() -> service.prepare(user));
         assertDisabled(() -> service.captcha(user));
         assertDisabled(() -> service.sync(user, 1, "", 1));
@@ -28,10 +26,8 @@ class ShopGptItemServiceSafetyTests {
     void enablingWithoutExplicitSupplierConfigurationFailsFastWithoutNetworkTraffic() {
         ShopGptItemService service = new ShopGptItemService(new ObjectMapper());
         ReflectionTestUtils.setField(service, "enabled", true);
-
         assertThatThrownBy(service::initializeClient)
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("shopgpt.base-url");
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining("shopgpt.base-url");
         assertThat(ReflectionTestUtils.getField(service, "webClient")).isNull();
     }
 
@@ -40,10 +36,8 @@ class ShopGptItemServiceSafetyTests {
         ShopGptItemService service = new ShopGptItemService(new ObjectMapper());
         ReflectionTestUtils.setField(service, "enabled", true);
         ReflectionTestUtils.setField(service, "configuredBaseUrl", "http://user:password@shop.example.test");
-
         assertThatThrownBy(service::initializeClient)
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("HTTPS origin");
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining("HTTPS origin");
         assertThat(ReflectionTestUtils.getField(service, "webClient")).isNull();
     }
 
@@ -51,7 +45,6 @@ class ShopGptItemServiceSafetyTests {
     void generatedSupplierOrderPasswordsAreRandomAndNotDerivedFromEmail() {
         String first = ShopGptItemService.newOrderPassword();
         String second = ShopGptItemService.newOrderPassword();
-
         assertThat(first).hasSizeGreaterThanOrEqualTo(40).doesNotContain("user@example.com");
         assertThat(second).isNotEqualTo(first);
     }

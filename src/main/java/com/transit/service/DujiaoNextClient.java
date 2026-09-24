@@ -82,14 +82,6 @@ public class DujiaoNextClient {
         return invoke(HttpMethod.GET, API_PREFIX + "/orders/" + upstreamOrderId, null, null);
     }
 
-    public JsonNode cancel(long upstreamOrderId) {
-        if (!properties.purchasesEnabled()) {
-            throw new DujiaoNextApiException("purchases_disabled",
-                    "Dujiao-Next purchases are disabled", 503, false);
-        }
-        return invoke(HttpMethod.POST, API_PREFIX + "/orders/" + upstreamOrderId + "/cancel", null, null);
-    }
-
     public void verifyCallback(String apiKey, String timestamp, String signature, byte[] body) {
         requireReadable();
         if (!constantTimeEquals(properties.getApiKey().trim(), apiKey)) {

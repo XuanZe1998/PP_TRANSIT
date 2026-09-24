@@ -272,8 +272,11 @@ flowchart LR
 | `oauth_codes` | OAuth 授权码。 |
 | `oauth_tokens` | 登录和 OAuth Token。 |
 | `oauth_user_bindings` | 第三方 OAuth 用户绑定。 |
-| `other_services` | 成品服务商品配置。 |
-| `service_orders` | 成品服务订单状态和履约信息。 |
+| `other_services` | 成品服务商品、定价和履约配置。 |
+| `service_orders` | 成品服务订单、价格快照、支付证据与履约状态。 |
+| `payment_intents` | MaPay 支付意图、金额/汇率快照、支付动作与查单状态。 |
+| `wallet_recharge_orders` | 钱包充值订单和赠送额度快照。 |
+| `service_coupons` / `service_inventory_items` | 优惠码与加密卡密库存。 |
 
 ## 8. 主要接口清单
 
@@ -317,15 +320,19 @@ flowchart LR
 - `GET /ops/overview`：运营总览。
 - `GET /ops/catalog`：供应商推荐目录。
 
-### 8.5 成品服务订单
+### 8.5 MaPay 支付与服务商城
 
-- `GET /public/other-services`：获取 成品服务商品。
-- `POST /service-orders`：创建当前用户的 成品服务订单。
-- `GET /service-orders`：获取当前用户订单。
-- `GET /service-orders/{id}`：获取当前用户指定订单。
-- `GET /service-orders/{id}/download`：下载订单凭证。
-- `GET /service-orders/admin/orders`：管理员获取全部 成品服务订单。
-- `PUT /service-orders/admin/orders/{id}`：管理员更新订单状态和履约备注。
+- `POST /platform/user/recharge-orders`：幂等创建钱包充值订单。
+- `POST /service-orders`：幂等创建服务订单，固化优惠、库存与金额快照。
+- `POST /payment-intents/{id}/start`：返回 MaPay 跳转、二维码或 URL Scheme 动作。
+- `GET /payment-intents/{id}`：只读本地支付状态。
+- `POST /payment-intents/{id}/query`：用户主动触发一次 MaPay 查单。
+- `GET|POST /webhooks/mapay`：MaPay 异步通知。
+- `GET /admin/payment-intents`：管理员分页查看支付记录。
+- `POST /admin/payment-intents/{id}/query`：管理员手动查单。
+- `GET /public/other-services`、`GET /service-orders`、`GET /service-orders/admin/orders`：分页服务与订单。
+
+项目不实现支付退款接口。支付成功但库存/优惠资源已释放时，付款事实保留，履约进入 `REVIEW_REQUIRED`。
 
 ### 8.6 OAuth
 

@@ -2,11 +2,11 @@ package com.transit.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.transit.dto.ServiceOrderCreateRequest;
 import com.transit.dto.ServiceOrderResponse;
 import com.transit.dto.ServiceOrderQuoteResponse;
 import com.transit.dto.MoneyAmount;
+import com.transit.dto.PageResponse;
 import com.transit.dto.ShopGptCheckoutRequest;
 import com.transit.mapper.ServiceOrderMapper;
 import com.transit.model.ServiceOrder;
@@ -64,37 +64,30 @@ public class ServiceOrderService {
     private static final SecureRandom RECEIPT_NUMBER_RANDOM = new SecureRandom();
 
     private final ServiceOrderMapper orderMapper;
-    private final AnyiPayClient anyiPayClient;
     private final ServiceCommerceService serviceCommerceService;
     private final PaymentIntentService paymentIntentService;
     private final AccountVerificationPolicy verificationPolicy;
 
     @Autowired
     public ServiceOrderService(ServiceOrderMapper orderMapper,
-                            AnyiPayClient anyiPayClient,
                             ServiceCommerceService serviceCommerceService,
                             PaymentIntentService paymentIntentService,
                             AccountVerificationPolicy verificationPolicy) {
         this.orderMapper = orderMapper;
-        this.anyiPayClient = anyiPayClient;
         this.serviceCommerceService = serviceCommerceService;
         this.paymentIntentService = paymentIntentService;
         this.verificationPolicy = verificationPolicy;
     }
 
     ServiceOrderService(ServiceOrderMapper orderMapper,
-                     AnyiPayClient anyiPayClient, ServiceCommerceService serviceCommerceService) {
-        this(orderMapper, anyiPayClient, serviceCommerceService, null,
+                     ServiceCommerceService serviceCommerceService) {
+        this(orderMapper, serviceCommerceService, null,
                 new AccountVerificationPolicy("EMAIL_AND_PHONE"));
     }
 
     // Focused unit tests that do not exercise an external payment provider use this constructor.
     ServiceOrderService(ServiceOrderMapper orderMapper) {
-        this(orderMapper, null, null, null, new AccountVerificationPolicy("EMAIL_AND_PHONE"));
-    }
-
-    ServiceOrderService(ServiceOrderMapper orderMapper, AnyiPayClient anyiPayClient) {
-        this(orderMapper, anyiPayClient, null, null, new AccountVerificationPolicy("EMAIL_AND_PHONE"));
+        this(orderMapper, null, null, new AccountVerificationPolicy("EMAIL_AND_PHONE"));
     }
 
     @Value("${payment.documents.merchant.legal-name:}")
@@ -117,9 +110,6 @@ public class ServiceOrderService {
 
     @Value("${payment.documents.font-path:}")
     private String receiptFontPath;
-
-    @Value("${payment.local-test-mode:false}")
-    private boolean localTestPaymentMode;
 
     @Value("${payment.usd-cny-rate:6.76693506}")
     private BigDecimal usdCnyPaymentRate = new BigDecimal("6.76693506");
@@ -238,88 +228,25 @@ public class ServiceOrderService {
 
     public ServiceOrderResponse startPayment(User user, Long id, String clientIp) {
         ServiceOrder order = getUserOrder(user, id);
-        if (paymentIntentService != null) {
-            com.transit.model.PaymentIntent intent = paymentIntentService.getByBusiness(PaymentBusinessSettlementService.SERVICE_ORDER, order.getId());
-            intent = paymentIntentService.start(user, intent.getId());
-            ServiceOrder latest = getUserOrder(user, id);
-            return ServiceOrderResponse.builder().order(latest).paymentIntent(intent)
-                    .payType(intent.getPaymentType()).paymentUrl(intent.getPaymentUrl())
-                    .providerTradeNo(intent.getProviderTradeNo()).message("Payment intent started").build();
-        }
-        String status = normalizeStoredStatus(order.getStatus());
-        if (!Set.of(PENDING, CONFIRMED).contains(status)) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    "Payment cannot be started while order status is " + status);
-        }
-        if (localTestPaymentMode) {
-            String reference = "LOCAL-" + requiredText(order.getOrderNo(), "order.orderNo", 80);
-            ServiceOrder paid = markPaid(order, reference, "local-test", "LOCAL_TEST");
-            return paymentResponse(paid, "本地模拟支付成功");
-        }
-        if (anyiPayClient == null || !anyiPayClient.isEnabled()) {
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
-                    "支付通道未启用，请先配置聚合支付商户信息");
-        }
-        PaymentQuote paymentQuote = ensurePaymentQuote(order);
-        String paymentMethod = normalizePaymentMethod(order.getPaymentMethod());
-        String paymentUrl = anyiPayClient.createPagePaymentUrl(
-                order.getOrderNo(),
-                order.getProductName(),
-                money(paymentQuote.amountCents()),
-                "service-order:" + order.getId(),
-                paymentMethod);
-        order.setPaymentProvider("ANYIPAY");
-        order.setProviderTradeNo(null);
-        order.setPaymentType("page");
-        order.setPaymentUrl(optionalHttpUrl(paymentUrl, "paymentUrl", 2000));
-        order.setUpdatedAt(nowUtc());
-        orderMapper.updateById(order);
-        return paymentResponse(order, "请前往支付页完成付款");
+        com.transit.model.PaymentIntent intent = paymentIntentService.getByBusiness(
+                PaymentBusinessSettlementService.SERVICE_ORDER, order.getId());
+        PaymentIntentService.StartResponse started = paymentIntentService.start(user, intent.getId(), clientIp, "pc");
+        com.transit.model.PaymentIntent latestIntent = started.intent();
+        ServiceOrder latest = getUserOrder(user, id);
+        return ServiceOrderResponse.builder().order(latest).paymentIntent(latestIntent)
+                .payType(started.action() == null ? latestIntent.getPaymentActionType() : started.action().type())
+                .paymentUrl(started.action() == null ? latestIntent.getPaymentUrl() : started.action().url())
+                .providerTradeNo(latestIntent.getProviderTradeNo()).message("Payment intent started").build();
     }
 
     public ServiceOrderResponse queryPayment(User user, Long id) {
         ServiceOrder owned = getUserOrder(user, id);
-        if (paymentIntentService != null) {
-            com.transit.model.PaymentIntent intent = paymentIntentService.getByBusiness(PaymentBusinessSettlementService.SERVICE_ORDER, owned.getId());
-            intent = paymentIntentService.query(user, intent.getId());
-            return ServiceOrderResponse.builder().order(getUserOrder(user, id)).paymentIntent(intent)
-                    .payType(intent.getPaymentType()).paymentUrl(intent.getPaymentUrl())
-                    .providerTradeNo(intent.getProviderTradeNo()).message("Payment status refreshed").build();
-        }
-        if (anyiPayClient == null) {
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "AnyiPay is unavailable");
-        }
-        ServiceOrder order = getUserOrder(user, id);
-        JsonNode provider = anyiPayClient.queryPayment(order.getProviderTradeNo(),
-                isBlank(order.getProviderTradeNo()) ? order.getOrderNo() : null);
-        validateGatewayOrderFacts(order, provider.path("pid").asText(), provider.path("out_trade_no").asText(),
-                provider.path("money").asText(), provider.path("param").asText());
-        if (provider.path("status").asInt(0) == 1) {
-            order = markPaid(order,
-                    requiredProviderText(provider, "trade_no", 120),
-                    provider.path("type").asText(null));
-        }
-        return paymentResponse(order, provider.path("status").asInt(0) == 1
-                ? "支付已确认" : "尚未查询到成功付款");
-    }
-
-    public void receivePaymentNotification(Map<String, String> callback) {
-        if (paymentIntentService != null) {
-            paymentIntentService.receiveNotification(callback);
-            return;
-        }
-        if (callback == null || !"TRADE_SUCCESS".equals(callback.get("trade_status"))) {
-            throw badRequest("Unsupported payment notification status");
-        }
-        String orderNo = requiredText(callback.get("out_trade_no"), "out_trade_no", 80);
-        ServiceOrder order = orderMapper.selectOne(new LambdaQueryWrapper<ServiceOrder>()
-                .eq(ServiceOrder::getOrderNo, orderNo)
-                .last("LIMIT 1"));
-        if (order == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Order not found");
-        validateGatewayOrderFacts(order, callback.get("pid"), orderNo, callback.get("money"), callback.get("param"));
-        markPaid(order,
-                requiredText(callback.get("trade_no"), "trade_no", 120),
-                optionalText(callback.get("type"), "type", 40));
+        com.transit.model.PaymentIntent intent = paymentIntentService.getByBusiness(
+                PaymentBusinessSettlementService.SERVICE_ORDER, owned.getId());
+        intent = paymentIntentService.query(user, intent.getId());
+        return ServiceOrderResponse.builder().order(getUserOrder(user, id)).paymentIntent(intent)
+                .payType(intent.getPaymentActionType()).paymentUrl(intent.getPaymentUrl())
+                .providerTradeNo(intent.getProviderTradeNo()).message("Payment status refreshed").build();
     }
 
     public List<ServiceOrder> listUserOrders(User user) {
@@ -329,9 +256,60 @@ public class ServiceOrderService {
                 .orderByDesc(ServiceOrder::getCreatedAt)).stream().map(this::enrichOrderMoney).toList();
     }
 
+    public PageResponse<ServiceOrder> listUserOrdersPage(User user, int page, int size, String status) {
+        requireUserId(user);
+        validateListPage(page, size);
+        LambdaQueryWrapper<ServiceOrder> count = orderFilter(user.getId(), status, null);
+        long total = orderMapper.selectCount(count);
+        List<ServiceOrder> items = orderMapper.selectList(orderFilter(user.getId(), status, null)
+                        .orderByDesc(ServiceOrder::getCreatedAt)
+                        .last("LIMIT " + size + " OFFSET " + ((page - 1L) * size)))
+                .stream().map(this::enrichOrderMoney).toList();
+        return page(page, size, total, items);
+    }
+
     public List<ServiceOrder> listAllOrders() {
         return orderMapper.selectList(new LambdaQueryWrapper<ServiceOrder>().orderByDesc(ServiceOrder::getCreatedAt))
                 .stream().map(this::enrichOrderMoney).toList();
+    }
+
+    public PageResponse<ServiceOrder> listAllOrdersPage(int page, int size, String status, String query) {
+        validateListPage(page, size);
+        long total = orderMapper.selectCount(orderFilter(null, status, query));
+        List<ServiceOrder> items = orderMapper.selectList(orderFilter(null, status, query)
+                        .orderByDesc(ServiceOrder::getCreatedAt)
+                        .last("LIMIT " + size + " OFFSET " + ((page - 1L) * size)))
+                .stream().map(this::enrichOrderMoney).toList();
+        return page(page, size, total, items);
+    }
+
+    private LambdaQueryWrapper<ServiceOrder> orderFilter(Long userId, String status, String query) {
+        LambdaQueryWrapper<ServiceOrder> wrapper = new LambdaQueryWrapper<>();
+        if (userId != null) wrapper.eq(ServiceOrder::getUserId, userId);
+        if (status != null && !status.isBlank()) {
+            List<String> statuses = java.util.Arrays.stream(status.split(","))
+                    .map(this::normalizeStatus).distinct().toList();
+            if (statuses.size() == 1) wrapper.eq(ServiceOrder::getStatus, statuses.get(0));
+            else wrapper.in(ServiceOrder::getStatus, statuses);
+        }
+        if (query != null && !query.isBlank()) {
+            String needle = requiredText(query, "query", 160);
+            wrapper.and(group -> group.like(ServiceOrder::getOrderNo, needle)
+                    .or().like(ServiceOrder::getProductName, needle)
+                    .or().like(ServiceOrder::getProviderTradeNo, needle));
+        }
+        return wrapper;
+    }
+
+    private PageResponse<ServiceOrder> page(int page, int size, long total, List<ServiceOrder> items) {
+        PageResponse<ServiceOrder> response = new PageResponse<>();
+        response.setPage(page); response.setSize(size); response.setTotal(total); response.setItems(items);
+        return response;
+    }
+
+    private void validateListPage(int page, int size) {
+        if (page < 1 || page > 1_000_000) throw badRequest("page is out of range");
+        if (!List.of(10, 20, 50, 100).contains(size)) throw badRequest("size must be one of 10, 20, 50, 100");
     }
 
     public ServiceOrder getUserOrder(User user, Long id) {
@@ -444,7 +422,7 @@ public class ServiceOrderService {
         String status = normalizeStoredStatus(order.getStatus());
         if (PAID.equals(status) || FULFILLED.equals(status) || hasPaymentEvidence(order)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    "Paid or fulfilled orders must be retained for audit; cancel or refund them through a verified workflow");
+                    "Paid or fulfilled orders must be retained for audit and cannot be deleted");
         }
         if (serviceCommerceService != null && order.getServiceId() != null
                 && Set.of(PENDING, CONFIRMED).contains(status)) {
@@ -706,64 +684,6 @@ public class ServiceOrderService {
         return normalized;
     }
 
-    private ServiceOrder markPaid(ServiceOrder order, String providerTradeNo, String paymentType) {
-        return markPaid(order, providerTradeNo, paymentType, "ANYIPAY");
-    }
-
-    private ServiceOrder markPaid(ServiceOrder order,
-                               String providerTradeNo,
-                               String paymentType,
-                               String paymentProvider) {
-        String current = normalizeStoredStatus(order.getStatus());
-        String reference = requiredText(providerTradeNo, "providerTradeNo", 120);
-        String provider = requiredText(paymentProvider, "paymentProvider", 40);
-        if ("ANYIPAY".equals(provider)) {
-            String actualMethod = normalizePaymentMethod(paymentType);
-            if (!actualMethod.equals(normalizePaymentMethod(order.getPaymentMethod()))) {
-                throw badRequest("Payment method does not match the method selected for this order");
-            }
-        }
-        if (Set.of(PAID, FULFILLED).contains(current)) {
-            if (!isBlank(order.getProviderTradeNo()) && !order.getProviderTradeNo().equals(reference)) {
-                throw new ResponseStatusException(HttpStatus.CONFLICT,
-                        "Paid order references a different provider transaction");
-            }
-            if (PAID.equals(current) && serviceCommerceService != null && order.getServiceId() != null
-                    && !"COMPLETED".equals(order.getFulfillmentStatus())) {
-                return serviceCommerceService.settlePaid(order);
-            }
-            return order;
-        }
-        if (!Set.of(PENDING, CONFIRMED, EXPIRED).contains(current)) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    "Payment cannot be applied while order status is " + current);
-        }
-        LocalDateTime now = nowUtc();
-        order.setStatus(PAID);
-        order.setPaymentProvider(provider);
-        order.setProviderTradeNo(reference);
-        order.setPaymentReference(reference);
-        order.setPaymentType(optionalText(paymentType, "paymentType", 40));
-        order.setPaidAt(now);
-        order.setUpdatedAt(now);
-        int updated = orderMapper.update(order, new LambdaUpdateWrapper<ServiceOrder>()
-                .eq(ServiceOrder::getId, order.getId())
-                .eq(ServiceOrder::getStatus, current));
-        if (updated != 1) {
-            ServiceOrder latest = orderMapper.selectById(order.getId());
-            if (latest != null && Set.of(PAID, FULFILLED).contains(normalizeStoredStatus(latest.getStatus()))
-                    && reference.equals(latest.getProviderTradeNo())) {
-                return latest;
-            }
-            throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    "Order changed concurrently while applying payment");
-        }
-        if (serviceCommerceService != null && order.getServiceId() != null) {
-            return serviceCommerceService.settlePaid(order);
-        }
-        return order;
-    }
-
     public ServiceOrder completeManualOrder(Long id, String deliveryContent, String note) {
         return requireCommerce().completeManual(id, deliveryContent, note);
     }
@@ -773,9 +693,9 @@ public class ServiceOrderService {
         if (order == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Order not found");
         if (!ServiceCommerceService.AUTOMATIC.equals(order.getFulfillmentMode())
                 || !PAID.equals(normalizeStoredStatus(order.getStatus()))
-                || !"FAILED".equals(order.getFulfillmentStatus())) {
+                || !Set.of("FAILED", "REVIEW_REQUIRED").contains(order.getFulfillmentStatus())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    "Only a paid automatic-delivery order with failed fulfillment can be retried");
+                    "Only a paid automatic-delivery order requiring fulfillment attention can be retried");
         }
         return requireCommerce().settlePaid(order);
     }
@@ -807,49 +727,6 @@ public class ServiceOrderService {
         return serviceCommerceService;
     }
 
-    private void validateGatewayOrderFacts(ServiceOrder order,
-                                           String callbackMerchantId,
-                                           String callbackOrderNo,
-                                           String callbackMoney,
-                                           String callbackParam) {
-        if (anyiPayClient == null || !anyiPayClient.merchantId().equals(callbackMerchantId)) {
-            throw badRequest("Payment merchant does not match");
-        }
-        if (!Objects.equals(order.getOrderNo(), callbackOrderNo)) {
-            throw badRequest("Payment order number does not match");
-        }
-        PaymentQuote paymentQuote = ensurePaymentQuote(order);
-        if (!"CNY".equals(paymentQuote.currency())) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Payment settlement currency is not CNY");
-        }
-        if (!money(paymentQuote.amountCents()).equals(callbackMoney)) {
-            throw badRequest("Payment amount does not match the order");
-        }
-        if (!("service-order:" + order.getId()).equals(callbackParam)) {
-            throw badRequest("Payment callback does not belong to the service order namespace");
-        }
-    }
-
-    private ServiceOrderResponse paymentResponse(ServiceOrder order, String message) {
-        return ServiceOrderResponse.builder()
-                .order(order)
-                .message(message)
-                .payType(order.getPaymentType())
-                .paymentUrl(order.getPaymentUrl())
-                .providerTradeNo(order.getProviderTradeNo())
-                .build();
-    }
-
-    private String requiredProviderText(JsonNode response, String field, int maxLength) {
-        return requiredText(response == null ? null : response.path(field).asText(null), field, maxLength);
-    }
-
-    private String money(Long cents) {
-        long normalized = requireNonNegativeSnapshot(cents, "amount");
-        if (normalized == 0) throw new ResponseStatusException(HttpStatus.CONFLICT, "Payment amount must be positive");
-        return BigDecimal.valueOf(normalized, 2).setScale(2).toPlainString();
-    }
-
     private PaymentQuote ensurePaymentQuote(ServiceOrder order) {
         if (order.getPaymentAmountCents() != null
                 && order.getPaymentAmountCents() > 0
@@ -875,7 +752,7 @@ public class ServiceOrderService {
         }
         if (!"USD".equals(sourceCurrency)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    "AnyiPay payment supports CNY services or USD services with a configured USD/CNY rate");
+                    "MaPay supports CNY services or USD services converted to CNY");
         }
         BigDecimal rate = usdCnyPaymentRate == null
                 ? null : usdCnyPaymentRate.setScale(8, RoundingMode.HALF_UP);

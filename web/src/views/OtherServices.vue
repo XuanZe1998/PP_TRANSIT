@@ -8,7 +8,7 @@
       </div>
       <div class="services-count">
         <span>当前可用</span>
-        <strong>{{ services.length }}</strong>
+        <strong>{{ serviceTotal }}</strong>
         <small>项服务</small>
       </div>
     </div>
@@ -16,7 +16,7 @@
     <el-skeleton v-if="loading" :rows="6" animated />
     <el-empty v-else-if="services.length === 0" description="暂无其他服务" />
     <div v-else class="services-grid">
-      <PagedList :data="services" list-id="OtherServices.vue-1" v-slot="{items:pagedItems}"><article v-for="(service, index) in pagedItems" :key="service.id" class="service-card">
+      <article v-for="(service, index) in services" :key="service.id" class="service-card">
         <div class="service-image">
           <img
             v-if="service.imageUrl && !failedImages.has(service.id)"
@@ -62,8 +62,9 @@
             </el-button>
           </div>
         </div>
-      </article></PagedList>
+      </article>
     </div>
+    <ListPagination v-if="serviceTotal > 0" v-model:page="servicePage" v-model:size="serviceSize" :total="serviceTotal" :allow-all="false" @change="loadCatalog" />
 
     <section v-if="authenticated" class="service-orders">
       <div class="orders-head">
@@ -73,7 +74,7 @@
         </div>
         <el-button :loading="ordersLoading" @click="loadOrders">刷新订单</el-button>
       </div>
-      <PagedTable v-loading="ordersLoading" :data="orders" empty-text="暂无服务订单" list-id="OtherServices-1">
+      <PagedTable v-loading="ordersLoading" :data="orders" empty-text="暂无服务订单" list-id="OtherServices-1" pagination="external">
         <el-table-column prop="orderNo" label="订单号" min-width="190" />
         <el-table-column prop="productName" label="服务" min-width="170" />
         <el-table-column label="金额" width="120">
@@ -115,6 +116,7 @@
           </template>
         </el-table-column>
       </PagedTable>
+      <ListPagination v-if="orderTotal > 0" v-model:page="orderPage" v-model:size="orderSize" :total="orderTotal" :allow-all="false" @change="loadOrders" />
     </section>
 
     <el-dialog v-model="orderDialogVisible" title="填写账单信息" width="min(680px, 94vw)">
@@ -216,12 +218,16 @@
         <el-button v-if="orderDetailRedemptionPath" type="primary" @click="goToRedemption">前往兑换</el-button>
       </template>
     </el-dialog>
+    <PaymentActionDialog v-model="paymentDialogVisible" :action="paymentAction" :payment-method="paymentMethod" />
   </section>
 </template>
 
 <script setup lang="ts">
 import PagedList from "@/components/PagedList.vue"
 import PagedTable from '@/components/PagedTable.vue'
+import ListPagination from '@/components/ListPagination.vue'
+import PaymentActionDialog, { type PaymentAction } from '@/components/PaymentActionDialog.vue'
+import { paymentActionOf } from '@/utils/payment'
 import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { formatCurrencyCents } from '@/utils/money'
 import { useRoute, useRouter } from 'vue-router'
@@ -296,6 +302,15 @@ const route = useRoute()
 const router = useRouter()
 const services = ref<OtherService[]>([])
 const orders = ref<ServiceOrder[]>([])
+const servicePage = ref(1)
+const serviceSize = ref(10)
+const serviceTotal = ref(0)
+const orderPage = ref(1)
+const orderSize = ref(10)
+const orderTotal = ref(0)
+const paymentDialogVisible = ref(false)
+const paymentAction = ref<PaymentAction | null>(null)
+const paymentMethod = ref('alipay')
 const loading = ref(true)
 const ordersLoading = ref(false)
 const buyingServiceId = ref<number | null>(null)
@@ -364,7 +379,7 @@ const canPay = (order: ServiceOrder) => ['PENDING', 'CONFIRMED'].includes(order.
 const deliveryComplete = (order: ServiceOrder) => order.status === 'FULFILLED'
   && order.fulfillmentStatus === 'COMPLETED'
 const awaitingFulfillment = (order: ServiceOrder) => order.status === 'PAID'
-  && !['COMPLETED', 'FAILED'].includes(order.fulfillmentStatus || '')
+  && !['COMPLETED', 'FAILED', 'REVIEW_REQUIRED'].includes(order.fulfillmentStatus || '')
 
 const statusType = (status: string) => {
   if (['PAID', 'CONFIRMED'].includes(status)) return 'success'
@@ -465,14 +480,14 @@ async function resumePendingPayment() {
     return
   }
 
-  // The provider can return before its asynchronous notification arrives.
-  // Querying briefly here gives the backend a chance to verify and fulfill the order.
+  // Returning to the page triggers one provider query. Subsequent polling reads local state only.
+  try { await http.post(`/api/service-orders/${pending.orderId}/payment/query`) } catch { /* local polling continues */ }
   for (let attempt = 0; attempt < 5; attempt += 1) {
     try {
-      const response = await http.post(`/api/service-orders/${pending.orderId}/payment/query`)
-      const order = response.data?.order as ServiceOrder | undefined
+      const response = await http.get(`/api/service-orders/${pending.orderId}`)
+      const order = response.data as ServiceOrder | undefined
       if (order && ['PAID', 'FULFILLED'].includes(order.status)) {
-        await finishPaidFlow(order, pending, response.data?.message)
+        await finishPaidFlow(order, pending)
         return
       }
       if (order && ['FAILED', 'CANCELLED'].includes(order.status)) {
@@ -489,16 +504,18 @@ async function resumePendingPayment() {
 }
 
 async function loadCatalog() {
-  const response = await http.get<OtherService[]>('/api/public/other-services')
-  services.value = response.data || []
+  const response = await http.get('/api/public/other-services', { params: { listPage: true, page: servicePage.value, size: serviceSize.value } })
+  services.value = response.data?.items || []
+  serviceTotal.value = Number(response.data?.total || 0)
 }
 
 async function loadOrders() {
   if (!authenticated) return
   ordersLoading.value = true
   try {
-    const response = await http.get<ServiceOrder[]>('/api/service-orders')
-    orders.value = response.data || []
+    const response = await http.get('/api/service-orders', { params: { listPage: true, page: orderPage.value, size: orderSize.value } })
+    orders.value = response.data?.items || []
+    orderTotal.value = Number(response.data?.total || 0)
   } catch (error: unknown) {
     ElMessage.error(getHttpErrorMessage(error, '服务订单加载失败'))
   } finally {
@@ -522,8 +539,9 @@ function startFulfillmentPolling(targetOrderId?: number) {
     if (fulfillmentPolling) return
     fulfillmentPolling = true
     try {
-      const response = await http.get<ServiceOrder[]>('/api/service-orders')
-      orders.value = response.data || []
+      const response = await http.get('/api/service-orders', { params: { listPage: true, page: orderPage.value, size: orderSize.value } })
+      orders.value = response.data?.items || []
+      orderTotal.value = Number(response.data?.total || 0)
       fulfillmentPollAttempts += 1
       const target = fulfillmentTargetOrderId === null
         ? undefined
@@ -540,9 +558,9 @@ function startFulfillmentPolling(targetOrderId?: number) {
         }
         return
       }
-      if (target?.fulfillmentStatus === 'FAILED' || target?.status === 'FAILED') {
+      if (['FAILED', 'REVIEW_REQUIRED'].includes(target?.fulfillmentStatus || '') || target?.status === 'FAILED') {
         stopFulfillmentPolling()
-        ElMessage.error('上游发货失败，请联系管理员处理')
+        ElMessage.warning('支付已记录，履约需要管理员补充处理')
         return
       }
       if (!orders.value.some(awaitingFulfillment)) {
@@ -689,7 +707,9 @@ async function copyAllDelivery() {
 
 async function startPayment(order: ServiceOrder) {
   try {
-    const response = await http.post(`/api/service-orders/${order.id}/payment`)
+    const response = await http.post(`/api/service-orders/${order.id}/payment`, {}, {
+      headers: { 'Idempotency-Key': createIdempotencyKey(`service-payment-${order.id}`) }
+    })
     await loadOrders()
     if (['PAID', 'FULFILLED'].includes(response.data?.order?.status)) {
       await finishPaidFlow(response.data.order, {
@@ -699,9 +719,12 @@ async function startPayment(order: ServiceOrder) {
       }, response.data?.message)
       return
     }
-    if (response.data?.paymentUrl) {
+    const action = paymentActionOf(response.data)
+    if (action) {
       rememberPendingPayment(response.data?.order || order)
-      goToPayment(response.data.paymentUrl)
+      paymentAction.value = action
+      paymentMethod.value = response.data?.paymentIntent?.paymentMethod || orderForm.paymentMethod
+      paymentDialogVisible.value = true
     } else {
       ElMessage.warning('支付链接尚未生成')
     }

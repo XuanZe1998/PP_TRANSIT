@@ -35,7 +35,6 @@ public class SchemaRepairService {
             ensurePlatformTables();
             ensureAdminOperationsTables();
             ensureAccountPresentationTables();
-            removeLegacyPlusAndService07();
             ensureColumns();
             consolidateDuplicateSitePublicMappings();
             normalizeAndValidateContacts();
@@ -214,8 +213,6 @@ public class SchemaRepairService {
                    )
                 """);
         if (created > 0) log.info("Backfilled {} service payment intent(s)", created);
-        jdbcTemplate.update("UPDATE payment_intents SET refund_status='NONE' WHERE refund_status IS NULL");
-        jdbcTemplate.update("UPDATE payment_intents SET status='PENDING' WHERE business_type='SERVICE_ORDER' AND status='EXPIRED'");
         return created;
     }
 
@@ -644,9 +641,12 @@ public class SchemaRepairService {
                     payment_provider VARCHAR(40) NULL,
                     provider_trade_no VARCHAR(120) NULL,
                     payment_type VARCHAR(40) NULL,
+                    payment_action_type VARCHAR(40) NULL,
                     payment_url VARCHAR(2000) NULL,
                     expires_at DATETIME NULL,
                     paid_at DATETIME NULL,
+                    last_queried_at DATETIME NULL,
+                    last_error VARCHAR(500) NULL,
                     refund_status VARCHAR(32) NULL,
                     refund_no VARCHAR(80) NULL,
                     provider_refund_no VARCHAR(120) NULL,
@@ -1250,14 +1250,6 @@ public class SchemaRepairService {
                   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
                 )
                 """);
-        jdbcTemplate.execute("""
-                CREATE TABLE IF NOT EXISTS payment_refund_jobs (
-                  id BIGINT PRIMARY KEY AUTO_INCREMENT, payment_intent_id BIGINT NOT NULL, service_order_id BIGINT NOT NULL,
-                  reason VARCHAR(500) NOT NULL, status VARCHAR(32) NOT NULL DEFAULT 'PENDING', attempts INT NOT NULL DEFAULT 0,
-                  next_attempt_at DATETIME NOT NULL, last_error VARCHAR(1000) NULL,
-                  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-                )
-                """);
     }
 
     private void ensureColumns() {
@@ -1452,6 +1444,9 @@ public class SchemaRepairService {
         ensureColumn("service_orders", "fulfillment_reference", "ALTER TABLE service_orders ADD COLUMN fulfillment_reference VARCHAR(255) NULL");
         ensureColumn("service_orders", "paid_at", "ALTER TABLE service_orders ADD COLUMN paid_at DATETIME NULL");
         ensureColumn("service_orders", "fulfilled_at", "ALTER TABLE service_orders ADD COLUMN fulfilled_at DATETIME NULL");
+        ensureColumn("payment_intents", "payment_action_type", "ALTER TABLE payment_intents ADD COLUMN payment_action_type VARCHAR(40) NULL");
+        ensureColumn("payment_intents", "last_queried_at", "ALTER TABLE payment_intents ADD COLUMN last_queried_at DATETIME NULL");
+        ensureColumn("payment_intents", "last_error", "ALTER TABLE payment_intents ADD COLUMN last_error VARCHAR(500) NULL");
         ensureColumn("service_orders", "currency", "ALTER TABLE service_orders ADD COLUMN currency VARCHAR(3) NOT NULL DEFAULT 'USD'");
         ensureColumn("wallet_recharge_orders", "invoice_requested", "ALTER TABLE wallet_recharge_orders ADD COLUMN invoice_requested BOOLEAN NOT NULL DEFAULT FALSE");
         ensureColumn("service_orders", "payment_amount_cents", "ALTER TABLE service_orders ADD COLUMN payment_amount_cents BIGINT NULL");
@@ -1502,8 +1497,6 @@ public class SchemaRepairService {
         ensureIndex("upstream_display_mappings", "uk_upstream_display_channel", "CREATE UNIQUE INDEX uk_upstream_display_channel ON upstream_display_mappings(channel_id)");
         ensureIndex("upstream_display_mappings", "idx_upstream_display_public", "CREATE INDEX idx_upstream_display_public ON upstream_display_mappings(public_code,enabled,sort_order)");
         ensureIndex("model_context_pricing_policies", "uk_context_pricing_model", "CREATE UNIQUE INDEX uk_context_pricing_model ON model_context_pricing_policies(public_model_name)");
-        ensureIndex("payment_refund_jobs", "uk_refund_job_intent", "CREATE UNIQUE INDEX uk_refund_job_intent ON payment_refund_jobs(payment_intent_id)");
-        ensureIndex("payment_refund_jobs", "idx_refund_job_due", "CREATE INDEX idx_refund_job_due ON payment_refund_jobs(status,next_attempt_at)");
         ensureIndex("creative_platform_connections", "idx_creative_platform_capability",
                 "CREATE INDEX idx_creative_platform_capability ON creative_platform_connections(capability, enabled, is_default)");
         ensureIndex("creative_platform_connections", "uq_creative_platform_default",

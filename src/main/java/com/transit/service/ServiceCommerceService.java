@@ -5,17 +5,16 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.transit.dto.ServiceOrderQuoteResponse;
+import com.transit.dto.PageResponse;
 import com.transit.dto.MoneyAmount;
 import com.transit.mapper.OtherServiceMapper;
 import com.transit.mapper.ServiceOrderMapper;
 import com.transit.mapper.ServiceCouponMapper;
 import com.transit.mapper.ServiceInventoryItemMapper;
-import com.transit.mapper.PaymentRefundJobMapper;
 import com.transit.model.OtherService;
 import com.transit.model.ServiceOrder;
 import com.transit.model.ServiceCoupon;
 import com.transit.model.ServiceInventoryItem;
-import com.transit.model.PaymentRefundJob;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -50,7 +49,6 @@ public class ServiceCommerceService {
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
     private final ChannelSecretService secretService;
-    private final PaymentRefundJobMapper refundJobMapper;
     private final DujiaoNextProcurementService dujiaoNextProcurementService;
 
     @Value("${service-orders.reservation-minutes:15}")
@@ -126,7 +124,7 @@ public class ServiceCommerceService {
     @Transactional
     public ServiceOrder settlePaid(ServiceOrder order) {
         if (order.getServiceId() == null || "COMPLETED".equals(order.getFulfillmentStatus())) return order;
-        int claimed = jdbcTemplate.update("UPDATE service_orders SET fulfillment_status='SETTLING', updated_at=? WHERE id=? AND (fulfillment_status IS NULL OR fulfillment_status IN ('RESERVED','RELEASED','FAILED','PENDING'))",
+        int claimed = jdbcTemplate.update("UPDATE service_orders SET fulfillment_status='SETTLING', updated_at=? WHERE id=? AND (fulfillment_status IS NULL OR fulfillment_status IN ('RESERVED','RELEASED','FAILED','PENDING','REVIEW_REQUIRED'))",
                 now(), order.getId());
         if (claimed != 1) {
             ServiceOrder latest = orderMapper.selectById(order.getId());
@@ -158,13 +156,12 @@ public class ServiceCommerceService {
                             .toList();
                 } catch (ResponseStatusException unavailable) {
                     jdbcTemplate.update("UPDATE service_inventory_items SET status='AVAILABLE', reserved_order_id=NULL, reserved_until=NULL WHERE reserved_order_id=? AND status='RESERVED'", order.getId());
-                    order.setStatus("REFUND_PENDING");
-                    order.setFulfillmentStatus("REFUND_PENDING");
-                    order.setFulfillmentNote("付款已确认，但并发分配时库存已售罄，系统正在自动退款。");
+                    order.setStatus("PAID");
+                    order.setFulfillmentStatus("REVIEW_REQUIRED");
+                    order.setFulfillmentNote("付款已确认，但并发分配时库存已售罄，需要管理员补充交付。");
                     order.setUpdatedAt(now());
                     consumeCouponReservation(order);
                     orderMapper.updateById(order);
-                    enqueueRefund(order, "Paid automatic-delivery order could not allocate stock");
                     return order;
                 }
             }
@@ -243,6 +240,18 @@ public class ServiceCommerceService {
     }
 
     @Transactional
+    public void cancelPendingOrderForProviderMigration(Long orderId) {
+        ServiceOrder order = orderId == null ? null : orderMapper.selectById(orderId);
+        if (order == null || !List.of("PENDING", "CONFIRMED", "EXPIRED").contains(order.getStatus())) return;
+        release(order, true);
+        order.setStatus("CANCELLED");
+        order.setFulfillmentStatus("RELEASED");
+        order.setFulfillmentNote("Legacy payment attempt was cancelled during the MaPay migration.");
+        order.setUpdatedAt(now());
+        orderMapper.updateById(order);
+    }
+
+    @Transactional
     public void release(ServiceOrder order, boolean markExpired) {
         if (order.getServiceId() == null) return;
         int stock = jdbcTemplate.update("UPDATE service_inventory_items SET status='AVAILABLE', reserved_order_id=NULL, reserved_until=NULL WHERE reserved_order_id=? AND status='RESERVED'", order.getId());
@@ -258,28 +267,6 @@ public class ServiceCommerceService {
         order.setFulfillmentStatus("RELEASED");
         if (markExpired) order.setStatus("EXPIRED");
         order.setUpdatedAt(now());
-        orderMapper.updateById(order);
-    }
-
-    /** Restores only resources that can safely be reused after a paid order is refunded. */
-    @Transactional
-    public void releasePaidResourcesForRefund(ServiceOrder order) {
-        if (order == null || order.getServiceId() == null || Boolean.TRUE.equals(order.getRefundResourcesReleased())) return;
-        if ("COMPLETED".equals(order.getFulfillmentStatus()) || "FULFILLED".equals(order.getStatus())) {
-            throw conflict("Delivered orders cannot restore inventory");
-        }
-        int restoredAutomatic = jdbcTemplate.update(
-                "UPDATE service_inventory_items SET status='AVAILABLE', reserved_order_id=NULL, reserved_until=NULL WHERE reserved_order_id=? AND status='RESERVED'",
-                order.getId());
-        if (MANUAL.equals(order.getFulfillmentMode()) && restoredAutomatic == 0 && "PENDING".equals(order.getFulfillmentStatus())) {
-            jdbcTemplate.update("UPDATE other_services SET manual_stock=CASE WHEN manual_stock IS NULL THEN NULL ELSE manual_stock+? END WHERE id=?",
-                    order.getQuantity(), order.getServiceId());
-        }
-        if (order.getCouponId() != null) {
-            jdbcTemplate.update("UPDATE service_coupons SET remaining_uses=remaining_uses+1, updated_at=? WHERE id=?", now(), order.getCouponId());
-        }
-        order.setRefundResourcesReleased(true);
-        order.setReservationExpiresAt(null);
         orderMapper.updateById(order);
     }
 
@@ -326,15 +313,6 @@ public class ServiceCommerceService {
         return ids;
     }
 
-    private void enqueueRefund(ServiceOrder order, String reason) {
-        List<Long> intents=jdbcTemplate.queryForList("SELECT id FROM payment_intents WHERE business_type='SERVICE_ORDER' AND business_id=? ORDER BY id DESC LIMIT 1",Long.class,order.getId());
-        if(intents.isEmpty())return;
-        Long intentId=intents.get(0);
-        if(refundJobMapper.selectCount(new LambdaQueryWrapper<PaymentRefundJob>().eq(PaymentRefundJob::getPaymentIntentId,intentId))>0)return;
-        PaymentRefundJob job=new PaymentRefundJob();LocalDateTime now=now();job.setPaymentIntentId(intentId);job.setServiceOrderId(order.getId());
-        job.setReason(reason);job.setStatus("PENDING");job.setAttempts(0);job.setNextAttemptAt(now);job.setCreatedAt(now);job.setUpdatedAt(now);refundJobMapper.insert(job);
-    }
-
     private boolean consumeManualReservation(ServiceOrder order) {
         int changed = jdbcTemplate.update("UPDATE other_services SET manual_reserved=CASE WHEN manual_reserved>=? THEN manual_reserved-? ELSE 0 END, manual_stock=CASE WHEN manual_stock IS NULL THEN NULL ELSE manual_stock-? END WHERE id=? AND (manual_stock IS NULL OR manual_stock>=?)",
                 order.getQuantity(), order.getQuantity(), order.getQuantity(), order.getServiceId(), order.getQuantity());
@@ -361,6 +339,33 @@ public class ServiceCommerceService {
                 .eq(ServiceInventoryItem::getServiceId, serviceId).orderByDesc(ServiceInventoryItem::getId);
         if (status != null && !status.isBlank()) query.eq(ServiceInventoryItem::getStatus, status.trim().toUpperCase(Locale.ROOT));
         return inventoryMapper.selectList(query);
+    }
+
+    public PageResponse<ServiceInventoryItem> listInventoryPage(Long serviceId, String status, int page, int size) {
+        validatePage(page, size);
+        LambdaQueryWrapper<ServiceInventoryItem> count = inventoryFilter(serviceId, status);
+        long total = inventoryMapper.selectCount(count);
+        List<ServiceInventoryItem> items = inventoryMapper.selectList(inventoryFilter(serviceId, status)
+                .orderByDesc(ServiceInventoryItem::getId)
+                .last("LIMIT " + size + " OFFSET " + ((page - 1L) * size)));
+        PageResponse<ServiceInventoryItem> response = new PageResponse<>();
+        response.setPage(page); response.setSize(size); response.setTotal(total); response.setItems(items);
+        return response;
+    }
+
+    private LambdaQueryWrapper<ServiceInventoryItem> inventoryFilter(Long serviceId, String status) {
+        if (serviceId == null) throw badRequest("serviceId is required");
+        LambdaQueryWrapper<ServiceInventoryItem> query = new LambdaQueryWrapper<ServiceInventoryItem>()
+                .eq(ServiceInventoryItem::getServiceId, serviceId);
+        if (status != null && !status.isBlank()) {
+            query.eq(ServiceInventoryItem::getStatus, status.trim().toUpperCase(Locale.ROOT));
+        }
+        return query;
+    }
+
+    private void validatePage(int page, int size) {
+        if (page < 1 || page > 1_000_000) throw badRequest("page is out of range");
+        if (!List.of(10, 20, 50, 100).contains(size)) throw badRequest("size must be one of 10, 20, 50, 100");
     }
 
     public void deleteAvailableInventory(Long serviceId, Long inventoryId) {

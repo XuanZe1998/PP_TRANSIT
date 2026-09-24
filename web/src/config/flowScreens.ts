@@ -48,7 +48,7 @@ export const userNav = [
   { label: 'API Key', path: '/console/keys' },
   { label: '在线调试', path: '/console/playground' },
   { label: '用量日志', path: '/console/logs' },
-  { label: '钱包充值', path: '/console/wallet' },
+  { label: '账户余额', path: '/console/wallet' },
   { label: '服务订单', path: '/services' },
   { label: '文档 SDK', path: '/docs' },
   { label: '账户安全', path: '/console/security' }
@@ -152,7 +152,7 @@ export const flowScreens: FlowScreenConfig[] = [
     ],
     cards: [
       { title: '公告', description: 'DeepSeek 渠道维护、新模型上架、充值活动和流式响应支持。', tags: ['维护通知', '新模型', '充值赠送'] },
-      { title: '快速入口', description: '从总览进入 Key 管理、在线调试、钱包充值和用量日志。', tags: ['API Key', 'Playground', '账单'] }
+      { title: '快速入口', description: '从总览进入 Key 管理、在线调试、账户余额和用量日志。', tags: ['API Key', 'Playground', '账务'] }
     ]
   },
   {
@@ -222,10 +222,10 @@ export const flowScreens: FlowScreenConfig[] = [
     order: 8,
     path: '/console/wallet',
     role: 'user',
-    activeNav: '钱包充值',
-    title: '钱包充值 / 兑换码',
-    subtitle: '余额、充值套餐、兑换码、发票申请和账单流水。',
-    primaryAction: '充值',
+    activeNav: '账户余额',
+    title: '账户余额 / 兑换码',
+    subtitle: '余额、兑换码和账单流水。',
+    primaryAction: '刷新',
     metrics: [
       { label: '当前余额', value: '¥428.60', badge: '可用', tone: 'green' },
       { label: '本月消费', value: '¥1,240', badge: '+18%', tone: 'orange' },
@@ -233,38 +233,14 @@ export const flowScreens: FlowScreenConfig[] = [
       { label: '发票金额', value: '¥800', badge: '可开', tone: 'purple' }
     ],
     cards: [
-      { title: '充值套餐', description: '支持支付宝、微信、Stripe、手工入账和充值赠送活动。', tags: ['¥50 入门包', '¥200 +3%', '¥500 +8%'] },
-      { title: '兑换码', description: '用户输入兑换码后自动增加余额或赠送额度。', tags: ['批量码', '有效期', '使用次数'] }
+      { title: '兑换码', description: '用户输入兑换码后增加账户额度。', tags: ['批量码', '有效期', '使用次数'] }
     ],
     table: {
       title: '钱包流水',
       columns: ['时间', '类型', '金额', '备注'],
       rows: [
-        ['06-30', '充值', '+¥500', '支付宝'],
         ['06-29', '消费', '-¥34.2', 'API 调用'],
         ['06-28', '兑换', '+¥20', '活动码']
-      ]
-    }
-  },
-  {
-    key: 'user-service-orders',
-    order: 9,
-    path: '/services',
-    role: 'user',
-    activeNav: '服务订单',
-    title: '服务订单',
-    subtitle: '会员服务商品、下单、凭证下载、订单状态和履约备注。',
-    primaryAction: '创建订单',
-    cards: [
-      { title: 'ChatGPT Plus 月度', description: '人工履约，订单凭证下载，不保存第三方账号密码。', tags: ['¥168', '凭证', '人工确认'] },
-      { title: 'Claude Pro 月度', description: '适合高质量文本和代码场景的会员服务商品。', tags: ['¥198', '履约备注', '售后'] }
-    ],
-    table: {
-      title: '我的订单',
-      columns: ['订单', '商品', '金额', '状态', '凭证'],
-      rows: [
-        ['PO-18', 'ChatGPT Plus', '¥168', '待确认', '下载'],
-        ['PO-17', 'Claude Pro', '¥198', '已履约', '下载']
       ]
     }
   },
@@ -313,7 +289,7 @@ export const flowScreens: FlowScreenConfig[] = [
     primaryAction: '新建渠道',
     metrics: opsMetrics,
     cards: [
-      { title: '风险队列', description: '渠道余额低、失败率升高、用户超限、订单待履约。', tags: ['余额低', '失败率', '待履约'] },
+      { title: '风险队列', description: '集中查看渠道余额、失败率和用户额度风险。', tags: ['余额低', '失败率', '额度风险'] },
       { title: '流量趋势', description: '按小时聚合请求量、收入、失败和重试请求。', tags: ['请求量', '收入', '重试'] }
     ]
   },
@@ -417,19 +393,17 @@ export const flowScreens: FlowScreenConfig[] = [
     order: 18,
     path: '/admin/finance',
     role: 'admin',
-    activeNav: '财务订单',
-    title: '财务 / 充值 / 兑换码',
-    subtitle: '充值订单、兑换码、钱包流水、退款、发票和支付渠道配置。',
+    activeNav: '额度与财务',
+    title: '额度与财务',
+    subtitle: '兑换码、钱包流水和额度审计。',
     primaryAction: '生成兑换码',
     cards: [
-      { title: '支付渠道', description: '支付宝、微信、Stripe、人工入账和手工调账。', tags: ['支付宝', '微信', 'Stripe'] },
       { title: '兑换码', description: '批量生成、设置有效期、面额、使用次数和用户范围。', tags: ['批量生成', '有效期', '面额'] }
     ],
     table: {
-      title: '充值订单',
-      columns: ['订单', '用户', '金额', '渠道', '状态'],
+      title: '钱包流水',
+      columns: ['记录', '用户', '金额', '渠道', '状态'],
       rows: [
-        ['R-1001', 'team-a', '¥500', '支付宝', '成功'],
         ['R-1002', 'guest', '¥50', '兑换码', '成功']
       ]
     }
@@ -439,16 +413,15 @@ export const flowScreens: FlowScreenConfig[] = [
     order: 19,
     path: '/admin/other-services',
     role: 'admin',
-    activeNav: '服务与订单',
-    title: '服务目录 / 订单履约',
-    subtitle: '商品配置、订单确认、凭证生成、履约备注和售后状态。',
-    primaryAction: '新建商品',
+    activeNav: '服务目录',
+    title: '服务目录',
+    subtitle: '维护公开展示的服务信息。',
+    primaryAction: '新增服务',
     table: {
-      title: '服务订单',
-      columns: ['订单', '用户', '商品', '金额', '状态', '履约备注'],
+      title: '服务列表',
+      columns: ['服务', '说明', '参考金额', '状态'],
       rows: [
-        ['PO-18', 'team-a', 'ChatGPT Plus', '¥168', '待确认', '等待付款凭证'],
-        ['PO-17', 'dev', 'Claude Pro', '¥198', '已履约', '已发送凭证']
+        ['模型接入咨询', '企业模型接入与迁移支持', '面议', '展示中']
       ]
     }
   },
@@ -525,7 +498,7 @@ export const flowScreens: FlowScreenConfig[] = [
       rows: [
         ['用户 / 分组', '费用 / Token', '日 / 周 / 月', 'CSV'],
         ['模型 / 渠道', '延迟 / 成功率', '小时 / 日', 'XLSX'],
-        ['订单 / 钱包', '收入 / 退款', '月', 'PDF']
+        ['用户 / 钱包', '额度发放 / 消费', '月', 'CSV']
       ]
     }
   },

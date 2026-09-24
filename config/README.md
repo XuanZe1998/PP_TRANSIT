@@ -6,7 +6,8 @@
 | --- | --- | --- |
 | `application-local.example.yaml` | 后端完整配置模板 | 是 |
 | `application-local.yaml` | 后端本地/私有配置 | 否 |
-| `.env.example` | 前端完整配置模板 | 是 |
+| `subscription-service.local.yaml` | 16688 订阅服务本地凭据（可选） | 否 |
+| `.env.example` | 仅前端 `VITE_*` 配置模板 | 是 |
 | `.env.local` | 前端本地配置 | 否 |
 
 首次运行：
@@ -16,9 +17,9 @@ Copy-Item config/application-local.example.yaml config/application-local.yaml
 Copy-Item config/.env.example config/.env.local
 ```
 
-后端会从项目根目录自动加载 `config/application-local.yaml`，前端 Vite 会自动加载 `config/.env.local`。无需再指定 `local` Profile，也无需为了本地开发逐项设置环境变量。
+后端会从项目根目录自动加载 `config/application-local.yaml`，前端 Vite 会自动加载 `config/.env.local`。无需再指定 `local` Profile，也无需为了本地开发逐项设置环境变量。后端密钥只写入 YAML 或部署密钥管理器，不要放进前端 `.env.local`。
 
-Spring Boot 的环境变量优先级高于本地 YAML，因此生产环境仍可使用容器 Secret、KMS/Vault 注入或环境变量覆盖。不要提交两个私有配置文件。
+Spring Boot 的环境变量优先级高于本地 YAML，因此生产环境仍可使用容器 Secret、KMS/Vault 注入或环境变量覆盖。不要提交任何私有配置文件。
 
 ## 密钥注意事项
 

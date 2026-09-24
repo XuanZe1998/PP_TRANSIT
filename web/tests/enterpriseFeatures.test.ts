@@ -33,11 +33,12 @@ describe('enterprise and API calling flows', () => {
     }
   })
 
-  it('keeps order, decimal bonus, card inventory and Chinese adjustment validation discoverable', () => {
+  it('keeps balance controls and exposes MaPay commerce without refund controls', () => {
     const admin = source('src/views/AdminConsole.vue')
-    expect(admin).toContain("/admin/other-services?tab=orders&status=pending")
-    expect(admin).toContain('precision="3"')
     expect(admin).toContain('调账原因必须为 3–500 个字符')
-    expect(source('src/views/AdminProductCommerce.vue')).toContain('替换未售卡密')
+    expect(admin).toContain('/finance/recharge-plans')
+    expect(source('src/views/OtherServices.vue')).toContain('/service-orders')
+    expect(source('src/views/UserConsole.vue')).toContain('/payment-intents')
+    expect(source('src/views/AdminServiceOrders.vue')).not.toContain('/refund')
   })
 })

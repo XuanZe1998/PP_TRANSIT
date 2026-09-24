@@ -26,9 +26,8 @@ public class IdempotencyRequiredFilter extends OncePerRequestFilter {
             Pattern.compile("^/platform/user/recharge-orders/?$"),
             Pattern.compile("^/platform/user/wallet/redeem/?$"),
             Pattern.compile("^/payment-intents/[^/]+/start/?$"),
-            Pattern.compile("^/admin/payment-intents/[^/]+/refund/?$"),
-            Pattern.compile("^/admin/payment/(refund|close|transfer)/?$"),
             Pattern.compile("^/service-orders/?$"),
+            Pattern.compile("^/service-orders/[^/]+/payment/?$"),
             Pattern.compile("^/creative/tasks/?$"),
             Pattern.compile("^/creative/auto-movie/projects/[^/]+/(script/generate|visuals/generate|videos/generate|compose)/?$")
     );

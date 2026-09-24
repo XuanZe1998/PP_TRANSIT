@@ -92,6 +92,8 @@ sub2api 搭建的上游可使用“模型网关 → 接入上游 → sub2api 站
 
 New API 中转站可使用“渠道治理 → New API 快速接入”：填写站点地址和推理 Key，确认分组、销售倍率及模型后导入渠道和标准价格。默认每 15 分钟同步；模型或分组连续两次完整目录缺失后停用。新增模型未发布，动态计费保留待配置，详见 [New API 两步接入与自动同步](docs/NEW_API_QUICK_CONNECT.md)。
 
+16688 Open API 已作为独立“订阅服务”模块接入：前台提供商品目录、详情和询价，管理后台覆盖文档全部 43 个商品、库存、采购、订单、投诉、账户和图片操作，详见 [16688 订阅服务接入](docs/SUBSCRIPTION_SERVICE.md)。
+
 1. 登录 `/admin`，进入“渠道治理”。
 2. 选择协议类型，填写 Base URL、API Key 与模型清单，设置权重、限流和熔断阈值。
 3. 渠道表单会为模型清单中的每个模型生成独立定价卡片；填写输入/输出/缓存的上游成本、销售价格与售卖倍率后一起保存。
@@ -132,22 +134,27 @@ curl -N http://127.0.0.1:8089/v1/chat/completions \
 
 好易智算的部署、灰度和接口清单见 [企业网关说明](docs/HAOEE_ENTERPRISE_GATEWAY.md)。
 
+## MaPay 支付与服务商城
+
+项目的钱包充值和服务商城统一通过 MaPay 收款，首版支持支付宝与微信支付。商户 PID、KEY 和公网 HTTPS 回调地址只能从私有配置或部署密钥注入；详见 [MaPay 接入说明](docs/MAPAY_INTEGRATION.md)。
+
+服务商城支持优惠码、库存/卡密自动发货、人工交付和 Dujiao-Next 自动采购。支付成功但资源已释放时，订单会进入 `REVIEW_REQUIRED` 并保留收款事实，由管理员补充交付。本项目不提供支付退款接口。
+
 ## 卡密自动发货
 
-1. 建议在生产私有配置中设置 `service-orders.redemption-allowed-hosts`，只填写可信的兑换站域名（逗号分隔）；配置后将强制白名单校验。
-2. 后台进入“服务与订单”，新增服务时选择“卡密自动发货”，填写白名单内的 HTTPS 兑换地址。
-3. 在同一个新增服务弹窗内粘贴初始卡密库存；后续也可在“服务订单 → 商品与履约配置”中继续补库。英文逗号、中文逗号、顿号、换行、制表符和空格都可作为分隔符。
+1. 生产私有配置中设置 `service-orders.redemption-allowed-hosts`，只填写可信兑换站域名。
+2. 后台进入“服务与订单”，新增服务时选择“卡密自动发货”并导入库存。
+3. 卡密用 `DATA_ENCRYPTION_KEY` 加密，以指纹去重；仅在服务端确认付款后交付，管理列表不返回明文。
 
-卡密库存使用 `DATA_ENCRYPTION_KEY` 加密，并用指纹防止重复导入；下单时事务预留，仅在服务端确认付款成功后交付。管理库存列表不返回明文。兑换入口是项目内的 `/services/:id/redeem`，它不传递卡密、不使用 iframe，只经后端白名单复核后返回一次性 HTTPS 跳转。
+上游自动采购见 [Dujiao-Next 成品服务上游采购](docs/DUJIAO_NEXT_UPSTREAM.md)。
 
 ## 安全要求
 
-- 仓库不提供任何可用的支付、虚拟卡、JWT、OAuth 或上游模型凭据默认值。
+- 仓库不提供任何可用的虚拟卡、JWT、OAuth 或上游模型凭据默认值。
 - `config/application-local.yaml`、`config/.env.local`、上传文件、日志和构建产物已忽略；不要把真实凭据提交到 Git。
 - 渠道 API Key 使用 `DATA_ENCRYPTION_KEY` 加密，管理 API 只返回脱敏预览。
 - 上游 Base URL 默认禁止私网、回环和其他 SSRF 高风险地址；仅在受控开发环境设置 `ALLOW_PRIVATE_UPSTREAMS=true`。
-- AnyiPay、VMCard、ShopGPT 和创作供应商均应保持默认关闭，配置完成并完成合规审查后再分别启用。
-- Dujiao-Next 成品服务上游采购见 [docs/DUJIAO_NEXT_UPSTREAM.md](docs/DUJIAO_NEXT_UPSTREAM.md)。
+- MaPay、Dujiao-Next、ShopGPT、VMCard 和创作供应商均默认关闭，配置完成并通过合规审查后再分别启用。
 - 如果历史提交或工作区曾包含真实凭据，应立即在对应供应商控制台轮换；仅从当前文件删除不能使旧凭据失效。
 
 ## 验证

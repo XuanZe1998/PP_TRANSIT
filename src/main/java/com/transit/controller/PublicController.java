@@ -28,7 +28,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
@@ -151,8 +150,12 @@ public class PublicController {
     }
 
     @GetMapping("/other-services")
-    public Flux<OtherService> otherServices() {
-        return Flux.fromIterable(otherServiceCatalogService.listPublicServices());
+    public Mono<PageResponse<OtherService>> otherServices(
+            @RequestParam(value = "listPage", defaultValue = "true") boolean listPage,
+            @RequestParam(value = "page", defaultValue = "1") int page,
+            @RequestParam(value = "size", defaultValue = "10") int size,
+            @RequestParam(value = "query", required = false) String query) {
+        return Mono.fromCallable(() -> otherServiceCatalogService.listPage(true, page, size, query));
     }
 
     @GetMapping("/other-services/{id}/redeem")

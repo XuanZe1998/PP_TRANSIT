@@ -33,7 +33,7 @@ public class MoneyService {
         BigDecimal rate;
         if ("CNY".equals(source.currency())) rate = BigDecimal.ONE.setScale(8);
         else if ("USD".equals(source.currency())) rate = usdCnyRate();
-        else throw conflict("AnyiPay only supports CNY or USD prices converted to CNY");
+        else throw conflict("MaPay only supports CNY or USD prices converted to CNY");
         try {
             long cents = BigDecimal.valueOf(source.amount())
                     .divide(BigDecimal.valueOf(source.scale()), 12, RoundingMode.HALF_UP)

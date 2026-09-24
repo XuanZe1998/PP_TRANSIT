@@ -104,10 +104,10 @@ const navItems: NavItem[] = [
   ] },
   { path: '/admin/model-gateway', label: '模型网关', icon: Connection },
   { path: 'content-services', label: '内容与服务', icon: Grid, children: [
-    { path: '/admin/creative-config', label: 'AI 创作配置' }, { path: '/admin/other-services', label: '服务与订单' }
+    { path: '/admin/creative-config', label: 'AI 创作配置' }, { path: '/admin/other-services', label: '服务目录' }, { path: '/admin/subscription-services', label: '订阅服务' }
   ] },
   { path: '/admin/contact-methods', label: '联系方式', icon: ChatDotRound },
-  { path: 'finance-payment', label: '财务与支付', icon: Wallet, children: [
+  { path: 'finance-operations', label: '额度与财务', icon: Wallet, children: [
     { path: '/admin/finance', label: '钱包财务' }, { path: '/admin/agents', label: '代理、号池与运维' }, { path: '/admin/vmcard-test', label: 'VMCard 测试' }
   ] },
   { path: 'audit-security', label: '审计与安全', icon: Lock, children: [

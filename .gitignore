@@ -63,18 +63,10 @@ reports/model-validation-*.json
 # Local secrets (merchant keys, OAuth credentials, JWT/AES keys)
 config/application-local.yaml
 config/application-local-1.yaml
+config/subscription-service.local.yaml
 config/.env.local
 config/.env.*.local
 .env
 .env.*
 !.env.example
 !config/.env.example
-
-### Payment Service (Python 微服务) ###
-payment-service/.env
-payment-service/payment_config.json
-payment-service/session.txt
-payment-service/__pycache__/
-payment-service/**/__pycache__/
-payment-service/venv/
-payment-service/.playwright/

@@ -28,8 +28,10 @@ spring:
           auth: true
           starttls:
             enable: true
+            required: true
 
 server:
+  address: 127.0.0.1
   port: 8089
 
 app:
@@ -38,6 +40,7 @@ app:
 security:
   # Base64 编码的 32 字节随机值；启用后不要随意更换。
   data-encryption-key: "REPLACE_WITH_BASE64_32_BYTE_KEY"
+  trusted-proxies: 127.0.0.1,::1
   admin-session-expiry: 1800
   password:
     bcrypt-strength: 12
@@ -86,16 +89,18 @@ haoee:
 
 # NVIDIA：统一使用 nvidia；程序仍兼容旧私有文件里的 nvida 前缀。
 nvidia:
+  enabled: false
   key: ""
   verify-on-startup: false
   startup-verification-limit: 10
   catalog-sync-cron: "0 17 */6 * * *"
 
 model-catalog:
+  manual-verification-only: true
   verification-retry-cron: "0 37 3 * * *"
 
 billing:
-  currency: CNY
+  model-currency: USD
   amount-scale: 10000
   default-max-output-tokens: 4096
   reservation-expiry-seconds: 600
@@ -107,6 +112,9 @@ storage:
   other-service-images:
     directory: data/uploads/other-services
     max-bytes: 5242880
+
+uploads:
+  avatars-directory: data/avatars
 
 oauth:
   state-expiry: 600
@@ -148,45 +156,12 @@ vmcard:
     interval-ms: 60000
     initial-delay-ms: 5000
 
-payment:
-  mode: live
-  enabled: false
-  allow-money-mutations: false
-  base-url: https://a.tjrl3.cn
-  merchant-id: ""
-  merchant-private-key: ""
-  platform-public-key: ""
-  notify-url: ""
-  return-url: ""
-  default-payment-type: alipay
-  usd-cny-rate: 6.76693506
-  request-timeout-seconds: 15
-  timestamp-tolerance-seconds: 300
-  local-test-mode: false
-  documents:
-    merchant:
-      display-name: ""
-      legal-name: ""
-      address-line-1: ""
-      address-line-2: ""
-      country: ""
-      contact-email: ""
-      registration-id: ""
-    time-zone: Asia/Shanghai
-    font-path: ""
-
-service-orders:
-  reservation-minutes: 15
-  expiry-scan-ms: 60000
-  # Production: list only the card redemption domains you control or trust.
-  redemption-allowed-hosts: "redeem.example.com"
-
 account:
   # EMAIL_AND_PHONE is the secure default; EMAIL_ONLY supports email-only deployments.
   verification-mode: EMAIL_AND_PHONE
 
 platform:
-  public-base-url: "https://modelhub.example.com"
+  public-base-url: "https://api.example.com"
 
 verification:
   # Use a separate random production secret. Verification codes are stored as HMAC digests only.
@@ -203,12 +178,63 @@ verification:
     provider: ""
     endpoint: ""
     token: ""
-# Dujiao-Next upstream procurement. Keep both switches false until the
-# connection test succeeds and the upstream wallet has enough balance.
+# Optional Dujiao-Next product catalog and post-payment procurement.
 dujiao-next:
   enabled: false
   allow-purchases: false
   base-url: https://www.cccrad.uk
   api-key: "REPLACE_WITH_DUJIAO_API_KEY"
   api-secret: "REPLACE_WITH_DUJIAO_API_SECRET"
-  callback-url: https://your-domain.example/api/v1/upstream/callback
+  callback-url: "https://your-domain.example/api/v1/upstream/callback"
+  request-timeout-seconds: 20
+  timestamp-tolerance-seconds: 60
+  worker-interval-ms: 2000
+  worker-initial-delay-ms: 5000
+  poll-interval-seconds: 30
+  max-attempts: 8
+  batch-size: 10
+
+# MaPay merchant credentials. Keep the real key only in the private local file
+# or deployment secret manager.
+mapay:
+  enabled: false
+  base-url: https://mzf.mapay.cc
+  merchant-id: "REPLACE_WITH_MAPAY_PID"
+  merchant-key: "REPLACE_WITH_MAPAY_KEY"
+  notify-url: "https://your-domain.example/webhooks/mapay"
+  return-url: "https://your-domain.example/payment/result"
+  site-name: Linknux
+  allowed-methods: [alipay, wxpay]
+  request-timeout-seconds: 15
+  reconcile-interval-ms: 30000
+  reconcile-initial-delay-ms: 30000
+  expiry-scan-ms: 60000
+  expiry-initial-delay-ms: 60000
+
+payment:
+  local-test-mode: false
+  usd-cny-rate: 6.76693506
+  documents:
+    merchant:
+      legal-name: ""
+      address-line-1: ""
+      address-line-2: ""
+      country: ""
+      contact-email: ""
+    time-zone: Asia/Shanghai
+    font-path: ""
+
+service-orders:
+  reservation-minutes: 15
+  expiry-scan-ms: 60000
+  redemption-allowed-hosts: ""
+
+# 16688 Open API subscription-service integration. Never commit real credentials.
+subscription-service:
+  enabled: false
+  allow-mutations: false
+  gateway: https://www.16688.com.cn/openApi
+  app-id: "REPLACE_WITH_16688_APP_ID"
+  secret: "REPLACE_WITH_16688_SECRET"
+  request-timeout-seconds: 30
+  max-response-bytes: 2097152

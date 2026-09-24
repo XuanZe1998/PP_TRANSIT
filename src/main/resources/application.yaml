@@ -5,7 +5,7 @@ spring:
   config:
     # Local/private overrides live in one place. Environment variables still
     # take precedence, so the same artifact can be deployed in production.
-    import: optional:file:./config/application-local.yaml
+    import: optional:file:./config/application-local.yaml,optional:file:./config/subscription-service.local.yaml
   autoconfigure:
     exclude: org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
   lifecycle:
@@ -254,45 +254,7 @@ vmcard:
     interval-ms: ${VMCARD_PRODUCT_CODE_SYNC_INTERVAL_MS:60000}
     initial-delay-ms: ${VMCARD_PRODUCT_CODE_SYNC_INITIAL_DELAY_MS:5000}
 
-payment:
-  mode: ${PAYMENT_MODE:live}
-  enabled: ${PAYMENT_ENABLED:false}
-  # Refund, close-order, and transfer calls require this second explicit switch.
-  allow-money-mutations: ${ANYIPAY_ALLOW_MONEY_MUTATIONS:false}
-  base-url: ${ANYIPAY_BASE_URL:https://a.tjrl3.cn}
-  merchant-id: ${ANYIPAY_MERCHANT_ID:}
-  merchant-private-key: ${ANYIPAY_MERCHANT_PRIVATE_KEY:}
-  platform-public-key: ${ANYIPAY_PLATFORM_PUBLIC_KEY:}
-  notify-url: ${ANYIPAY_NOTIFY_URL:}
-  return-url: ${ANYIPAY_RETURN_URL:}
-  default-payment-type: ${ANYIPAY_DEFAULT_PAYMENT_TYPE:alipay}
-  # Latest available ECB reference cross-rate on 2026-07-20: CNY/EUR 7.7319 / USD/EUR 1.1426.
-  # The rate is snapshotted when the order is created; update this value when your pricing policy changes.
-  usd-cny-rate: ${ANYIPAY_USD_CNY_RATE:6.76693506}
-  request-timeout-seconds: ${ANYIPAY_REQUEST_TIMEOUT_SECONDS:15}
-  timestamp-tolerance-seconds: ${ANYIPAY_TIMESTAMP_TOLERANCE_SECONDS:300}
-  local-test-mode: ${PAYMENT_LOCAL_TEST_MODE:false}
-  documents:
-    merchant:
-      display-name: ${PAYMENT_MERCHANT_DISPLAY_NAME:}
-      legal-name: ${PAYMENT_MERCHANT_LEGAL_NAME:}
-      address-line-1: ${PAYMENT_MERCHANT_ADDRESS_LINE_1:}
-      address-line-2: ${PAYMENT_MERCHANT_ADDRESS_LINE_2:}
-      country: ${PAYMENT_MERCHANT_COUNTRY:}
-      contact-email: ${PAYMENT_MERCHANT_CONTACT_EMAIL:}
-      registration-id: ${PAYMENT_MERCHANT_REGISTRATION_ID:}
-    time-zone: ${PAYMENT_DOCUMENT_TIME_ZONE:Asia/Shanghai}
-    font-path: ${PAYMENT_DOCUMENT_FONT_PATH:}
-
-service-orders:
-  reservation-minutes: ${SERVICE_ORDER_RESERVATION_MINUTES:15}
-  expiry-scan-ms: ${SERVICE_ORDER_EXPIRY_SCAN_MS:60000}
-  # Optional comma-separated trusted HTTPS hosts. When set, redirects are restricted to this allowlist.
-  redemption-allowed-hosts: ${SERVICE_REDEMPTION_ALLOWED_HOSTS:}
-
 dujiao-next:
-  # Customer payments still settle through this application's payment provider.
-  # A paid mapped service is then purchased from this upstream wallet.
   enabled: ${DUJIAO_NEXT_ENABLED:false}
   allow-purchases: ${DUJIAO_NEXT_ALLOW_PURCHASES:false}
   base-url: ${DUJIAO_NEXT_BASE_URL:https://www.cccrad.uk}
@@ -307,10 +269,52 @@ dujiao-next:
   max-attempts: ${DUJIAO_NEXT_MAX_ATTEMPTS:8}
   batch-size: ${DUJIAO_NEXT_BATCH_SIZE:10}
 
+mapay:
+  enabled: ${MAPAY_ENABLED:false}
+  base-url: ${MAPAY_BASE_URL:https://mzf.mapay.cc}
+  merchant-id: ${MAPAY_PID:}
+  merchant-key: ${MAPAY_KEY:}
+  notify-url: ${MAPAY_NOTIFY_URL:}
+  return-url: ${MAPAY_RETURN_URL:}
+  site-name: ${MAPAY_SITE_NAME:Linknux}
+  request-timeout-seconds: ${MAPAY_REQUEST_TIMEOUT_SECONDS:15}
+  allowed-methods: ${MAPAY_ALLOWED_METHODS:alipay,wxpay}
+  reconcile-interval-ms: ${MAPAY_RECONCILE_INTERVAL_MS:30000}
+  reconcile-initial-delay-ms: ${MAPAY_RECONCILE_INITIAL_DELAY_MS:30000}
+  expiry-scan-ms: ${MAPAY_EXPIRY_SCAN_MS:60000}
+  expiry-initial-delay-ms: ${MAPAY_EXPIRY_INITIAL_DELAY_MS:60000}
+
+payment:
+  local-test-mode: ${PAYMENT_LOCAL_TEST_MODE:false}
+  usd-cny-rate: ${PAYMENT_USD_CNY_RATE:${BILLING_USD_CNY_RATE:6.76693506}}
+  documents:
+    merchant:
+      legal-name: ${PAYMENT_MERCHANT_LEGAL_NAME:}
+      address-line-1: ${PAYMENT_MERCHANT_ADDRESS_LINE_1:}
+      address-line-2: ${PAYMENT_MERCHANT_ADDRESS_LINE_2:}
+      country: ${PAYMENT_MERCHANT_COUNTRY:}
+      contact-email: ${PAYMENT_MERCHANT_CONTACT_EMAIL:}
+    time-zone: ${PAYMENT_DOCUMENT_TIME_ZONE:Asia/Shanghai}
+    font-path: ${PAYMENT_DOCUMENT_FONT_PATH:}
+
+service-orders:
+  reservation-minutes: ${SERVICE_ORDER_RESERVATION_MINUTES:15}
+  expiry-scan-ms: ${SERVICE_ORDER_EXPIRY_SCAN_MS:60000}
+  redemption-allowed-hosts: ${SERVICE_REDEMPTION_ALLOWED_HOSTS:}
+
+subscription-service:
+  enabled: ${SUBSCRIPTION_SERVICE_ENABLED:false}
+  # Keep mutations disabled until credentials, balance and business settlement have been verified.
+  allow-mutations: ${SUBSCRIPTION_SERVICE_ALLOW_MUTATIONS:false}
+  gateway: ${SUBSCRIPTION_SERVICE_GATEWAY:https://www.16688.com.cn/openApi}
+  app-id: ${SUBSCRIPTION_SERVICE_APP_ID:}
+  secret: ${SUBSCRIPTION_SERVICE_SECRET:}
+  request-timeout-seconds: ${SUBSCRIPTION_SERVICE_REQUEST_TIMEOUT_SECONDS:30}
+  max-response-bytes: ${SUBSCRIPTION_SERVICE_MAX_RESPONSE_BYTES:2097152}
+
 billing:
-  currency: ${BILLING_CURRENCY:CNY}
   model-currency: ${MODEL_BILLING_CURRENCY:USD}
-  # Model usage uses USD at this scale; wallet and payment settlement remain CNY.
+  # Model usage uses USD at this scale; wallet balances remain CNY.
   amount-scale: ${BILLING_AMOUNT_SCALE:10000}
   default-max-output-tokens: ${BILLING_DEFAULT_MAX_OUTPUT_TOKENS:4096}
   reservation-expiry-seconds: ${BILLING_RESERVATION_EXPIRY_SECONDS:600}

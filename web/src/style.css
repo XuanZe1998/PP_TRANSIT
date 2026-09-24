@@ -156,8 +156,6 @@ pre,
 .user-console-page,
 .organization-page,
 .creative-studio,
-.item-page,
-.redemption-redirect,
 .flow-shell,
 .admin-shell {
   color: var(--tech-text);
@@ -166,7 +164,6 @@ pre,
 
 .site-nav,
 .studio-nav,
-.item-nav,
 .flow-topbar,
 .admin-header {
   border-color: var(--tech-line) !important;
@@ -182,7 +179,6 @@ pre,
 .model-tile,
 .feature-card,
 .other-service-card,
-.redirect-card,
 .el-card {
   border-color: var(--tech-line) !important;
   background: var(--tech-surface) !important;
@@ -1961,7 +1957,6 @@ textarea {
 .console-panel,
 .wallet-layout,
 .wallet-metrics,
-.wallet-plan-grid,
 .playground-layout,
 .response-panel,
 .playground-billing-panel {
@@ -3071,61 +3066,6 @@ textarea {
   max-width: 520px;
 }
 
-.wallet-plan-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.wallet-plan-grid article {
-  display: grid;
-  gap: 8px;
-  padding: 16px;
-  border: 1px solid #e3e8f0;
-  border-radius: 8px;
-  background: #f8fafc;
-}
-
-.wallet-plan-grid article span {
-  color: #0b63ce;
-  font-size: 24px;
-  font-weight: 800;
-}
-
-.wallet-plan-grid article small {
-  color: #64748b;
-}
-
-.recharge-drawer-plans {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-  margin-bottom: 20px;
-}
-
-.recharge-drawer-plans button {
-  display: grid;
-  gap: 7px;
-  padding: 15px;
-  border: 1px solid #dfe7e2;
-  border-radius: 12px;
-  background: #fff;
-  color: #24342a;
-  cursor: pointer;
-  text-align: left;
-}
-
-.recharge-drawer-plans button.selected {
-  border-color: #67a61f;
-  box-shadow: 0 0 0 2px rgb(103 166 31 / 12%);
-  background: #f8fbf4;
-}
-
-.recharge-drawer-plans button span { display: flex; justify-content: space-between; gap: 8px; }
-.recharge-drawer-plans button small { color: #67a61f; }
-.recharge-drawer-plans button b { font-size: 22px; }
-.recharge-credit-note { color: #627168; font-size: 12px; font-style: normal; }
-
 .usage-filter-row { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
 .usage-filter-row .el-select { width: 220px; }
 .usage-visual-grid { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(280px, .8fr); gap: 14px; margin-bottom: 18px; }
@@ -3147,7 +3087,7 @@ textarea {
 .usage-pie-wrap li { display: grid; grid-template-columns: 9px minmax(0, 1fr) auto; gap: 7px; align-items: center; font-size: 12px; }
 .usage-pie-wrap li i { width: 9px; height: 9px; border-radius: 3px; }
 .usage-pie-card footer { display: flex; justify-content: space-between; margin-top: 16px; padding-top: 12px; border-top: 1px solid #e5ebe7; }
-@media (max-width: 900px) { .usage-visual-grid { grid-template-columns: 1fr; }.recharge-drawer-plans { grid-template-columns: 1fr; } }
+@media (max-width: 900px) { .usage-visual-grid { grid-template-columns: 1fr; } }
 
 .created-key-secret {
   margin-top: 18px;
@@ -3449,8 +3389,7 @@ textarea {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .wallet-metrics,
-  .wallet-plan-grid {
+  .wallet-metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -3597,8 +3536,7 @@ textarea {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .wallet-metrics,
-  .wallet-plan-grid {
+  .wallet-metrics {
     grid-template-columns: minmax(0, 1fr);
   }
 
@@ -4469,8 +4407,6 @@ body {
 .user-console-page,
 .organization-page,
 .creative-studio,
-.item-page,
-.redemption-redirect,
 .flow-shell,
 .admin-shell,
 .admin-login,
@@ -4489,7 +4425,6 @@ body {
 /* Public navigation and page typography */
 .public-site:not(.home-theme) .site-nav,
 .studio-nav,
-.item-nav,
 .flow-topbar,
 .admin-header {
   border-color: rgba(105, 143, 215, 0.2) !important;
@@ -4500,7 +4435,6 @@ body {
 
 .public-site:not(.home-theme) .site-brand,
 .studio-brand,
-.item-brand,
 .brand-title,
 .console-brand,
 .admin-header h1,
@@ -4512,7 +4446,6 @@ body {
 .docs-page h1,
 .services-hero h1,
 .creative-studio h1,
-.item-page h1,
 .legal-page h1,
 .organization-page h1,
 .agent-page h1 {
@@ -4599,7 +4532,6 @@ body {
 .docs-shell,
 .docs-sidebar,
 .docs-content,
-.redirect-card,
 .agent-card,
 .composer-card,
 .work-card,
@@ -4641,8 +4573,7 @@ body {
 .report-summary > div,
 .gateway-metrics > div,
 .vmcard-status-grid > article,
-.studio-stat,
-.item-stat {
+.studio-stat {
   border-color: rgba(98, 144, 230, 0.24) !important;
   background: linear-gradient(145deg, rgba(20, 42, 82, 0.86), rgba(9, 23, 50, 0.86)) !important;
   color: var(--tech-text) !important;
@@ -4893,12 +4824,10 @@ small,
 .activity-list > div,
 .session-list > div,
 .oauth-binding,
-.wallet-plan,
 .access-item,
 .response-content,
 .playground-raw-collapse,
-.playground-usage-summary,
-.recharge-drawer-plans button {
+.playground-usage-summary {
   border-color: rgba(100, 141, 215, .2) !important;
   background: rgba(9, 23, 50, .7) !important;
   color: #c0cee1 !important;
@@ -5259,12 +5188,10 @@ code,
 #app .activity-list > div,
 #app .session-list > div,
 #app .oauth-binding,
-#app .wallet-plan,
 #app .access-item,
 #app .response-content,
 #app .playground-raw-collapse,
-#app .playground-usage-summary,
-#app .recharge-drawer-plans button {
+#app .playground-usage-summary {
   border-color: var(--tech-line) !important;
   background: #ffffff !important;
   background-image: none !important;
@@ -5386,8 +5313,6 @@ code,
 #app > .user-console-page,
 #app > .organization-page,
 #app > .creative-studio,
-#app > .item-page,
-#app > .redemption-redirect,
 #app > .flow-shell,
 #app > .admin-shell,
 #app > .admin-login,
@@ -5411,7 +5336,6 @@ code,
 .agent-page,
 .legal-page,
 .admin-login,
-.redemption-redirect,
 .flow-shell {
   background-color: transparent !important;
   background-image: none !important;
@@ -5516,13 +5440,6 @@ code,
 }
 
 .service-image-placeholder span { color: #58d8ff !important; }
-.service-order-row { border-color: rgba(98, 139, 213, .2) !important; }
-.service-order-row strong { color: #edf5ff !important; }
-.service-orders {
-  border-color: var(--tech-line) !important;
-  background: rgba(10, 23, 49, .86) !important;
-}
-
 .developer-docs {
   border-color: var(--tech-line) !important;
   background: linear-gradient(145deg, rgba(14, 29, 60, .94), rgba(8, 19, 42, .92)) !important;
@@ -5916,8 +5833,6 @@ body {
 .user-console-page,
 .organization-page,
 .creative-studio,
-.item-page,
-.redemption-redirect,
 .flow-shell,
 .admin-shell,
 .admin-login,
@@ -5930,7 +5845,6 @@ body {
 
 .site-nav,
 .studio-nav,
-.item-nav,
 .flow-topbar,
 .admin-header,
 .agent-header,
@@ -5950,12 +5864,10 @@ body {
 .model-tile,
 .feature-card,
 .other-service-card,
-.redirect-card,
 .el-card,
 .market-hero,
 .market-filter-panel,
 .market-card,
-.service-orders,
 .developer-docs,
 .model-sale-pricing,
 .sale-price-grid article,
@@ -6050,7 +5962,6 @@ body {
 .creative-studio .work-card-body h3,
 .creative-studio .field-label label,
 .creative-studio .mode-rail b,
-.item-page h1,
 .legal-page h1,
 .organization-page h1,
 .agent-page h1,
@@ -6196,8 +6107,6 @@ pre,
 #app > .user-console-page,
 #app > .organization-page,
 #app > .creative-studio,
-#app > .item-page,
-#app > .redemption-redirect,
 #app > .flow-shell,
 #app > .admin-shell,
 #app > .admin-login,
@@ -6432,9 +6341,7 @@ pre,
 #app .report-summary strong,
 #app .gateway-metrics strong,
 #app .vmcard-status-grid strong,
-#app .studio-stat strong,
-#app .item-stat strong,
-#app .service-order-row strong {
+#app .studio-stat strong {
   color: var(--ui-text) !important;
   text-shadow: none !important;
 }
@@ -6457,8 +6364,7 @@ pre,
 #app .report-summary > div,
 #app .gateway-metrics > div,
 #app .vmcard-status-grid > article,
-#app .studio-stat,
-#app .item-stat {
+#app .studio-stat {
   border-color: var(--tech-line) !important;
   background: #ffffff !important;
   background-image: none !important;
@@ -6771,20 +6677,8 @@ pre,
 }
 
 #app .other-services-page .service-image-placeholder small,
-#app .other-services-page .service-card-meta,
-#app .other-services-page .service-order-row small {
+#app .other-services-page .service-card-meta {
   color: var(--ui-muted) !important;
-}
-
-#app .other-services-page .service-order-row {
-  border-color: #d8e3f0 !important;
-}
-
-#app .other-services-page .service-orders {
-  border-color: #d8e3f0 !important;
-  background: #ffffff !important;
-  background-image: none !important;
-  color: var(--ui-text) !important;
 }
 
 /* The complete admin area uses one calm, high-contrast light palette. */

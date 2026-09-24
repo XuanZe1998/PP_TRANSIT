@@ -136,7 +136,7 @@ public class ShopGptItemService {
     public Map<String, Object> trade(User user, int quantity, String captcha, Integer payId) {
         requireEnabled();
         throw new ResponseStatusException(HttpStatus.GONE,
-                "Supplier checkout has migrated: create a local order and pay through AnyiPay; administrators procure it after payment");
+                "Supplier checkout creates a local order and pays through MaPay; administrators procure it after payment");
     }
 
     public ServiceOrderResponse checkout(User user, ShopGptCheckoutRequest request) {

@@ -32,10 +32,6 @@ oauth:
     client-id: "<GitHub Client ID>"
     client-secret: "<GitHub Client Secret>"
     redirect-uri: http://localhost:5173/oauth/callback/github
-
-features:
-  shopgpt:
-    enabled: false
 ```
 
 生成渠道加密主密钥（PowerShell）：
@@ -86,13 +82,14 @@ npm run dev
 6. 创建模型映射并填写输入、输出、缓存的每百万 Token 售价和成本。
 7. 创建 API Key，立即保存一次性 secret；刷新列表后只应看到预览。
 8. 用 API Key 调用 `/v1/chat/completions`，核对请求日志、Token、余额与金额明细。
-9. Plus/ShopGPT 在没有真实支付和商户资料时保持关闭；不要用伪订单验证“支付成功”。
+9. 保持 `mapay.enabled=false`，用 `payment.local-test-mode=true` 验证充值和服务订单的本地幂等结算；不要在 CI 中调用真实 MaPay。
+10. 验证支付宝/微信下单、本地状态轮询、卡密或人工交付，并确认界面没有退款操作。
 
 ## 5. 仍需你提供的信息
 
 - Google/GitHub OAuth Client ID 与 Client Secret。
 - MySQL 连接信息、独立 JWT Secret、独立 AES-256 主密钥。
 - 至少一个真实 Provider 的 HTTPS Base URL、API Key、模型名、成本价和销售价。
-- 若启用 Plus 收据：商户法定名称、地址、联系邮箱、注册号和时区。
-- 若启用 ShopGPT：授权确认、HTTPS Base URL、真实商品 ID 和业务合规结论。
-- 上线前还需要支付服务、域名/TLS、KMS、Redis、监控告警和备份策略。
+- MaPay 商户 PID/KEY、公网 HTTPS 通知地址和返回页地址。
+- 若提供账单/收据：商户法定名称、地址、联系邮箱、注册号和时区。
+- 上线前还需要域名/TLS、KMS、Redis、监控告警和备份策略。

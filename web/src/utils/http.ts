@@ -58,7 +58,7 @@ export function getHttpErrorNotice(error: unknown, fallback = '请求失败，�
 function authScope(url = ''): AuthScope | 'public' {
   url=url.replace(/^\/api(?=\/)/, '')
   if (/^\/(public\/|ops\/catalog|auth\/(login|register|refresh|validate)|oauth\/|admin\/auth\/login)/.test(url)) return 'public'
-  if (/^\/(admin\/|platform\/admin\/|service-orders\/admin\/|channels\/|tokens\/|mappings\/)/.test(url)) return 'admin'
+  if (/^\/(admin\/|platform\/admin\/|channels\/|tokens\/|mappings\/)/.test(url)) return 'admin'
   return 'user'
 }
 

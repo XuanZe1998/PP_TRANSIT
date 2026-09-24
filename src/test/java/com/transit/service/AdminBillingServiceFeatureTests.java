@@ -19,25 +19,25 @@ class AdminBillingServiceFeatureTests {
     @Autowired AdminBillingService billing;
 
     @Test
-    void rechargeSummaryExcludesAdjustmentsAndTransactionsAreServerPaged() {
-        long before = ((Number) billing.financeSummary().get("rechargeAmount")).longValue();
+    void creditedSummaryIncludesPositiveLedgerEntriesAndTransactionsAreServerPaged() {
+        long before = ((Number) billing.financeSummary().get("creditedAmount")).longValue();
         String username = "finance-" + UUID.randomUUID();
         jdbc.update("INSERT INTO users(username,password,email,role,status,balance) VALUES (?,'x',?,'USER','ACTIVE',1110)",
                 username, username + "@example.com");
         Long userId = jdbc.queryForObject("SELECT id FROM users WHERE username=?", Long.class, username);
-        transaction(userId, "RECHARGE", 100, "bank", "feature recharge");
+        transaction(userId, "CREDIT", 100, "admin", "feature credit");
         transaction(userId, "REDEEM", 40, "code", "feature redeem");
         transaction(userId, "ADJUST", 1000, "admin", "feature adjustment");
         transaction(userId, "CONSUME", -30, "api", "feature consume");
 
-        long after = ((Number) billing.financeSummary().get("rechargeAmount")).longValue();
-        assertThat(after - before).isEqualTo(140);
+        long after = ((Number) billing.financeSummary().get("creditedAmount")).longValue();
+        assertThat(after - before).isEqualTo(1140);
 
-        PageResponse<Map<String, Object>> first = billing.transactionsPage(1, 2, username);
-        PageResponse<Map<String, Object>> second = billing.transactionsPage(2, 2, username);
+        PageResponse<Map<String, Object>> first = billing.transactionsPage(1, 10, username);
+        PageResponse<Map<String, Object>> second = billing.transactionsPage(2, 10, username);
         assertThat(first.getTotal()).isEqualTo(4);
-        assertThat(first.getItems()).hasSize(2);
-        assertThat(second.getItems()).hasSize(2);
+        assertThat(first.getItems()).hasSize(4);
+        assertThat(second.getItems()).isEmpty();
         assertThat(billing.transactionsPage(1, 20, "feature adjustment").getItems())
                 .extracting(row -> row.get("type")).contains("ADJUST");
     }
