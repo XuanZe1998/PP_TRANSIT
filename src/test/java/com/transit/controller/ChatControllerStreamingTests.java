@@ -12,10 +12,11 @@ import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import reactor.core.publisher.Flux;
 
+import java.time.Duration;
+
 import static org.hamcrest.Matchers.containsString;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -36,7 +37,7 @@ class ChatControllerStreamingTests {
         when(transitService.chatCompletionsStream(anyString(), any(), anyString()))
                 .thenReturn(Flux.just(
                         ServerSentEvent.builder("{\"object\":\"chat.completion.chunk\"}").build(),
-                        ServerSentEvent.builder("[DONE]").build()));
+                        ServerSentEvent.builder("[DONE]").build()).delayElements(Duration.ofMillis(50)));
 
         MvcResult pending = mockMvc.perform(post("/v1/chat/completions")
                         .header("Authorization", "Bearer sk-test")
@@ -48,7 +49,11 @@ class ChatControllerStreamingTests {
                 .andExpect(request().asyncStarted())
                 .andReturn();
 
+        // The outer Mono resolves on the first dispatch, then Spring writes the
+        // inner SSE Flux asynchronously. Wait for that second phase before
+        // asserting headers and body; otherwise CI can observe a partial response.
         mockMvc.perform(asyncDispatch(pending))
+                .andDo(MvcResult::getAsyncResult)
                 .andExpect(status().isOk())
                 .andExpect(header().string("X-Accel-Buffering", "no"))
                 .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_EVENT_STREAM))

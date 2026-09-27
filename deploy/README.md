@@ -32,6 +32,20 @@ OAuth providers compare callback addresses character by character. Before a prod
 
 After startup, check the non-secret `OAuth callback configuration` log entry, then open each login button once and inspect the provider authorization URL's `redirect_uri`. A `redirect_uri_mismatch` response means the provider console and the deployed environment still differ; changing application code alone cannot override that provider-side allowlist.
 
+## Staged browser security headers (2026-09-28)
+
+The repository Nginx example now matches the **staged** production security-header values:
+1-day HSTS (`max-age=86400`, without subdomain/preload) and frontend
+`Content-Security-Policy-Report-Only`. This is not an enforced CSP. Do not turn
+report-only into enforcement or lengthen HSTS just by copying a candidate
+configuration: first validate real login/IP challenge, OAuth callbacks and the
+payment checkout/return flow (prefer sandboxes), plus every relevant frontend
+path and rollback. The current policy has no `report-uri` or `report-to`; manual
+browser observations are not sitewide telemetry. Keep a dated Nginx backup,
+run `nginx -t`, deploy in a short rollback window, and verify HTTPS headers on
+both domains before extending HSTS or enforcing CSP. The application deploy
+workflow does not automatically publish this Nginx file.
+
 ## Compression verification
 
 The production Nginx server block enables gzip for JavaScript, CSS, JSON, and SVG, while hashed files under `/assets/` retain a one-year immutable cache. After reloading the effective HTTPS configuration, verify it with:
