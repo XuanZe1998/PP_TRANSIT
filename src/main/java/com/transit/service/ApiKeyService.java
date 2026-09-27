@@ -79,6 +79,16 @@ public class ApiKeyService {
                 tokenMapper.updateById(token);
             }
         }
+        if (token != null && token.getOrganizationId() != null) {
+            Integer activeWallets = jdbcTemplate.queryForObject("""
+                    SELECT COUNT(*) FROM organizations o
+                    JOIN organization_members om ON om.organization_id=o.id
+                    JOIN wallet_accounts wa ON wa.organization_id=o.id AND wa.user_id=om.user_id
+                    WHERE o.id=? AND om.user_id=? AND o.status='ACTIVE'
+                      AND om.status='ACTIVE' AND wa.status='ACTIVE'
+                    """, Integer.class, token.getOrganizationId(), token.getUserId());
+            if (activeWallets == null || activeWallets == 0) return null;
+        }
         return token;
     }
 

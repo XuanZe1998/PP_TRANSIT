@@ -22,6 +22,7 @@ class OrganizationWalletTransferIntegrationTests {
     @Autowired UserMapper users;
     @Autowired JdbcTemplate jdbc;
     @Autowired GatewaySettlementService gateway;
+    @Autowired ApiKeyService apiKeys;
 
     @Test
     void creatingAnOrganizationTransfersFromOwnTreasuryNotCurrentMemberWallet() {
@@ -172,6 +173,66 @@ class OrganizationWalletTransferIntegrationTests {
         assertThat(jdbc.queryForObject("SELECT status FROM organization_members WHERE organization_id=? AND user_id=?",
                 String.class, companyId, owner.getId())).isEqualTo("ACTIVE");
         assertThat(walletBalance(companyId, owner.getId())).isEqualTo(10_000L);
+    }
+
+    @Test
+    void suspendedMemberKeyCannotAuthenticateOrChargeLegacyBalance() {
+        User owner = user(10_000L);
+        User member = user(5_000L);
+        Long companyId = organization(owner, "COMPANY", "OWNER", "TREASURY", 10_000L);
+        addMember(companyId, member, "MEMBER", "MEMBER", 2_000L);
+        String secret = "sk-suspended-" + UUID.randomUUID();
+        jdbc.update("""
+                INSERT INTO tokens(`key`,key_prefix,user_id,organization_id,name,used_quota,total_quota,enabled)
+                VALUES (?,'sk-suspended',?,?,'member-key',0,1000,TRUE)
+                """, secret, member.getId(), companyId);
+        Long tokenId = jdbc.queryForObject("SELECT id FROM tokens WHERE `key`=?", Long.class, secret);
+        Token token = Token.builder().id(tokenId).userId(member.getId()).organizationId(companyId).build();
+        assertThat(apiKeys.findBySecret(secret)).isNotNull();
+
+        organizations.updateMember(owner, companyId, member.getId(), Map.of("status", "SUSPENDED"));
+        assertThat(jdbc.queryForObject("SELECT enabled FROM tokens WHERE id=?", Boolean.class, tokenId)).isTrue();
+        assertThatThrownBy(() -> gateway.reserve(token, member, 10, 1_000,
+                "suspended-" + UUID.randomUUID(), "test-model"))
+                .isInstanceOf(org.springframework.web.server.ResponseStatusException.class)
+                .hasMessageContaining("403 FORBIDDEN");
+        assertThat(apiKeys.findBySecret(secret)).isNull();
+        assertThat(users.selectById(member.getId()).getBalance()).isEqualTo(5_000L);
+        assertThat(walletBalance(companyId, member.getId())).isEqualTo(2_000L);
+        assertThat(jdbc.queryForObject("SELECT used_quota FROM tokens WHERE id=?", Long.class, tokenId)).isZero();
+
+        organizations.updateMember(owner, companyId, member.getId(), Map.of("status", "ACTIVE"));
+        assertThat(apiKeys.findBySecret(secret)).isNotNull();
+        GatewaySettlementService.Reservation reservation = gateway.reserve(token, member, 10, 1_000,
+                "resumed-" + UUID.randomUUID(), "test-model");
+        assertThat(walletBalance(companyId, member.getId())).isEqualTo(1_000L);
+        gateway.release(reservation, "controlled regression");
+        assertThat(walletBalance(companyId, member.getId())).isEqualTo(2_000L);
+        assertThat(users.selectById(member.getId()).getBalance()).isEqualTo(5_000L);
+    }
+
+    @Test
+    void inactiveOrganizationKeyCannotAuthenticateOrChargeLegacyBalance() {
+        User owner = user(10_000L);
+        Long companyId = organization(owner, "COMPANY", "OWNER", "TREASURY", 10_000L);
+        String secret = "sk-inactive-" + UUID.randomUUID();
+        jdbc.update("""
+                INSERT INTO tokens(`key`,key_prefix,user_id,organization_id,name,used_quota,total_quota,enabled)
+                VALUES (?,'sk-inactive',?,?,'owner-key',0,1000,TRUE)
+                """, secret, owner.getId(), companyId);
+        Long tokenId = jdbc.queryForObject("SELECT id FROM tokens WHERE `key`=?", Long.class, secret);
+        Token token = Token.builder().id(tokenId).userId(owner.getId()).organizationId(companyId).build();
+        assertThat(apiKeys.findBySecret(secret)).isNotNull();
+
+        jdbc.update("UPDATE organizations SET status='SUSPENDED' WHERE id=?", companyId);
+        assertThat(apiKeys.findBySecret(secret)).isNull();
+        assertThatThrownBy(() -> gateway.reserve(token, owner, 10, 1_000,
+                "inactive-" + UUID.randomUUID(), "test-model"))
+                .isInstanceOf(org.springframework.web.server.ResponseStatusException.class)
+                .hasMessageContaining("403 FORBIDDEN");
+        assertThat(walletBalance(companyId, owner.getId())).isEqualTo(10_000L);
+        assertThat(users.selectById(owner.getId()).getBalance()).isEqualTo(10_000L);
+        assertThat(jdbc.queryForObject("SELECT used_quota FROM tokens WHERE id=?", Long.class, tokenId)).isZero();
     }
 
     @Test

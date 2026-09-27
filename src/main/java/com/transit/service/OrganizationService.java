@@ -259,7 +259,11 @@ public class OrganizationService {
     @Transactional
     public Map<String,Object> updateMember(User caller, Long organizationId, Long memberUserId, Map<String,Object> request) {
         requireRole(caller.getId(), organizationId, "OWNER", "ORG_ADMIN");
-        String current = currentRole(memberUserId, organizationId);
+        String current = jdbcTemplate.queryForList("""
+                SELECT member_role FROM organization_members
+                WHERE organization_id=? AND user_id=? AND status<>'REMOVED'
+                """, String.class, organizationId, memberUserId).stream().findFirst()
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Organization member not found"));
         if ("OWNER".equals(current)
                 && (!Objects.equals(caller.getId(), memberUserId)
                     || request.containsKey("role") || request.containsKey("status"))) {

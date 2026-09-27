@@ -297,7 +297,10 @@ public class GatewaySettlementService {
                   AND om.user_id=wa.user_id AND om.status='ACTIVE'
                 WHERE wa.organization_id=? AND wa.user_id=? AND wa.status='ACTIVE'
                 """, organizationId, user.getId());
-        if (accounts.isEmpty()) return new BillingWallets(null, null);
+        if (accounts.isEmpty()) {
+            // An organization-bound key must never fall back to the user's legacy balance.
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Organization permission denied");
+        }
         Map<String, Object> account = accounts.get(0);
         long accountWalletId = ((Number) account.get("id")).longValue();
         if (!"COMPANY".equalsIgnoreCase(String.valueOf(account.get("organization_type")))
