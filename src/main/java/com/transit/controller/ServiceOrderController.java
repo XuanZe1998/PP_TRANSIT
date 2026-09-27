@@ -8,6 +8,7 @@ import com.transit.dto.PageResponse;
 import com.transit.model.ServiceOrder;
 import com.transit.model.User;
 import com.transit.service.CurrentUserService;
+import com.transit.service.ClientIpResolver;
 import com.transit.service.ServiceOrderService;
 import com.transit.service.ServiceCommerceService;
 import com.transit.service.ServiceCouponAdminService;
@@ -16,7 +17,6 @@ import com.transit.model.ServiceCoupon;
 import com.transit.model.ServiceInventoryItem;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -35,9 +35,7 @@ public class ServiceOrderController {
     private final ServiceCommerceService serviceCommerceService;
     private final ServiceCouponAdminService couponAdminService;
     private final IdempotencyService idempotencyService;
-
-    @Value("${gateway.trust-forwarded-headers:false}")
-    private boolean trustForwardedHeaders;
+    private final ClientIpResolver clientIps;
 
     @PostMapping("/service-orders")
     public Mono<Object> createServiceOrder(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
@@ -296,13 +294,6 @@ public class ServiceOrderController {
     }
 
     private String clientIp(HttpServletRequest request) {
-        if (trustForwardedHeaders) {
-            String forwarded = request.getHeader("X-Forwarded-For");
-            if (forwarded != null && !forwarded.isBlank()) {
-                String first = forwarded.split(",", 2)[0].trim();
-                if (!first.isBlank() && first.length() <= 64) return first;
-            }
-        }
-        return request.getRemoteAddr();
+        return clientIps.resolve(request);
     }
 }

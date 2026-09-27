@@ -7,7 +7,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
-import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -32,8 +31,7 @@ class ChatControllerStreamingTests {
 
     @Test
     void streamFlagProducesActualServerSentEvents() throws Exception {
-        ChatController controller = new ChatController(transitService);
-        ReflectionTestUtils.setField(controller, "trustForwardedHeaders", false);
+        ChatController controller = new ChatController(transitService, new com.transit.service.ClientIpResolver("127.0.0.1,::1"));
         MockMvc mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
         when(transitService.chatCompletionsStream(anyString(), any(), anyString()))
                 .thenReturn(Flux.just(
