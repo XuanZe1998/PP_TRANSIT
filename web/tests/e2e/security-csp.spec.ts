@@ -1,12 +1,21 @@
 import { readFileSync } from 'node:fs'
 import { expect, test } from '@playwright/test'
 
-// Exercise the exact proposed Nginx document policy against the built frontend.
+// Enforce the staged Nginx report-only policy locally to test the future enforcement candidate.
 const nginx = readFileSync(new URL('../../../deploy/nginx/linknux.conf', import.meta.url), 'utf8')
-const policy = nginx.match(/add_header Content-Security-Policy "([^"]+)" always;/)?.[1]
-if (!policy) throw new Error('Frontend CSP missing from deploy/nginx/linknux.conf')
+const policies = [...nginx.matchAll(/add_header Content-Security-Policy-Report-Only "([^"]+)" always;/g)]
+  .map(match => match[1])
+if (policies.length !== 3 || new Set(policies).size !== 1) {
+  throw new Error('Staged CSP Report-Only must match across the frontend response locations')
+}
+const hstsAges = [...nginx.matchAll(/add_header Strict-Transport-Security "max-age=(\d+)" always;/g)]
+  .map(match => match[1])
+if (hstsAges.length !== 4 || hstsAges.some(age => age !== '86400')) {
+  throw new Error('Staged one-day HSTS must match across frontend and API response locations')
+}
+const policy = policies[0]
 
-test('proposed frontend CSP permits representative pages to load', async ({ page }) => {
+test('staged report-only policy also permits representative pages when enforced locally', async ({ page }) => {
   await page.addInitScript(() => {
     ;(window as Window & { __cspViolations?: string[] }).__cspViolations = []
     document.addEventListener('securitypolicyviolation', event => {
