@@ -263,7 +263,7 @@ public class OrganizationService {
         if ("OWNER".equals(current)
                 && (!Objects.equals(caller.getId(), memberUserId)
                     || request.containsKey("role") || request.containsKey("status"))) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "不能修改企业主角色或状态");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "不能修改企业主账户");
         }
         if (request.containsKey("role")) {
             String role = string(request.get("role")).toUpperCase();
