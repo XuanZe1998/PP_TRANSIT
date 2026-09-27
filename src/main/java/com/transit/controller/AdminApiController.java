@@ -27,6 +27,7 @@ import com.transit.service.AdminSecurityService;
 import com.transit.service.AdminTokenService;
 import com.transit.service.AdminUserService;
 import com.transit.service.CurrentUserService;
+import com.transit.service.ClientIpResolver;
 import com.transit.service.OtherServiceCatalogService;
 import com.transit.service.RedemptionHostService;
 import com.transit.service.ServiceOrderService;
@@ -61,6 +62,7 @@ import java.util.Map;
 public class AdminApiController {
 
     private final CurrentUserService currentUserService;
+    private final ClientIpResolver clientIps;
     private final AdminAuditService adminAuditService;
     private final AdminDashboardService dashboardService;
     private final AdminUserService userService;
@@ -987,7 +989,7 @@ public class AdminApiController {
     }
 
     private String clientIp(HttpServletRequest servletRequest) {
-        return servletRequest.getRemoteAddr();
+        return clientIps.resolve(servletRequest);
     }
 
     @Data

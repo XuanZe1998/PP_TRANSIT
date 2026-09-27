@@ -90,6 +90,14 @@ class SecurityBoundaryIntegrationTests {
     }
 
     @Test
+    void unsupportedLoginMethodReturns405InsteadOf500() {
+        client.get().uri("/auth/login").exchange()
+                .expectStatus().isEqualTo(405)
+                .expectHeader().value(HttpHeaders.ALLOW, value -> assertThat(value).contains("POST"))
+                .expectBody().jsonPath("$.error.code").isEqualTo("method_not_allowed");
+    }
+
+    @Test
     void teleAgentCompatibilityRoutesReachTheApiKeyBoundary() {
         client.get().uri("/v1")
                 .exchange().expectStatus().isOk()

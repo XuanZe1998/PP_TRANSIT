@@ -4,11 +4,11 @@ import com.transit.dto.PageResponse;
 import com.transit.model.PaymentIntent;
 import com.transit.model.User;
 import com.transit.service.CurrentUserService;
+import com.transit.service.ClientIpResolver;
 import com.transit.service.IdempotencyService;
 import com.transit.service.PaymentIntentService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -24,9 +24,7 @@ public class PaymentIntentController {
     private final CurrentUserService currentUserService;
     private final PaymentIntentService paymentIntentService;
     private final IdempotencyService idempotencyService;
-
-    @Value("${gateway.trust-forwarded-headers:false}")
-    private boolean trustForwardedHeaders;
+    private final ClientIpResolver clientIps;
 
     @PostMapping("/payment-intents/{id}/start")
     public Mono<Object> start(@RequestHeader(HttpHeaders.AUTHORIZATION) String auth,
@@ -85,11 +83,7 @@ public class PaymentIntentController {
     }
 
     private String clientIp(HttpServletRequest request) {
-        if (trustForwardedHeaders) {
-            String value = request.getHeader("X-Forwarded-For");
-            if (value != null && !value.isBlank()) return value.split(",", 2)[0].trim();
-        }
-        return request.getRemoteAddr();
+        return clientIps.resolve(request);
     }
 
     private String device(HttpServletRequest request) {

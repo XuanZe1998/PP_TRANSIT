@@ -4324,7 +4324,7 @@ html {
 
 @media (min-width: 1101px) and (min-height: 768px) {
   .playground-layout {
-    height: calc(100dvh - 230px);
+    height: calc(100dvh - 270px);
     min-height: 500px;
     max-height: 680px;
   }
