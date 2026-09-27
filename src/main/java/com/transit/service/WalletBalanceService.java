@@ -44,7 +44,26 @@ public class WalletBalanceService {
         if (balance < 0 || (wallet != null && ((Number) wallet.get("balance")).longValue() != balance)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Balance changed while creating organization");
         }
-        return balance;
+        if (wallet == null || !"COMPANY".equals(wallet.get("organization_type"))) return balance;
+        Long organizationId = ((Number) wallet.get("organization_id")).longValue();
+        Long allocated = jdbcTemplate.queryForObject("""
+                SELECT COALESCE(SUM(wa.balance),0) FROM wallet_accounts wa
+                JOIN organization_members om ON om.organization_id=wa.organization_id
+                  AND om.user_id=wa.user_id AND om.status='ACTIVE' AND om.member_role<>'OWNER'
+                WHERE wa.organization_id=? AND wa.status='ACTIVE'
+                """, Long.class, organizationId);
+        long committed = allocated == null ? 0L : allocated;
+        if (committed < 0 || committed > balance) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Existing employee allocations exceed the enterprise treasury balance");
+        }
+        return balance - committed;
+    }
+
+    @Transactional
+    public boolean isPreferredOwnTreasuryWallet(Long userId, Long walletId) {
+        Map<String, Object> preferred = ownTreasuryWallet(userId);
+        return preferred != null && ((Number) preferred.get("id")).longValue() == walletId;
     }
 
     @Transactional
@@ -81,7 +100,7 @@ public class WalletBalanceService {
 
     private Map<String, Object> ownTreasuryWallet(Long userId) {
         List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
-                SELECT wa.id,wa.organization_id,wa.balance
+                SELECT wa.id,wa.organization_id,wa.balance,o.organization_type
                 FROM wallet_accounts wa
                 JOIN organizations o ON o.id=wa.organization_id AND o.status='ACTIVE'
                 JOIN organization_members om ON om.organization_id=o.id AND om.user_id=wa.user_id
