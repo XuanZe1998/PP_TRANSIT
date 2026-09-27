@@ -49,7 +49,7 @@ public class WalletBalanceService {
         Long allocated = jdbcTemplate.queryForObject("""
                 SELECT COALESCE(SUM(wa.balance),0) FROM wallet_accounts wa
                 JOIN organization_members om ON om.organization_id=wa.organization_id
-                  AND om.user_id=wa.user_id AND om.status='ACTIVE' AND om.member_role<>'OWNER'
+                  AND om.user_id=wa.user_id AND om.status<>'REMOVED' AND om.member_role<>'OWNER'
                 WHERE wa.organization_id=? AND wa.status='ACTIVE'
                 """, Long.class, organizationId);
         long committed = allocated == null ? 0L : allocated;

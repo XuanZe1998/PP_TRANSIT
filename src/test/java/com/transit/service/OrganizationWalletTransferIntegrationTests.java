@@ -117,6 +117,24 @@ class OrganizationWalletTransferIntegrationTests {
     }
 
     @Test
+    void openingAnotherCompanyKeepsSuspendedEmployeeAllocationFunded() {
+        User owner = user(10_000L);
+        User employee = user(0L);
+        Long existingId = organization(owner, "COMPANY", "OWNER", "TREASURY", 10_000L);
+        addMember(existingId, employee, "MEMBER", "MEMBER", 4_000L);
+        jdbc.update("UPDATE users SET default_organization_id=? WHERE id=?", existingId, owner.getId());
+        owner = users.selectById(owner.getId());
+        organizations.updateMember(owner, existingId, employee.getId(), Map.of("status", "SUSPENDED"));
+
+        Long nextId = ((Number) organizations.create(owner, "next with suspended allocation").get("id")).longValue();
+
+        assertThat(walletBalance(existingId, owner.getId())).isEqualTo(4_000L);
+        assertThat(walletBalance(existingId, employee.getId())).isEqualTo(4_000L);
+        assertThat(walletBalance(nextId, owner.getId())).isEqualTo(6_000L);
+        organizations.updateMember(owner, existingId, employee.getId(), Map.of("status", "ACTIVE"));
+        assertThat(users.selectById(owner.getId()).getBalance()).isEqualTo(6_000L);
+    }
+    @Test
     void oldCompanyReservationReleaseDoesNotOverwriteNewDefaultTreasuryMirror() {
         User owner = user(10_000L);
         User employee = user(0L);
@@ -173,6 +191,61 @@ class OrganizationWalletTransferIntegrationTests {
         assertThat(jdbc.queryForObject("SELECT status FROM organization_members WHERE organization_id=? AND user_id=?",
                 String.class, companyId, owner.getId())).isEqualTo("ACTIVE");
         assertThat(walletBalance(companyId, owner.getId())).isEqualTo(10_000L);
+    }
+
+    @Test
+    void suspendedMemberAllocationRemainsReservedWhenAllocatingToAnotherMember() {
+        User owner = user(10_000L);
+        User suspendedMember = user(0L);
+        User activeMember = user(0L);
+        Long companyId = organization(owner, "COMPANY", "OWNER", "TREASURY", 10_000L);
+        addMember(companyId, suspendedMember, "MEMBER", "MEMBER", 8_000L);
+        addMember(companyId, activeMember, "MEMBER", "MEMBER", 0L);
+        organizations.updateMember(owner, companyId, suspendedMember.getId(), Map.of("status", "SUSPENDED"));
+
+        assertThatThrownBy(() -> organizations.allocate(owner, companyId,
+                Map.of("userId", activeMember.getId(), "amount", 3_000L), UUID.randomUUID().toString(), false))
+                .isInstanceOf(org.springframework.web.server.ResponseStatusException.class)
+                .hasMessageContaining("Total employee allocations");
+        assertThat(walletBalance(companyId, suspendedMember.getId())).isEqualTo(8_000L);
+        assertThat(walletBalance(companyId, activeMember.getId())).isZero();
+        organizations.allocate(owner, companyId,
+                Map.of("userId", activeMember.getId(), "amount", 2_000L), UUID.randomUUID().toString(), false);
+        organizations.updateMember(owner, companyId, suspendedMember.getId(), Map.of("status", "ACTIVE"));
+        assertThat(walletBalance(companyId, activeMember.getId())).isEqualTo(2_000L);
+        assertThat(walletBalance(companyId, suspendedMember.getId())
+                + walletBalance(companyId, activeMember.getId())).isEqualTo(10_000L);
+        assertThat(walletBalance(companyId, owner.getId())).isEqualTo(10_000L);
+    }
+
+    @Test
+    void heldMemberAllocationRemainsReservedWhenAllocatingToAnotherMember() {
+        User owner = user(10_000L);
+        User reservedMember = user(0L);
+        User activeMember = user(0L);
+        Long companyId = organization(owner, "COMPANY", "OWNER", "TREASURY", 10_000L);
+        addMember(companyId, reservedMember, "MEMBER", "MEMBER", 8_000L);
+        addMember(companyId, activeMember, "MEMBER", "MEMBER", 0L);
+        String secret = "sk-held-" + UUID.randomUUID();
+        jdbc.update("""
+                INSERT INTO tokens(`key`,key_prefix,user_id,organization_id,name,used_quota,total_quota,enabled)
+                VALUES (?,'sk-held',?,?,'reserved-member',0,10000,TRUE)
+                """, secret, reservedMember.getId(), companyId);
+        Long tokenId = jdbc.queryForObject("SELECT id FROM tokens WHERE `key`=?", Long.class, secret);
+        Token token = Token.builder().id(tokenId).userId(reservedMember.getId()).organizationId(companyId).build();
+        GatewaySettlementService.Reservation reservation = gateway.reserve(token, reservedMember, 10, 3_000,
+                "held-" + UUID.randomUUID(), "test-model");
+        assertThat(walletBalance(companyId, reservedMember.getId())).isEqualTo(5_000L);
+        assertThat(walletHeldBalance(companyId, reservedMember.getId())).isEqualTo(3_000L);
+
+        assertThatThrownBy(() -> organizations.allocate(owner, companyId,
+                Map.of("userId", activeMember.getId(), "amount", 3_000L), UUID.randomUUID().toString(), false))
+                .isInstanceOf(org.springframework.web.server.ResponseStatusException.class)
+                .hasMessageContaining("Total employee allocations");
+        assertThat(walletBalance(companyId, activeMember.getId())).isZero();
+        gateway.release(reservation, "controlled regression");
+        assertThat(walletBalance(companyId, reservedMember.getId())).isEqualTo(8_000L);
+        assertThat(walletHeldBalance(companyId, reservedMember.getId())).isZero();
     }
 
     @Test
@@ -283,6 +356,11 @@ class OrganizationWalletTransferIntegrationTests {
 
     private Long walletBalance(Long organizationId, Long userId) {
         return jdbc.queryForObject("SELECT balance FROM wallet_accounts WHERE organization_id=? AND user_id=?",
+                Long.class, organizationId, userId);
+    }
+
+    private Long walletHeldBalance(Long organizationId, Long userId) {
+        return jdbc.queryForObject("SELECT held_balance FROM wallet_accounts WHERE organization_id=? AND user_id=?",
                 Long.class, organizationId, userId);
     }
 
