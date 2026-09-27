@@ -9,12 +9,17 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import com.transit.service.SecretHashService;
 import com.transit.service.OAuthService;
+import com.transit.service.VerificationDeliveryService;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import org.mockito.ArgumentCaptor;
 
 import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureWebTestClient
@@ -34,6 +39,9 @@ class AuthFlowIntegrationTests {
 
     @Autowired
     private BCryptPasswordEncoder passwordEncoder;
+
+    @MockitoSpyBean
+    private VerificationDeliveryService verificationDelivery;
 
     @Test
     void registrationLoginAndLogoutFormACompleteSessionLifecycle() {
@@ -149,6 +157,66 @@ class AuthFlowIntegrationTests {
                 .header("X-Real-IP", secondIp)
                 .bodyValue(Map.of("challengeId", challengeId, "code", "not-a-code"))
                 .exchange().expectStatus().isBadRequest();
+    }
+
+    @Test
+    void newLoginIpValidCodeTrustsAddressAndCannotBeReplayed() {
+        String identifier = uniqueEmail();
+        String firstIp = "198.51.100.20";
+        String secondIp = "198.51.100.21";
+        jdbcTemplate.update("""
+                INSERT INTO users(username, password, email, auth_provider, role, status, balance)
+                VALUES (?, ?, ?, 'local', 'USER', 'ACTIVE', 0)
+                """, identifier, passwordEncoder.encode("StrongPass123"), identifier);
+        Long userId = jdbcTemplate.queryForObject(
+                "SELECT id FROM users WHERE username = ?", Long.class, identifier);
+
+        client.post().uri("/auth/login")
+                .header("X-Real-IP", firstIp)
+                .bodyValue(Map.of("identifier", identifier, "password", "StrongPass123"))
+                .exchange().expectStatus().isOk()
+                .expectBody().jsonPath("$.access_token").isNotEmpty();
+        Map<String, Object> challenge = client.post().uri("/auth/login")
+                .header("X-Real-IP", secondIp)
+                .bodyValue(Map.of("identifier", identifier, "password", "StrongPass123"))
+                .exchange().expectStatus().isOk()
+                .expectBody(Map.class).returnResult().getResponseBody();
+        assertThat(challenge).isNotNull().containsEntry("verificationRequired", true)
+                .doesNotContainKeys("access_token", "refresh_token");
+        String challengeId = challenge.get("challengeId").toString();
+        ArgumentCaptor<String> codeCaptor = ArgumentCaptor.forClass(String.class);
+        verify(verificationDelivery).sendEmail(eq(identifier), codeCaptor.capture());
+        String code = codeCaptor.getValue();
+
+        // Even the real code cannot be redeemed from another address.
+        client.post().uri("/auth/login/ip-verify")
+                .header("X-Real-IP", firstIp)
+                .bodyValue(Map.of("challengeId", challengeId, "code", code))
+                .exchange().expectStatus().isForbidden();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT status FROM user_verification_codes WHERE recipient = ? AND purpose = 'NEW_LOGIN_IP'",
+                String.class, identifier)).isEqualTo("PENDING");
+
+        Map<String, Object> session = client.post().uri("/auth/login/ip-verify")
+                .header("X-Real-IP", secondIp)
+                .bodyValue(Map.of("challengeId", challengeId, "code", code))
+                .exchange().expectStatus().isOk()
+                .expectBody(Map.class).returnResult().getResponseBody();
+        assertThat(session).isNotNull().containsKeys("access_token", "refresh_token");
+        client.get().uri("/user/profile")
+                .header("Authorization", "Bearer " + session.get("access_token"))
+                .exchange().expectStatus().isOk();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT status FROM login_ip_challenges WHERE challenge_id = ?", String.class, challengeId))
+                .isEqualTo("CONSUMED");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM login_ip_history WHERE user_id = ? AND ip_digest = ? AND verified = TRUE AND revoked_at IS NULL",
+                Integer.class, userId, secretHashService.hash("login-ip|" + secondIp))).isEqualTo(1);
+
+        client.post().uri("/auth/login/ip-verify")
+                .header("X-Real-IP", secondIp)
+                .bodyValue(Map.of("challengeId", challengeId, "code", code))
+                .exchange().expectStatus().isEqualTo(409);
     }
 
     @Test
