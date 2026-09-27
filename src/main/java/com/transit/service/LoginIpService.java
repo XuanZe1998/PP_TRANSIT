@@ -70,7 +70,9 @@ public class LoginIpService {
         Map<String,Object> row = jdbc.queryForList("SELECT * FROM login_ip_challenges WHERE challenge_id=? FOR UPDATE", challengeId)
                 .stream().findFirst().orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "登录验证不存在"));
         if (!"PENDING".equals(row.get("status"))) throw new ResponseStatusException(HttpStatus.CONFLICT, "登录验证已使用");
-        LocalDateTime expires = (LocalDateTime) row.get("expires_at");
+        Object expiresAt = row.get("expires_at");
+        LocalDateTime expires = expiresAt instanceof java.sql.Timestamp timestamp
+                ? timestamp.toLocalDateTime() : (LocalDateTime) expiresAt;
         if (expires == null || !expires.isAfter(LocalDateTime.now())) {
             jdbc.update("UPDATE login_ip_challenges SET status='EXPIRED' WHERE challenge_id=?", challengeId);
             throw new ResponseStatusException(HttpStatus.GONE, "登录验证已过期");

@@ -101,6 +101,57 @@ class AuthFlowIntegrationTests {
     }
 
     @Test
+    void spoofedForwardedChainCannotBypassNewLoginIpChallenge() {
+        String identifier = uniqueEmail();
+        String firstIp = "198.51.100.10";
+        String secondIp = "198.51.100.11";
+        jdbcTemplate.update("""
+                INSERT INTO users(username, password, email, auth_provider, role, status, balance)
+                VALUES (?, ?, ?, 'local', 'USER', 'ACTIVE', 0)
+                """, identifier, passwordEncoder.encode("StrongPass123"), identifier);
+        Long userId = jdbcTemplate.queryForObject(
+                "SELECT id FROM users WHERE username = ?", Long.class, identifier);
+
+        // The trusted edge overwrites X-Real-IP. The first password login bootstraps its address.
+        client.post().uri("/auth/login")
+                .header("X-Real-IP", firstIp)
+                .bodyValue(Map.of("identifier", identifier, "password", "StrongPass123"))
+                .exchange().expectStatus().isOk()
+                .expectBody().jsonPath("$.access_token").isNotEmpty();
+
+        // A forged XFF still naming the trusted address must not suppress the new-IP challenge.
+        Map<String, Object> challenge = client.post().uri("/auth/login")
+                .header("X-Real-IP", secondIp)
+                .header("X-Forwarded-For", firstIp)
+                .bodyValue(Map.of("identifier", identifier, "password", "StrongPass123"))
+                .exchange().expectStatus().isOk()
+                .expectBody(Map.class).returnResult().getResponseBody();
+        assertThat(challenge).isNotNull()
+                .containsEntry("verificationRequired", true)
+                .doesNotContainKeys("access_token", "refresh_token");
+        String challengeId = challenge.get("challengeId").toString();
+        String storedDigest = jdbcTemplate.queryForObject(
+                "SELECT ip_digest FROM login_ip_challenges WHERE challenge_id = ? AND user_id = ?",
+                String.class, challengeId, userId);
+        assertThat(storedDigest).isEqualTo(secretHashService.hash("login-ip|" + secondIp));
+
+        // The IP check precedes code validation; the challenge stays bound to the new address.
+        client.post().uri("/auth/login/ip-verify")
+                .header("X-Real-IP", firstIp)
+                .bodyValue(Map.of("challengeId", challengeId, "code", "000000"))
+                .exchange().expectStatus().isForbidden();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT status FROM login_ip_challenges WHERE challenge_id = ?", String.class, challengeId))
+                .isEqualTo("PENDING");
+
+        // A matching IP reaches code validation rather than failing with an internal error.
+        client.post().uri("/auth/login/ip-verify")
+                .header("X-Real-IP", secondIp)
+                .bodyValue(Map.of("challengeId", challengeId, "code", "not-a-code"))
+                .exchange().expectStatus().isBadRequest();
+    }
+
+    @Test
     void accessTokenUsesItsOwnExpiryInsteadOfRefreshTokenExpiry() {
         Map<String, Object> registration = register(uniqueEmail(), "StrongPass123");
         String accessToken = registration.get("access_token").toString();
