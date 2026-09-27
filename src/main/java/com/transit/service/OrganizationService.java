@@ -260,8 +260,11 @@ public class OrganizationService {
     public Map<String,Object> updateMember(User caller, Long organizationId, Long memberUserId, Map<String,Object> request) {
         requireRole(caller.getId(), organizationId, "OWNER", "ORG_ADMIN");
         String current = currentRole(memberUserId, organizationId);
-        if ("OWNER".equals(current) && !Objects.equals(caller.getId(), memberUserId))
+        if ("OWNER".equals(current)
+                && (!Objects.equals(caller.getId(), memberUserId)
+                    || request.containsKey("role") || request.containsKey("status"))) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "不能修改企业主账户");
+        }
         if (request.containsKey("role")) {
             String role = string(request.get("role")).toUpperCase();
             if (!List.of("ORG_ADMIN", "BILLING", "MEMBER").contains(role)) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "成员角色无效");

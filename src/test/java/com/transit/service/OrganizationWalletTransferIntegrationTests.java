@@ -145,6 +145,36 @@ class OrganizationWalletTransferIntegrationTests {
     }
 
     @Test
+    void ownerCannotDemoteSelfAndOrphanFundedTreasury() {
+        User owner = user(10_000L);
+        Long companyId = organization(owner, "COMPANY", "OWNER", "TREASURY", 10_000L);
+        jdbc.update("UPDATE users SET default_organization_id=? WHERE id=?", companyId, owner.getId());
+
+        assertThatThrownBy(() -> organizations.updateMember(owner, companyId, owner.getId(),
+                Map.of("role", "MEMBER")))
+                .isInstanceOf(org.springframework.web.server.ResponseStatusException.class)
+                .hasMessageContaining("403 FORBIDDEN");
+        assertThat(jdbc.queryForObject("SELECT member_role FROM organization_members WHERE organization_id=? AND user_id=?",
+                String.class, companyId, owner.getId())).isEqualTo("OWNER");
+        assertThat(walletBalance(companyId, owner.getId())).isEqualTo(10_000L);
+        assertThat(users.selectById(owner.getId()).getBalance()).isEqualTo(10_000L);
+    }
+
+    @Test
+    void ownerCannotSuspendSelfAndOrphanFundedTreasury() {
+        User owner = user(10_000L);
+        Long companyId = organization(owner, "COMPANY", "OWNER", "TREASURY", 10_000L);
+
+        assertThatThrownBy(() -> organizations.updateMember(owner, companyId, owner.getId(),
+                Map.of("status", "SUSPENDED")))
+                .isInstanceOf(org.springframework.web.server.ResponseStatusException.class)
+                .hasMessageContaining("403 FORBIDDEN");
+        assertThat(jdbc.queryForObject("SELECT status FROM organization_members WHERE organization_id=? AND user_id=?",
+                String.class, companyId, owner.getId())).isEqualTo("ACTIVE");
+        assertThat(walletBalance(companyId, owner.getId())).isEqualTo(10_000L);
+    }
+
+    @Test
     void legacyUserWithoutTreasuryTransfersOnce() {
         User owner = user(7_000L);
 
