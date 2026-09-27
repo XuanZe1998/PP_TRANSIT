@@ -33,6 +33,20 @@ public class WalletBalanceService {
         return adjust(userId, -amount, insufficientMessage);
     }
 
+    /** Lock the source before deciding how much can be moved to a new treasury. */
+    @Transactional
+    public long lockTransferableBalance(Long userId) {
+        Map<String, Object> wallet = ownTreasuryWallet(userId);
+        List<Long> balances = jdbcTemplate.queryForList(
+                "SELECT balance FROM users WHERE id=? AND status='ACTIVE' FOR UPDATE", Long.class, userId);
+        if (balances.isEmpty()) throw unavailableOrInsufficient(userId, "User account is unavailable");
+        long balance = balances.get(0);
+        if (balance < 0 || (wallet != null && ((Number) wallet.get("balance")).longValue() != balance)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Balance changed while creating organization");
+        }
+        return balance;
+    }
+
     @Transactional
     public BalanceSnapshot adjust(Long userId, long delta, String insufficientMessage) {
         if (userId == null || delta == 0 || delta == Long.MIN_VALUE) {

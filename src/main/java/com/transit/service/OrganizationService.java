@@ -30,6 +30,7 @@ public class OrganizationService {
     private final IdempotencyService idempotency;
     private final TokenMapper tokenMapper;
     private final ApiKeyService apiKeys;
+    private final WalletBalanceService walletBalanceService;
     private final SecureRandom random = new SecureRandom();
 
     public List<Map<String, Object>> list(User user) {
@@ -65,19 +66,21 @@ public class OrganizationService {
                 INSERT INTO organization_members(organization_id,user_id,member_role,status,joined_at)
                 VALUES (?,?,'OWNER','ACTIVE',?)
                 """, id, owner.getId(), now);
-        long transferable = Math.max(0, owner.getBalance());
+        long transferable = walletBalanceService.lockTransferableBalance(owner.getId());
+        if (transferable > 0) {
+            // Debit the owner's treasury, not a MEMBER wallet in the current default organization.
+            // A concurrent balance change must fail the transaction rather than mint a new wallet.
+            walletBalanceService.debit(owner.getId(), transferable, "Balance changed while creating organization");
+        }
         jdbcTemplate.update("""
                 INSERT INTO wallet_accounts(organization_id,user_id,account_type,balance,status,created_at,updated_at)
                 VALUES (?,?,'TREASURY',?,'ACTIVE',?,?)
                 """, id, owner.getId(), transferable, now, now);
-        Long previousOrg = owner.getDefaultOrganizationId();
-        if (previousOrg != null && transferable > 0) {
-            jdbcTemplate.update("""
-                    UPDATE wallet_accounts SET balance=0, version=version+1, updated_at=?
-                    WHERE organization_id=? AND user_id=? AND balance=?
-                    """, now, previousOrg, owner.getId(), transferable);
+        int changed = jdbcTemplate.update("UPDATE users SET default_organization_id=?,balance=? WHERE id=? AND status='ACTIVE'",
+                id, transferable, owner.getId());
+        if (changed != 1) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Balance changed while creating organization");
         }
-        jdbcTemplate.update("UPDATE users SET default_organization_id=? WHERE id=?", id, owner.getId());
         return Map.of("id", id, "name", normalized, "role", "OWNER", "balance", transferable);
     }
 
@@ -143,7 +146,9 @@ public class OrganizationService {
         if (!"PENDING".equals(invitation.get("status"))) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Invitation is no longer pending");
         }
-        LocalDateTime expires = (LocalDateTime) invitation.get("expires_at");
+        Object expiresAt = invitation.get("expires_at");
+        LocalDateTime expires = expiresAt instanceof java.sql.Timestamp timestamp
+                ? timestamp.toLocalDateTime() : (LocalDateTime) expiresAt;
         if (expires.isBefore(LocalDateTime.now())) {
             jdbcTemplate.update("UPDATE organization_invitations SET status='EXPIRED' WHERE id=?", invitation.get("id"));
             throw new ResponseStatusException(HttpStatus.GONE, "Invitation expired");
