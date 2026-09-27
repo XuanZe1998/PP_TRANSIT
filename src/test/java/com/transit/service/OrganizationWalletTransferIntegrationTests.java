@@ -2,6 +2,7 @@ package com.transit.service;
 
 import com.transit.mapper.UserMapper;
 import com.transit.model.User;
+import com.transit.model.Token;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -20,6 +21,7 @@ class OrganizationWalletTransferIntegrationTests {
     @Autowired OrganizationService organizations;
     @Autowired UserMapper users;
     @Autowired JdbcTemplate jdbc;
+    @Autowired GatewaySettlementService gateway;
 
     @Test
     void creatingAnOrganizationTransfersFromOwnTreasuryNotCurrentMemberWallet() {
@@ -92,6 +94,54 @@ class OrganizationWalletTransferIntegrationTests {
                 Integer.class, name)).isZero();
         assertThat(walletBalance(personalId, owner.getId())).isEqualTo(10_000L);
         assertThat(users.selectById(owner.getId()).getBalance()).isEqualTo(5_000L);
+    }
+
+    @Test
+    void openingAnotherCompanyKeepsExistingEmployeeAllocationsFunded() {
+        User owner = user(10_000L);
+        User employee = user(0L);
+        Long existingId = organization(owner, "COMPANY", "OWNER", "TREASURY", 10_000L);
+        addMember(existingId, employee, "MEMBER", "MEMBER", 4_000L);
+        jdbc.update("UPDATE users SET default_organization_id=? WHERE id=?", existingId, owner.getId());
+        owner = users.selectById(owner.getId());
+
+        Long nextId = ((Number) organizations.create(owner, "next company").get("id")).longValue();
+
+        assertThat(walletBalance(existingId, owner.getId())).isEqualTo(4_000L);
+        assertThat(walletBalance(existingId, employee.getId())).isEqualTo(4_000L);
+        assertThat(walletBalance(nextId, owner.getId())).isEqualTo(6_000L);
+        assertThat(users.selectById(owner.getId()).getBalance()).isEqualTo(6_000L);
+        assertThat(walletBalance(existingId, owner.getId()) + walletBalance(nextId, owner.getId()))
+                .isEqualTo(10_000L);
+    }
+
+    @Test
+    void oldCompanyReservationReleaseDoesNotOverwriteNewDefaultTreasuryMirror() {
+        User owner = user(10_000L);
+        User employee = user(0L);
+        Long existingId = organization(owner, "COMPANY", "OWNER", "TREASURY", 10_000L);
+        addMember(existingId, employee, "MEMBER", "MEMBER", 4_000L);
+        jdbc.update("UPDATE users SET default_organization_id=? WHERE id IN (?,?)",
+                existingId, owner.getId(), employee.getId());
+        owner = users.selectById(owner.getId());
+        employee = users.selectById(employee.getId());
+        Long nextId = ((Number) organizations.create(owner, "next with reservation").get("id")).longValue();
+        String tokenKey = "sk-test-" + UUID.randomUUID();
+        jdbc.update("""
+                INSERT INTO tokens(`key`,key_prefix,user_id,organization_id,name,used_quota,total_quota,enabled)
+                VALUES (?,'sk-test',?,?,'old-company',0,1000,TRUE)
+                """, tokenKey, employee.getId(), existingId);
+        Long tokenId = jdbc.queryForObject("SELECT id FROM tokens WHERE `key`=?", Long.class, tokenKey);
+        Token token = Token.builder().id(tokenId).userId(employee.getId()).organizationId(existingId).build();
+
+        GatewaySettlementService.Reservation reservation = gateway.reserve(token, employee, 10, 1_000,
+                "old-company-" + UUID.randomUUID(), "test-model");
+        gateway.release(reservation, "controlled regression");
+
+        assertThat(walletBalance(existingId, owner.getId())).isEqualTo(4_000L);
+        assertThat(walletBalance(existingId, employee.getId())).isEqualTo(4_000L);
+        assertThat(walletBalance(nextId, owner.getId())).isEqualTo(6_000L);
+        assertThat(users.selectById(owner.getId()).getBalance()).isEqualTo(6_000L);
     }
 
     @Test

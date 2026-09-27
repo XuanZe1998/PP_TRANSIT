@@ -22,6 +22,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class GatewaySettlementService {
     private final JdbcTemplate jdbcTemplate;
+    private final WalletBalanceService walletBalanceService;
     @Autowired(required = false)
     private AgentDistributionService agentDistributionService;
 
@@ -403,10 +404,24 @@ public class GatewaySettlementService {
     }
 
     private void syncWalletOwnerBalance(Long walletId) {
+        Map<String, Object> wallet = jdbcTemplate.queryForMap("""
+                SELECT user_id,organization_id,account_type FROM wallet_accounts WHERE id=?
+                """, walletId);
+        long userId = ((Number) wallet.get("user_id")).longValue();
+        long organizationId = ((Number) wallet.get("organization_id")).longValue();
+        if ("TREASURY".equals(wallet.get("account_type"))) {
+            // A member may spend from an older company after its owner opened a new default treasury.
+            // That older company's balance must not replace the new treasury's legacy user mirror.
+            if (!walletBalanceService.isPreferredOwnTreasuryWallet(userId, walletId)) return;
+        } else {
+            Long defaultOrganizationId = jdbcTemplate.queryForObject(
+                    "SELECT default_organization_id FROM users WHERE id=?", Long.class, userId);
+            if (!java.util.Objects.equals(defaultOrganizationId, organizationId)) return;
+        }
         jdbcTemplate.update("""
                 UPDATE users SET balance=(SELECT balance FROM wallet_accounts WHERE id=?)
-                WHERE id=(SELECT user_id FROM wallet_accounts WHERE id=? )
-                """, walletId, walletId);
+                WHERE id=?
+                """, walletId, userId);
     }
 
     private long walletBalance(Long walletId) {
