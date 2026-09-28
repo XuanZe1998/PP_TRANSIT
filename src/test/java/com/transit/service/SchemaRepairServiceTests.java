@@ -12,6 +12,24 @@ import static org.assertj.core.api.Assertions.assertThat;
 class SchemaRepairServiceTests {
 
     @Test
+    void seedsBlankDisclosureFieldsWithoutOverwritingOperatorDraftOrEnablingPayments() {
+        DriverManagerDataSource dataSource = new DriverManagerDataSource(
+                "jdbc:h2:mem:blank_legal_fields;MODE=MySQL;DB_CLOSE_DELAY=-1", "sa", "");
+        JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+        jdbc.execute("CREATE TABLE system_settings(setting_key VARCHAR(160) PRIMARY KEY, setting_value CLOB, description VARCHAR(255), updated_at TIMESTAMP)");
+        jdbc.update("INSERT INTO system_settings(setting_key,setting_value) VALUES ('legal.operator','Real operator')");
+        SchemaRepairService service = new SchemaRepairService(jdbc);
+        service.seedBlankLegalDisclosureFields();
+        service.seedBlankLegalDisclosureFields();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM system_settings", Integer.class)).isEqualTo(20);
+        assertThat(jdbc.queryForObject("SELECT setting_value FROM system_settings WHERE setting_key='legal.operator'", String.class)).isEqualTo("Real operator");
+        assertThat(jdbc.queryForObject("SELECT setting_value FROM system_settings WHERE setting_key='legal.registration'", String.class)).isEmpty();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM system_settings WHERE setting_key IN ('legal.publication_approved','commerce.payments_enabled')", Integer.class)).isZero();
+        assertThat(new LegalDocumentService(jdbc).publicDocuments().get("checkout_ready")).isEqualTo(false);
+    }
+
+
+    @Test
     void consolidatesSameSiteSameNameGroupMappingsIntoOneSiteIdentity() {
         DriverManagerDataSource dataSource = new DriverManagerDataSource(
                 "jdbc:h2:mem:site_public_identity;MODE=MySQL;DB_CLOSE_DELAY=-1", "sa", "");

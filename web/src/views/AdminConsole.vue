@@ -163,10 +163,11 @@
     <template v-else-if="module === 'settings'">
       <el-alert :type="legalStatus?.publication_ready ? 'success' : 'warning'" :closable="false" :title="legalStatus?.publication_ready ? '出海公开信息已配置并标记为审核通过' : '公开信息尚未配置完成：线上支付处于保护状态'">
         <template #default>
-          在本页新增或编辑 legal.* 配置；缺少字段：{{ legalStatus?.missing_fields?.map((key: string) => `legal.${key}`).join('、') || '请刷新状态' }}。
+          请在下方“公开信息填写区”逐项填写；仍需核对：{{ legalStatus?.missing_fields?.map((key: string) => `legal.${key}`).join('、') || '请刷新状态' }}。
           完成真实信息、双语正文与法律审核后，设置 legal.publication_approved=true，并更新协议版本。详见 docs/INTERNATIONAL_SITE_LAUNCH.md。
         </template>
       </el-alert>
+      <LegalSettingsEditor :settings="rows" :missing-fields="legalStatus?.missing_fields || []" @saved="handleLegalFieldSaved" />
       <article class="panel" style="margin: 16px 0">
         <div class="panel-head"><h3>线上收款总开关</h3></div>
         <p>默认关闭。开启前仍须完成真实经营主体、目标地区及双语政策审核；即使开启，公开信息未就绪时也无法发起付款。关闭后不再生成新的支付链接，已经发出的链接及支付回调仍可能完成，请核对待处理订单。</p>
@@ -851,6 +852,7 @@
 <script setup lang="ts">
 import SelectablePagination from '@/components/SelectablePagination.vue'
 import PagedTable from '@/components/PagedTable.vue'
+import LegalSettingsEditor from '@/components/LegalSettingsEditor.vue'
 import AdminPageToolbar from '@/components/AdminPageToolbar.vue'
 import { computed, defineAsyncComponent, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -896,6 +898,13 @@ const query = ref('')
 const rows = ref<any[]>([])
 const legalStatus = ref<any>(null)
 const paymentSwitchSaving = ref(false)
+async function handleLegalFieldSaved(key: string, value: string, description: string) {
+  const row = rows.value.find(item => item.setting_key === key)
+  if (row) { row.setting_value = value; row.description = description }
+  else rows.value.push({ setting_key: key, setting_value: value, description })
+  try { legalStatus.value = (await http.get('/api/public/legal')).data }
+  catch (error: unknown) { ElMessage.warning(getHttpErrorNotice(error, '已保存，但状态刷新失败，请手动刷新')) }
+}
 async function setPaymentsEnabled(enabled: boolean) {
   try {
     await ElMessageBox.confirm(
