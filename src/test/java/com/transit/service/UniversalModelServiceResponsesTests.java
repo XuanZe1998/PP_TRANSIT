@@ -268,6 +268,19 @@ class UniversalModelServiceResponsesTests {
         verifyNoInteractions(haoee);
     }
 
+    @Test
+    void newApiImageRouteIsCallableWithoutChangingLegacyChatRouting() {
+        mapping.setProtocols("images,chat-completions");
+        channel.setType("openai-compatible");
+        channel.setSourceCode("new-api");
+
+        assertThat(service.hasHaoeeRoute("gpt-5.4-pro", "images")).isTrue();
+        assertThat(service.hasHaoeeRoute("gpt-5.4-pro", "responses")).isFalse();
+        assertThat(service.hasHaoeeRoute("gpt-5.4-pro", "chat-completions")).isFalse();
+        assertThat(service.route("gpt-5.4-pro", "images").channel().getApiKey())
+                .isEqualTo("upstream-secret");
+    }
+
     private ObjectNode request(boolean stream) {
         return objectMapper.createObjectNode()
                 .put("model", "gpt-5.4-pro")

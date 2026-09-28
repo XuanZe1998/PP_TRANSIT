@@ -262,7 +262,7 @@ public class UniversalModelService {
         if (publicModel == null || publicModel.isBlank()) return false;
         return candidateMappings(publicModel, protocol).stream().anyMatch(mapping -> {
             Channel channel = channels.selectById(mapping.getChannelId());
-            return isUniversalChannel(channel);
+            return isUniversalChannel(channel, protocol);
         });
     }
 
@@ -437,7 +437,7 @@ public class UniversalModelService {
         List<ModelMapping> candidates = candidateMappings(publicModel, protocol);
         for (ModelMapping mapping : candidates) {
             Channel channel = channels.selectById(mapping.getChannelId());
-            if (!isUniversalChannel(channel)) continue;
+            if (!isUniversalChannel(channel, protocol)) continue;
             ProviderCredentialService.SelectedCredential selected = null;
             try {
                 selected = credentials.select(channel, publicModel, sessionId, requireReliableCost);
@@ -468,13 +468,15 @@ public class UniversalModelService {
                 .filter(mapping -> supports(mapping, protocol)).toList();
     }
 
-    private boolean isUniversalChannel(Channel channel) {
+    private boolean isUniversalChannel(Channel channel, String protocol) {
         if (channel == null || !channel.isEnabled()) return false;
         String health = Objects.toString(channel.getHealthStatus(), "UNTESTED").toUpperCase(Locale.ROOT);
         boolean healthy = List.of("HEALTHY", "DEGRADED").contains(health)
                 || ("COOLDOWN".equals(health) && channel.getCooldownUntil() != null
                 && channel.getCooldownUntil().isBefore(LocalDateTime.now()));
-        return healthy && (channel.isManaged()
+        return healthy && (("new-api".equalsIgnoreCase(channel.getSourceCode())
+                && "images".equalsIgnoreCase(protocol))
+                || channel.isManaged()
                 || "haoee".equalsIgnoreCase(channel.getType())
                 || "haoee-openai".equalsIgnoreCase(channel.getType())
                 || "aiapibank".equalsIgnoreCase(channel.getSourceCode())

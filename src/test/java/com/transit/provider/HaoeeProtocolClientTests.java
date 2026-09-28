@@ -117,6 +117,30 @@ class HaoeeProtocolClientTests {
     }
 
     @Test
+    void newApiImagesUseOpenAiCompatibleHeaders() {
+        AtomicReference<ClientRequest> captured = new AtomicReference<>();
+        WebClient client = WebClient.builder().exchangeFunction(request -> {
+            captured.set(request);
+            return Mono.just(ClientResponse.create(HttpStatus.OK)
+                    .header("Content-Type", MediaType.APPLICATION_JSON_VALUE)
+                    .body("{\"data\":[]}").build());
+        }).build();
+        HaoeeProtocolClient gateway = new HaoeeProtocolClient(client);
+        Channel channel = Channel.builder().sourceCode("new-api")
+                .baseUrl("https://ahhilai.top").apiKey("upstream-secret").build();
+
+        StepVerifier.create(gateway.invoke(channel, "gpt-image-2", "/v1/images/generations",
+                        HttpMethod.POST, JsonNodeFactory.instance.objectNode().put("model", "gpt-image-2")))
+                .expectNextCount(1).verifyComplete();
+
+        assertThat(captured.get().url().toString())
+                .isEqualTo("https://ahhilai.top/v1/images/generations");
+        assertThat(captured.get().headers().getFirst("Authorization"))
+                .isEqualTo("Bearer upstream-secret");
+        assertThat(captured.get().headers().getFirst("ModelName")).isNull();
+    }
+
+    @Test
     void aiApiBankUsesNativeAnthropicHeadersWithoutHaoeeModelName() {
         AtomicReference<ClientRequest> captured = new AtomicReference<>();
         WebClient client = WebClient.builder().exchangeFunction(request -> {
