@@ -55,6 +55,9 @@ class PublicModelPresentationIntegrationTests {
         assertThat(bank).extracting(PublicModel::getPublisherCode, PublicModel::getCapability,
                 PublicModel::getInputModalities, PublicModel::getOutputModalities, PublicModel::getProtocols)
                 .containsExactly("openai", "reasoning", "text", "text", "chat-completions");
+        assertThat(platform.getVerificationStatus()).isEqualTo("UNVERIFIED");
+        assertThat(bank.getVerificationStatus()).isEqualTo("UNVERIFIED");
+        assertThat(bank.getVerificationMessage()).contains("尚无当前路由的有效实测记录");
         assertThat(platform.getPlanName()).isEqualTo("智能路由");
         assertThat(bank.getRouteName()).isEqualTo("AiAPIBank");
         assertThat(bank.getPlanName()).isEqualTo("团队套餐");

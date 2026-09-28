@@ -31,6 +31,10 @@ export type PublicModelOffer = ModelCategoryInput & {
   pricingMessage?: string
   pricingVerifiedAt?: string
   available?: boolean
+  verificationStatus?: string
+  verificationMessage?: string
+  verifiedAt?: string | null
+  lastSeenAt?: string | null
   billingConfigured?: boolean
   upstreams?: PublicUpstream[]
   minInputPricePerMillion?: number
