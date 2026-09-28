@@ -63,6 +63,9 @@ const routes: RouteRecordRaw[] = [
   { path: '/payment/result', component: PaymentResult, meta: { title: '支付结果', role: 'user' } },
   { path: '/terms', component: LegalPage, meta: { title: '用户协议', role: 'public', legalKind: 'terms' } },
   { path: '/privacy', component: LegalPage, meta: { title: '隐私政策', role: 'public', legalKind: 'privacy' } },
+  ...(['refund', 'ai-data', 'subprocessors', 'cookies', 'rights', 'support', 'security'] as const).map(path => ({
+    path: `/${path}`, component: LegalPage, meta: { title: path, role: 'public', legalKind: path.replace('-', '_') }
+  })),
   { path: '/console', component: UserConsole, meta: { title: '用户总览', role: 'user' } },
   { path: '/console/keys', component: UserConsole, meta: { title: 'API Key 管理', role: 'user' } },
   { path: '/console/playground', component: UserConsole, meta: { title: '在线调试', role: 'user' } },

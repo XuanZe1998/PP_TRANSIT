@@ -1,0 +1,15 @@
+# /etc/msmtprc sample. Install as root:root mode 0600, not from a public repo.
+defaults
+auth on
+tls on
+tls_starttls on
+tls_trust_file /etc/ssl/certs/ca-certificates.crt
+
+account linknux
+host smtp.resend.com
+port 587
+from linknux@linknux.com
+user REPLACE_WITH_DEDICATED_SMTP_USERNAME
+passwordeval "cat /etc/linknux-security/smtp-password"
+
+account default : linknux

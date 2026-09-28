@@ -33,9 +33,13 @@ public class SchemaRepairService {
             ensureCoreTables();
             ensureOAuthTables();
             ensurePlatformTables();
+            ensureLegalSettingCapacity();
             ensureAdminOperationsTables();
             ensureAccountPresentationTables();
             ensureColumns();
+            ensureColumn("legal_checkout_acceptances", "disclosure_snapshot",
+                    "ALTER TABLE legal_checkout_acceptances ADD COLUMN disclosure_snapshot TEXT NULL");
+            ensureLegalSnapshotCapacity();
             consolidateDuplicateSitePublicMappings();
             normalizeAndValidateContacts();
             ensureIndexes();
@@ -1067,6 +1071,62 @@ public class SchemaRepairService {
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
                 """);
+    }
+
+    private void ensureLegalSettingCapacity() {
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS legal_checkout_acceptances (
+                    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+                    user_id BIGINT NOT NULL,
+                    business_type VARCHAR(40) NOT NULL,
+                    business_id BIGINT NOT NULL,
+                    disclosure_id VARCHAR(64) NOT NULL,
+                    disclosure_snapshot TEXT NULL,
+                    accepted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+                """);
+        // Long, reviewed bilingual policies must not be silently limited to the old 2,000 characters.
+        String product = jdbcTemplate.execute((org.springframework.jdbc.core.ConnectionCallback<String>) connection -> {
+            for (String table : java.util.List.of("system_settings", "SYSTEM_SETTINGS")) {
+                try (var columns = connection.getMetaData().getColumns(connection.getCatalog(), null,
+                        table, table.equals("system_settings") ? "setting_value" : "SETTING_VALUE")) {
+                    if (columns.next()) {
+                        String type = columns.getString("TYPE_NAME").toUpperCase(java.util.Locale.ROOT);
+                        if (type.contains("LONGTEXT") || type.contains("CLOB") || columns.getLong("COLUMN_SIZE") > 65535) return "ready";
+                        break;
+                    }
+                }
+            }
+            return connection.getMetaData().getDatabaseProductName();
+        });
+        if ("ready".equals(product)) return;
+        if (product.toLowerCase(java.util.Locale.ROOT).contains("mysql")
+                || product.toLowerCase(java.util.Locale.ROOT).contains("mariadb"))
+            jdbcTemplate.execute("ALTER TABLE system_settings MODIFY COLUMN setting_value LONGTEXT NULL");
+        else
+            jdbcTemplate.execute("ALTER TABLE system_settings ALTER COLUMN setting_value CLOB");
+    }
+
+    private void ensureLegalSnapshotCapacity() {
+        String product = jdbcTemplate.execute((org.springframework.jdbc.core.ConnectionCallback<String>) connection -> {
+            for (String table : java.util.List.of("legal_checkout_acceptances", "LEGAL_CHECKOUT_ACCEPTANCES")) {
+                try (var columns = connection.getMetaData().getColumns(connection.getCatalog(), null,
+                        table, table.equals("legal_checkout_acceptances") ? "disclosure_snapshot" : "DISCLOSURE_SNAPSHOT")) {
+                    if (columns.next()) {
+                        String type = columns.getString("TYPE_NAME").toUpperCase(java.util.Locale.ROOT);
+                        if (type.contains("LONGTEXT") || type.contains("CLOB") || columns.getLong("COLUMN_SIZE") > 65535) return "ready";
+                        break;
+                    }
+                }
+            }
+            return connection.getMetaData().getDatabaseProductName();
+        });
+        if ("ready".equals(product)) return;
+        if (product.toLowerCase(java.util.Locale.ROOT).contains("mysql")
+                || product.toLowerCase(java.util.Locale.ROOT).contains("mariadb"))
+            jdbcTemplate.execute("ALTER TABLE legal_checkout_acceptances MODIFY COLUMN disclosure_snapshot LONGTEXT NULL");
+        else
+            jdbcTemplate.execute("ALTER TABLE legal_checkout_acceptances ALTER COLUMN disclosure_snapshot CLOB");
     }
 
     private void ensureOAuthTables() {

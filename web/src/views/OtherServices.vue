@@ -74,6 +74,7 @@
         </div>
         <el-button :loading="ordersLoading" @click="loadOrders">刷新订单</el-button>
       </div>
+      <p class="order-policy-links">付款前请核对订单金额与币种，并阅读 <router-link to="/terms" target="_blank">服务条款</router-link>、<router-link to="/refund" target="_blank">退款与取消</router-link>、<router-link to="/privacy" target="_blank">隐私政策</router-link>。</p>
       <PagedTable v-loading="ordersLoading" :data="orders" empty-text="暂无服务订单" list-id="OtherServices-1" pagination="external">
         <el-table-column prop="orderNo" label="订单号" min-width="190" />
         <el-table-column prop="productName" label="服务" min-width="170" />
@@ -181,9 +182,10 @@
           </el-form-item>
         </div>
       </el-form>
+      <CheckoutDisclosure v-model="checkoutAcknowledged" v-model:disclosure-id="checkoutDisclosureId" />
       <template #footer>
         <el-button @click="orderDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="buyingServiceId !== null" @click="submitOrder">创建订单</el-button>
+        <el-button type="primary" :loading="buyingServiceId !== null" :disabled="!checkoutAcknowledged" @click="submitOrder">创建订单</el-button>
       </template>
     </el-dialog>
 
@@ -227,11 +229,12 @@ import PagedList from "@/components/PagedList.vue"
 import PagedTable from '@/components/PagedTable.vue'
 import ListPagination from '@/components/ListPagination.vue'
 import PaymentActionDialog, { type PaymentAction } from '@/components/PaymentActionDialog.vue'
+import CheckoutDisclosure from '@/components/CheckoutDisclosure.vue'
 import { paymentActionOf } from '@/utils/payment'
 import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { formatCurrencyCents } from '@/utils/money'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import http, { createIdempotencyKey, getHttpErrorMessage, resolveApiResourceUrl } from '@/utils/http'
 import { getToken } from '@/utils/auth'
@@ -316,6 +319,8 @@ const ordersLoading = ref(false)
 const buyingServiceId = ref<number | null>(null)
 const failedImages = ref(new Set<number>())
 const orderDialogVisible = ref(false)
+const checkoutAcknowledged = ref(false)
+const checkoutDisclosureId = ref('')
 const orderFormRef = ref<FormInstance>()
 const selectedService = ref<OtherService | null>(null)
 const quote = ref<Quote | null>(null)
@@ -589,6 +594,7 @@ async function openOrderDialog(service: OtherService) {
     ElMessage.warning('该服务当前不可下单')
     return
   }
+  checkoutAcknowledged.value = false
   selectedService.value = service
   orderForm.quantity = 1
   orderForm.couponCode = ''
@@ -619,6 +625,7 @@ async function refreshQuote() {
 }
 
 async function submitOrder() {
+  if (!checkoutAcknowledged.value || !checkoutDisclosureId.value) return
   const service = selectedService.value
   if (!service) return
   try {
@@ -707,8 +714,11 @@ async function copyAllDelivery() {
 
 async function startPayment(order: ServiceOrder) {
   try {
+    const legal = (await http.get('/api/public/legal')).data
+    if (!legal?.publication_ready) return ElMessage.warning('运营方尚未发布完整交易条款')
+    try { await ElMessageBox.confirm('继续支付前，请核对订单详情并阅读退款与取消政策。', '支付确认', { confirmButtonText: '继续支付', cancelButtonText: '取消' }) } catch { return }
     const response = await http.post(`/api/service-orders/${order.id}/payment`, {}, {
-      headers: { 'Idempotency-Key': createIdempotencyKey(`service-payment-${order.id}`) }
+      headers: { 'Idempotency-Key': createIdempotencyKey(`service-payment-${order.id}`), 'X-Checkout-Disclosure': legal.checkout_disclosure_id }
     })
     await loadOrders()
     if (['PAID', 'FULFILLED'].includes(response.data?.order?.status)) {

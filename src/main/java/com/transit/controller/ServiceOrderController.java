@@ -14,6 +14,7 @@ import com.transit.service.ServiceOrderService;
 import com.transit.service.ServiceCommerceService;
 import com.transit.service.ServiceCouponAdminService;
 import com.transit.service.IdempotencyService;
+import com.transit.service.LegalDocumentService;
 import com.transit.model.ServiceCoupon;
 import com.transit.model.ServiceInventoryItem;
 import lombok.Data;
@@ -38,6 +39,7 @@ public class ServiceOrderController {
     private final IdempotencyService idempotencyService;
     private final ClientIpResolver clientIps;
     private final AdminAuditService adminAuditService;
+    private final LegalDocumentService legalDocuments;
 
     @PostMapping("/service-orders")
     public Mono<Object> createServiceOrder(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
@@ -81,14 +83,18 @@ public class ServiceOrderController {
     public Mono<Object> startPayment(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
                                                 @RequestHeader("Idempotency-Key") String idempotencyKey,
                                                 @PathVariable Long id,
+                                                @RequestHeader("X-Checkout-Disclosure") String disclosureId,
                                                 HttpServletRequest httpRequest) {
         User user = currentUserService.requireUser(authHeader);
+        legalDocuments.requireCheckoutOpen();
         return Mono.fromCallable(() -> {
             IdempotencyService.Claim claim = idempotencyService.claim(
                     "USER", user.getId(), "START_SERVICE_ORDER_PAYMENT:" + id,
                     idempotencyKey, java.util.Map.of("id", id), true);
             if (claim.replay()) return claim.response();
             try {
+                serviceOrderService.getUserOrder(user, id);
+                legalDocuments.recordCheckoutConsent(user.getId(), "SERVICE_ORDER", id, disclosureId);
                 ServiceOrderResponse response = serviceOrderService.startPayment(user, id, clientIp(httpRequest));
                 idempotencyService.complete(claim, 200, response, "SERVICE_ORDER", id);
                 return response;

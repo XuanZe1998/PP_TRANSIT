@@ -626,6 +626,11 @@
                 <el-input-number v-model="customRechargeAmount" :min="0.01" :precision="2" :step="10" controls-position="right" style="width:100%" />
                 <div class="form-hint">金额必须大于 0，最多保留两位小数。</div>
               </el-form-item>
+              <p class="checkout-disclosure">{{ customRecharge ? `实付 ${customRechargeAmount.toFixed(2)} ${getDisplayCurrency()}，到账金额以服务端订单确认页为准。` : `实付 ${formatMoneyDto(selectedRechargePlan?.paymentMoney)}，到账 ${formatMoneyDto(selectedRechargePlan?.totalCreditMoney)}。` }}
+                模型调用按实际用量另行扣费；税费、汇率和最终金额请以支付订单为准。充值前请阅读
+                <router-link to="/refund" target="_blank">退款与取消</router-link>、<router-link to="/terms" target="_blank">服务条款</router-link>和<router-link to="/ai-data" target="_blank">AI 数据处理</router-link>。</p>
+              <el-alert v-if="!rechargeLegal?.checkout_ready" type="warning" :closable="false" title="收款未开启或公开信息尚未审核完成，暂不能付款。" />
+              <el-checkbox v-model="checkoutAcknowledged" :disabled="!rechargeLegal?.checkout_ready">我已阅读本次交易条件、退款与取消政策</el-checkbox>
               <el-form-item label="支付方式"><el-radio-group v-model="rechargeForm.paymentMethod"><el-radio value="alipay">支付宝</el-radio><el-radio value="wxpay">微信支付</el-radio></el-radio-group></el-form-item>
               <el-form-item v-if="wallet.invoiceEnabled" label="需要开具账单 / 发票"><el-switch v-model="rechargeForm.needInvoice" /></el-form-item>
               <template v-if="wallet.invoiceEnabled && rechargeForm.needInvoice">
@@ -637,7 +642,7 @@
                 <el-form-item label="国家/地区"><el-input v-model="rechargeForm.billingCountry" /></el-form-item>
               </template>
             </el-form>
-            <template #footer><el-button @click="rechargeVisible=false">取消</el-button><el-button type="primary" :disabled="customRecharge ? customRechargeAmount <= 0 : !selectedRechargePlan" :loading="rechargeSubmitting" @click="submitRecharge">立即支付</el-button></template>
+            <template #footer><el-button @click="rechargeVisible=false">取消</el-button><el-button type="primary" :disabled="!rechargeLegal?.checkout_ready || !checkoutAcknowledged || (customRecharge ? customRechargeAmount <= 0 : !selectedRechargePlan)" :loading="rechargeSubmitting" @click="submitRecharge">立即支付</el-button></template>
           </el-drawer>
         </section>
 
@@ -856,6 +861,8 @@ type MoneyDto = { amount: number | string; currency: string; scale: number }
 type RechargePlan = { id: number | string; name: string; amount: AmountUnits; bonus?: number; paymentMoney?: MoneyDto; totalCreditMoney?: MoneyDto }
 const rechargeVisible = ref(false)
 const rechargeSubmitting = ref(false)
+const rechargeLegal = ref<Record<string, any> | null>(null)
+const checkoutAcknowledged = ref(false)
 const selectedRechargePlan = ref<RechargePlan | null>(null)
 const customRecharge = ref(false)
 const customRechargeAmount = ref(1)
@@ -1284,7 +1291,13 @@ function formatMoneyDto(money?: MoneyDto | null) {
   return formatLocalizedMoneyDto(money)
 }
 
+async function loadCheckoutDisclosure() {
+  checkoutAcknowledged.value = false
+  try { rechargeLegal.value = (await http.get('/api/public/legal')).data } catch { rechargeLegal.value = null }
+}
+
 function openRecharge(plan: RechargePlan) {
+  void loadCheckoutDisclosure()
   customRecharge.value = false
   selectedRechargePlan.value = plan
   rechargeForm.value.contactEmail = String(dashboard.value?.profile?.email || dashboard.value?.user?.email || '')
@@ -1302,6 +1315,7 @@ async function handleRechargeOrderPageSizeChange() {
 }
 
 function openCustomRecharge() {
+  void loadCheckoutDisclosure()
   selectCustomRecharge()
   rechargeForm.value.contactEmail = String(dashboard.value?.profile?.email || dashboard.value?.user?.email || '')
   rechargeVisible.value = true
@@ -1318,6 +1332,7 @@ function selectCustomRecharge() {
 }
 
 async function openRechargePanel() {
+  await loadCheckoutDisclosure()
   if (route.path !== '/console/wallet') await router.push('/console/wallet')
   if (!wallet.value.plans.length) await loadWallet()
   selectedRechargePlan.value = wallet.value.plans[0] || null
@@ -1326,6 +1341,15 @@ async function openRechargePanel() {
 }
 
 async function submitRecharge() {
+  if (!checkoutAcknowledged.value || !rechargeLegal.value?.publication_ready) return
+  const currentLegal = await http.get('/api/public/legal').then(response => response.data).catch(() => null)
+  if (!currentLegal?.checkout_ready || currentLegal.terms_version !== rechargeLegal.value.terms_version
+      || currentLegal.privacy_version !== rechargeLegal.value.privacy_version) {
+    checkoutAcknowledged.value = false
+    rechargeLegal.value = currentLegal
+    ElMessage.warning('公开条款已更新或暂不可用，请重新阅读后确认')
+    return
+  }
   if (customRecharge.value) {
     if (!Number.isFinite(customRechargeAmount.value) || customRechargeAmount.value <= 0) {
       ElMessage.warning('自定义充值金额必须大于 0')
@@ -1348,7 +1372,7 @@ async function submitRecharge() {
     const intentId = created.data?.paymentIntent?.id
     if (!intentId) throw new Error('支付意图创建失败')
     const started = await http.post(`/api/payment-intents/${intentId}/start`, {},
-      { headers: { 'Idempotency-Key': createIdempotencyKey(`payment-start-${intentId}`) } })
+      { headers: { 'Idempotency-Key': createIdempotencyKey(`payment-start-${intentId}`), 'X-Checkout-Disclosure': currentLegal.checkout_disclosure_id } })
     rechargeVisible.value = false
     paymentAction.value = paymentActionOf(started.data)
     paymentDialogVisible.value = Boolean(paymentAction.value)

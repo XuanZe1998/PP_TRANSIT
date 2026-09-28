@@ -1,0 +1,8 @@
+# Do not install until a separate named sudo administrator with a verified SSH key
+# and out-of-band recovery has been tested in a second session.
+PermitRootLogin no
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PubkeyAuthentication yes
+MaxAuthTries 3
+X11Forwarding no
