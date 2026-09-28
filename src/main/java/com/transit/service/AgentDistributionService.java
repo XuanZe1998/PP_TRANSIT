@@ -19,6 +19,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class AgentDistributionService {
     private final JdbcTemplate jdbc;
+    private final WalletBalanceService walletBalanceService;
 
     @Value("${features.linknux.agent.enabled:false}")
     private boolean enabled;
@@ -126,9 +127,7 @@ public class AgentDistributionService {
         }
         Long eventId = jdbc.queryForObject("SELECT id FROM agent_commission_events WHERE business_event_id=?", Long.class, businessEventId);
         if (rebate > 0) {
-            int credited = jdbc.update("UPDATE users SET balance=balance+? WHERE id=? AND status='ACTIVE'", rebate, customerUserId);
-            if (credited != 1) throw new ResponseStatusException(HttpStatus.CONFLICT, "返利账户不可用");
-            long balance = jdbc.queryForObject("SELECT balance FROM users WHERE id=?", Long.class, customerUserId);
+            long balance = walletBalanceService.credit(customerUserId, rebate).balance();
             jdbc.update("INSERT INTO wallet_transactions(user_id,type,amount,balance_after,channel,remark,created_at) VALUES (?,'AGENT_REBATE',?,?, 'agent',?,?)",
                     customerUserId, rebate, balance, "消费返利 " + businessEventId, LocalDateTime.now());
             ledger(eventId, businessEventId, customerUserId, agentUserId, customerUserId,
@@ -171,18 +170,29 @@ public class AgentDistributionService {
     public Map<String, Object> transferToBalance(Long userId, long amount, String eventKey) {
         requireEnabled();
         if (amount <= 0 || eventKey == null || eventKey.isBlank()) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "金额和业务事件不能为空");
+        String businessId = "TRANSFER:" + eventKey.trim();
+        // Serialize distinct transfers for one agent before checking available commission.
+        if (jdbc.queryForList("SELECT id FROM users WHERE id=? AND status='ACTIVE' FOR UPDATE", Long.class, userId).isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "代理账户不可用");
+        }
+        List<Map<String, Object>> existing = jdbc.queryForList("SELECT agent_user_id,agent_commission_amount FROM agent_commission_events WHERE business_event_id=? AND business_type='TRANSFER'", businessId);
+        if (!existing.isEmpty()) {
+            Map<String, Object> row = existing.get(0);
+            if (((Number) row.get("agent_user_id")).longValue() != userId || ((Number) row.get("agent_commission_amount")).longValue() != amount) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "业务事件已被其他转账使用");
+            }
+            return summary(userId);
+        }
         long available = availableCommission(userId);
         if (amount > available) throw new ResponseStatusException(HttpStatus.CONFLICT, "可用佣金不足");
-        String businessId = "TRANSFER:" + eventKey.trim();
         try {
             jdbc.update("INSERT INTO agent_commission_events(business_event_id,business_type,customer_user_id,agent_user_id,sale_amount,cost_amount,gross_profit,commission_pool,customer_rebate_amount,agent_commission_amount,amount_scale,status,created_at) VALUES (?,'TRANSFER',?,?,0,0,0,0,0,?,?,'SETTLED',?)",
                     businessId, userId, userId, amount, amountScale, LocalDateTime.now());
-        } catch (DuplicateKeyException duplicate) { return summary(userId); }
+        } catch (DuplicateKeyException duplicate) { throw new ResponseStatusException(HttpStatus.CONFLICT, "业务事件已被使用"); }
         Long transferEventId = jdbc.queryForObject("SELECT id FROM agent_commission_events WHERE business_event_id=?", Long.class, businessId);
         ledger(transferEventId, businessId, userId, userId, userId, "TRANSFER_OUT", -amount,
                 "AVAILABLE", LocalDateTime.now(), "佣金转入平台余额");
-        jdbc.update("UPDATE users SET balance=balance+? WHERE id=?", amount, userId);
-        long balance = jdbc.queryForObject("SELECT balance FROM users WHERE id=?", Long.class, userId);
+        long balance = walletBalanceService.credit(userId, amount).balance();
         jdbc.update("INSERT INTO wallet_transactions(user_id,type,amount,balance_after,channel,remark,created_at) VALUES (?,'AGENT_TRANSFER',?,?, 'agent',?,?)",
                 userId, amount, balance, businessId, LocalDateTime.now());
         return summary(userId);
