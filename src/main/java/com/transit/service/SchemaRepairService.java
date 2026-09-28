@@ -985,6 +985,8 @@ public class SchemaRepairService {
                     stage VARCHAR(40) NOT NULL,
                     estimated_amount BIGINT NOT NULL DEFAULT 0,
                     reserved_amount BIGINT NOT NULL DEFAULT 0,
+                    wallet_account_id BIGINT NULL,
+                    funding_wallet_account_id BIGINT NULL,
                     actual_amount BIGINT NOT NULL DEFAULT 0,
                     status VARCHAR(40) NOT NULL DEFAULT 'RESERVED',
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -1253,6 +1255,8 @@ public class SchemaRepairService {
     }
 
     private void ensureColumns() {
+        ensureColumn("creative_billing_reservations", "wallet_account_id", "ALTER TABLE creative_billing_reservations ADD COLUMN wallet_account_id BIGINT NULL");
+        ensureColumn("creative_billing_reservations", "funding_wallet_account_id", "ALTER TABLE creative_billing_reservations ADD COLUMN funding_wallet_account_id BIGINT NULL");
         ensureColumn("oauth_login_states", "target_user_id", "ALTER TABLE oauth_login_states ADD COLUMN target_user_id BIGINT NULL");
         ensureColumn("oauth_login_states", "flow_type", "ALTER TABLE oauth_login_states ADD COLUMN flow_type VARCHAR(16) NOT NULL DEFAULT 'LOGIN'");
         ensureColumn("creative_platform_connections", "default_slot",
