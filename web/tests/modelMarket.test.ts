@@ -35,6 +35,9 @@ describe('model marketplace helpers', () => {
   it('keeps card metadata and pricing collapsed until requested and synchronizes column heights', () => {
     const market = source('src/views/ModelMarket.vue')
     const css = source('src/style.css')
+    expect(market).toContain('已上架 · 未实测')
+    expect(market).toContain('有历史实测记录')
+    expect(market).not.toContain('<span class="market-badge available">已验证可调用</span>')
     expect(market).toContain('<details class="market-card-details">')
     expect(market).toContain('<dl class="market-meta">')
     expect(market).toContain('<ModelSalePricing')

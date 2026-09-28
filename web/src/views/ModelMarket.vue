@@ -76,11 +76,11 @@
                   <span class="market-publisher-icon"><img v-if="publisherIcon(model.publisherCode)" :src="publisherIcon(model.publisherCode)" :alt="`${model.publisherName} 图标`" /><span v-else class="market-publisher-fallback">{{ (model.publisherName || '未').slice(0, 1) }}</span></span>
                   <span><strong>{{ model.publisherName || '未声明' }}</strong><small>{{ model.routeName || '平台智能路由' }}</small></span>
                 </div>
-                <div class="market-card-badges"><span class="market-badge">{{ model.planName || '标准' }}</span><span class="market-badge available">已验证可调用</span></div>
+                <div class="market-card-badges"><span class="market-badge">{{ model.planName || '标准' }}</span><span class="market-badge" :title="model.verificationMessage || '已上架，但尚无当前路由的有效实测记录'">{{ model.verificationStatus === 'AVAILABLE' && model.verifiedAt ? '有历史实测记录' : '已上架 · 未实测' }}</span></div>
               </header>
               <h3>{{ model.displayName || model.upstreamModelName || model.publicName }}</h3>
               <p class="market-public-id">{{ model.publicName }}</p>
-              <p class="market-card-desc">{{ model.routeName || '平台智能路由' }} · {{ model.planName || '标准' }}，价格与可用性以当前公开目录为准。</p>
+              <p class="market-card-desc">{{ model.routeName || '平台智能路由' }} · {{ model.planName || '标准' }}，已上架不代表实时调用成功，调用前请在控制台测试。</p>
               <div class="market-tags"><span>{{ categoryLabel(model.category) }}</span><span>{{ capabilityLabel(model.capability) }}</span><span>{{ model.inputModalities || '未声明' }} → {{ model.outputModalities || '未声明' }}</span><span>{{ model.protocols || '未声明' }}</span></div>
             </div>
             <footer>

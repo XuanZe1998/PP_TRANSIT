@@ -89,8 +89,8 @@ public class PublicModelPresentationService {
             model.setCategory(text(identity, "category", ModelIdentityService.category(
                     model.getCapability(), model.getInputModalities(), model.getOutputModalities())));
             applyRouteAndPlan(model);
-            if (!useful(model.getVerificationStatus())) model.setVerificationStatus("AVAILABLE");
-            if (!useful(model.getVerificationMessage())) model.setVerificationMessage("当前公开路由已验证可调用");
+            if (!useful(model.getVerificationStatus())) model.setVerificationStatus("UNVERIFIED");
+            if (!useful(model.getVerificationMessage())) model.setVerificationMessage("已上架，但尚无当前路由的有效实测记录");
             if (!useful(model.getPricingStatus())) model.setPricingStatus(model.isBillingConfigured() ? "VERIFIED" : "PENDING");
             model.setPricingMessage(publicPricingMessage(model));
             model.setPricingSourceUrl(null);
