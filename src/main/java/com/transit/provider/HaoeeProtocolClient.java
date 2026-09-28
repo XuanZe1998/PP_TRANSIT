@@ -16,6 +16,8 @@ import org.springframework.web.util.UriComponentsBuilder;
 import org.springframework.http.client.MultipartBodyBuilder;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.netty.http.client.HttpClientRequest;
+import java.time.Duration;
 
 @Component
 public class HaoeeProtocolClient {
@@ -34,6 +36,14 @@ public class HaoeeProtocolClient {
                 .contentType(MediaType.APPLICATION_JSON)
                 .accept(MediaType.APPLICATION_JSON);
         applyProviderHeaders(request, channel, path);
+        if ("new-api".equalsIgnoreCase(channel.getSourceCode())
+                && "/v1/images/generations".equals(path)) {
+            // Image generation may outlast the shared 90-second upstream response timeout.
+            request.httpRequest(httpRequest -> {
+                HttpClientRequest nativeRequest = httpRequest.getNativeRequest();
+                nativeRequest.responseTimeout(Duration.ofSeconds(180));
+            });
+        }
         if (haoee(channel)) request.header("ModelName", providerModel);
         return request.bodyValue(body).retrieve().bodyToMono(JsonNode.class);
     }

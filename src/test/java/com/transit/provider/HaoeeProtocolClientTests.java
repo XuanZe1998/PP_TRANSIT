@@ -11,9 +11,14 @@ import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.reactive.function.client.ClientRequest;
 import org.springframework.web.reactive.function.client.ClientResponse;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.http.client.reactive.ReactorClientHttpConnector;
+import reactor.netty.http.client.HttpClient;
+import reactor.netty.http.server.HttpServer;
+import reactor.netty.DisposableServer;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
+import java.time.Duration;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -138,6 +143,31 @@ class HaoeeProtocolClientTests {
         assertThat(captured.get().headers().getFirst("Authorization"))
                 .isEqualTo("Bearer upstream-secret");
         assertThat(captured.get().headers().getFirst("ModelName")).isNull();
+    }
+
+    @Test
+    void newApiImageRequestOverridesTheSharedResponseTimeout() {
+        DisposableServer server = HttpServer.create().host("127.0.0.1").port(0)
+                .route(routes -> routes.post("/v1/images/generations", (request, response) -> response
+                        .header("Content-Type", "application/json")
+                        .sendString(Mono.delay(Duration.ofMillis(300)).map(ignored -> "{\"data\":[]}"))))
+                .bindNow();
+        try {
+            WebClient client = WebClient.builder()
+                    .clientConnector(new ReactorClientHttpConnector(HttpClient.create()
+                            .responseTimeout(Duration.ofMillis(100))))
+                    .build();
+            HaoeeProtocolClient gateway = new HaoeeProtocolClient(client);
+            Channel channel = Channel.builder().sourceCode("new-api")
+                    .baseUrl("http://127.0.0.1:" + server.port()).apiKey("test-secret").build();
+
+            StepVerifier.create(gateway.invoke(channel, "gpt-image-2", "/v1/images/generations",
+                            HttpMethod.POST, JsonNodeFactory.instance.objectNode().put("model", "gpt-image-2")))
+                    .assertNext(body -> assertThat(body.path("data").isArray()).isTrue())
+                    .verifyComplete();
+        } finally {
+            server.disposeNow();
+        }
     }
 
     @Test
