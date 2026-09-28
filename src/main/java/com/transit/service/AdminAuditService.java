@@ -16,9 +16,14 @@ public class AdminAuditService {
     private final JdbcTemplate jdbcTemplate;
 
     public void record(User admin, String action, String targetType, Object targetId, Object beforeData, Object afterData, String ipAddress) {
+        record(admin, action, targetType, targetId, beforeData, afterData, ipAddress, "SUCCESS");
+    }
+
+    public void record(User admin, String action, String targetType, Object targetId, Object beforeData, Object afterData, String ipAddress, String result) {
+        if (!java.util.Set.of("SUCCESS", "FAILED").contains(result)) throw new IllegalArgumentException("Invalid audit result");
         jdbcTemplate.update("""
                 INSERT INTO admin_audit_logs(admin_id, admin_name, action, target_type, target_id, before_data, after_data, ip_address, result, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'SUCCESS', ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 admin == null ? null : admin.getId(),
                 admin == null ? null : admin.getUsername(),
@@ -28,6 +33,7 @@ public class AdminAuditService {
                 auditData(beforeData),
                 auditData(afterData),
                 bounded(ipAddress, 80),
+                result,
                 LocalDateTime.now()
         );
     }

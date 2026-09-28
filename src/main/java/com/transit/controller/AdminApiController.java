@@ -38,6 +38,7 @@ import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -828,10 +829,9 @@ public class AdminApiController {
             HttpServletRequest servletRequest) {
         User admin = requireAdmin(authHeader);
         return Mono.fromCallable(() -> {
-            int imported = serviceCommerceService.importInventory(id, request == null ? null : request.getContent());
-            Map<String, Integer> result = Map.of("imported", imported);
-            audit(admin, "IMPORT_SERVICE_INVENTORY", "OTHER_SERVICE", id, null, result, servletRequest);
-            return result;
+            return inventoryOperation(admin, "IMPORT_SERVICE_INVENTORY", id, id, servletRequest,
+                    () -> serviceCommerceService.importInventoryWithReport(id, request == null ? null : request.getContent()),
+                    result -> result);
         });
     }
 
@@ -842,9 +842,10 @@ public class AdminApiController {
             @RequestParam(defaultValue = "true") boolean listPage,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "10") int size,
-            @RequestParam(required = false) String status) {
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String q) {
         requireAdmin(authHeader);
-        return Mono.fromCallable(() -> serviceCommerceService.listInventoryPage(id, status, page, size));
+        return Mono.fromCallable(() -> serviceCommerceService.listInventoryPage(id, status, page, size, q));
     }
 
     @GetMapping("/other-services/{id}/inventory/stats")
@@ -863,9 +864,9 @@ public class AdminApiController {
             HttpServletRequest servletRequest) {
         User admin = requireAdmin(authHeader);
         return Mono.fromRunnable(() -> {
-            serviceCommerceService.deleteAvailableInventory(id, inventoryId);
-            audit(admin, "DELETE_SERVICE_INVENTORY", "SERVICE_INVENTORY", inventoryId,
-                    null, Map.of("serviceId", id), servletRequest);
+            inventoryOperation(admin, "DELETE_SERVICE_INVENTORY", id, inventoryId, servletRequest,
+                    () -> { serviceCommerceService.deleteAvailableInventory(id, inventoryId); return 1; },
+                    deleted -> Map.of("deleted", deleted));
         });
     }
 
@@ -876,10 +877,57 @@ public class AdminApiController {
             HttpServletRequest servletRequest) {
         User admin = requireAdmin(authHeader);
         return Mono.fromCallable(() -> {
-            ServiceInventoryItem item = serviceCommerceService.replaceAvailableInventory(id, inventoryId, request == null ? null : request.getContent());
-            audit(admin, "REPLACE_SERVICE_INVENTORY", "SERVICE_INVENTORY", inventoryId, null, Map.of("serviceId", id), servletRequest);
-            return item;
+            return inventoryOperation(admin, "REPLACE_SERVICE_INVENTORY", id, inventoryId, servletRequest,
+                    () -> serviceCommerceService.replaceAvailableInventory(id, inventoryId, request == null ? null : request.getContent()),
+                    item -> Map.of("replaced", 1));
         });
+    }
+
+    @PostMapping("/other-services/{id}/inventory/batch-delete")
+    public Mono<Map<String, Integer>> deleteOtherServiceInventoryBatch(
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader, @PathVariable Long id,
+            @RequestBody InventoryBatchDeleteRequest request, HttpServletRequest servletRequest) {
+        User admin = requireAdmin(authHeader);
+        return Mono.fromCallable(() -> inventoryOperation(admin, "BATCH_DELETE_SERVICE_INVENTORY", id, id, servletRequest,
+                () -> Map.of("deleted", serviceCommerceService.deleteAvailableInventoryBatch(id, request == null ? null : request.getIds())),
+                result -> Map.of("deleted", result.get("deleted"), "ids", request.getIds())));
+    }
+
+    @PostMapping("/other-services/{id}/inventory/{inventoryId}/reveal")
+    public Mono<ResponseEntity<Map<String, String>>> revealOtherServiceInventory(
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader, @PathVariable Long id,
+            @PathVariable Long inventoryId, @RequestParam(defaultValue = "VIEW") String purpose,
+            HttpServletRequest servletRequest) {
+        User admin = requireAdmin(authHeader);
+        if (!List.of("VIEW", "COPY").contains(purpose)) throw new org.springframework.web.server.ResponseStatusException(
+                org.springframework.http.HttpStatus.BAD_REQUEST, "Invalid reveal purpose");
+        return Mono.fromCallable(() -> {
+            String content = inventoryOperation(admin, purpose + "_SERVICE_INVENTORY", id, inventoryId, servletRequest,
+                    () -> serviceCommerceService.revealInventory(id, inventoryId), result -> Map.of("revealed", 1));
+            return ResponseEntity.ok().header(HttpHeaders.CACHE_CONTROL, "no-store")
+                    .body(Map.of("content", content));
+        });
+    }
+
+    private <T> T inventoryOperation(User admin, String action, Long serviceId, Long targetId,
+                                     HttpServletRequest servletRequest, java.util.function.Supplier<T> operation,
+                                     java.util.function.Function<T, Object> summary) {
+        T result;
+        try {
+            result = operation.get();
+        } catch (RuntimeException failure) {
+            adminAuditService.record(admin, action, "SERVICE_INVENTORY", targetId, null,
+                    Map.of("serviceId", serviceId, "outcome", "FAILED"), clientIps.resolve(servletRequest), "FAILED");
+            throw failure;
+        }
+        audit(admin, action, "SERVICE_INVENTORY", targetId, null,
+                Map.of("serviceId", serviceId, "outcome", "SUCCESS", "summary", summary.apply(result)), servletRequest);
+        return result;
+    }
+
+    @Data
+    public static class InventoryBatchDeleteRequest {
+        private List<Long> ids;
     }
 
     @GetMapping("/security/policies")

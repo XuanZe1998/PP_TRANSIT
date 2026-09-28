@@ -105,3 +105,13 @@
 订单交付内容是单个订单的有界结果，仅在不超过 200 条时允许本地“全部”展示。
 
 2026-09-24：服务兑换域名后台列表 `AdminOtherServices.vue` / `GET /admin/api/other-services/redemption-hosts` 使用 `PagedTable` + `ListPagination`，数据库按相同搜索条件 COUNT + LIMIT/OFFSET，默认10，仅接受10/20/50/100，不提供“全部”；增删单条域名即时生效。
+
+
+2026-09-28：服务目录“卡密管理”直接按服务 ID 打开共享 `ServiceInventoryManager`，商品与履约配置复用该组件。
+
+| 页面 / 接口 | 列表 | 分页方式 |
+| --- | --- | --- |
+| `ServiceInventoryManager.vue` / `GET /admin/api/other-services/{id}/inventory`（兼容 `/service-orders/admin/services/{serviceId}/inventory`） | 本站加密卡密库存 | `PagedTable` + `ListPagination`；`listPage=true`，数据库 COUNT + LIMIT/OFFSET；服务端状态和 `q` 搜索（ID、掩码尾号、订单号）；默认10，可选10/20/50/100，无“全部” |
+| `AdminServiceOrders.vue` / `GET /service-orders/admin/orders` | 卡密关联服务订单 | 现有分页契约新增 `serviceId` 服务端筛选，COUNT 与数据查询使用相同条件；按 `orderId` 调用单条详情接口不依赖当前列表页 |
+
+库存只在本站自动发货服务开放；上游采购服务显示来源说明与服务订单入口。库存统计不受搜索和分页截断影响。完整卡密仅通过管理员主动 POST 单条查看／复制返回，列表不含密文、指纹和明文。批量删除仅针对当前页最多100个选中 ID，不提供隐式“删除全部筛选结果”。

@@ -45,7 +45,7 @@
       <el-table-column label="操作" width="230" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
-          <el-button v-if="row.productType==='CARD_KEY'" link type="success" @click="manageCards">卡密管理</el-button>
+          <el-button v-if="row.productType==='CARD_KEY'" link type="success" @click="manageCards(row)">卡密管理</el-button>
           <el-button link type="danger" @click="remove(row)">删除</el-button>
         </template>
       </el-table-column>
@@ -79,6 +79,10 @@
         <AdminPaymentIntents />
       </el-tab-pane>
     </el-tabs>
+
+    <el-dialog v-model="cardsVisible" title="卡密管理" width="min(1280px, 96vw)" destroy-on-close>
+      <ServiceInventoryManager v-if="cardsVisible && cardsService" :service="cardsService" @order="viewCardOrder" @orders="viewServiceOrders" />
+    </el-dialog>
 
     <el-dialog v-model="dialogVisible" :title="form.id ? '编辑服务' : '新增服务'" width="620px">
       <el-form label-position="top" :model="form">
@@ -234,7 +238,7 @@
 import PagedTable from '@/components/PagedTable.vue'
 import ListPagination from '@/components/ListPagination.vue'
 import AdminPageToolbar from '@/components/AdminPageToolbar.vue'
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { formatCurrencyCents } from '@/utils/money'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -242,6 +246,7 @@ import http, { getHttpErrorMessage, resolveApiResourceUrl } from '@/utils/http'
 import { compressServiceImage } from '@/utils/serviceImage'
 import AdminServiceOrders from '@/views/AdminServiceOrders.vue'
 import AdminProductCommerce from '@/views/AdminProductCommerce.vue'
+import ServiceInventoryManager from '@/components/ServiceInventoryManager.vue'
 import AdminPaymentIntents from '@/views/AdminPaymentIntents.vue'
 
 type OtherService = {
@@ -275,6 +280,10 @@ const services = ref<OtherService[]>([])
 const servicePage = ref(1)
 const serviceSize = ref(10)
 const serviceTotal = ref(0)
+const cardsVisible = ref(false)
+const cardsService = ref<OtherService | null>(null)
+let cardsRequest = 0
+onUnmounted(() => { cardsRequest++ })
 const loading = ref(false)
 const saving = ref(false)
 const uploadingImage = ref(false)
@@ -328,7 +337,7 @@ const formatMoney = (cents?: number, currency?: string) => cents === null || cen
 
 function syncTab(tab: string | number) {
   const value = String(tab)
-  router.replace({ query: value === 'catalog' ? {} : { tab: value } })
+  router.replace({ query: value === 'catalog' ? {} : value === 'orders' ? { ...route.query, tab: value } : { tab: value } })
   if (value === 'redemption-hosts') loadHosts()
 }
 
@@ -454,7 +463,28 @@ async function openEdit(service: OtherService) {
   form.inventoryText = ''
   dialogVisible.value = true
 }
-function manageCards(){activeTab.value='orders';router.replace({query:{tab:'orders'}});window.setTimeout(()=>document.querySelector('.commerce-admin')?.scrollIntoView({behavior:'smooth'}),50)}
+async function manageCards(service: OtherService) {
+  const request = ++cardsRequest
+  cardsVisible.value = false
+  cardsService.value = null
+  try {
+    const response = await http.get<OtherService>(`/api/admin/api/other-services/${service.id}`)
+    if (request !== cardsRequest) return
+    cardsService.value = response.data
+    cardsVisible.value = true
+  } catch (error) { if (request === cardsRequest) ElMessage.error(getHttpErrorMessage(error, '卡密管理加载失败')) }
+}
+async function viewCardOrder(orderId: number) {
+  cardsVisible.value = false
+  await router.replace({ query: { tab: 'orders', orderId: String(orderId) } })
+  activeTab.value = 'orders'
+}
+async function viewServiceOrders(serviceId: number) {
+  cardsVisible.value = false
+  await router.replace({ query: { tab: 'orders', serviceId: String(serviceId) } })
+  activeTab.value = 'orders'
+}
+
 
 function chooseLocalImage() {
   imageFileInput.value?.click()

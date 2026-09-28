@@ -11,16 +11,7 @@
       <el-form-item label="自定义下单字段"><el-input v-model="form.inputSchemaJson" type="textarea" :rows="3" placeholder='[{"key":"account","label":"账号","required":true,"maxLength":200}]' /></el-form-item>
       <el-button type="primary" :loading="saving" @click="saveConfig">保存商品配置</el-button>
     </el-form>
-    <section v-if="form?.fulfillmentMode === 'AUTOMATIC_DELIVERY'" class="panel inventory-panel">
-      <h3>自动发货库存</h3><el-alert :closable="false" type="success" :title="`可用 ${stats.AVAILABLE || 0} / 预留 ${stats.RESERVED || 0} / 已交付 ${stats.DELIVERED || 0}；库存明文不会在列表中返回`" />
-      <el-input v-model="inventoryText" type="textarea" :rows="6" placeholder="粘贴多个卡密，可用逗号、中文逗号、顿号、换行或空格分隔" />
-      <div class="inventory-import-actions">
-        <span>已识别 {{ recognizedInventoryItems.length }} 条，重复内容将自动去重</span>
-        <el-button type="success" :loading="inventoryImporting" :disabled="recognizedInventoryItems.length === 0" @click="importInventory">批量导入</el-button>
-      </div>
-      <PagedTable :data="inventory" list-id="AdminProductCommerce-1" pagination="external"><el-table-column prop="id" label="ID" width="90" /><el-table-column prop="secretPreview" label="卡密掩码"/><el-table-column prop="status" label="状态" /><el-table-column prop="reservedOrderId" label="订单 ID" /><el-table-column prop="createdAt" label="导入时间" /><el-table-column label="操作" width="160"><template #default="{ row }"><el-button v-if="row.status === 'AVAILABLE'" link type="primary" @click="replaceInventory(row.id)">替换</el-button><el-button v-if="row.status === 'AVAILABLE'" link type="danger" @click="deleteInventory(row.id)">删除未售</el-button></template></el-table-column></PagedTable>
-      <ListPagination v-if="inventoryTotal > 0" v-model:page="inventoryPage" v-model:size="inventorySize" :total="inventoryTotal" :allow-all="false" @change="loadInventory" />
-    </section>
+    <ServiceInventoryManager v-if="form?.fulfillmentMode === 'AUTOMATIC_DELIVERY'" :service="form" @order="viewOrder" @orders="viewOrders" />
     <section class="panel"><div class="panel-title"><h3>优惠码</h3><el-button type="primary" @click="openCoupon()">新增</el-button></div>
       <PagedTable :data="coupons" list-id="AdminProductCommerce-2" pagination="external"><el-table-column prop="code" label="代码" /><el-table-column label="固定优惠"><template #default="{ row }">{{ (row.discountCents / 100).toFixed(2) }}</template></el-table-column><el-table-column prop="remainingUses" label="剩余次数" /><el-table-column label="状态"><template #default="{ row }">{{ row.enabled ? '启用' : '停用' }}</template></el-table-column><el-table-column label="操作"><template #default="{ row }"><el-button link @click="openCoupon(row)">编辑</el-button><el-button link type="danger" @click="disableCoupon(row.id)">停用</el-button></template></el-table-column></PagedTable>
       <ListPagination v-if="couponTotal > 0" v-model:page="couponPage" v-model:size="couponSize" :total="couponTotal" :allow-all="false" @change="loadCoupons" />
@@ -31,28 +22,26 @@
 <script setup lang="ts">
 import PagedTable from '@/components/PagedTable.vue'
 import ListPagination from '@/components/ListPagination.vue'
-import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import ServiceInventoryManager from '@/components/ServiceInventoryManager.vue'
+import { useRouter } from 'vue-router'
+import { onMounted, reactive, ref } from 'vue'
+import { ElMessage } from 'element-plus'
 import http, { getHttpErrorMessage } from '@/utils/http'
 type ProductService = Record<string, any> & { id:number; name:string }
 type Coupon = { id?:number; code:string; discountCents:number; remainingUses:number; enabled:boolean; serviceIds:number[] }
-const services=ref<ProductService[]>([]), form=ref<ProductService|null>(null), inventory=ref<any[]>([]), coupons=ref<Coupon[]>([])
-const selectedId=ref<number>(), saving=ref(false), inventoryText=ref(''), stats=ref<Record<string,number>>({}), couponVisible=ref(false)
+const services=ref<ProductService[]>([]), form=ref<ProductService|null>(null), coupons=ref<Coupon[]>([])
+const selectedId=ref<number>(), saving=ref(false), couponVisible=ref(false)
 const servicePage=ref(1),serviceSize=ref(10),serviceTotal=ref(0)
-const inventoryPage=ref(1),inventorySize=ref(10),inventoryTotal=ref(0)
 const couponPage=ref(1),couponSize=ref(10),couponTotal=ref(0)
-const inventoryImporting=ref(false)
-const recognizedInventoryItems=computed(()=>Array.from(new Set(inventoryText.value.split(/[\s,，、]+/u).map(item=>item.trim()).filter(Boolean))))
 const couponForm=reactive({id:undefined as number|undefined,code:'',discount:0,remainingUses:1,enabled:true,serviceIds:[] as number[]})
 async function load(){await Promise.all([loadServices(),loadCoupons()])}
 async function loadServices(){const s=await http.get('/api/admin/api/other-services',{params:{listPage:true,page:servicePage.value,size:serviceSize.value}});services.value=s.data?.items||[];serviceTotal.value=Number(s.data?.total||0);if(selectedId.value&&!services.value.some(item=>item.id===selectedId.value)){selectedId.value=undefined;form.value=null}}
 async function loadCoupons(){const c=await http.get('/api/service-orders/admin/coupons',{params:{listPage:true,page:couponPage.value,size:couponSize.value}});coupons.value=c.data?.items||[];couponTotal.value=Number(c.data?.total||0)}
-async function selectService(){const source=services.value.find(x=>x.id===selectedId.value);form.value=source?{...source,fulfillmentMode:source.fulfillmentMode||'MANUAL_PROCESSING',maxPurchaseQuantity:source.maxPurchaseQuantity||1,wholesaleTiersJson:source.wholesaleTiersJson||'[]',inputSchemaJson:source.inputSchemaJson||'[]'}:null;if(form.value?.fulfillmentMode==='AUTOMATIC_DELIVERY')await loadInventory()}
+async function selectService(){const source=services.value.find(x=>x.id===selectedId.value);form.value=source?{...source,fulfillmentMode:source.fulfillmentMode||'MANUAL_PROCESSING',maxPurchaseQuantity:source.maxPurchaseQuantity||1,wholesaleTiersJson:source.wholesaleTiersJson||'[]',inputSchemaJson:source.inputSchemaJson||'[]'}:null}
 async function saveConfig(){if(!form.value)return;saving.value=true;try{await http.put(`/api/admin/api/other-services/${form.value.id}`,form.value);ElMessage.success('商品配置已保存');await load();await selectService()}catch(e){ElMessage.error(getHttpErrorMessage(e,'保存失败'))}finally{saving.value=false}}
-async function loadInventory(){if(!selectedId.value)return;const [i,s]=await Promise.all([http.get(`/api/admin/api/other-services/${selectedId.value}/inventory`,{params:{listPage:true,page:inventoryPage.value,size:inventorySize.value}}),http.get(`/api/admin/api/other-services/${selectedId.value}/inventory/stats`)]);inventory.value=i.data?.items||[];inventoryTotal.value=Number(i.data?.total||0);stats.value=s.data||{}}
-async function importInventory(){if(!selectedId.value||recognizedInventoryItems.value.length===0)return;inventoryImporting.value=true;try{const recognized=recognizedInventoryItems.value.length;const r=await http.post(`/api/admin/api/other-services/${selectedId.value}/inventory/import`,{content:inventoryText.value});const imported=Number(r.data.imported||0);ElMessage.success(`识别 ${recognized} 条，成功导入 ${imported} 条${imported<recognized?'，已忽略库中重复卡密':''}`);inventoryText.value='';await loadInventory()}catch(e){ElMessage.error(getHttpErrorMessage(e,'卡密导入失败'))}finally{inventoryImporting.value=false}}
-async function deleteInventory(id:number){await http.delete(`/api/admin/api/other-services/${selectedId.value}/inventory/${id}`);await loadInventory()}
-async function replaceInventory(id:number){try{const result=await ElMessageBox.prompt('完整卡密只用于覆盖写入，保存后仍只显示尾号。','替换未售卡密',{inputType:'password',inputPattern:/^.{1,10000}$/,inputErrorMessage:'请输入卡密'});await http.put(`/api/admin/api/other-services/${selectedId.value}/inventory/${id}`,{content:result.value});await loadInventory();ElMessage.success('卡密已安全替换')}catch(e:any){if(e!=='cancel'&&e!=='close')ElMessage.error(getHttpErrorMessage(e,'替换失败'))}}
+const router = useRouter()
+function viewOrder(id: number) { router.replace({ query: { tab: 'orders', orderId: String(id) } }) }
+function viewOrders(id: number) { router.replace({ query: { tab: 'orders', serviceId: String(id) } }) }
 function openCoupon(c?:Coupon){Object.assign(couponForm,c?{...c,discount:c.discountCents/100}:{id:undefined,code:'',discount:0,remainingUses:1,enabled:true,serviceIds:[]});couponVisible.value=true}
 async function saveCoupon(){const p={code:couponForm.code,discountCents:Math.round(couponForm.discount*100),remainingUses:couponForm.remainingUses,enabled:couponForm.enabled,serviceIds:couponForm.serviceIds};if(couponForm.id)await http.put(`/api/service-orders/admin/coupons/${couponForm.id}`,p);else await http.post('/api/service-orders/admin/coupons',p);couponVisible.value=false;await loadCoupons()}
 async function disableCoupon(id:number){await http.delete(`/api/service-orders/admin/coupons/${id}`);await loadCoupons()}
