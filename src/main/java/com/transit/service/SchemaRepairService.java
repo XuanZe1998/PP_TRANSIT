@@ -1663,6 +1663,7 @@ public class SchemaRepairService {
                 "INSERT INTO system_settings(setting_key, setting_value, description) VALUES ('register.mode', 'invite_or_open', 'Registration policy')");
         insertIfMissing("system_settings", "setting_key", "billing.usd_cny_rate",
                 "INSERT INTO system_settings(setting_key, setting_value, description) VALUES ('billing.usd_cny_rate', '6.76693506', '模型美元费用结算到人民币钱包时使用的固定汇率')");
+        seedBlankLegalDisclosureFields();
         insertIfMissing("security_policies", "name", "RPM limit",
                 "INSERT INTO security_policies(name, scope, action, threshold_value, enabled) VALUES ('RPM limit', 'default group', 'RATE_LIMIT', '500/min', TRUE)");
         insertIfMissing("security_policies", "name", "Sensitive prompt",
@@ -1812,6 +1813,22 @@ public class SchemaRepairService {
                 priceRatio,
                 "0",
                 tags);
+    }
+
+    // Empty records make the required fields editable in the admin console; they never approve publication.
+    void seedBlankLegalDisclosureFields() {
+        for (String field : List.of("operator", "address", "registration", "jurisdiction", "contact_email",
+                "terms", "privacy", "refund", "ai_data", "rights", "support",
+                "terms_version", "privacy_version", "effective_date",
+                "terms_en", "privacy_en", "refund_en", "ai_data_en", "rights_en", "support_en")) {
+            String key = "legal." + field;
+            Integer count = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM system_settings WHERE setting_key = ?", Integer.class, key);
+            if (count == null || count == 0) {
+                jdbcTemplate.update("INSERT INTO system_settings(setting_key, setting_value, description, updated_at) "
+                        + "VALUES (?, '', ?, CURRENT_TIMESTAMP)", key, "Public disclosure draft: " + field);
+            }
+        }
     }
 
     private void insertIfMissing(String tableName, String columnName, String value, String insertSql) {

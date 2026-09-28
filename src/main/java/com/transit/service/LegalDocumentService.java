@@ -36,12 +36,12 @@ public class LegalDocumentService {
             if (row.get("setting_value") != null)
                 settings.put(String.valueOf(row.get("setting_key")), String.valueOf(row.get("setting_value")));
         }
-        DEFAULTS.forEach((key, fallback) -> out.put(key.substring(6), settings.getOrDefault(key, fallback)));
+        DEFAULTS.forEach((key, fallback) -> out.put(key.substring(6), nonBlankOrDefault(settings.get(key), fallback)));
         // A seeded support address is not proof that the operator has verified that mailbox.
         if (DEFAULTS.get("legal.contact_email").equals(out.get("contact_email"))) out.put("contact_email", "");
         for (String field : List.of("registration", "jurisdiction", "support_hours", "terms", "privacy",
                 "refund", "ai_data", "cookies", "rights", "support", "security", "subprocessors")) {
-            out.put(field, settings.getOrDefault("legal." + field, field.equals("terms") ? termsText() : field.equals("privacy") ? privacyText() : ""));
+            out.put(field, nonBlankOrDefault(settings.get("legal." + field), field.equals("terms") ? termsText() : field.equals("privacy") ? privacyText() : ""));
             out.put(field + "_en", settings.getOrDefault("legal." + field + "_en", ""));
         }
         out.put("operator_en", settings.getOrDefault("legal.operator_en", ""));
@@ -123,7 +123,11 @@ public class LegalDocumentService {
 
     private String setting(String key, String fallback) {
         var rows = jdbc.queryForList("SELECT setting_value FROM system_settings WHERE setting_key=?", key);
-        return rows.isEmpty() || rows.get(0).get("setting_value") == null ? fallback : rows.get(0).get("setting_value").toString();
+        return rows.isEmpty() ? fallback : nonBlankOrDefault(rows.get(0).get("setting_value"), fallback);
+    }
+
+    private String nonBlankOrDefault(Object value, String fallback) {
+        return value == null || value.toString().isBlank() ? fallback : value.toString();
     }
 
     private String termsText() { return "使用本平台即表示您同意妥善保管账户与 API Key，并对企业成员授权负责。服务按实际用量计费，第三方模型提供方可能按请求处理数据。禁止违法、侵权、绕过安全控制或滥用服务。企业主可管理组织成员、额度和 Token，相关操作会保留审计与财务记录。具体退款、服务可用性、终止及争议处理规则以页面公示为准。本文需由正式法律顾问复核。"; }

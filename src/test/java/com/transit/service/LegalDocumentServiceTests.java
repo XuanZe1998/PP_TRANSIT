@@ -39,6 +39,20 @@ class LegalDocumentServiceTests {
         assertThat(result.get("legalReviewRequired")).isEqualTo(true);
     }
 
+    @Test void blankDraftRowsDoNotReplaceExistingAgreementVersionsOrOpenCheckout() {
+        Map<String, String> settings = new HashMap<>();
+        for (String key : List.of("operator", "terms", "privacy", "terms_version", "privacy_version", "effective_date"))
+            settings.put("legal." + key, "");
+        LegalDocumentService legal = service(settings);
+        assertThat(legal.termsVersion()).isEqualTo("2026-08-28");
+        assertThat(legal.privacyVersion()).isEqualTo("2026-08-28");
+        Map<String, Object> documents = legal.publicDocuments();
+        assertThat(documents.get("terms_version")).isEqualTo("2026-08-28");
+        assertThat(documents.get("privacy_version")).isEqualTo("2026-08-28");
+        assertThat((List<String>) documents.get("missing_fields")).contains("terms_version", "privacy_version", "operator", "terms", "privacy");
+        assertThat(documents.get("checkout_ready")).isEqualTo(false);
+    }
+
     @Test void checkoutConsentRequiresCurrentDigestAndSnapshotsTheCopy() {
         Map<String, String> settings = new HashMap<>();
         for (String field : List.of("operator", "address", "registration", "jurisdiction", "contact_email",
