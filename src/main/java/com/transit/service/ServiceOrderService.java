@@ -274,9 +274,14 @@ public class ServiceOrderService {
     }
 
     public PageResponse<ServiceOrder> listAllOrdersPage(int page, int size, String status, String query) {
+        return listAllOrdersPage(page, size, status, query, null);
+    }
+
+    public PageResponse<ServiceOrder> listAllOrdersPage(int page, int size, String status, String query, Long serviceId) {
         validateListPage(page, size);
-        long total = orderMapper.selectCount(orderFilter(null, status, query));
-        List<ServiceOrder> items = orderMapper.selectList(orderFilter(null, status, query)
+        if (serviceId != null && serviceId < 1) throw badRequest("Invalid serviceId");
+        long total = orderMapper.selectCount(orderFilter(null, status, query).eq(serviceId != null, ServiceOrder::getServiceId, serviceId));
+        List<ServiceOrder> items = orderMapper.selectList(orderFilter(null, status, query).eq(serviceId != null, ServiceOrder::getServiceId, serviceId)
                         .orderByDesc(ServiceOrder::getCreatedAt)
                         .last("LIMIT " + size + " OFFSET " + ((page - 1L) * size)))
                 .stream().map(this::enrichOrderMoney).toList();

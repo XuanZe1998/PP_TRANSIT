@@ -8,6 +8,7 @@
       <el-button :loading="loading" @click="fetchOrders">刷新</el-button>
     </div>
 
+    <el-alert v-if="serviceFilter" type="info" :closable="false" :title="`当前查看服务 ID ${serviceFilter} 的订单`" />
     <el-alert v-if="pendingOnly" type="warning" :closable="false" title="当前仅显示待处理（PENDING / CONFIRMED）订单" />
     <PagedTable v-loading="loading" :data="orders" empty-text="暂无服务订单" list-id="AdminServiceOrders-1" pagination="external">
       <el-table-column prop="orderNo" label="订单号" min-width="190" />
@@ -36,7 +37,7 @@
     </PagedTable>
     <ListPagination v-if="total > 0" v-model:page="page" v-model:size="size" :total="total" :allow-all="false" @change="fetchOrders" />
 
-    <el-dialog v-model="dialogVisible" title="处理服务订单" width="620px">
+    <el-dialog v-model="dialogVisible" title="处理服务订单" width="620px" @close="clearOrderRoute" @closed="!dialogVisible && (selectedOrder = null)">
       <el-form label-position="top">
         <el-form-item label="订单号">
           <el-input :model-value="selectedOrder?.orderNo || ''" readonly />
@@ -92,9 +93,9 @@
 <script setup lang="ts">
 import PagedTable from '@/components/PagedTable.vue'
 import ListPagination from '@/components/ListPagination.vue'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { formatCurrencyCents } from '@/utils/money'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import http, { getHttpErrorMessage } from '@/utils/http'
 
@@ -120,7 +121,12 @@ type ServiceOrder = {
 }
 
 const orders = ref<ServiceOrder[]>([])
+const router = useRouter()
 const route=useRoute(),pendingOnly=computed(()=>route.query.status==='pending')
+const serviceFilter = computed(() => {
+  const id = Number(route.query.serviceId)
+  return Number.isSafeInteger(id) && id > 0 ? id : undefined
+})
 const page = ref(1)
 const size = ref(10)
 const total = ref(0)
@@ -130,6 +136,8 @@ const selectedOrder = ref<ServiceOrder | null>(null)
 const loading = ref(false)
 const saving = ref(false)
 const dialogVisible = ref(false)
+let listRequest = 0, detailRequest = 0
+onUnmounted(() => { listRequest++; detailRequest++ })
 const form = ref({
   status: 'PENDING',
   fulfillmentNote: '',
@@ -155,31 +163,31 @@ const statusLabel = (status: string) => ({
 }[status] || status)
 
 async function fetchOrders() {
+  const request = ++listRequest
   loading.value = true
   try {
     const response = await http.get('/api/service-orders/admin/orders', { params: {
       listPage: true, page: page.value, size: size.value,
-      status: pendingOnly.value ? 'PENDING,CONFIRMED' : undefined
+      status: pendingOnly.value ? 'PENDING,CONFIRMED' : undefined, serviceId: serviceFilter.value
     } })
+    if (request !== listRequest) return
     orders.value = response.data?.items || []
     total.value = Number(response.data?.total || 0)
   } catch (error: unknown) {
-    ElMessage.error(getHttpErrorMessage(error, '服务订单加载失败'))
+    if (request === listRequest) ElMessage.error(getHttpErrorMessage(error, '服务订单加载失败'))
   } finally {
-    loading.value = false
+    if (request === listRequest) loading.value = false
   }
 }
 
-async function openEdit(order: ServiceOrder) {
-  try {
-    const response = await http.get<ServiceOrder>(`/api/service-orders/admin/orders/${order.id}`)
-    selectedOrder.value = response.data
-  } catch {
-    selectedOrder.value = order
-  }
-  try {
-    paymentIntent.value = (await http.get(`/api/admin/payment-intents/business/SERVICE_ORDER/${order.id}`)).data
-  } catch { paymentIntent.value = null }
+async function showOrder(order: ServiceOrder, request: number) {
+  if (request !== detailRequest) return
+  let payment: Record<string, any> | null = null
+  try { payment = (await http.get(`/api/admin/payment-intents/business/SERVICE_ORDER/${order.id}`)).data }
+  catch { /* Payment detail is optional; order identity must come from its exact endpoint. */ }
+  if (request !== detailRequest) return
+  selectedOrder.value = order
+  paymentIntent.value = payment
   form.value = {
     status: order.status,
     fulfillmentNote: order.fulfillmentNote || '',
@@ -189,6 +197,29 @@ async function openEdit(order: ServiceOrder) {
   }
   dialogVisible.value = true
 }
+async function openEdit(order: ServiceOrder) {
+  const request = ++detailRequest
+  try { await showOrder((await http.get<ServiceOrder>(`/api/service-orders/admin/orders/${order.id}`)).data, request) }
+  catch (error) { if (request === detailRequest) ElMessage.error(getHttpErrorMessage(error, '订单详情加载失败')) }
+}
+function clearOrderRoute() {
+  detailRequest++
+  paymentIntent.value = null
+  if (Number(route.query.orderId) !== selectedOrder.value?.id) return
+  const query = { ...route.query }; delete query.orderId
+  router.replace({ query })
+}
+watch(() => route.query.orderId, async value => {
+  const request = ++detailRequest, id = Number(value)
+  if (!Number.isSafeInteger(id) || id < 1) return
+  try { await showOrder((await http.get<ServiceOrder>(`/api/service-orders/admin/orders/${id}`)).data, request) }
+  catch (error) {
+    if (request !== detailRequest) return
+    dialogVisible.value = false; selectedOrder.value = null
+    ElMessage.error(getHttpErrorMessage(error, '订单不存在或无法查看'))
+  }
+}, { immediate: true })
+watch(serviceFilter, () => { page.value = 1; void fetchOrders() })
 
 async function saveOrder() {
   if (!selectedOrder.value) return

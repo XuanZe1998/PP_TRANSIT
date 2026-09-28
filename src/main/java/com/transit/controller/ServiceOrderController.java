@@ -8,6 +8,7 @@ import com.transit.dto.PageResponse;
 import com.transit.model.ServiceOrder;
 import com.transit.model.User;
 import com.transit.service.CurrentUserService;
+import com.transit.service.AdminAuditService;
 import com.transit.service.ClientIpResolver;
 import com.transit.service.ServiceOrderService;
 import com.transit.service.ServiceCommerceService;
@@ -36,6 +37,7 @@ public class ServiceOrderController {
     private final ServiceCouponAdminService couponAdminService;
     private final IdempotencyService idempotencyService;
     private final ClientIpResolver clientIps;
+    private final AdminAuditService adminAuditService;
 
     @PostMapping("/service-orders")
     public Mono<Object> createServiceOrder(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
@@ -161,9 +163,10 @@ public class ServiceOrderController {
                                                         @RequestParam(defaultValue = "1") int page,
                                                         @RequestParam(defaultValue = "10") int size,
                                                         @RequestParam(required = false) String status,
-                                                        @RequestParam(required = false) String query) {
+                                                        @RequestParam(required = false) String query,
+                                                        @RequestParam(required = false) Long serviceId) {
         currentUserService.requireAdmin(authHeader);
-        return Mono.fromCallable(() -> serviceOrderService.listAllOrdersPage(page, size, status, query));
+        return Mono.fromCallable(() -> serviceOrderService.listAllOrdersPage(page, size, status, query, serviceId));
     }
 
     @GetMapping("/service-orders/admin/orders/{id}")
@@ -205,9 +208,10 @@ public class ServiceOrderController {
     @PostMapping("/service-orders/admin/services/{serviceId}/inventory/import")
     public Mono<java.util.Map<String, Integer>> importInventory(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
                                                                 @PathVariable Long serviceId,
-                                                                @RequestBody InventoryImportRequest request) {
-        currentUserService.requireAdmin(authHeader);
-        return Mono.fromCallable(() -> java.util.Map.of("imported", serviceCommerceService.importInventory(serviceId, request.getContent())));
+                                                                @RequestBody InventoryImportRequest request, HttpServletRequest servletRequest) {
+        User admin = currentUserService.requireAdmin(authHeader);
+        return Mono.fromCallable(() -> legacyInventoryOperation(admin, "IMPORT_SERVICE_INVENTORY", serviceId, serviceId, servletRequest,
+                () -> serviceCommerceService.importInventoryWithReport(serviceId, request == null ? null : request.getContent()), result -> result));
     }
 
     @GetMapping("/service-orders/admin/services/{serviceId}/inventory")
@@ -216,9 +220,10 @@ public class ServiceOrderController {
                                                 @RequestParam(required = false) String status,
                                                 @RequestParam(defaultValue = "true") boolean listPage,
                                                 @RequestParam(defaultValue = "1") int page,
-                                                @RequestParam(defaultValue = "10") int size) {
+                                                @RequestParam(defaultValue = "10") int size,
+                                                @RequestParam(required = false) String q) {
         currentUserService.requireAdmin(authHeader);
-        return Mono.fromCallable(() -> serviceCommerceService.listInventoryPage(serviceId, status, page, size));
+        return Mono.fromCallable(() -> serviceCommerceService.listInventoryPage(serviceId, status, page, size, q));
     }
 
     @GetMapping("/service-orders/admin/services/{serviceId}/inventory/stats")
@@ -231,9 +236,25 @@ public class ServiceOrderController {
     @DeleteMapping("/service-orders/admin/services/{serviceId}/inventory/{inventoryId}")
     public Mono<Void> deleteInventory(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
                                       @PathVariable Long serviceId,
-                                      @PathVariable Long inventoryId) {
-        currentUserService.requireAdmin(authHeader);
-        return Mono.fromRunnable(() -> serviceCommerceService.deleteAvailableInventory(serviceId, inventoryId));
+                                      @PathVariable Long inventoryId, HttpServletRequest servletRequest) {
+        User admin = currentUserService.requireAdmin(authHeader);
+        return Mono.fromRunnable(() -> legacyInventoryOperation(admin, "DELETE_SERVICE_INVENTORY", serviceId, inventoryId, servletRequest,
+                () -> { serviceCommerceService.deleteAvailableInventory(serviceId, inventoryId); return 1; }, result -> java.util.Map.of("deleted", result)));
+    }
+
+    private <T> T legacyInventoryOperation(User admin, String action, Long serviceId, Long targetId,
+                                           HttpServletRequest request, java.util.function.Supplier<T> operation,
+                                           java.util.function.Function<T, Object> summary) {
+        T result;
+        try { result = operation.get(); }
+        catch (RuntimeException failure) {
+            adminAuditService.record(admin, action, "SERVICE_INVENTORY", targetId, null,
+                    java.util.Map.of("serviceId", serviceId, "outcome", "FAILED"), clientIps.resolve(request), "FAILED");
+            throw failure;
+        }
+        adminAuditService.record(admin, action, "SERVICE_INVENTORY", targetId, null,
+                java.util.Map.of("serviceId", serviceId, "outcome", "SUCCESS", "summary", summary.apply(result)), clientIps.resolve(request));
+        return result;
     }
 
     @GetMapping("/service-orders/admin/coupons")

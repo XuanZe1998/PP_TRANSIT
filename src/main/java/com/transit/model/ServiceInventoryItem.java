@@ -23,4 +23,7 @@ public class ServiceInventoryItem {
     @TableField("reserved_until") private LocalDateTime reservedUntil;
     @TableField("delivered_at") private LocalDateTime deliveredAt;
     @TableField("created_at") private LocalDateTime createdAt;
+    @TableField(exist = false) private String orderNo;
+    @TableField(exist = false) private Long buyerUserId;
+    @TableField(exist = false) private String orderStatus;
 }
