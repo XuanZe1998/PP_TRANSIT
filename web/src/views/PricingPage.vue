@@ -7,6 +7,8 @@
       </div>
     </div>
     <p class="pricing-disclosure">{{ disclosure }}</p>
+    <p class="pricing-disclosure">{{ isEnglish ? 'The final payment currency, taxes (if applicable), credited amount and exchange rate are shown at checkout before payment. Model usage is charged separately at the published model rate. No subscription or automatic renewal is implied by a one-time wallet top-up.' : '最终支付币种、适用税费、到账额度与汇率请在付款前核对订单。模型调用另按模型价格计费；一次性钱包充值不代表自动续费。' }}</p>
+    <p class="pricing-disclosure"><router-link to="/refund">{{ isEnglish ? 'Refunds and cancellation' : '退款与取消' }}</router-link> · <router-link to="/terms">{{ isEnglish ? 'Terms' : '服务条款' }}</router-link> · <router-link to="/ai-data">{{ isEnglish ? 'AI data processing' : 'AI 数据处理' }}</router-link></p>
     <div class="pricing-grid">
       <article v-for="plan in plans" :key="plan.name" class="pricing-card">
         <h3>{{ plan.name }}</h3>
@@ -35,8 +37,8 @@ import { isEnglish } from '@/i18n/locale'
 const router = useRouter()
 const shopGptEnabled = import.meta.env.VITE_ENABLE_SHOPGPT === 'true'
 const disclosure = computed(() => isEnglish.value
-  ? 'Prices, wallet funding and checkout are shown in USD. The backend snapshots the USD/CNY rate used by the supported payment rail; your wallet and invoice remain auditable in their source currency.'
-  : '模型价格、钱包充值与结算统一以人民币展示。支付时固化汇率与原币记录，让每一笔账单都可追溯。')
+  ? 'Published model prices may be displayed in USD; wallet plans and supported payment methods show their actual settlement currency at checkout. Do not assume that an indicative currency conversion is the final charge.'
+  : '公开模型价格与钱包方案可能使用不同币种；以支付订单显示的实付币种、金额和到账额度为准。')
 const plans = [
   { name: '自助额度', price: '以钱包实时方案为准', desc: '登录后查看管理员已启用的充值方案；未启用支付时仅支持受控兑换码。', primary: true },
   { name: '企业方案', price: '当前未配置公开价格', desc: '需由运营方配置专属渠道、计费和审计规则后再对外销售。', primary: false }

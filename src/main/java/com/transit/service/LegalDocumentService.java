@@ -7,7 +7,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDateTime;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 @Service
@@ -25,9 +30,79 @@ public class LegalDocumentService {
 
     public Map<String,Object> publicDocuments() {
         Map<String,Object> out = new LinkedHashMap<>();
-        DEFAULTS.forEach((key, fallback) -> out.put(key.substring(6), setting(key, fallback)));
-        out.put("terms", termsText()); out.put("privacy", privacyText()); out.put("legalReviewRequired", true);
+        Map<String, String> settings = new java.util.HashMap<>();
+        for (Map<String, Object> row : jdbc.queryForList(
+                "SELECT setting_key, setting_value FROM system_settings WHERE setting_key LIKE 'legal.%' OR setting_key = 'commerce.payments_enabled'")) {
+            if (row.get("setting_value") != null)
+                settings.put(String.valueOf(row.get("setting_key")), String.valueOf(row.get("setting_value")));
+        }
+        DEFAULTS.forEach((key, fallback) -> out.put(key.substring(6), settings.getOrDefault(key, fallback)));
+        // A seeded support address is not proof that the operator has verified that mailbox.
+        if (DEFAULTS.get("legal.contact_email").equals(out.get("contact_email"))) out.put("contact_email", "");
+        for (String field : List.of("registration", "jurisdiction", "support_hours", "terms", "privacy",
+                "refund", "ai_data", "cookies", "rights", "support", "security", "subprocessors")) {
+            out.put(field, settings.getOrDefault("legal." + field, field.equals("terms") ? termsText() : field.equals("privacy") ? privacyText() : ""));
+            out.put(field + "_en", settings.getOrDefault("legal." + field + "_en", ""));
+        }
+        out.put("operator_en", settings.getOrDefault("legal.operator_en", ""));
+        out.put("address_en", settings.getOrDefault("legal.address_en", ""));
+        List<String> missing = new java.util.ArrayList<>();
+        for (String key : List.of("operator", "address", "registration", "jurisdiction", "contact_email",
+                "terms", "privacy", "refund", "ai_data", "rights", "support",
+                "terms_version", "privacy_version", "effective_date")) {
+            String value = String.valueOf(out.getOrDefault(key, "")).trim();
+            if (value.isEmpty() || ((key.equals("contact_email") || key.endsWith("_version") || key.equals("effective_date"))
+                    && value.equals(DEFAULTS.get("legal." + key))) || (key.equals("operator") && value.equals(DEFAULTS.get("legal.operator")))
+                    || (key.equals("address") && value.equals(DEFAULTS.get("legal.address")))
+                    || ((key.equals("terms") || key.equals("privacy"))
+                        && value.equals(key.equals("terms") ? termsText() : privacyText()))) missing.add(key);
+        }
+        for (String key : List.of("terms", "privacy", "refund", "ai_data", "rights", "support")) {
+            if (String.valueOf(out.get(key + "_en")).isBlank()) missing.add(key + "_en");
+        }
+        boolean approved = "true".equalsIgnoreCase(settings.getOrDefault("legal.publication_approved", "false"));
+        out.put("publication_ready", missing.isEmpty() && approved);
+        // Payment activation is a separate, fail-closed operator decision.
+        out.put("payments_enabled", "true".equalsIgnoreCase(settings.getOrDefault("commerce.payments_enabled", "false")));
+        out.put("checkout_ready", Boolean.TRUE.equals(out.get("publication_ready")) && Boolean.TRUE.equals(out.get("payments_enabled")));
+        out.put("checkout_disclosure_id", checkoutDisclosureId(out));
+        out.put("missing_fields", missing);
+        out.put("legalReviewRequired", !approved);
         return out;
+    }
+
+    public boolean isPublicationReady() { return Boolean.TRUE.equals(publicDocuments().get("publication_ready")); }
+
+    public void requireCheckoutOpen() {
+        if (!Boolean.TRUE.equals(publicDocuments().get("checkout_ready")))
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Checkout is closed: payment switch or reviewed disclosures are not ready");
+    }
+
+    public void recordCheckoutConsent(Long userId, String businessType, Long businessId, String disclosureId) {
+        Map<String, Object> current = publicDocuments();
+        if (!Boolean.TRUE.equals(current.get("checkout_ready")) || !isCurrentAccepted(userId)
+                || disclosureId == null || !disclosureId.equals(current.get("checkout_disclosure_id")))
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Checkout disclosures changed; review and accept the current terms");
+        try {
+            String snapshot = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(current);
+            jdbc.update("INSERT INTO legal_checkout_acceptances(user_id,business_type,business_id,disclosure_id,disclosure_snapshot,accepted_at) VALUES (?,?,?,?,?,?)",
+                    userId, businessType, businessId, disclosureId, snapshot, LocalDateTime.now());
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            throw new IllegalStateException("Cannot snapshot checkout disclosure", e);
+        }
+    }
+
+    private String checkoutDisclosureId(Map<String, Object> out) {
+        StringBuilder material = new StringBuilder();
+        // Any published copy relevant to a purchase must invalidate stale checkout confirmations.
+        out.entrySet().stream().filter(entry -> !List.of("publication_ready", "missing_fields",
+                        "legalReviewRequired", "checkout_disclosure_id", "payments_enabled", "checkout_ready").contains(entry.getKey()))
+                .sorted(Map.Entry.comparingByKey())
+                .forEach(entry -> material.append(entry.getKey()).append('\0').append(entry.getValue()).append('\0'));
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest(material.toString().getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(digest);
+        } catch (NoSuchAlgorithmException e) { throw new IllegalStateException("SHA-256 unavailable", e); }
     }
 
     public boolean isCurrentAccepted(Long userId) {
