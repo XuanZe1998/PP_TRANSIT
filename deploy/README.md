@@ -21,6 +21,8 @@ The local machine must have the production deploy key at `~/.ssh/api-transit-dep
 
 Application secrets, SSH passwords, and database contents are intentionally outside this workflow.
 
+Host hardening, Nginx security headers, SSH policy, Fail2ban and alert-mail setup are **not** installed by this application release workflow. See [the staged security runbook](../docs/LINKNUX_SECURITY_2026-09-26.md); use a separate reviewed administrator change with `nginx -t` / `sshd -t` and rollback.
+
 ## OAuth production checklist
 
 OAuth providers compare callback addresses character by character. Before a production release, confirm all of the following without a trailing slash:
@@ -87,3 +89,7 @@ Use the load test package in:
 - `scripts/k6/user-token-pool.sample.csv`
 
 See [线上压测与上线核验方案](../docs/线上压测与上线核验方案.md) for the full concurrency methodology and interpretation.
+
+## Linknux security hardening
+
+The 2026-09-26 host changes and the pending QQ SMTP alert activation are documented in [the security report](../docs/LINKNUX_SECURITY_2026-09-26.md). The application deployment script does not manage SSH, Nginx, Fail2ban, or SMTP. Do not commit sender credentials or mailbox authorization codes.

@@ -7,6 +7,7 @@ import com.transit.service.CurrentUserService;
 import com.transit.service.ClientIpResolver;
 import com.transit.service.IdempotencyService;
 import com.transit.service.PaymentIntentService;
+import com.transit.service.LegalDocumentService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
@@ -25,18 +26,23 @@ public class PaymentIntentController {
     private final PaymentIntentService paymentIntentService;
     private final IdempotencyService idempotencyService;
     private final ClientIpResolver clientIps;
+    private final LegalDocumentService legalDocuments;
 
     @PostMapping("/payment-intents/{id}/start")
     public Mono<Object> start(@RequestHeader(HttpHeaders.AUTHORIZATION) String auth,
                               @RequestHeader("Idempotency-Key") String idempotencyKey,
                               @PathVariable Long id,
+                              @RequestHeader("X-Checkout-Disclosure") String disclosureId,
                               HttpServletRequest request) {
         User user = currentUserService.requireUser(auth);
+        legalDocuments.requireCheckoutOpen();
         return Mono.fromCallable(() -> {
             IdempotencyService.Claim claim = idempotencyService.claim(
                     "USER", user.getId(), "START_PAYMENT_INTENT:" + id, idempotencyKey, java.util.Map.of("id", id), true);
             if (claim.replay()) return claim.response();
             try {
+                paymentIntentService.getUserIntent(user, id);
+                legalDocuments.recordCheckoutConsent(user.getId(), "PAYMENT_INTENT", id, disclosureId);
                 PaymentIntentService.StartResponse response = paymentIntentService.start(
                         user, id, clientIp(request), device(request));
                 idempotencyService.complete(claim, 200, response, "PAYMENT_INTENT", id);

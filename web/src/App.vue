@@ -1,5 +1,7 @@
 <template>
   <router-view />
+  <SiteFooter v-if="!route.path.startsWith('/admin')" />
+  <CookieConsent />
   <AuthDialog v-if="showAuthDialog" />
   <AgreementGate v-if="showAgreementGate" />
   <ContactWidget v-if="showContactWidget" />
@@ -10,6 +12,8 @@
 import { computed, defineAsyncComponent } from 'vue'
 import { useRoute } from 'vue-router'
 import LocaleSwitch from '@/components/LocaleSwitch.vue'
+import SiteFooter from '@/components/SiteFooter.vue'
+import CookieConsent from '@/components/CookieConsent.vue'
 
 const route = useRoute()
 const AuthDialog = defineAsyncComponent(() => import('@/components/AuthDialog.vue'))

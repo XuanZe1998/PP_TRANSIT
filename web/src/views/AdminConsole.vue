@@ -161,6 +161,18 @@
     </template>
 
     <template v-else-if="module === 'settings'">
+      <el-alert :type="legalStatus?.publication_ready ? 'success' : 'warning'" :closable="false" :title="legalStatus?.publication_ready ? '出海公开信息已配置并标记为审核通过' : '公开信息尚未配置完成：线上支付处于保护状态'">
+        <template #default>
+          在本页新增或编辑 legal.* 配置；缺少字段：{{ legalStatus?.missing_fields?.map((key: string) => `legal.${key}`).join('、') || '请刷新状态' }}。
+          完成真实信息、双语正文与法律审核后，设置 legal.publication_approved=true，并更新协议版本。详见 docs/INTERNATIONAL_SITE_LAUNCH.md。
+        </template>
+      </el-alert>
+      <article class="panel" style="margin: 16px 0">
+        <div class="panel-head"><h3>线上收款总开关</h3></div>
+        <p>默认关闭。开启前仍须完成真实经营主体、目标地区及双语政策审核；即使开启，公开信息未就绪时也无法发起付款。关闭后不再生成新的支付链接，已经发出的链接及支付回调仍可能完成，请核对待处理订单。</p>
+        <el-switch :model-value="legalStatus?.payments_enabled === true" :loading="paymentSwitchSaving" active-text="允许发起付款" inactive-text="禁止发起付款" @change="setPaymentsEnabled(Boolean($event))" />
+        <el-tag style="margin-left: 12px" :type="legalStatus?.checkout_ready ? 'success' : 'warning'">{{ legalStatus?.checkout_ready ? '结账开放' : '结账关闭' }}</el-tag>
+      </article>
       <section class="admin-grid">
         <article class="panel">
           <div class="panel-head">
@@ -882,6 +894,22 @@ const loading = ref(false)
 const saving = ref(false)
 const query = ref('')
 const rows = ref<any[]>([])
+const legalStatus = ref<any>(null)
+const paymentSwitchSaving = ref(false)
+async function setPaymentsEnabled(enabled: boolean) {
+  try {
+    await ElMessageBox.confirm(
+      enabled ? '确认允许发起新的线上付款？请先核对经营主体、地区、支付渠道及公开条款。此操作不能替代合规审核。' : '确认关闭新付款？已经发出的支付链接和回调仍可能完成。',
+      enabled ? '开启收款总开关' : '关闭收款总开关', { type: 'warning', confirmButtonText: '确认', cancelButtonText: '取消' }
+    )
+    paymentSwitchSaving.value = true
+    await http.put('/api/admin/api/settings', { key: 'commerce.payments_enabled', value: String(enabled), description: '运营方显式控制新付款发起；默认关闭' })
+    legalStatus.value = (await http.get('/api/public/legal')).data
+    ElMessage.success(enabled ? '已开启人工收款开关（仍受公开信息门禁约束）' : '已关闭新付款')
+  } catch (error: any) {
+    if (error !== 'cancel' && error !== 'close') ElMessage.error(getHttpErrorNotice(error, '保存支付开关失败'))
+  } finally { paymentSwitchSaving.value = false }
+}
 const secondaryRows = ref<any[]>([])
 const rechargePlans = ref<any[]>([])
 type FinanceSection = 'summary' | 'transactions' | 'codes' | 'plans'
@@ -1437,12 +1465,14 @@ async function load() {
     } else if (module.value === 'finance') {
       await loadFinance()
     } else if (module.value === 'settings') {
-      const [settings, reports] = await Promise.all([
+      const [settings, reports, legal] = await Promise.all([
         http.get('/api/admin/api/settings'),
-        http.get('/api/admin/api/reports')
+        http.get('/api/admin/api/reports'),
+        http.get('/api/public/legal')
       ])
       rows.value = settings.data
       report.value = reports.data
+      legalStatus.value = legal.data
     } else if (module.value === 'models') {
       const [modelRes, channelRes] = await Promise.all([
         http.get('/api/admin/api/models'),

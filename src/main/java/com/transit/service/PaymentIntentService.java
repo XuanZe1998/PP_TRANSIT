@@ -35,6 +35,7 @@ public class PaymentIntentService {
     private final MaPayClient maPayClient;
     private final PaymentBusinessSettlementService settlementService;
     private final TransactionTemplate transactionTemplate;
+    private final LegalDocumentService legalDocuments;
 
     @Value("${payment.local-test-mode:false}")
     private boolean localTestMode;
@@ -91,6 +92,7 @@ public class PaymentIntentService {
     }
 
     public StartResponse start(User user, Long id, String clientIp, String device) {
+        legalDocuments.requireCheckoutOpen();
         PaymentIntent intent = getUserIntent(user, id);
         if ("PAID".equals(intent.getStatus())) return response(intent);
         if (!"PENDING".equals(intent.getStatus())) throw conflict("Payment cannot be started while intent status is " + intent.getStatus());

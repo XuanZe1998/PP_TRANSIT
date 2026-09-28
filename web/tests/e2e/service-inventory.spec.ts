@@ -14,10 +14,8 @@ async function mockInventory(page: Page) {
     { id: 103, secretPreview: '****1003', status: 'DELIVERED', reservedOrderId: 900, orderNo: 'ORDER-900', buyerUserId: 23, deliveredAt: '2026-09-28 10:05:00' }
   ]
   const calls: { path: string; method: string; params: URLSearchParams; body: any }[] = []
-  await page.route(url => url.hostname === 'api.linknux.com' || url.pathname.startsWith('/api/'), async route => {
+  await page.route('**/api/**', async route => {
     const request = route.request(), url = new URL(request.url()), method = request.method()
-    // Normalize production API origins and the development /api proxy for identical mock assertions.
-    if (!url.pathname.startsWith('/api/')) url.pathname = '/api' + url.pathname
     let body: any = null; try { body = request.postDataJSON() } catch { /* no body */ }
     calls.push({ path: url.pathname, method, params: url.searchParams, body })
     if (url.pathname === '/api/admin/api/other-services') {

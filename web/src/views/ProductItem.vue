@@ -89,12 +89,13 @@
 
             <p class="sync-status" :class="{ error: syncError }">{{ syncMessage }}</p>
 
+            <CheckoutDisclosure v-model="checkoutAcknowledged" v-model:disclosure-id="checkoutDisclosureId" />
             <div class="order-summary">
               <span>订单合计</span>
               <strong>{{ product.price === null ? '待询价' : formatCurrencyValue(totalPrice, 'CNY', 2, 2) }}</strong>
             </div>
 
-            <el-button type="primary" size="large" native-type="submit" class="submit-button" :loading="submitting" :disabled="!canOrder">
+            <el-button type="primary" size="large" native-type="submit" class="submit-button" :loading="submitting" :disabled="!canOrder || !checkoutAcknowledged">
               立即购买
             </el-button>
           </form>
@@ -158,6 +159,7 @@ import {
 } from '@element-plus/icons-vue'
 import http, { createIdempotencyKey } from '@/utils/http'
 import BillingCheckoutFields, { type BillingCheckout } from '@/components/BillingCheckoutFields.vue'
+import CheckoutDisclosure from '@/components/CheckoutDisclosure.vue'
 import PaymentActionDialog, { type PaymentAction } from '@/components/PaymentActionDialog.vue'
 import { paymentActionOf } from '@/utils/payment'
 import { formatCurrencyValue } from '@/utils/money'
@@ -169,6 +171,8 @@ type PayMethod = {
 }
 
 const router = useRouter()
+const checkoutAcknowledged = ref(false)
+const checkoutDisclosureId = ref('')
 
 const product = reactive<{
   name: string
@@ -320,6 +324,7 @@ const shareProduct = async () => {
 
 const submitOrder = async () => {
   form.quantity = clampQuantity(form.quantity)
+  if (!checkoutAcknowledged.value || !checkoutDisclosureId.value) return
   if (!canOrder.value) {
     ElMessage.warning('实时价格或库存尚未完成校验，暂不能下单')
     return
@@ -352,7 +357,7 @@ const submitOrder = async () => {
     const intentId = res.data?.paymentIntent?.id
     if (!intentId) throw new Error('支付意图创建失败')
     const started = await http.post(`/api/payment-intents/${intentId}/start`, {}, {
-      headers: { 'Idempotency-Key': createIdempotencyKey(`payment-start-${intentId}`) }
+      headers: { 'Idempotency-Key': createIdempotencyKey(`payment-start-${intentId}`), 'X-Checkout-Disclosure': checkoutDisclosureId.value }
     })
     paymentAction.value = paymentActionOf(started.data)
     paymentDialogVisible.value = Boolean(paymentAction.value)

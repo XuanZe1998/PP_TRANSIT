@@ -1,25 +1,63 @@
 <template>
   <main class="legal-page" v-loading="loading">
-    <router-link to="/" class="back">← 返回首页</router-link>
+    <router-link to="/" class="back">← {{ en ? 'Back to home' : '返回首页' }}</router-link>
     <article v-if="legal">
-      <p class="eyebrow">LEGAL</p><h1>{{ kind==='terms'?'用户协议':'隐私政策' }}</h1>
-      <p class="meta">版本 {{ version }} · 生效日期 {{ legal.effective_date }}</p>
-      <el-alert type="warning" :closable="false" title="当前文本为产品合规基线，上线运营前仍需正式法律顾问复核。" />
-      <p v-for="paragraph in paragraphs" :key="paragraph">{{ paragraph }}</p>
-      <h2>运营与联系</h2><p>运营主体：{{ legal.operator }}<br>联系邮箱：{{ legal.contact_email }}<br>联系地址：{{ legal.address }}</p>
-      <p class="sources">合规参考：<a href="https://www.npc.gov.cn/npc/c2/c30834/202108/t20210820_313088.html" target="_blank" rel="noopener noreferrer">《个人信息保护法》</a> · <a href="https://www.cac.gov.cn/2024-09/30/c_1729384452307680.htm" target="_blank" rel="noopener noreferrer">《网络数据安全管理条例》</a></p>
+      <p class="eyebrow">LINKNUX · {{ en ? 'INFORMATION' : '公开信息' }}</p>
+      <h1>{{ title }}</h1>
+      <p class="meta">{{ en ? 'Effective date' : '生效日期' }} {{ legal.effective_date }}<template v-if="kind === 'terms' || kind === 'privacy'"> · {{ en ? 'Version' : '版本' }} {{ legal[`${kind}_version`] }}</template></p>
+      <el-alert v-if="!legal.publication_ready" type="warning" :closable="false" :title="en ? 'Draft information: the operator has not completed and approved all required disclosures.' : '运营方尚未完成并审核公开信息；此页面不能作为已发布的正式条款。'" />
+      <el-alert v-if="!content" type="warning" :closable="false" :title="en ? 'Content is not yet published. Please contact support before purchasing or submitting sensitive data.' : '正文尚未发布。购买或提交敏感数据前请联系运营方。'" />
+      <div v-else class="legal-copy"><p v-for="(paragraph, index) in paragraphs" :key="index">{{ paragraph }}</p></div>
+      <h2>{{ en ? 'Operator and contact' : '运营与联系' }}</h2>
+      <dl>
+        <template v-if="operator"><dt>{{ en ? 'Legal entity' : '法定运营主体' }}</dt><dd>{{ operator }}</dd></template>
+        <template v-if="registration"><dt>{{ en ? 'Registration' : '注册信息' }}</dt><dd>{{ registration }}</dd></template>
+        <template v-if="jurisdiction"><dt>{{ en ? 'Jurisdiction' : '注册地' }}</dt><dd>{{ jurisdiction }}</dd></template>
+        <template v-if="address"><dt>{{ en ? 'Address' : '地址' }}</dt><dd>{{ address }}</dd></template>
+        <template v-if="legal.contact_email"><dt>{{ en ? 'Contact' : '联系邮箱' }}</dt><dd><a :href="`mailto:${legal.contact_email}`">{{ legal.contact_email }}</a></dd></template>
+      </dl>
+      <nav class="legal-links" :aria-label="en ? 'Related disclosures' : '相关公开信息'">
+        <router-link v-for="item in related" :key="item.path" :to="item.path">{{ en ? item.en : item.zh }}</router-link>
+      </nav>
     </article>
-    <el-result v-else-if="error" icon="warning" title="暂时无法加载协议内容" :sub-title="error">
-      <template #extra><el-button type="primary" @click="loadLegal">重新加载</el-button></template>
+    <el-result v-else-if="error" icon="warning" :title="en ? 'Unable to load this document' : '暂时无法加载公开信息'" :sub-title="error">
+      <template #extra><el-button type="primary" @click="loadLegal">{{ en ? 'Retry' : '重新加载' }}</el-button></template>
     </el-result>
   </main>
 </template>
 <script setup lang="ts">
-import { computed,onMounted,ref } from 'vue';import { useRoute } from 'vue-router';import http from '@/utils/http'
-const route=useRoute(),loading=ref(true),legal=ref<any>(null),error=ref(''),kind=computed(()=>route.meta.legalKind==='privacy'?'privacy':'terms')
-const version=computed(()=>kind.value==='terms'?legal.value?.terms_version:legal.value?.privacy_version)
-const paragraphs=computed(()=>String(kind.value==='terms'?legal.value?.terms:legal.value?.privacy).split('。').filter(Boolean).map(item=>`${item}。`))
-async function loadLegal(){loading.value=true;error.value='';try{legal.value=(await http.get('/api/public/legal')).data}catch{legal.value=null;error.value='请检查网络连接后重试，或联系平台客服。'}finally{loading.value=false}}
-onMounted(loadLegal)
+import { computed, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
+import http from '@/utils/http'
+import { isEnglish } from '@/i18n/locale'
+import { legalLinks, type LegalKind } from '@/config/legal'
+
+const route = useRoute()
+const en = isEnglish
+const loading = ref(true)
+const legal = ref<Record<string, any> | null>(null)
+const error = ref('')
+const kind = computed(() => (route.meta.legalKind || 'terms') as LegalKind)
+const title = computed(() => {
+  const item = legalLinks.find(link => link.kind === kind.value)
+  return en.value ? item?.en : item?.zh
+})
+const content = computed(() => String(legal.value?.[kind.value + (en.value ? '_en' : '')] || '').trim())
+const paragraphs = computed(() => content.value.split(/\n\s*\n|\n/).map(p => p.trim()).filter(Boolean))
+const related = computed(() => legalLinks.filter(link => link.kind !== kind.value))
+const operator = computed(() => legal.value?.operator === 'LinkNux API 服务平台' ? '' : (en.value ? legal.value?.operator_en || legal.value?.operator : legal.value?.operator))
+const address = computed(() => legal.value?.address === '请以运营主体公示信息为准' ? '' : legal.value?.address)
+const registration = computed(() => en.value ? legal.value?.registration_en || legal.value?.registration : legal.value?.registration)
+const jurisdiction = computed(() => en.value ? legal.value?.jurisdiction_en || legal.value?.jurisdiction : legal.value?.jurisdiction)
+async function loadLegal() {
+  loading.value = true
+  error.value = ''
+  try { legal.value = (await http.get('/api/public/legal')).data }
+  catch { legal.value = null; error.value = en.value ? 'Check your connection or contact support.' : '请检查网络连接后重试，或联系平台客服。' }
+  finally { loading.value = false }
+}
+watch(() => route.path, loadLegal, { immediate: true })
 </script>
-<style scoped>.legal-page{min-height:100vh;padding:38px 20px;background:#f5f8fc;color:#18314f}.legal-page article{max-width:880px;margin:18px auto;padding:42px;border:1px solid #dce8f7;border-radius:18px;background:#fff;box-shadow:0 18px 50px rgba(29,70,115,.08)}.back{display:block;max-width:880px;margin:auto;color:#2563eb;text-decoration:none}.eyebrow{color:#2563eb;font-size:12px;font-weight:800;letter-spacing:.15em}h1{font-size:36px}.meta,.sources{color:#64748b}article>p{line-height:1.9}h2{margin-top:28px}a{color:#2563eb}@media(max-width:640px){.legal-page article{padding:24px}h1{font-size:28px}}</style>
+<style scoped>
+.legal-page{min-height:100vh;padding:38px 20px;background:#f5f8fc;color:#18314f}.legal-page article{max-width:880px;margin:18px auto;padding:42px;border:1px solid #dce8f7;border-radius:18px;background:#fff;box-shadow:0 18px 50px rgba(29,70,115,.08)}.back{display:block;max-width:880px;margin:auto;color:#2563eb;text-decoration:none}.eyebrow{color:#2563eb;font-size:12px;font-weight:800;letter-spacing:.15em}h1{font-size:36px}.meta{color:#64748b}.legal-copy{white-space:pre-wrap;line-height:1.9;margin-top:26px}.legal-copy p{margin:16px 0}h2{margin-top:28px}dl{display:grid;grid-template-columns:140px 1fr;gap:10px}dt{font-weight:700}dd{margin:0;overflow-wrap:anywhere}a{color:#2563eb}.legal-links{display:flex;flex-wrap:wrap;gap:12px;margin-top:32px;border-top:1px solid #e2e8f0;padding-top:20px}@media(max-width:640px){.legal-page article{padding:24px}h1{font-size:28px}dl{grid-template-columns:1fr}}
+</style>
