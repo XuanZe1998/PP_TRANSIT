@@ -27,7 +27,7 @@
     <el-table-column label="测试健康" min-width="120"><template #default="{row}"><el-tag :type="row.health_status==='HEALTHY'?'success':row.health_status==='UNTESTED'?'info':'warning'">{{healthLabel(row.health_status)}}</el-tag></template></el-table-column>
     <el-table-column label="同步" min-width="130"><template #default="{row}"><el-tag :type="statusType(row.sync_status,row.sync_enabled)">{{statusLabel(row.sync_status)}}</el-tag><small v-if="!row.sync_enabled">自动同步已暂停</small></template></el-table-column>
     <el-table-column label="最近结果 / 原因" min-width="240"><template #default="{row}"><span :class="{'failure-text':row.sync_status==='ERROR'}">{{row.message || (row.sync_status==='ERROR'?'历史原因未记录':'尚未同步')}}</span><el-button v-if="row.message" link @click="detail=row">详情</el-button></template></el-table-column>
-    <el-table-column label="操作" min-width="185" fixed="right"><template #default="{row}"><el-button link type="primary" @click="editGroup(row)">设置</el-button><el-button link type="primary" @click="synchronize(row.id)">同步</el-button><el-button link @click="test(row)">测试</el-button></template></el-table-column>
+    <el-table-column label="操作" min-width="245" fixed="right"><template #default="{row}"><el-button link type="primary" @click="editGroup(row)">设置</el-button><el-button link type="primary" @click="synchronize(row.id)">同步</el-button><el-button link @click="test(row)">测试</el-button><el-button v-if="!row.enabled" class="gateway-delete-action" link type="danger" :loading="deletingGroupId===row.id" :disabled="working || deletingGroupId!==undefined || ['QUEUED','RUNNING'].includes(row.sync_status)" @click="deleteGroup(row)">删除</el-button></template></el-table-column>
    </PagedTable>
    <PagedTable scrollbar-always-on v-else-if="tab === 'models'" :data="rows" v-loading="loading" @selection-change="selected=$event" list-id="ModelGateway-2" pagination="external">
     <el-table-column type="selection" width="42"/><el-table-column prop="public_model_name" label="模型 / 路由" min-width="210"/><el-table-column prop="site_name" label="上游" min-width="115"/><el-table-column prop="group_name" label="上游分组" min-width="175"/>
@@ -54,7 +54,7 @@ import PagedTable from '@/components/PagedTable.vue'
 import AdminPageToolbar from '@/components/AdminPageToolbar.vue'
 import {ref,reactive,onMounted,onBeforeUnmount} from 'vue'
 import {useRoute,useRouter} from 'vue-router'
-import {ElMessage} from 'element-plus'
+import {ElMessage,ElMessageBox} from 'element-plus'
 import http,{getHttpErrorMessage} from '../utils/http'
 import {useListPage} from '../utils/listPage'
 import ListPagination from '../components/ListPagination.vue'
@@ -74,6 +74,7 @@ const paging=useListPage('gateway-'+tab.value),settingsOpen=ref(false),settingsK
 const settings=reactive({name:'',enabled:false,syncEnabled:true,apiKey:'',publicName:'',publicCode:'',badgeText:'',badgeColor:'#2563eb',inheritDisplay:true})
 const accountAuth=reactive({email:'',password:'',totpCode:'',emailPreview:'',authenticated:false,status:'ANONYMOUS',lastError:''})
 const batchResults=ref<any[]>([]),batchOpen=ref(false)
+const deletingGroupId=ref(undefined as number | undefined)
 async function cancelPublication(id:number){try{await http.delete(`/api/admin/api/gateway/models/${id}/publication`);await load()}catch(e){ElMessage.error(getHttpErrorMessage(e,'取消失败'))}}
 const statusNames:Record<string,string>={ERROR:'失败',FAILED:'失败',SUCCESS:'成功',PARTIAL:'部分完成',QUEUED:'等待执行',RUNNING:'正在同步',PENDING:'未执行',IMPORTED:'已导入',MISSING_CONFIRMATION:'等待确认',GROUP_REMOVED:'分组已停用',DISABLED_MISSING:'上游分组已移除',CREDENTIAL_MISSING:'缺少凭据',UNMANAGED:'未接入同步',MISSING:'等待确认缺失'}
 function phaseLabel(value:string){return ({GROUPS:'同步上游分组',MODELS:'读取模型目录',PRICING:'读取采购价格',APPLY:'应用目录与价格',CATALOG:'读取上游目录',TEST:'连通性测试'} as Record<string,string>)[value]||'历史阶段未记录'}
@@ -107,7 +108,24 @@ async function publish(){working.value=true;try{batchResults.value=(await http.p
 let timer:ReturnType<typeof setInterval>|undefined
 onMounted(async()=>{await reloadAll();timer=setInterval(()=>{if(pendingGroupJobs.value.length)checkGroupJobs();if(!loading.value&&rows.value.some(r=>['QUEUED','RUNNING'].includes(r.status||r.sync_status)))load()},3000)})
 onBeforeUnmount(()=>{if(timer)clearInterval(timer)})
+async function deleteGroup(row:any){
+ if(working.value || deletingGroupId.value!==undefined || row.enabled)return
+ deletingGroupId.value=row.id
+ try{
+  await ElMessageBox.confirm(`确认删除停用分组“${row.group_name || row.name}”？将清理该分组的模型映射、定价规则、自动发布请求及本地凭据；所属上游站点和历史运行记录保留。此操作不可撤销；若上游仍存在该分组，后续同步可能重新发现。`,'删除停用分组',{type:'warning',confirmButtonText:'确认删除',cancelButtonText:'取消'})
+  await http.delete(`/api/admin/api/gateway/groups/${row.id}`)
+  if(groupId.value===row.id)groupId.value=undefined
+  if(detail.value?.id===row.id)detail.value=null
+  ElMessage.success('停用分组已删除')
+  await searchGroups(groupQuery.value)
+  await load()
+ }catch(e){if(e!=='cancel' && e!=='close')ElMessage.error(getHttpErrorMessage(e,'删除分组失败'))}
+ finally{deletingGroupId.value=undefined}
+}
+
 </script>
 <style scoped>
 .gateway-workbench { display:grid; gap:16px; }.actions { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }.gateway-filter{width:210px}.gateway-search{width:250px}.panel{min-width: 0;padding:18px;border:1px solid var(--el-border-color);border-radius:12px;background:var(--el-bg-color)}.failure-text{color:var(--el-color-danger)}small{color:var(--el-text-color-secondary)}
+:global(#app .gateway-workbench .el-button.gateway-delete-action) { color: var(--lnx-danger) !important; }
+:global(#app .gateway-workbench .el-button.gateway-delete-action.is-disabled) { opacity: .5; }
 </style>
