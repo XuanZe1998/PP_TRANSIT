@@ -1,0 +1,28 @@
+Draft revised: 2026-09-29. The operator’s identity, actual providers, processing locations and retention periods still need verification. This text is not proof of global compliance.
+
+1. Responsible party and contact
+The party responsible for personal information is the actual operator identified in “Operator and contact”. The service is operated from Suzhou, Jiangsu, China. Send privacy requests to the published contact email. A brand, city or “individual” registration description does not replace a full operator identity and serviceable address where required by law.
+
+2. Categories of data
+Registration, authentication and security involve account identifiers, contact information, credentials and login/device records. Authorisation and service delivery involve API keys, organisation membership and permissions, model choices, request identifiers, times, usage, charges, errors and audit records. Orders may involve billing names, email, addresses, countries, postcodes, order details and payment status. Third-party sign-in or bring-your-own-key features involve related authorisation identifiers or keys. Chat, creation and file features may process or store submitted text, images, files, conversations and generated results; “API transit” does not mean all content is never stored.
+
+3. Purposes and grounds
+Data supports service delivery, orders, billing, security, abuse prevention, troubleshooting, support and legal obligations. A consent button is not treated as the sole basis for every activity. Where the law distinguishes bases, assess contract performance, legal obligations, legitimate interests subject to a balancing assessment, or valid consent as appropriate. Optional analytics requires a prior choice. Rejecting optional analytics does not prevent necessary website access.
+
+4. Recipients and disclosures
+Requests may pass through one or more gateways to model providers. Payment, hosting, database, backup, authentication and necessary support providers may process data needed for their functions. Organisation administrators may access organisation records within their permissions. Access should be necessary and authorised; compulsory disclosures need a lawful basis. Actual recipients, subprocessors and regions have not yet been fully disclosed; see the subprocessors page. A model brand must not be assumed to be the sole actual recipient.
+
+5. International processing
+Operator, server, gateway and final model-provider locations may differ and data may cross borders. Providing a service does not establish that all transfer requirements have been met. The operator must verify the route and implement applicable contracts, safeguards, assessments and separate consent where required. Do not submit data subject to localisation, confidentiality or sensitivity requirements before receiving the necessary written information.
+
+6. Retention and deletion
+Retention must be assessed separately for account/authorisation data, usage/billing/tax records, security audits, chat/creation content, caches and backups according to purpose and law. Exact periods and backup rotation are not yet confirmed; zero retention, immediate deletion and fixed clearing times are not promised. Requests require verification of data scope and upstream/backup capabilities. Legally retained records should have restricted use; account deletion alone does not prove all records are removed. An actionable retention schedule is required before approval.
+
+7. Security and risk
+The project includes permission checks, access controls, credential handling and audit features, but deployment, key management and backup controls still need verification. Absolute security is not guaranteed. Avoid putting credentials in logs, support tickets or model inputs. Incident notification duties must be assessed under applicable law. See the security information.
+
+8. Rights and complaints
+Depending on applicable law, you may request access, copies, correction, deletion, restriction, objection or portability, and withdraw consent-based processing. Withdrawal does not invalidate prior lawful processing or remove necessary contract/legal processing. See the privacy requests page for verification and legal deadlines. You may complain to a competent authority in your location without first contacting the platform.
+
+9. Children, analytics and updates
+The service is intended for people able to enter lawful contracts and is not intentionally directed at children. Contact the operator about suspected children’s data; this statement is not an implemented age-verification system. See the cookie policy for browser storage. New purposes, providers or material changes require policy/version updates and renewed permission where needed.

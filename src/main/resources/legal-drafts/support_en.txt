@@ -1,0 +1,16 @@
+Draft revised: 2026-09-29. The website is personally operated and does not promise round-the-clock support, fixed hourly response times or an unagreed SLA.
+
+1. Contact
+Use the email in “Operator and contact” for enquiries, billing, refunds, privacy and complaints. Use a valid mailbox, not a domain or misspelling. Messages are intended to be handled on working days; the time zone, holidays and response targets still need operator confirmation. Personal operation does not remove statutory response duties.
+
+2. Reporting an issue
+Include your account identifier, time and time zone, relevant order/request ID, model/feature, expected result and troubleshooting steps. Redact API keys, passwords, verification codes, personal data and payment credentials from screenshots and logs. Do not provide access to a third-party account for troubleshooting.
+
+3. Billing and incidents
+Distinguish paid-but-uncredited orders, duplicate charges, refunds, model failures and quota issues so payment and usage records can be reconciled. Closing payments may not cancel existing links. Upstream or network issues may be involved; explain actual timelines as known. Only report causes based on evidence; do not invent uptime statistics or a status page.
+
+4. Complaint review
+Describe the facts, relevant records and requested resolution. The operator should explain acceptance, required information and review findings within applicable statutory deadlines. If unanswered or unresolved, you retain lawful access to payment providers, consumer bodies, regulators and competent courts. Platform review is not a prerequisite to legal remedies.
+
+5. Security and privacy
+Report vulnerabilities or suspected exposure privately as described in the security policy. Use the privacy requests process for personal information requests. Do not test other users’ data without authorisation or publish unremediated sensitive details.

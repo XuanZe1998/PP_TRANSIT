@@ -163,7 +163,7 @@
     <template v-else-if="module === 'settings'">
       <el-alert :type="legalStatus?.publication_ready ? 'success' : 'warning'" :closable="false" :title="legalStatus?.publication_ready ? '出海公开信息已配置并标记为审核通过' : '公开信息尚未配置完成：线上支付处于保护状态'">
         <template #default>
-          请在下方“公开信息填写区”逐项填写；仍需核对：{{ legalStatus?.missing_fields?.map((key: string) => `legal.${key}`).join('、') || '请刷新状态' }}。
+          请在下方“公开信息填写区”逐项填写；仍需核对：{{ legalStatus?.missing_fields?.map((key: string) => `legal.${key}`).join('、') || '字段已填，仍需核对真实经营信息、实际处理方及人工法律审核' }}。
           完成真实信息、双语正文与法律审核后，设置 legal.publication_approved=true，并更新协议版本。详见 docs/INTERNATIONAL_SITE_LAUNCH.md。
         </template>
       </el-alert>

@@ -1,16 +1,16 @@
 <template>
   <main class="legal-page" v-loading="loading">
     <router-link to="/" class="back">← {{ en ? 'Back to home' : '返回首页' }}</router-link>
-    <article v-if="legal">
+    <article v-if="legal" data-no-auto-i18n>
       <p class="eyebrow">LINKNUX · {{ en ? 'INFORMATION' : '公开信息' }}</p>
       <h1>{{ title }}</h1>
-      <p class="meta">{{ en ? 'Effective date' : '生效日期' }} {{ legal.effective_date }}<template v-if="kind === 'terms' || kind === 'privacy'"> · {{ en ? 'Version' : '版本' }} {{ legal[`${kind}_version`] }}</template></p>
+      <p class="meta">{{ legal.publication_ready ? (en ? 'Effective date' : '生效日期') : (en ? 'Proposed effective date' : '拟生效日期') }} {{ legal.effective_date }}<template v-if="kind === 'terms' || kind === 'privacy'"> · {{ legal.publication_ready ? (en ? 'Version' : '版本') : (en ? 'Proposed version' : '拟发布版本') }} {{ legal[`${kind}_version`] }}</template></p>
       <el-alert v-if="!legal.publication_ready" type="warning" :closable="false" :title="en ? 'Draft information: the operator has not completed and approved all required disclosures.' : '运营方尚未完成并审核公开信息；此页面不能作为已发布的正式条款。'" />
       <el-alert v-if="!content" type="warning" :closable="false" :title="en ? 'Content is not yet published. Please contact support before purchasing or submitting sensitive data.' : '正文尚未发布。购买或提交敏感数据前请联系运营方。'" />
-      <div v-else class="legal-copy"><p v-for="(paragraph, index) in paragraphs" :key="index">{{ paragraph }}</p></div>
+      <div v-else class="legal-copy"><template v-for="(paragraph, index) in paragraphs" :key="index"><h2 v-if="isSectionHeading(paragraph)">{{ paragraph }}</h2><p v-else>{{ paragraph }}</p></template></div>
       <h2>{{ en ? 'Operator and contact' : '运营与联系' }}</h2>
       <dl>
-        <template v-if="operator"><dt>{{ en ? 'Legal entity' : '法定运营主体' }}</dt><dd>{{ operator }}</dd></template>
+        <template v-if="operator"><dt>{{ en ? 'Operator identity' : '经营者身份' }}</dt><dd>{{ operator }}</dd></template>
         <template v-if="registration"><dt>{{ en ? 'Registration' : '注册信息' }}</dt><dd>{{ registration }}</dd></template>
         <template v-if="jurisdiction"><dt>{{ en ? 'Jurisdiction' : '注册地' }}</dt><dd>{{ jurisdiction }}</dd></template>
         <template v-if="address"><dt>{{ en ? 'Address' : '地址' }}</dt><dd>{{ address }}</dd></template>
@@ -44,6 +44,7 @@ const title = computed(() => {
 })
 const content = computed(() => String(legal.value?.[kind.value + (en.value ? '_en' : '')] || '').trim())
 const paragraphs = computed(() => content.value.split(/\n\s*\n|\n/).map(p => p.trim()).filter(Boolean))
+function isSectionHeading(paragraph: string) { return /^\d+\.\s.{1,90}$/.test(paragraph) }
 const related = computed(() => legalLinks.filter(link => link.kind !== kind.value))
 const operator = computed(() => legal.value?.operator === 'LinkNux API 服务平台' ? '' : (en.value ? legal.value?.operator_en || legal.value?.operator : legal.value?.operator))
 const address = computed(() => legal.value?.address === '请以运营主体公示信息为准' ? '' : legal.value?.address)

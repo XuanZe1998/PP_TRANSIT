@@ -1,0 +1,19 @@
+Draft revised: 2026-09-29. This covers model APIs and chat/creation features and does not promise zero retention, no training or single-region processing.
+
+1. Data flow
+After a client or website submits a request, the platform processes inputs for authorisation, routing and model compatibility and may pass them through gateways/channels to the actual model provider. Results return through the platform. Inputs may include message history, system prompts, text, images, files, tool parameters and other uploaded content. A model name does not necessarily identify a single recipient; routing or retries may use different channels.
+
+2. Platform records and feature storage
+The platform handles request identifiers, models, usage, charges, timing, status and necessary diagnostics. Chat, creation, uploads and history features may separately store inputs, attachments or results. Configurable enterprise masking is not automatically applicable to every personal call, endpoint, attachment or history record. Logs, databases, caches, backups and third-party features require separate review; “forwarding only” is not a storage inventory.
+
+3. Upstream retention and training
+Provider retention, safety checks, training and human review depend on actual contracts, account types and enabled options. These have not yet been verified and disclosed for every channel. No guarantee is made of no training, immediate deletion or a model brand’s default enterprise terms. Obtain written confirmation of the actual provider, account mode and safeguards if those restrictions are required.
+
+4. Masking and sensitive data
+Remove unnecessary personal data and credentials before uploading. Test enabled enterprise masking for coverage; automated patterns can miss content, and attachments or other features should not be presumed masked. Do not submit regulated, confidential or sensitive data without suitable permission, legal grounds and written safeguards. Masking is not necessarily irreversible anonymisation.
+
+5. Transfers, roles and third parties
+See the subprocessors and privacy policies for actual recipients, locations and transfer measures. Roles for account/billing processing and customer-directed business inputs must be assessed by activity. Enterprises needing a DPA, subprocessor approval or localisation must obtain a written agreement before use. Website wording alone is not a signed DPA or transfer assessment.
+
+6. Deletion, outputs and changes
+Request deletion through the privacy request process, identifying relevant requests, conversations or files. The platform should explain executable deletion, legal retention and upstream/backup limitations; it cannot guarantee control of all third-party copies. Independently review generated results and do not use them as the sole basis for automated high-risk decisions. New channels or purposes require updated disclosures and permission where needed.

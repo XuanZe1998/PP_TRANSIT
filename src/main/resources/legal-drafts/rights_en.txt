@@ -1,0 +1,19 @@
+Draft revised: 2026-09-29. Available rights and deadlines depend on the requester’s location and applicable law.
+
+1. Requests
+Where applicable, request information about processing, access and copies, correction, deletion, restriction, objection, portability and withdrawal of consent-based processing. Not every right applies to every dataset or activity. The operator should explain the applicable grounds; accepting terms does not waive rights.
+
+2. Channel and scope
+Send a “Privacy rights request” to the published email with your account identifier, requested right, data scope and reply channel. Do not send passwords, full API keys, card details or unnecessary identity documents. Explain your authorisation if acting for an organisation or another person.
+
+3. Verification
+To avoid disclosing another person’s data, the operator may use an existing account or proportionate additional evidence. Minimise information and do not routinely require complete identity documents or use verification to cause unjustified delay. Verification and response records should be used only for handling the request and necessary auditing.
+
+4. Response and legal deadlines
+The operator should establish scope, assess applicable rights and respond within statutory deadlines. Where GDPR applies, requests generally require a response within one month of receipt. Necessary lawful extensions require reasons and the extension period to be communicated within the first month. Other locations follow local deadlines. Refusals or incomplete fulfilment require reasons and appeal options. Fees or refusal for manifestly unfounded/excessive requests are limited to legally permitted and demonstrable cases; fees are not automatic.
+
+5. Deletion, export and withdrawal limits
+Distinguish business content, account details, billing/tax data, security audits, backups and upstream copies. Explain legally retained data, purposes and restrictions; account closure does not promise immediate removal of everything. Exports must not expose other users, members or third parties. Withdraw optional analytics through the footer’s cookie settings; existing third-party storage may require browser or provider action.
+
+6. Complaints and representatives
+You may complain directly to a competent privacy authority without platform permission. Some locations provide authorised-agent requests, sale/sharing opt-outs or other additional rights. The operator must assess and implement requirements based on actual activities, not deny statutory requests because a dedicated button is absent.

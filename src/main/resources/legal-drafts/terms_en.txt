@@ -1,0 +1,28 @@
+Draft revised: 2026-09-29. The operator must verify the business facts, markets and consumer requirements before approval. A proposed effective date is not approval.
+
+1. Service and operator
+LinkNux offers access to AI model APIs, routing, usage reporting and related digital services listed on the website. The contracting operator and contact channel are identified in “Operator and contact”; a brand name is not proof of company registration. The service is personally operated from Suzhou, Jiangsu, China. Intended markets are outside mainland China, but availability does not mean sales are authorised in every country or territory. Local law, upstream restrictions and payment-provider rules still apply.
+
+2. Accounts and API keys
+Provide accurate account details and protect passwords, sessions and API keys. Grant access only to authorised people. Revoke exposed keys, change credentials and contact the operator if compromise is suspected. Organisation administrators should review member permissions, budgets and usage. Do not impersonate others or use an account without permission.
+
+3. Acceptable use
+Obtain permission for your inputs and comply with applicable law and the selected provider’s usage rules. Illegal content, privacy or intellectual-property infringement, fraud, malware, attacks, evasion of limits or security controls, and unauthorised resale of restricted services are prohibited. Do not submit passwords, full payment-card details, identity documents, patient records or other sensitive data unsuitable for third-party processing.
+
+4. Pricing and billing
+Models, routes, input/output/cache billing and rates are governed by the disclosed prices at the time of use and the order confirmation. Display, wallet and settlement currencies may differ; check currency, taxes, fees and exchange rates before purchase. Wallet credit is prepaid service credit, not a bank deposit or investment. Promotional credit must be distinguished from paid credit. If subscriptions are offered, their period, renewal and cancellation terms must be disclosed separately; a one-off top-up is not treated as automatic renewal.
+
+5. Requests, outputs and availability
+AI outputs may be inaccurate, incomplete, biased or similar to other users’ outputs and require independent review. Do not rely on unreviewed outputs for medical, legal, investment or other high-risk decisions. Model providers, networks and rate limits may cause outages, delays or incompatibility. No dedicated SLA, permanent supply or identical model capabilities are promised without a separate written agreement.
+
+6. Data and intellectual property
+You retain the rights you lawfully hold in your inputs and authorise processing and transmission necessary to fulfil the request. Output use remains subject to law, third-party rights and upstream contracts; exclusivity and copyright registration are not guaranteed. See the privacy and AI data policies for data flows, retention and training risks. Obtain written confirmation before sending data that requires a data processing agreement or special retention terms.
+
+7. Refunds, restrictions and termination
+Refunds and cancellation follow the dedicated policy and mandatory law. Necessary limits, suspension or termination may address misuse, security threats, unpaid charges or legal/provider restrictions. Reasons and appeal channels should be provided where law and security permit. Termination does not automatically extinguish refund claims for unused paid credit or records that must legally be retained.
+
+8. Liability and disputes
+Both parties should reasonably mitigate loss. No exclusion overrides non-excludable liability or mandatory consumer rights. This draft does not impose unreviewed blanket disclaimers, unilateral final interpretation or compulsory class-action waivers. You may contact the published email to seek resolution without losing access to regulators, competent authorities or courts. Governing-law and jurisdiction arrangements require review of the operator’s identity and user location; operating from China does not remove other mandatory protections.
+
+9. Changes and notices
+Material changes to billing, rights or processing should be notified through the website or available account channels, with a version and effective date and renewed confirmation where required. Chinese and English are intended to express the same rules. Differences should be clarified, not used to reduce statutory rights.
