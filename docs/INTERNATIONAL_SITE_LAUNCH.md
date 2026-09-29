@@ -4,7 +4,7 @@
 
 ## 公开页面与配置
 
-后台「系统配置与报表」可新增/编辑 `legal.*` 键；公开接口 `/api/public/legal` 返回展示数据及 `publication_ready`、`missing_fields`。正文按纯文本逐段（换行）输入；不要输入 HTML 或凭据。公开页面：`/terms`、`/privacy`、`/refund`、`/ai-data`、`/subprocessors`、`/cookies`、`/rights`、`/support`、`/security`。页脚常驻公开及用户页面。
+后台「系统配置与报表」的「公开信息填写区」默认折叠，点击标题展开后逐项保存 `legal.*`。系统配置表格以单行省略展示长内容，点击「编辑」可查看完整值；公开接口 `/api/public/legal` 返回展示数据及 `publication_ready`、`missing_fields`。正文按纯文本逐段（换行）输入；不要输入 HTML 或凭据。公开页面：`/terms`、`/privacy`、`/refund`、`/ai-data`、`/subprocessors`、`/cookies`、`/rights`、`/support`、`/security`。页脚常驻公开及用户页面。
 
 | 配置键 | 运营方必须核实的内容 |
 | --- | --- |
@@ -20,7 +20,7 @@
 | `legal.security` / `legal.security_en` | 经过验证的安全措施、漏洞报告渠道；不承诺未经验证的认证或 SLA |
 | `legal.terms_version`、`legal.privacy_version`、`legal.effective_date` | 首次发布或正文更新时改掉默认版本与日期，并同步提升版本，以触发登录用户重新确认并留存版本记录 |
 | `commerce.payments_enabled` | 后台「系统配置与报表」的**线上收款总开关**，默认关闭；单独确认开启，只有与 `publication_ready` 同时成立才允许发起新付款。关闭不会撤销已发出的第三方支付链接或回调，应核对待处理订单。 |
-| `legal.publication_approved` | 完成上述真实核对和人工法律审核后才设为 `true`；默认 `false` |
+| `legal.publication_approved` | 后台「系统配置与报表」上方独立的**政策审核与发布**开关（不在折叠区内）。仅完成真实核对与人工法律审核后，在确认框中显式批准才设为 `true`；默认 `false`。必填项不齐或状态未知时不能批准；即使已批准仍可撤销。该操作不会开启或关闭收款总开关。 |
 
 `publication_ready` 要求真实经营者、地址、注册信息、地区、邮箱，以及中英文条款、隐私、退款、AI 数据、权利、支持正文和明确批准。缺项、审核未通过或收款总开关关闭时，公开页面提示草稿/结账关闭，钱包/商品支付入口及服务订单付款由前后端保护，不能发起新付款。`cookies`、`subprocessors`、`security` 等仅在相关事实确认后发布，不能因页面存在就视为已完成审核。后台有缺项提示。
 

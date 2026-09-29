@@ -164,14 +164,23 @@
       <el-alert :type="legalStatus?.publication_ready ? 'success' : 'warning'" :closable="false" :title="legalStatus?.publication_ready ? '出海公开信息已配置并标记为审核通过' : '公开信息尚未配置完成：线上支付处于保护状态'">
         <template #default>
           请在下方“公开信息填写区”逐项填写；仍需核对：{{ legalStatus?.missing_fields?.map((key: string) => `legal.${key}`).join('、') || '字段已填，仍需核对真实经营信息、实际处理方及人工法律审核' }}。
-          完成真实信息、双语正文与法律审核后，设置 legal.publication_approved=true，并更新协议版本。详见 docs/INTERNATIONAL_SITE_LAUNCH.md。
+          完成真实信息、双语正文与法律审核并更新协议版本后，在下方“政策审核与发布”中显式批准。该开关对应 legal.publication_approved，不会自动开启收款。
         </template>
       </el-alert>
+      <article class="panel legal-publication-control" style="margin: 16px 0">
+        <div class="panel-head"><h3>政策审核与发布</h3><code>legal.publication_approved</code></div>
+        <p>仅在真实经营信息、中英文政策及法律审核完成后批准。开启会将 legal.publication_approved 设置为 true；关闭设为 false。此操作不会开启下方的收款总开关。</p>
+        <el-switch :model-value="legalStatus?.legalReviewRequired === false" :loading="legalApprovalSaving"
+                   :disabled="!legalApprovalStatusLoaded || (legalStatus?.legalReviewRequired !== false && Boolean(legalStatus?.missing_fields?.length))"
+                   active-text="已审核批准" inactive-text="未审核批准" @change="setLegalPublicationApproved(Boolean($event))" />
+        <el-tag style="margin-left: 12px" :type="legalStatus?.publication_ready ? 'success' : 'warning'">{{ legalStatus?.publication_ready ? '正式政策就绪' : '政策未就绪' }}</el-tag>
+        <p v-if="legalStatus?.missing_fields?.length" class="field-hint">必填字段尚未齐全，请先展开“公开信息填写区”补齐，再决定是否批准。</p>
+      </article>
       <LegalSettingsEditor :settings="rows" :missing-fields="legalStatus?.missing_fields || []" @saved="handleLegalFieldSaved" />
       <article class="panel" style="margin: 16px 0">
         <div class="panel-head"><h3>线上收款总开关</h3></div>
         <p>默认关闭。开启前仍须完成真实经营主体、目标地区及双语政策审核；即使开启，公开信息未就绪时也无法发起付款。关闭后不再生成新的支付链接，已经发出的链接及支付回调仍可能完成，请核对待处理订单。</p>
-        <el-switch :model-value="legalStatus?.payments_enabled === true" :loading="paymentSwitchSaving" active-text="允许发起付款" inactive-text="禁止发起付款" @change="setPaymentsEnabled(Boolean($event))" />
+        <el-switch :model-value="legalStatus?.payments_enabled === true" :loading="paymentSwitchSaving" :disabled="!legalApprovalStatusLoaded" active-text="允许发起付款" inactive-text="禁止发起付款" @change="setPaymentsEnabled(Boolean($event))" />
         <el-tag style="margin-left: 12px" :type="legalStatus?.checkout_ready ? 'success' : 'warning'">{{ legalStatus?.checkout_ready ? '结账开放' : '结账关闭' }}</el-tag>
       </article>
       <section class="admin-grid">
@@ -180,10 +189,11 @@
             <h3>系统配置</h3>
             <el-button type="primary" :icon="Plus" @click="openCreate">保存配置</el-button>
           </div>
-          <PagedTable :data="filteredRows" v-loading="loading" list-id="AdminConsole-5">
-            <el-table-column prop="setting_key" label="键" min-width="180" />
-            <el-table-column prop="setting_value" label="值" min-width="220" />
-            <el-table-column prop="description" label="说明" min-width="200" />
+          <p class="field-hint">表格内容仅显示单行摘要，超出部分隐藏；点击“编辑”查看或修改完整内容。</p>
+          <PagedTable class="settings-table" table-layout="fixed" :data="filteredRows" v-loading="loading" list-id="AdminConsole-5">
+            <el-table-column prop="setting_key" label="键" min-width="180"><template #default="{ row }"><span class="settings-cell-text">{{ row.setting_key }}</span></template></el-table-column>
+            <el-table-column prop="setting_value" label="值" min-width="220"><template #default="{ row }"><span class="settings-cell-text">{{ row.setting_value }}</span></template></el-table-column>
+            <el-table-column prop="description" label="说明" min-width="200"><template #default="{ row }"><span class="settings-cell-text">{{ row.description }}</span></template></el-table-column>
             <el-table-column label="操作" width="100">
               <template #default="{ row }">
                 <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
@@ -197,8 +207,8 @@
             <el-tag>实时聚合</el-tag>
           </div>
           <div class="report-summary">
-            <div><span>模型收入</span><strong>{{ formatUsd(report.revenue) }}</strong></div>
-            <div><span>模型成本</span><strong>{{ formatUsd(report.cost) }}</strong></div>
+            <div><span>模型收入</span><strong>{{ report.revenue == null ? '—' : formatUsd(report.revenue) }}</strong></div>
+            <div><span>模型成本</span><strong>{{ report.cost == null ? '—' : formatUsd(report.cost) }}</strong></div>
             <div><span>毛利率</span><strong>{{ percent(report.grossMargin) }}</strong></div>
             <div><span>P95 延迟</span><strong>{{ report.p95LatencyMs || 0 }} ms</strong></div>
           </div>
@@ -898,6 +908,28 @@ const query = ref('')
 const rows = ref<any[]>([])
 const legalStatus = ref<any>(null)
 const paymentSwitchSaving = ref(false)
+const legalApprovalSaving = ref(false)
+const legalApprovalStatusLoaded = computed(() => typeof legalStatus.value?.legalReviewRequired === 'boolean' && Array.isArray(legalStatus.value?.missing_fields))
+async function setLegalPublicationApproved(approved: boolean) {
+  if (legalApprovalSaving.value || !legalApprovalStatusLoaded.value) return
+  if (approved && legalStatus.value.missing_fields.length > 0) {
+    ElMessage.warning('请先补齐公开信息必填字段')
+    return
+  }
+  legalApprovalSaving.value = true
+  try {
+    await ElMessageBox.confirm(
+      approved ? '确认已核实真实经营信息、服务商、处理地区、保留期限及退款能力，并完成中英文政策与法律审核？批准后将设置 legal.publication_approved=true，但不会开启收款。' : '确认撤销政策审核批准？将设置 legal.publication_approved=false，新付款会继续受保护；已发出的支付链接及回调仍可能完成。',
+      approved ? '批准政策发布' : '撤销政策批准', { type: 'warning', confirmButtonText: '确认', cancelButtonText: '取消' }
+    )
+    const key = 'legal.publication_approved', value = String(approved), description = '运营方显式确认公开信息与政策已审核；与收款开关独立'
+    await http.put('/api/admin/api/settings', { key, value, description })
+    await handleLegalFieldSaved(key, value, description)
+    ElMessage.success(approved ? '政策审核批准已保存，收款开关未改变' : '政策审核批准已撤销，收款开关未改变')
+  } catch (error: unknown) {
+    if (error !== 'cancel' && error !== 'close') ElMessage.error(getHttpErrorNotice(error, '保存政策审核开关失败'))
+  } finally { legalApprovalSaving.value = false }
+}
 async function handleLegalFieldSaved(key: string, value: string, description: string) {
   const row = rows.value.find(item => item.setting_key === key)
   if (row) { row.setting_value = value; row.description = description }
@@ -1474,6 +1506,7 @@ async function load() {
     } else if (module.value === 'finance') {
       await loadFinance()
     } else if (module.value === 'settings') {
+      legalStatus.value = null
       const [settings, reports, legal] = await Promise.all([
         http.get('/api/admin/api/settings'),
         http.get('/api/admin/api/reports'),
@@ -2841,6 +2874,17 @@ function healthType(value: string) {
 .panel :deep(.el-table) {
   width: 100%;
 }
+
+.settings-table { width: 100%; max-width: 100%; min-width: 0; }
+.settings-table :deep(td.el-table__cell),
+.settings-table :deep(.cell) { overflow: hidden; }
+.settings-table :deep(.cell), .settings-cell-text {
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.settings-cell-text { display: block; max-width: 100%; overflow: hidden; }
+.legal-publication-control .panel-head { flex-wrap: wrap; }
+.legal-publication-control code { overflow-wrap: anywhere; }
 
 .dashboard-usage-panel,
 .admin-usage-analytics {
