@@ -202,6 +202,10 @@ public class AdminChannelService {
 
     @Transactional
     public void delete(Long id) {
+        jdbcTemplate.update("DELETE FROM aiapibank_image_price_variants WHERE model_offer_id IN (SELECT id FROM aiapibank_model_offers WHERE provider_group_id IN (SELECT id FROM aiapibank_provider_groups WHERE channel_id=?))", id);
+        jdbcTemplate.update("DELETE FROM aiapibank_model_offers WHERE provider_group_id IN (SELECT id FROM aiapibank_provider_groups WHERE channel_id=?)", id);
+        jdbcTemplate.update("DELETE FROM aiapibank_provider_groups WHERE channel_id=?", id);
+        jdbcTemplate.update("DELETE FROM gateway_publication_requests WHERE model_mapping_id IN (SELECT id FROM model_mappings WHERE channel_id=?)", id);
         jdbcTemplate.update("DELETE FROM sub2api_model_state WHERE channel_id=?", id);
         jdbcTemplate.update("DELETE FROM sub2api_connections WHERE channel_id=?", id);
         jdbcTemplate.update("DELETE FROM new_api_model_state WHERE channel_id=?", id);

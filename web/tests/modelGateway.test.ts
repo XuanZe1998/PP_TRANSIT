@@ -85,3 +85,16 @@ describe('model gateway administration routes', () => {
     expect(gateway).not.toContain('settings.inheritDisplay=false')
   })
 })
+
+
+describe('disabled gateway group deletion', () => {
+  it('offers a guarded, confirmed delete action without dropping server pagination', () => {
+    const gateway = source('src/views/ModelGateway.vue')
+    expect(gateway).toContain('v-if="!row.enabled"')
+    expect(gateway).toContain('@click="deleteGroup(row)"')
+    expect(gateway).toContain('ElMessageBox.confirm')
+    expect(gateway).toContain('http.delete(`/api/admin/api/gateway/groups/${row.id}`)')
+    expect(gateway).toContain('if(groupId.value===row.id)groupId.value=undefined')
+    expect(gateway).toContain('list-id="ModelGateway-1" pagination="external"')
+  })
+})

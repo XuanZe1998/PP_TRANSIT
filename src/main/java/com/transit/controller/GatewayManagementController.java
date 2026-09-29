@@ -21,6 +21,7 @@ public class GatewayManagementController {
  private final TransactionTemplate tx;
  private final AdminAuditService audit;
  private final AdminChannelService channelService;
+ private final GatewayGroupDeletionService groupDeletion;
  private final com.transit.mapper.ModelMappingMapper modelMapper;
  private void admin(String auth){users.requireAdmin(auth);}
  private final ChannelSecretService secrets;
@@ -74,6 +75,11 @@ public class GatewayManagementController {
  }
  private String filters(Long site,Long group,String groupColumn,List<Object> args){String sql="";if(site!=null){sql+=" AND s.id=?";args.add(site);}if(group!=null){sql+=" AND "+groupColumn+"=?";args.add(group);}return sql;}
  @PutMapping("/sites/{id}") public void site(@RequestHeader(HttpHeaders.AUTHORIZATION)String auth,@PathVariable long id,@RequestBody GatewaySiteService.Display body){admin(auth);sites.update(id,body);audit.record(users.requireAdmin(auth),"UPDATE_GATEWAY_SITE","SITE",id,null,Map.of("updated",true),null);}
+ @DeleteMapping("/groups/{id}") public void deleteGroup(@RequestHeader(HttpHeaders.AUTHORIZATION)String auth,@PathVariable long id){
+  var operator=users.requireAdmin(auth);
+  groupDeletion.deleteDisabled(id);
+  audit.record(operator,"DELETE_GATEWAY_GROUP","CHANNEL",id,null,Map.of("deleted",true),null);
+ }
  public record GroupSettings(String name,Boolean enabled,Boolean syncEnabled,@com.fasterxml.jackson.annotation.JsonProperty(access=com.fasterxml.jackson.annotation.JsonProperty.Access.WRITE_ONLY) String apiKey,String publicName,String publicCode,String badgeText,String badgeColor,boolean inheritDisplay){}
  @PutMapping("/groups/{id}") public void group(@RequestHeader(HttpHeaders.AUTHORIZATION)String auth,@PathVariable long id,@RequestBody GroupSettings body){
   admin(auth);
