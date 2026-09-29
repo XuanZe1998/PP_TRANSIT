@@ -21,7 +21,7 @@ class SchemaRepairServiceTests {
         SchemaRepairService service = new SchemaRepairService(jdbc);
         service.seedBlankLegalDisclosureFields();
         service.seedBlankLegalDisclosureFields();
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM system_settings", Integer.class)).isEqualTo(20);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM system_settings", Integer.class)).isEqualTo(26);
         assertThat(jdbc.queryForObject("SELECT setting_value FROM system_settings WHERE setting_key='legal.operator'", String.class)).isEqualTo("Real operator");
         assertThat(jdbc.queryForObject("SELECT setting_value FROM system_settings WHERE setting_key='legal.registration'", String.class)).isEmpty();
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM system_settings WHERE setting_key IN ('legal.publication_approved','commerce.payments_enabled')", Integer.class)).isZero();

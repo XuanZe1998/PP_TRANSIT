@@ -1,0 +1,13 @@
+Draft revised: 2026-09-29. The actual provider inventory has not yet been verified. This page is not a complete subprocessor disclosure.
+
+1. Possible recipient roles
+Services may involve website/database/backup hosts, API gateways and channel operators, final model providers, payment services, third-party authentication and support. Not every recipient is a subprocessor for every activity; payment or authentication services may independently determine some purposes. Roles require review of actual contracts and activities.
+
+2. Models versus channels
+A model brand, display name, group or site label is not a legal entity name or proof of processing country. A request may traverse multiple gateways, and routing, failover or retry may change recipients. Listing model brands alone does not establish that no other third parties are involved.
+
+3. Required verified disclosures
+For each actual service, the operator must provide its legal name, purpose, data categories, processing/storage regions, privacy/contract information, retention/training rules, transfer safeguards and change-notice arrangements. Only verified recipients may be listed; do not invent providers, locations, DPAs or certifications.
+
+4. Confirmation before use
+If you need a specific region, provider restrictions, subprocessor approval or an enterprise DPA, obtain written route and contract information via the published email. Do not submit sensitive, confidential or localisation-restricted data while the inventory and necessary safeguards remain unconfirmed. Update this page when providers change and give advance notice where law or contract requires.

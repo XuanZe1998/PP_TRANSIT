@@ -1,0 +1,13 @@
+Draft revised: 2026-09-29. This is public security information, not certification, audit approval or a bug-bounty promise.
+
+1. Controls and scope
+The project includes authentication and permission checks, organisation authorisation, rate/security policies, encryption handling for some credentials, and access/billing audits. Server configuration, HTTPS, key management, backups, patching and monitoring still require verification. No claim is made of end-to-end encryption for all data, absolute security, or ISO/SOC certification.
+
+2. User precautions
+Use unique strong passwords, protect sessions and API keys and grant only necessary permissions. Revoke exposed keys and contact the operator promptly. Do not put credentials in public browser code, repositories, screenshots, model prompts or support logs. Organisation administrators should regularly review members, budgets and access records.
+
+3. Private reports
+Report suspected vulnerabilities or data exposure to the published email with “Security report” in the subject, affected pages/endpoints, timing, risk and minimal reproduction steps. Remove real keys and other people’s data from evidence. Do not scan, brute-force, disrupt services, download others’ data or distribute exploits without authorisation. The report channel does not authorise testing or automatically promise payment.
+
+4. Response and notification
+The operator should verify reports, contain risks, preserve necessary evidence and assess applicable user/regulator notification duties. Unverified universal repair times and uninterrupted service are not promised. Personal information issues may also use the privacy request channel. Communicate unremediated sensitive details privately.

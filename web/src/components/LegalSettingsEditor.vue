@@ -1,15 +1,15 @@
 <template>
   <article class="panel legal-settings-editor">
     <div class="panel-head"><h3>公开信息填写区</h3><el-tag type="warning">草稿</el-tag></div>
-    <p>以下字段已在线建立为空白草稿。逐项填写并点击“保存本项”；保存不会批准发布，也不会开启收款。没有营业执照时，登记信息请保持空白，切勿编造。</p>
-    <el-alert title="填写前请核对事实及目标销售地区的要求。公开政策由你自行撰写并审阅；未完成前继续保持收款关闭。" type="info" :closable="false" />
+    <p>政策正文已补充中英文审核草稿；逐项核对并点击“保存本项”。保存不会批准发布，也不会开启收款。身份、供应商、保留期限及目标地区要求仍须核实；没有营业执照时不要编造登记号码。</p>
+    <el-alert title="草稿不是正式法律审核结论。请补齐真实经营者身份、服务商与处理地区、保留期限及退款能力，审阅双语内容后再决定正式发布；未完成前继续保持收款关闭。" type="info" :closable="false" />
     <section v-for="group in legalSettingGroups" :key="group.title" class="legal-settings-group">
       <h4>{{ group.title }}</h4>
       <div v-for="field in group.fields" :key="field.key" class="legal-settings-field">
         <div class="legal-settings-field-head">
           <label :for="field.key">{{ field.label }} <code>{{ field.key }}</code></label>
-          <el-tag :type="missingFields.includes(field.key.slice(6)) ? 'warning' : 'success'" size="small">
-            {{ missingFields.includes(field.key.slice(6)) ? '待填写或核对' : '已填写' }}
+          <el-tag :type="!draft[field.key]?.trim() || missingFields.includes(field.key.slice(6)) ? 'warning' : 'success'" size="small">
+            {{ !draft[field.key]?.trim() || missingFields.includes(field.key.slice(6)) ? '待填写或核对' : '已填写' }}
           </el-tag>
         </div>
         <el-input :id="field.key" v-model="draft[field.key]" :type="field.multiline ? 'textarea' : 'text'"

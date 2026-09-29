@@ -1,0 +1,13 @@
+Draft revised: 2026-09-29. “Storage” includes cookies, localStorage and sessionStorage, not only browser cookies.
+
+1. Necessary and functional storage
+The frontend uses local storage for login tokens, refresh tokens, account summaries and last-activity times, separately for users and administrators, to support authentication and session management. Local storage also holds interface preferences such as language and list pagination. Third-party sign-in may use session storage for state verification. Clearing authentication storage may sign you out or require reauthentication. Local storage is not an automatically expiring cookie and may remain until logout, application cleanup or manual removal; no uniform expiry in days is promised.
+
+2. Optional analytics
+The built-in mechanism loads an analytics script only when deployment explicitly configures an HTTPS script URL and the user permits analytics. Rejection should not block login or browsing. The choice is saved in linknux.cookie.analytics.v1. This mechanism is not represented as a complete consent-management system for all third-party tags.
+
+3. Providers and inventory
+Before enabling analytics or other optional tracking, the operator must verify and disclose the actual provider, purpose, storage/cookie names, periods and recipient regions, and obtain required consent. Payment pages, third-party sign-in or external sites may have their own policies and are not collectively controlled by this website’s choice button.
+
+4. Changing and withdrawing choices
+Open cookie preferences from the footer to reject or withdraw optional analytics. If a script is already loaded, withdrawal reloads the page to prevent subsequent loading, but does not guarantee existing third-party cookies are deleted. Browser or provider action may be necessary. Browser settings can inspect, restrict or remove storage, which may affect necessary features.

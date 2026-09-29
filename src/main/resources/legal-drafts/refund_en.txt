@@ -1,0 +1,19 @@
+Draft revised: 2026-09-29. Payment routes, refund capabilities and market-specific consumer rules require operator verification. This is not a blanket no-refunds policy.
+
+1. Scope and pre-purchase checks
+This policy covers prepaid credit and digital services actually sold on the site. Check the item/model, quantity, currency, total, taxes, promotional rules, delivery and cancellation before paying. New payments should not be initiated while the payment switch or disclosures are not ready. Previously issued third-party links and callbacks may still complete and require reconciliation.
+
+2. Unused credit and cancellation
+You may request review of unused paid credit or undelivered orders. Used services, delivered digital items and irreversible upstream costs require case-by-case assessment of performance, cause and applicable law; refunds are not categorically excluded. Promotional credit is generally not cash refund principal, but cannot reduce statutory rights in paid amounts. Subscription cancellation, expiry and renewal follow the specific order; disabling an account does not prove third-party recurring charges are cancelled.
+
+3. Payment and billing issues
+Duplicate payments, successful payments not credited, clear billing errors, non-delivery or non-conforming services can be reviewed. Supply your account identifier, order number, date, amount and issue, and redacted payment evidence if needed. Never send passwords, full card numbers, API keys or verification codes. Whether a failed call incurred upstream charges must be reconciled against usage and transactions; not every failed request is guaranteed free.
+
+4. Requests and refunds
+Apply through the published email. The operator should reconcile orders, usage and payments and explain approval or refusal within applicable statutory deadlines. Approved refunds should use the original payment route where possible; if unsupported, agree a lawful alternative with the payer. Providers and banks determine settlement time. No uniform working-day timeframe has been verified, and immediate refunds are not guaranteed. Fees or exchange differences may be handled only where lawful and disclosed in advance; all fees are not automatically deducted.
+
+5. Mandatory consumer rights
+Applicable withdrawal, cancellation, conformity remedies and refund rights prevail over conflicting order rules. EU/EEA distance service contracts generally involve a fourteen-day withdrawal framework and statutory exceptions requiring review of service type and local law. Early performance or digital-content exceptions may require a separate express request, consent and acknowledgment of loss of withdrawal rights. A general terms checkbox or first API call does not automatically meet those requirements. Loss of withdrawal rights should not be assumed before those conditions are implemented and recorded.
+
+6. Complaints and disputes
+Request reconsideration through Help and complaints or pursue lawful remedies through payment providers, consumer bodies or courts. Review is not conditional on waiving legitimate complaints or chargeback rights. Fraud or misuse should be addressed with necessary evidence and law, not a unilateral “final interpretation” clause.

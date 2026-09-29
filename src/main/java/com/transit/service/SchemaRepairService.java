@@ -1664,6 +1664,7 @@ public class SchemaRepairService {
         insertIfMissing("system_settings", "setting_key", "billing.usd_cny_rate",
                 "INSERT INTO system_settings(setting_key, setting_value, description) VALUES ('billing.usd_cny_rate', '6.76693506', '模型美元费用结算到人民币钱包时使用的固定汇率')");
         seedBlankLegalDisclosureFields();
+        seedBilingualLegalPolicyDrafts();
         insertIfMissing("security_policies", "name", "RPM limit",
                 "INSERT INTO security_policies(name, scope, action, threshold_value, enabled) VALUES ('RPM limit', 'default group', 'RATE_LIMIT', '500/min', TRUE)");
         insertIfMissing("security_policies", "name", "Sensitive prompt",
@@ -1820,7 +1821,8 @@ public class SchemaRepairService {
         for (String field : List.of("operator", "address", "registration", "jurisdiction", "contact_email",
                 "terms", "privacy", "refund", "ai_data", "rights", "support",
                 "terms_version", "privacy_version", "effective_date",
-                "terms_en", "privacy_en", "refund_en", "ai_data_en", "rights_en", "support_en")) {
+                "terms_en", "privacy_en", "refund_en", "ai_data_en", "rights_en", "support_en",
+                "cookies", "cookies_en", "security", "security_en", "subprocessors", "subprocessors_en")) {
             String key = "legal." + field;
             Integer count = jdbcTemplate.queryForObject(
                     "SELECT COUNT(*) FROM system_settings WHERE setting_key = ?", Integer.class, key);
@@ -1829,6 +1831,29 @@ public class SchemaRepairService {
                         + "VALUES (?, '', ?, CURRENT_TIMESTAMP)", key, "Public disclosure draft: " + field);
             }
         }
+    }
+
+    // One-time upgrade: fill empty policy bodies only. Identity, dates, versions and switches stay untouched.
+    void seedBilingualLegalPolicyDrafts() {
+        var approvals = jdbcTemplate.queryForList(
+                "SELECT setting_value FROM system_settings WHERE setting_key = 'legal.publication_approved'");
+        if (approvals.stream().anyMatch(row -> "true".equalsIgnoreCase(String.valueOf(row.get("setting_value")))))
+            return; // Never change an operator-approved publication during application startup.
+        Integer seeded = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM system_settings WHERE setting_key = ?", Integer.class, LegalPolicyDrafts.SEED_MARKER);
+        if (seeded != null && seeded > 0) return; // A later intentional clearing must not restore a draft.
+        for (var entry : LegalPolicyDrafts.documents().entrySet()) {
+            jdbcTemplate.update("UPDATE system_settings SET setting_value=?, description=?, updated_at=CURRENT_TIMESTAMP "
+                            + "WHERE setting_key=? AND (setting_value IS NULL OR TRIM(setting_value)='')",
+                    entry.getValue(), "Bilingual policy review draft: 2026-09-29", entry.getKey());
+        }
+        // Replace only the exact old support text with the invalid mailbox, not custom support policies.
+        jdbcTemplate.update("UPDATE system_settings SET setting_value=?, updated_at=CURRENT_TIMESTAMP "
+                        + "WHERE setting_key='legal.support' AND setting_value=?",
+                LegalPolicyDrafts.documents().get("legal.support"), LegalPolicyDrafts.LEGACY_SUPPORT_TYPO);
+        jdbcTemplate.update("INSERT INTO system_settings(setting_key,setting_value,description,updated_at) "
+                        + "VALUES (?,'true','One-time bilingual policy draft seed; not publication approval',CURRENT_TIMESTAMP)",
+                LegalPolicyDrafts.SEED_MARKER);
     }
 
     private void insertIfMissing(String tableName, String columnName, String value, String insertSql) {
