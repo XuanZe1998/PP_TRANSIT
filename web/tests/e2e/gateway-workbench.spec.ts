@@ -1,6 +1,6 @@
 import {test,expect} from '@playwright/test'
 test('gateway uses site/group hierarchy, red failures, unified jobs and selectable pages',async({page})=>{
- await page.addInitScript(()=>{localStorage.setItem('admin_access_token','browser-test-only');localStorage.setItem('admin_info',JSON.stringify({username:'test',role:'ADMIN'}))})
+ await page.addInitScript(()=>{sessionStorage.setItem('admin_access_token','browser-test-only');sessionStorage.setItem('admin_info',JSON.stringify({username:'test',role:'ADMIN'}))})
  const sites=[{id:1,name:'AiAPIBank'},{id:2,name:'好易智算'},{id:3,name:'ahh'}]
  const groups=Array.from({length:24},(_,i)=>({id:i+1,site_id:i===0?3:i===1?2:1,site_name:i===0?'ahh':i===1?'好易智算':'AiAPIBank',name:i===0?'ahh':`group-${i}`,group_name:i===0?'Claude-Max':`分组 ${i}`,model_count:6,enabled:true,credential_configured:true,sync_enabled:true,sync_status:i===0?'ERROR':'SUCCESS',message:i===0?'上游凭据无效或已过期':'同步完成',http_status:i===0?401:null,suggestion:'更新该分组 Key 后重试',phase:'MODELS'}))
  const calls:string[]=[]

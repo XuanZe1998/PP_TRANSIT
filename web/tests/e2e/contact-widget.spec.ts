@@ -18,8 +18,8 @@ test('contact entry is collapsed across public, user and admin routes and can be
   await page.addInitScript(() => {
     localStorage.setItem('user_access_token', 'test-user')
     localStorage.setItem('user_info', JSON.stringify({ username: 'test', role: 'USER' }))
-    localStorage.setItem('admin_access_token', 'test-admin')
-    localStorage.setItem('admin_info', JSON.stringify({ username: 'test', role: 'ADMIN' }))
+    sessionStorage.setItem('admin_access_token', 'test-admin')
+    sessionStorage.setItem('admin_info', JSON.stringify({ username: 'test', role: 'ADMIN' }))
   })
   await page.goto('/')
   const widget = page.locator('.contact-widget')

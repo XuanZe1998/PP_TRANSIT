@@ -4,9 +4,9 @@ type Options = { locale?: 'zh-CN' | 'en-US'; count?: number; failDelete?: boolea
 async function mockGateway(page: Page, options: Options = {}) {
   await page.addInitScript(locale => {
     localStorage.setItem('linknux.locale', locale)
-    localStorage.setItem('admin_access_token', 'test-admin-token')
-    localStorage.setItem('admin_info', JSON.stringify({ username: 'test-admin', role: 'ADMIN' }))
-    localStorage.setItem('admin_last_active_at', String(Date.now()))
+    sessionStorage.setItem('admin_access_token', 'test-admin-token')
+    sessionStorage.setItem('admin_info', JSON.stringify({ username: 'test-admin', role: 'ADMIN' }))
+    sessionStorage.setItem('admin_last_active_at', String(Date.now()))
   }, options.locale ?? 'zh-CN')
   let rows = Array.from({ length: options.count ?? 12 }, (_, i) => ({
     id: i + 1, site_id: 1, site_name: 'Test upstream', group_name: `Group ${i + 1}`,

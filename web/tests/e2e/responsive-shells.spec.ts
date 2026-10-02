@@ -39,9 +39,9 @@ async function mockUserConsole(page: Page) {
 
 async function mockAdminConsole(page: Page) {
   await page.addInitScript(() => {
-    localStorage.setItem('admin_access_token', 'responsive-admin-token')
-    localStorage.setItem('admin_info', JSON.stringify({ username: 'responsive-admin', role: 'ADMIN' }))
-    localStorage.setItem('admin_last_active_at', String(Date.now()))
+    sessionStorage.setItem('admin_access_token', 'responsive-admin-token')
+    sessionStorage.setItem('admin_info', JSON.stringify({ username: 'responsive-admin', role: 'ADMIN' }))
+    sessionStorage.setItem('admin_last_active_at', String(Date.now()))
   })
   await page.route('**/api/**', async route => {
     const url = new URL(route.request().url())
