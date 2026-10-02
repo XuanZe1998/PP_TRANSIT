@@ -72,6 +72,7 @@ public class AutoMovieService {
     private final MeterRegistry meterRegistry;
     private final CreativePlatformConfigService platformConfigs;
     private final FfmpegDiagnosticsService ffmpeg;
+    private final CreativeBillingService creativeBilling;
     private volatile long lastVideoPollAt;
 
     public Map<String, Object> catalog() {
@@ -536,10 +537,24 @@ public class AutoMovieService {
     private Map<String, Object> quoteForProject(Map<String, Object> p) { return Map.of("script", quote(p, "SCRIPT"), "visuals", quote(p, "VISUALS"), "video", quote(p, "VIDEO"), "amountScale", 10000, "currency", "CNY"); }
     private long quote(Map<String, Object> p, String stage) { return switch (stage) { case "SCRIPT" -> connection(p, "text") == null ? price("scriptPrice", 10000) : 0; case "VISUALS" -> { Long count = jdbc.queryForObject("SELECT COUNT(*) FROM creative_assets WHERE project_id=? AND status<>'SUCCEEDED'", Long.class, p.get("id")); yield connection(p, "image") == null ? (count == null ? 0 : count * price("imagePrice", 5000)) : 0; } case "VIDEO" -> { Long seconds = jdbc.queryForObject("SELECT COALESCE(SUM(duration),0) FROM creative_shots WHERE project_id=? AND status<>'SUCCEEDED'", Long.class, p.get("id")); yield connection(p, "video") == null ? (seconds == null ? 0 : seconds * price("videoSecondPrice", 2000)) : 0; } default -> throw badRequest("不支持的报价阶段"); }; }
 
-    private void reserve(User user, Map<String, Object> p, String stage, long amount) { if (amount <= 0) return; int updated = jdbc.update("UPDATE users SET balance=balance-? WHERE id=? AND balance>=? AND status='ACTIVE'", amount, user.getId(), amount); if (updated != 1) throw new ResponseStatusException(HttpStatus.PAYMENT_REQUIRED, "余额不足，无法冻结本阶段预估费用"); jdbc.update("INSERT INTO creative_billing_reservations(project_id,user_id,stage,estimated_amount,reserved_amount,status,created_at) VALUES (?,?,?,?,?,'RESERVED',?)", p.get("id"), user.getId(), stage, amount, amount, now()); }
-    private void settle(long projectId, String stage, long actual) { List<Map<String, Object>> rows = jdbc.queryForList("SELECT * FROM creative_billing_reservations WHERE project_id=? AND stage=? AND status='RESERVED' ORDER BY id", projectId, stage); long remaining = Math.max(0, actual); for (Map<String, Object> row : rows) { long reserved = ((Number) row.get("reserved_amount")).longValue(); long charge = Math.min(reserved, remaining); long refund = reserved - charge; if (refund > 0) jdbc.update("UPDATE users SET balance=balance+? WHERE id=?", refund, row.get("user_id")); jdbc.update("UPDATE creative_billing_reservations SET actual_amount=?,status='SETTLED',settled_at=? WHERE id=?", charge, now(), row.get("id")); remaining -= charge; } }
-    private void settleVideo(long projectId) { Map<String, Object> p = projectById(projectId); if (connection(p, "video") != null) { settle(projectId, "VIDEO", 0); return; } Long seconds = jdbc.queryForObject("SELECT COALESCE(SUM(duration),0) FROM creative_shots WHERE project_id=? AND status='SUCCEEDED'", Long.class, projectId); settle(projectId, "VIDEO", (seconds == null ? 0 : seconds) * price("videoSecondPrice", 2000)); }
-    private void releaseOpenReservations(long projectId) { for (Map<String, Object> row : jdbc.queryForList("SELECT * FROM creative_billing_reservations WHERE project_id=? AND status='RESERVED'", projectId)) { jdbc.update("UPDATE users SET balance=balance+? WHERE id=?", row.get("reserved_amount"), row.get("user_id")); jdbc.update("UPDATE creative_billing_reservations SET status='RELEASED',actual_amount=0,settled_at=? WHERE id=?", now(), row.get("id")); } }
+    private void reserve(User user, Map<String, Object> p, String stage, long amount) {
+        creativeBilling.reserve(user.getId(), ((Number) p.get("id")).longValue(), stage, amount);
+    }
+
+    private void settle(long projectId, String stage, long actual) {
+        creativeBilling.settle(projectId, stage, actual);
+    }
+
+    private void settleVideo(long projectId) {
+        Map<String, Object> p = projectById(projectId);
+        if (connection(p, "video") != null) { settle(projectId, "VIDEO", 0); return; }
+        Long seconds = jdbc.queryForObject("SELECT COALESCE(SUM(duration),0) FROM creative_shots WHERE project_id=? AND status='SUCCEEDED'", Long.class, projectId);
+        settle(projectId, "VIDEO", (seconds == null ? 0 : seconds) * price("videoSecondPrice", 2000));
+    }
+
+    private void releaseOpenReservations(long projectId) {
+        creativeBilling.releaseOpen(projectId);
+    }
 
     private void checkVersion(Map<String, Object> p, Map<String, Object> request) { int expected = integer(request.get("version"), -1, -1, Integer.MAX_VALUE, "版本"); if (expected < 0) throw badRequest("version 必填"); if (((Number) p.get("version")).intValue() != expected) throw conflict("项目已被更新，请刷新后重试"); }
     private void requireStatus(Map<String, Object> p, List<String> allowed) { String status = Objects.toString(p.get("status")); if (!allowed.contains(status)) throw conflict("当前项目状态不允许执行此操作：" + status); }
