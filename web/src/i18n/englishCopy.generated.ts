@@ -3523,6 +3523,7 @@ export const generatedEnglishCopy: Readonly<Record<string, string>> = {
   "账号同步失败": "Account synchronization failed",
   "账号为一号一绑欧洲渠道，该商品无质保，请谨慎购买。": "The account number is one number and one is tied to the European channel. This product has no warranty, so please purchase with caution.",
   "账号已失效": "The account is no longer active",
+  "账号自助删除暂未开放": "Self-service account deletion is not available yet",
   "账户": "Account",
   "账户安全": "Account Security",
   "账户安全 / 通知": "Account Security/Notifications",
