@@ -58,6 +58,7 @@ public class UserController {
     private final PublicUpstreamMappingService publicUpstreamMappingService;
     private final ModelContextPricingService modelContextPricingService;
     private final UserProfileService userProfileService;
+    private final com.transit.service.AccountDeletionService accountDeletionService;
     private final AccountVerificationPolicy verificationPolicy;
     private final com.transit.service.ClientIpResolver clientIpResolver;
     private final com.transit.service.LoginIpService loginIpService;
@@ -107,6 +108,15 @@ public class UserController {
         User user = currentUserService.requireUser(authHeader);
         return Mono.fromCallable(() -> { loginIpService.revoke(user.getId(), id); return Map.of("revoked", true); });
     }
+
+    @DeleteMapping("/profile")
+    public Mono<Void> deleteProfile(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+                                    @RequestBody DeleteAccountRequest request) {
+        User user = currentUserService.requireUser(authHeader);
+        return Mono.fromRunnable(() -> accountDeletionService.deleteUnusedPersonalAccount(user.getId(), request.password()));
+    }
+
+    public record DeleteAccountRequest(String password) {}
 
     @PatchMapping("/profile")
     public Mono<Map<String,Object>> updateProfile(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,

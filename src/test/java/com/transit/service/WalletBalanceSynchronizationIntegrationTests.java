@@ -4,6 +4,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.transaction.annotation.Transactional;
 import com.transit.model.User;
 
@@ -12,6 +14,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest
 @Transactional
@@ -22,6 +25,7 @@ class WalletBalanceSynchronizationIntegrationTests {
     @Autowired WalletBalanceReconciliationService reconciliationService;
     @Autowired OrganizationService organizationService;
     @Autowired GatewaySettlementService gatewaySettlementService;
+    @Autowired WalletBalanceService walletBalanceService;
     @Autowired PlatformOperationsService platformOperationsService;
 
     @Test
@@ -64,6 +68,20 @@ class WalletBalanceSynchronizationIntegrationTests {
         assertThat((Number) fallbackToTen.get("transactionPage")).isNotNull().extracting(Number::longValue).isEqualTo(1L);
         assertThat((Number) fallbackToTen.get("transactionPageSize")).isNotNull().extracting(Number::longValue).isEqualTo(10L);
         assertThat(((java.util.List<?>) fallbackToTen.get("transactions")).size()).isEqualTo(7);
+    }
+
+    @Test
+    void balanceMutationRefusesToEraseAnExistingWalletMismatch() {
+        PersonalAccount account = personalAccount(120, 100);
+
+        assertThatThrownBy(() -> walletBalanceService.credit(account.userId(), 20))
+                .isInstanceOfSatisfying(ResponseStatusException.class,
+                        exception -> assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.CONFLICT));
+        assertThatThrownBy(() -> walletBalanceService.debit(account.userId(), 20, "insufficient"))
+                .isInstanceOfSatisfying(ResponseStatusException.class,
+                        exception -> assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.CONFLICT));
+        assertThat(userBalance(account.userId())).isEqualTo(120);
+        assertThat(walletBalance(account.walletId())).isEqualTo(100);
     }
 
     @Test

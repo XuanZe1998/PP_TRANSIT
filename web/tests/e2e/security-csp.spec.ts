@@ -17,9 +17,9 @@ test('proposed frontend CSP permits representative pages to load', async ({ page
     localStorage.setItem('user_access_token', 'csp-test-user')
     localStorage.setItem('user_info', JSON.stringify({ username: 'csp-test', role: 'USER' }))
     localStorage.setItem('user_last_active_at', String(Date.now()))
-    localStorage.setItem('admin_access_token', 'csp-test-admin')
-    localStorage.setItem('admin_info', JSON.stringify({ username: 'csp-test', role: 'ADMIN' }))
-    localStorage.setItem('admin_last_active_at', String(Date.now()))
+    sessionStorage.setItem('admin_access_token', 'csp-test-admin')
+    sessionStorage.setItem('admin_info', JSON.stringify({ username: 'csp-test', role: 'ADMIN' }))
+    sessionStorage.setItem('admin_last_active_at', String(Date.now()))
   })
   await page.route('http://127.0.0.1:4173/**', async route => {
     if (route.request().resourceType() !== 'document') return route.continue()

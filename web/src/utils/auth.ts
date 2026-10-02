@@ -11,16 +11,21 @@ function inferredScope(): AuthScope {
 }
 
 function migrateLegacy() {
+  // Purge old persistent admin sessions even when the visitor opens a public page.
+  Object.values(keys.admin).forEach(key => localStorage.removeItem(key))
   const token = localStorage.getItem('token')
   const rawUser = localStorage.getItem('user')
   if (!token || !rawUser) return
   try {
     const user = JSON.parse(rawUser) as UserInfo
     const scope: AuthScope = user.role === 'ADMIN' ? 'admin' : 'user'
-    if (!localStorage.getItem(keys[scope].token)) {
-      localStorage.setItem(keys[scope].token, token)
-      localStorage.setItem(keys[scope].user, rawUser)
+    // Never migrate a persistent administrator credential into the new session.
+    if (scope === 'user' && !localStorage.getItem(keys.user.token)) {
+      localStorage.setItem(keys.user.token, token)
+      localStorage.setItem(keys.user.user, rawUser)
     }
+  } catch {
+    // A corrupt legacy profile is not an authenticated session.
   } finally {
     localStorage.removeItem('token')
     localStorage.removeItem('user')
@@ -28,9 +33,18 @@ function migrateLegacy() {
   }
 }
 
+function authStorage(scope: AuthScope): Storage {
+  if (scope === 'admin') {
+    // Old releases persisted administrator bearer tokens across browser restarts.
+    Object.values(keys.admin).forEach(key => localStorage.removeItem(key))
+    return sessionStorage
+  }
+  return localStorage
+}
+
 export function getToken(scope: AuthScope = inferredScope()): string | null {
   migrateLegacy()
-  return localStorage.getItem(keys[scope].token)
+  return authStorage(scope).getItem(keys[scope].token)
 }
 
 export function getRefreshToken(): string | null {
@@ -39,28 +53,30 @@ export function getRefreshToken(): string | null {
 
 export function getUser(scope: AuthScope = inferredScope()): UserInfo | null {
   migrateLegacy()
-  const raw = localStorage.getItem(keys[scope].user)
+  const raw = authStorage(scope).getItem(keys[scope].user)
   if (!raw) return null
   try { return JSON.parse(raw) } catch { return null }
 }
 
 export function setAuth(token: string, user: UserInfo, refreshToken?: string) {
   const scope: AuthScope = user.role === 'ADMIN' ? 'admin' : 'user'
-  localStorage.setItem(keys[scope].token, token)
-  localStorage.setItem(keys[scope].user, JSON.stringify(user))
-  if (refreshToken) localStorage.setItem(keys[scope].refresh, refreshToken)
-  localStorage.setItem(keys[scope].active, String(Date.now()))
+  const storage = authStorage(scope)
+  storage.setItem(keys[scope].token, token)
+  storage.setItem(keys[scope].user, JSON.stringify(user))
+  if (refreshToken) storage.setItem(keys[scope].refresh, refreshToken)
+  storage.setItem(keys[scope].active, String(Date.now()))
   window.dispatchEvent(new CustomEvent('auth-changed', { detail: { scope } }))
 }
 
 export function clearAuth(scope: AuthScope = inferredScope()) {
-  Object.values(keys[scope]).forEach(key => localStorage.removeItem(key))
+  const storage = authStorage(scope)
+  Object.values(keys[scope]).forEach(key => storage.removeItem(key))
   window.dispatchEvent(new CustomEvent('auth-changed', { detail: { scope } }))
 }
 
 export function touchActivity(scope: AuthScope = inferredScope()) {
   if (!getToken(scope)) return
-  localStorage.setItem(keys[scope].active, String(Date.now()))
+  authStorage(scope).setItem(keys[scope].active, String(Date.now()))
 }
 
 export function initInactivityGuard(timeoutMs: number, onTimeout: () => void) {
@@ -71,7 +87,7 @@ export function initInactivityGuard(timeoutMs: number, onTimeout: () => void) {
     clearTimer()
     const scope = inferredScope()
     if (!getToken(scope)) return
-    const stored = Number(localStorage.getItem(keys[scope].active))
+    const stored = Number(authStorage(scope).getItem(keys[scope].active))
     const lastActiveAt = Number.isFinite(stored) && stored > 0 ? stored : Date.now()
     const remaining = timeoutMs - (Date.now() - lastActiveAt)
     if (remaining <= 0) {

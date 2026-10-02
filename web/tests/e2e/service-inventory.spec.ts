@@ -2,8 +2,8 @@ import { test, expect, type Page } from '@playwright/test'
 
 async function mockInventory(page: Page) {
   await page.addInitScript(() => {
-    localStorage.setItem('admin_access_token', 'browser-test-only')
-    localStorage.setItem('admin_info', JSON.stringify({ username: 'test', role: 'ADMIN' }))
+    sessionStorage.setItem('admin_access_token', 'browser-test-only')
+    sessionStorage.setItem('admin_info', JSON.stringify({ username: 'test', role: 'ADMIN' }))
   })
   const services = Array.from({ length: 12 }, (_, index) => ({ id: index + 1, name: `卡密服务 ${index + 1}`, productType: 'CARD_KEY',
     fulfillmentMode: 'AUTOMATIC_DELIVERY', supplierType: index === 11 ? 'DUJIAO_NEXT' : 'LOCAL_INVENTORY',

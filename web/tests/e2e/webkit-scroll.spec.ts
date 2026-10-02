@@ -82,13 +82,27 @@ test('short registration dialog keeps its form scrollable', async ({ page }) => 
   await expect(page.getByRole('button', { name: '注册并进入控制台' })).toBeVisible()
 })
 
-test('online playground fits the 1366x768 viewport and keeps all three sections visible', async ({ page }) => {
+test('online playground keeps all three panels within 1366x768 while the legal footer remains reachable', async ({ page }) => {
   await page.setViewportSize({ width: 1366, height: 768 })
   await openMockedUserConsole(page, '/console/playground')
   const sections = page.locator('.playground-layout > .console-panel')
   await expect(sections).toHaveCount(3)
-  const state = await page.evaluate(() => ({ clientHeight: document.documentElement.clientHeight, scrollHeight: document.documentElement.scrollHeight }))
-  expect(state.scrollHeight).toBeLessThanOrEqual(state.clientHeight + 1)
+  const state = await page.evaluate(() => ({
+    clientHeight: document.documentElement.clientHeight,
+    scrollHeight: document.documentElement.scrollHeight,
+    panels: [...document.querySelectorAll('.playground-layout > .console-panel')].map(panel => {
+      const bounds = panel.getBoundingClientRect()
+      return { top: bounds.top, bottom: bounds.bottom }
+    }),
+  }))
+  for (const panel of state.panels) {
+    expect(panel.top).toBeGreaterThanOrEqual(0)
+    expect(panel.bottom).toBeLessThanOrEqual(state.clientHeight + 1)
+  }
+  if (state.scrollHeight > state.clientHeight) {
+    await page.evaluate(() => { document.scrollingElement!.scrollTop = document.scrollingElement!.scrollHeight })
+    await expect(page.locator('.site-legal-footer')).toBeInViewport()
+  }
 })
 
 test('usage log tables expose a working horizontal drag area', async ({ page }) => {

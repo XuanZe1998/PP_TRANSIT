@@ -5,9 +5,9 @@ type Options = { approved?: boolean; missing?: string[]; failWrite?: boolean; fa
 async function mockSettings(page: Page, options: Options = {}) {
   await page.addInitScript(locale => {
     localStorage.setItem('linknux.locale', locale)
-    localStorage.setItem('admin_access_token', 'test-admin-token')
-    localStorage.setItem('admin_info', JSON.stringify({ username: 'test-admin', role: 'ADMIN' }))
-    localStorage.setItem('admin_last_active_at', String(Date.now()))
+    sessionStorage.setItem('admin_access_token', 'test-admin-token')
+    sessionStorage.setItem('admin_info', JSON.stringify({ username: 'test-admin', role: 'ADMIN' }))
+    sessionStorage.setItem('admin_last_active_at', String(Date.now()))
   }, options.locale ?? 'zh-CN')
   let approved = options.approved ?? false
   const writes: Record<string, string>[] = []

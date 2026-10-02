@@ -130,6 +130,95 @@ class GatewaySettlementServiceIntegrationTests {
         assertThat(reservationCount(account.token().getId())).isZero();
     }
 
+    @Test
+    void staleUserSnapshotCannotDebitOnlyTheLegacyBalance() {
+        Account account = account(1_000, 1_000);
+        Long walletId = createPersonalWallet(account.user().getId(), 1_000);
+        String id = unique("stale-user-wallet");
+
+        GatewaySettlementService.Reservation reservation = settlementService.reserve(
+                account.token(), account.user(), 100, 200, id, "test-model");
+
+        assertThat(reservation.walletAccountId()).isNull();
+        assertThat(userBalance(account.user().getId())).isEqualTo(800);
+        assertThat(walletBalance(walletId)).isEqualTo(800);
+        settlementService.release(reservation, "upstream failed");
+        assertThat(userBalance(account.user().getId())).isEqualTo(1_000);
+        assertThat(walletBalance(walletId)).isEqualTo(1_000);
+    }
+
+    @Test
+    void legacyReservationRefundAfterWalletCreationCreditsBothBalancesExactlyOnce() {
+        Account account = account(1_000, 1_000);
+        String id = unique("legacy-wallet-refund");
+        GatewaySettlementService.Reservation reservation = settlementService.reserve(
+                account.token(), account.user(), 100, 200, id, "test-model");
+        Long walletId = createPersonalWallet(account.user().getId(), 800);
+
+        settlementService.release(reservation, "upstream unavailable");
+        settlementService.release(reservation, "idempotent retry");
+
+        assertThat(userBalance(account.user().getId())).isEqualTo(1_000);
+        assertThat(walletBalance(walletId)).isEqualTo(1_000);
+        assertThat(tokenUsage(account.token().getId())).isZero();
+        assertThat(reservationStatus(id)).isEqualTo("RELEASED");
+    }
+
+    @Test
+    void legacyReservationSettlementAfterWalletCreationSynchronizesBothBalances() {
+        Account account = account(1_000, 1_000);
+        String id = unique("legacy-wallet-settle");
+        GatewaySettlementService.Reservation reservation = settlementService.reserve(
+                account.token(), account.user(), 100, 200, id, "test-model");
+        Long walletId = createPersonalWallet(account.user().getId(), 800);
+
+        settlementService.settle(reservation, 30, 50, "test usage");
+
+        assertThat(userBalance(account.user().getId())).isEqualTo(950);
+        assertThat(walletBalance(walletId)).isEqualTo(950);
+        assertThat(reservationStatus(id)).isEqualTo("SETTLED");
+    }
+
+    @Test
+    void legacyRefundRejectsExistingMismatchWithoutChangingQuotaOrReservation() {
+        Account account = account(1_000, 1_000);
+        String id = unique("legacy-wallet-mismatch");
+        GatewaySettlementService.Reservation reservation = settlementService.reserve(
+                account.token(), account.user(), 100, 200, id, "test-model");
+        Long walletId = createPersonalWallet(account.user().getId(), 700);
+
+        assertThatThrownBy(() -> settlementService.release(reservation, "upstream unavailable"))
+                .isInstanceOfSatisfying(ResponseStatusException.class,
+                        exception -> assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.CONFLICT));
+        assertThat(userBalance(account.user().getId())).isEqualTo(800);
+        assertThat(walletBalance(walletId)).isEqualTo(700);
+        assertThat(tokenUsage(account.token().getId())).isEqualTo(100);
+        assertThat(reservationStatus(id)).isEqualTo("RESERVED");
+    }
+
+    private Long createPersonalWallet(Long userId, long balance) {
+        LocalDateTime now = LocalDateTime.now();
+        String name = unique("late-personal-wallet");
+        jdbcTemplate.update("""
+                INSERT INTO organizations(name,organization_type,status,created_by,created_at,updated_at)
+                VALUES (?,'PERSONAL','ACTIVE',?,?,?)
+                """, name, userId, now, now);
+        Long organizationId = jdbcTemplate.queryForObject(
+                "SELECT id FROM organizations WHERE name=?", Long.class, name);
+        jdbcTemplate.update("""
+                INSERT INTO organization_members(organization_id,user_id,member_role,status,joined_at)
+                VALUES (?,?,'OWNER','ACTIVE',?)
+                """, organizationId, userId, now);
+        jdbcTemplate.update("""
+                INSERT INTO wallet_accounts(organization_id,user_id,account_type,balance,status,created_at,updated_at)
+                VALUES (?,?,'TREASURY',?,'ACTIVE',?,?)
+                """, organizationId, userId, balance, now, now);
+        jdbcTemplate.update("UPDATE users SET default_organization_id=? WHERE id=?", organizationId, userId);
+        return jdbcTemplate.queryForObject(
+                "SELECT id FROM wallet_accounts WHERE organization_id=? AND user_id=?",
+                Long.class, organizationId, userId);
+    }
+
     private Account account(long balance, long totalQuota) {
         String username = unique("settlement-user") + "@example.com";
         jdbcTemplate.update("""

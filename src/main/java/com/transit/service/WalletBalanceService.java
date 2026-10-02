@@ -83,6 +83,13 @@ public class WalletBalanceService {
 
         long walletId = ((Number) wallet.get("id")).longValue();
         long organizationId = ((Number) wallet.get("organization_id")).longValue();
+        List<Long> userBalances = jdbcTemplate.queryForList(
+                "SELECT balance FROM users WHERE id=? AND status='ACTIVE' FOR UPDATE", Long.class, userId);
+        if (userBalances.isEmpty()) throw unavailableOrInsufficient(userId, "User account is unavailable");
+        if (userBalances.get(0) != ((Number) wallet.get("balance")).longValue()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "User and treasury balances differ; manual reconciliation required");
+        }
         int changed = jdbcTemplate.update("""
                 UPDATE wallet_accounts
                 SET balance=balance+?,version=version+1,updated_at=?

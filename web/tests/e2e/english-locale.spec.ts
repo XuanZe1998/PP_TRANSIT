@@ -8,9 +8,9 @@ async function prepareEnglishSession(page: Page) {
     localStorage.setItem('user_access_token', 'english-user-token')
     localStorage.setItem('user_info', JSON.stringify({ username: 'english-user', role: 'USER', accountType: 'PERSONAL' }))
     localStorage.setItem('user_last_active_at', String(Date.now()))
-    localStorage.setItem('admin_access_token', 'english-admin-token')
-    localStorage.setItem('admin_info', JSON.stringify({ username: 'english-admin', role: 'ADMIN' }))
-    localStorage.setItem('admin_last_active_at', String(Date.now()))
+    sessionStorage.setItem('admin_access_token', 'english-admin-token')
+    sessionStorage.setItem('admin_info', JSON.stringify({ username: 'english-admin', role: 'ADMIN' }))
+    sessionStorage.setItem('admin_last_active_at', String(Date.now()))
   })
   await page.route('**/api/**', async route => {
     const path = new URL(route.request().url()).pathname
