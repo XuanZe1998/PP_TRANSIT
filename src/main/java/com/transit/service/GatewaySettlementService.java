@@ -184,7 +184,10 @@ public class GatewaySettlementService {
                 """, reservedTokens, reservedTokens, tokenId);
         if (reservedAmount > 0) {
             if (walletAccountId == null) {
-                jdbcTemplate.update("UPDATE users SET balance = balance + ? WHERE id = ?", reservedAmount, userId);
+                // An old reservation may have been made before a treasury wallet was created.
+                // Lock and check both balances before refunding; never refund just the legacy row.
+                walletBalanceService.lockTransferableBalance(userId);
+                walletBalanceService.credit(userId, reservedAmount);
             } else {
                 releaseWalletReservation(walletAccountId, reservedAmount);
                 if (fundingWalletAccountId != null && !fundingWalletAccountId.equals(walletAccountId)) {
@@ -255,18 +258,20 @@ public class GatewaySettlementService {
             }
             return;
         }
-        if (delta > 0) {
-            int updated = jdbcTemplate.update("""
-                    UPDATE users SET balance = balance - ?
-                    WHERE id = ? AND status = 'ACTIVE' AND balance >= ?
-                    """, delta, reservation.userId(), delta);
-            if (updated != 1) {
-                throw new ResponseStatusException(HttpStatus.PAYMENT_REQUIRED,
+        if (delta != 0) {
+            // The reservation may predate a personal or enterprise treasury wallet.
+            // Refuse to overwrite any pre-existing mismatch while settling it.
+            long transferable = walletBalanceService.lockTransferableBalance(reservation.userId());
+            if (delta > 0) {
+                if (transferable < delta) {
+                    throw new ResponseStatusException(HttpStatus.PAYMENT_REQUIRED,
+                            "Actual usage exceeded the reserved account balance");
+                }
+                walletBalanceService.debit(reservation.userId(), delta,
                         "Actual usage exceeded the reserved account balance");
+            } else {
+                walletBalanceService.credit(reservation.userId(), -delta);
             }
-        } else if (delta < 0) {
-            jdbcTemplate.update("UPDATE users SET balance = balance + ? WHERE id = ?",
-                    -delta, reservation.userId());
         }
     }
 
@@ -348,11 +353,12 @@ public class GatewaySettlementService {
     private void reserveFunds(BillingWallets wallets, Long userId, long amount) {
         if (amount <= 0) return;
         if (wallets.accountWalletId() == null) {
-            int updated = jdbcTemplate.update("""
-                    UPDATE users SET balance=balance-?
-                    WHERE id=? AND status='ACTIVE' AND balance>=?
-                    """, amount, userId, amount);
-            if (updated != 1) throw new ResponseStatusException(HttpStatus.PAYMENT_REQUIRED,
+            // A stale user snapshot may predate creation of its preferred treasury wallet.
+            // Do not debit only the legacy row when a wallet now exists.
+            long transferable = walletBalanceService.lockTransferableBalance(userId);
+            if (transferable < amount) throw new ResponseStatusException(HttpStatus.PAYMENT_REQUIRED,
+                    "Insufficient balance for the maximum estimated request cost");
+            walletBalanceService.debit(userId, amount,
                     "Insufficient balance for the maximum estimated request cost");
             return;
         }
