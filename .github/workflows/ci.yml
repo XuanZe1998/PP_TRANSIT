@@ -70,6 +70,10 @@ jobs:
         run: npm run i18n:check
       - name: Build production frontend
         run: npm run build
+      - name: Verify public SEO artifacts
+        run: node scripts/verify-public-build.mjs
+      - name: Test minimal Nginx SEO configuration patch
+        run: python3 ../deploy/server/test_public_seo.py
       - name: Prepare frontend deployment artifact
         if: github.ref == 'refs/heads/master' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         run: |

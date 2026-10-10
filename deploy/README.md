@@ -21,6 +21,26 @@ The local machine must have the production deploy key at `~/.ssh/api-transit-dep
 
 Application secrets, SSH passwords, and database contents are intentionally outside this workflow.
 
+## Public SEO routes
+
+The frontend build emits readable public HTML for `/`, `/docs`, `/pricing`, plus
+`robots.txt`, `sitemap.xml` and the neutral SPA entry `app.html`. Application
+releases publish these files; existing Nginx installations need a separate
+administrator change to serve the extensionless URLs directly and use the neutral
+entry for other routes. After publishing the application, copy the reviewed
+`deploy/server/install-public-seo.py` and `deploy/nginx/linknux-public-seo.conf`
+to an administrator-controlled directory and run:
+
+```bash
+sudo python3 install-public-seo.py --snippet ./linknux-public-seo.conf
+```
+
+The script patches only the existing `linknux.com` HTTPS block, preserves its
+security headers and TLS settings, backs up the previous files, validates with
+`nginx -t`, and reloads Nginx. Unexpected roots, conflicting custom routes or an
+unrecognized SPA fallback require manual review. Failed validation/reload restores
+the previous configuration. See [the SEO release report](../docs/LINKNUX_SEO_2026-10-10.md).
+
 Host hardening, Nginx security headers, SSH policy, Fail2ban and alert-mail setup are **not** installed by this application release workflow. See [the staged security runbook](../docs/LINKNUX_SECURITY_2026-09-26.md); use a separate reviewed administrator change with `nginx -t` / `sshd -t` and rollback.
 
 ## OAuth production checklist
