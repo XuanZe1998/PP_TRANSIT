@@ -1,4 +1,5 @@
 <template>
+  <PublicPageIntro page-path="/pricing" />
   <section id="pricing" class="site-section">
     <div class="section-head">
       <div>
@@ -33,6 +34,7 @@
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { isEnglish } from '@/i18n/locale'
+import PublicPageIntro from '@/components/PublicPageIntro.vue'
 
 const router = useRouter()
 const shopGptEnabled = import.meta.env.VITE_ENABLE_SHOPGPT === 'true'

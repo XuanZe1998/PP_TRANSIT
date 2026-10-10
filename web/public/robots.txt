@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /console
+Disallow: /oauth/
+Disallow: /payment/
+Disallow: /api/
+
+Sitemap: https://linknux.com/sitemap.xml

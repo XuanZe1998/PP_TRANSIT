@@ -49,7 +49,9 @@ function extractQuotedStrings(source, found) {
 }
 
 function extractTemplateText(source, found) {
-  for (const match of source.matchAll(/>([^<]+)</gu)) {
+  // Script imports and setup code are not rendered template copy.
+  const template = source.replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1>/gu, '')
+  for (const match of template.matchAll(/>([^<]+)</gu)) {
     const value = normalize(match[1])
     if (HAN.test(value)) found.add(value)
   }

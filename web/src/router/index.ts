@@ -1,7 +1,8 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import { getToken, getUser } from '@/utils/auth'
 import { siteConfig } from '@/config/site'
-import { localizeCopy } from '@/i18n/locale'
+import { isEnglish, localizeCopy } from '@/i18n/locale'
+import { updatePageMetadata } from '@/seo/metadata'
 
 const FlowScreen=()=>import('@/views/FlowScreen.vue'),UserConsole=()=>import('@/views/UserConsole.vue')
 const AdminLayout=()=>import('@/components/AdminLayout.vue'),AdminConsole=()=>import('@/views/AdminConsole.vue'),AdminLogin=()=>import('@/views/AdminLogin.vue')
@@ -135,12 +136,12 @@ router.beforeEach(to => {
 })
 
 router.afterEach(to => {
-  document.title = `${localizeCopy(String(to.meta.title || siteConfig.name))} - ${siteConfig.name}`
+  updatePageMetadata(to.path, isEnglish.value, `${localizeCopy(String(to.meta.title || siteConfig.name))} - ${siteConfig.name}`)
 })
 
 window.addEventListener('locale-changed', () => {
   const title = String(router.currentRoute.value.meta.title || siteConfig.name)
-  document.title = `${localizeCopy(title)} - ${siteConfig.name}`
+  updatePageMetadata(router.currentRoute.value.path, isEnglish.value, `${localizeCopy(title)} - ${siteConfig.name}`)
 })
 
 export default router

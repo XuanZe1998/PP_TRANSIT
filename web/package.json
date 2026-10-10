@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vue-tsc && vite build",
+    "build": "vue-tsc && vite build && node scripts/build-public-pages.mjs",
     "preview": "vite preview",
     "test": "vitest run",
     "i18n:check": "node scripts/generate-english-copy.mjs --check",
@@ -17,7 +17,7 @@
     "echarts": "^6.1.0",
     "element-plus": "^2.6.0",
     "qrcode.vue": "^3.11.0",
-    "vue": "^3.4.21",
+    "vue": "3.5.43",
     "vue-echarts": "^8.1.0",
     "vue-router": "^4.3.0"
   },
@@ -27,7 +27,6 @@
     "@vitejs/plugin-vue": "^6.0.7",
     "autoprefixer": "^10.4.18",
     "postcss": "^8.4.35",
-    "tailwindcss": "^3.4.1",
     "typescript": "^5.8.3",
     "unplugin-auto-import": "^21.1.0",
     "unplugin-element-plus": "^0.11.2",
