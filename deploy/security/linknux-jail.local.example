@@ -1,0 +1,22 @@
+# Enable ban-only protection first. Do not enable email until a private SMTP
+# sender is configured and a real test message is delivered.
+[DEFAULT]
+bantime = 1h
+findtime = 10m
+maxretry = 5
+# Keep the distro ban-only default; a separate mail override may add email.
+
+[sshd]
+enabled = true
+backend = systemd
+port = ssh
+mode = aggressive
+maxretry = 5
+
+[linknux-probes]
+enabled = true
+backend = auto
+filter = linknux-probes
+logpath = /var/log/nginx/access.log
+port = http,https
+maxretry = 5

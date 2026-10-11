@@ -45,7 +45,7 @@
       <el-table-column label="操作" width="230" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
-          <el-button v-if="row.productType==='CARD_KEY'" link type="success" @click="manageCards">卡密管理</el-button>
+          <el-button v-if="row.productType==='CARD_KEY'" link type="success" @click="manageCards(row)">卡密管理</el-button>
           <el-button link type="danger" @click="remove(row)">删除</el-button>
         </template>
       </el-table-column>
@@ -53,7 +53,7 @@
     <ListPagination v-if="serviceTotal > 0" v-model:page="servicePage" v-model:size="serviceSize" :total="serviceTotal" :allow-all="false" @change="load" />
       </el-tab-pane>
       <el-tab-pane label="服务订单" name="orders">
-        <AdminServiceOrders />
+        <AdminServiceOrders ref="serviceOrders" :service-id="orderServiceId" />
         <AdminProductCommerce />
       </el-tab-pane>
       <el-tab-pane label="兑换域名" name="redemption-hosts">
@@ -79,6 +79,10 @@
         <AdminPaymentIntents />
       </el-tab-pane>
     </el-tabs>
+
+    <el-dialog v-model="inventoryVisible" title="卡密管理" width="min(1100px, 96vw)" destroy-on-close>
+      <ServiceInventoryManager v-if="inventoryVisible && inventoryService" :service="inventoryService" @order="openInventoryOrder" @orders="openServiceOrders" />
+    </el-dialog>
 
     <el-dialog v-model="dialogVisible" :title="form.id ? '编辑服务' : '新增服务'" width="620px">
       <el-form label-position="top" :model="form">
@@ -241,6 +245,8 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import http, { getHttpErrorMessage, resolveApiResourceUrl } from '@/utils/http'
 import { compressServiceImage } from '@/utils/serviceImage'
 import AdminServiceOrders from '@/views/AdminServiceOrders.vue'
+import ServiceInventoryManager from '@/components/ServiceInventoryManager.vue'
+import type { InventoryService } from '@/composables/useServiceInventory'
 import AdminProductCommerce from '@/views/AdminProductCommerce.vue'
 import AdminPaymentIntents from '@/views/AdminPaymentIntents.vue'
 
@@ -283,6 +289,10 @@ const supplierTesting = ref(false)
 const supplierOptions = ref<SupplierOption[]>([])
 const imageFileInput = ref<HTMLInputElement | null>(null)
 const dialogVisible = ref(false)
+const inventoryVisible = ref(false)
+const inventoryService = ref<InventoryService | null>(null)
+const orderServiceId = ref<number | null>(null)
+const serviceOrders = ref<InstanceType<typeof AdminServiceOrders> | null>(null)
 type RedemptionHost = { id: number; host: string; createdAt: string }
 const hosts = ref<RedemptionHost[]>([])
 const hostInput = ref('')
@@ -454,7 +464,23 @@ async function openEdit(service: OtherService) {
   form.inventoryText = ''
   dialogVisible.value = true
 }
-function manageCards(){activeTab.value='orders';router.replace({query:{tab:'orders'}});window.setTimeout(()=>document.querySelector('.commerce-admin')?.scrollIntoView({behavior:'smooth'}),50)}
+function manageCards(row: OtherService) {
+  inventoryService.value = { id: row.id, name: row.name, supplierType: row.supplierType }
+  inventoryVisible.value = true
+}
+async function openInventoryOrder(id: number) {
+  inventoryVisible.value = false
+  orderServiceId.value = null
+  activeTab.value = 'orders'
+  await router.replace({ query: { ...route.query, tab: 'orders' } })
+  await serviceOrders.value?.openOrderById(id)
+}
+async function openServiceOrders(serviceId: number) {
+  inventoryVisible.value = false
+  orderServiceId.value = serviceId
+  activeTab.value = 'orders'
+  await router.replace({ query: { ...route.query, tab: 'orders' } })
+}
 
 function chooseLocalImage() {
   imageFileInput.value?.click()

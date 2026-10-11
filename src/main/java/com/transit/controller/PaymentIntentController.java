@@ -4,11 +4,12 @@ import com.transit.dto.PageResponse;
 import com.transit.model.PaymentIntent;
 import com.transit.model.User;
 import com.transit.service.CurrentUserService;
+import com.transit.service.ClientIpResolver;
 import com.transit.service.IdempotencyService;
 import com.transit.service.PaymentIntentService;
+import com.transit.service.LegalDocumentService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -24,21 +25,24 @@ public class PaymentIntentController {
     private final CurrentUserService currentUserService;
     private final PaymentIntentService paymentIntentService;
     private final IdempotencyService idempotencyService;
-
-    @Value("${gateway.trust-forwarded-headers:false}")
-    private boolean trustForwardedHeaders;
+    private final ClientIpResolver clientIps;
+    private final LegalDocumentService legalDocuments;
 
     @PostMapping("/payment-intents/{id}/start")
     public Mono<Object> start(@RequestHeader(HttpHeaders.AUTHORIZATION) String auth,
                               @RequestHeader("Idempotency-Key") String idempotencyKey,
                               @PathVariable Long id,
+                              @RequestHeader("X-Checkout-Disclosure") String disclosureId,
                               HttpServletRequest request) {
         User user = currentUserService.requireUser(auth);
+        legalDocuments.requireCheckoutOpen();
         return Mono.fromCallable(() -> {
             IdempotencyService.Claim claim = idempotencyService.claim(
                     "USER", user.getId(), "START_PAYMENT_INTENT:" + id, idempotencyKey, java.util.Map.of("id", id), true);
             if (claim.replay()) return claim.response();
             try {
+                paymentIntentService.getUserIntent(user, id);
+                legalDocuments.recordCheckoutConsent(user.getId(), "PAYMENT_INTENT", id, disclosureId);
                 PaymentIntentService.StartResponse response = paymentIntentService.start(
                         user, id, clientIp(request), device(request));
                 idempotencyService.complete(claim, 200, response, "PAYMENT_INTENT", id);
@@ -85,11 +89,7 @@ public class PaymentIntentController {
     }
 
     private String clientIp(HttpServletRequest request) {
-        if (trustForwardedHeaders) {
-            String value = request.getHeader("X-Forwarded-For");
-            if (value != null && !value.isBlank()) return value.split(",", 2)[0].trim();
-        }
-        return request.getRemoteAddr();
+        return clientIps.resolve(request);
     }
 
     private String device(HttpServletRequest request) {

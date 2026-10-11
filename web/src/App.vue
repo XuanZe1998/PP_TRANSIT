@@ -2,7 +2,7 @@
   <router-view />
   <AuthDialog v-if="showAuthDialog" />
   <AgreementGate v-if="showAgreementGate" />
-  <ContactWidget v-if="showContactWidget" />
+  <ContactWidget />
   <LocaleSwitch />
 </template>
 
@@ -17,5 +17,4 @@ const AgreementGate = defineAsyncComponent(() => import('@/components/AgreementG
 const ContactWidget = defineAsyncComponent(() => import('@/components/ContactWidget.vue'))
 const showAuthDialog = computed(() => route.query.auth === 'login' || route.query.auth === 'register' || route.query.auth === 'reset')
 const showAgreementGate = computed(() => route.meta.role === 'user')
-const showContactWidget = computed(() => !route.path.startsWith('/admin'))
 </script>

@@ -17,11 +17,20 @@ class ClientIpResolverTests {
     }
 
     @Test
-    void acceptsTheFirstLiteralAddressFromATrustedProxy() {
+    void trustsOnlyTheAddressOverwrittenByTheEdgeProxy() {
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.setRemoteAddr("127.0.0.1");
-        request.addHeader("X-Forwarded-For", "203.0.113.7, 127.0.0.1");
-        assertThat(resolver.resolve(request)).isEqualTo("203.0.113.7");
+        request.addHeader("X-Forwarded-For", "203.0.113.7, 198.51.100.9");
+        request.addHeader("X-Real-IP", "198.51.100.9");
+        assertThat(resolver.resolve(request)).isEqualTo("198.51.100.9");
+    }
+
+    @Test
+    void ignoresAttackerControlledForwardedChainWithoutAnEdgeIp() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setRemoteAddr("127.0.0.1");
+        request.addHeader("X-Forwarded-For", "203.0.113.7, 198.51.100.9");
+        assertThat(resolver.resolve(request)).isEqualTo("127.0.0.1");
     }
 
     @Test

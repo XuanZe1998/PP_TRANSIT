@@ -5,10 +5,10 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.transit.dto.ChatRequest;
 import com.transit.dto.ChatResponse;
 import com.transit.service.TransitService;
+import com.transit.service.ClientIpResolver;
 import com.transit.service.UniversalModelService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -27,13 +27,11 @@ import java.util.Map;
 public class ChatController {
 
     private final TransitService transitService;
+    private final ClientIpResolver clientIps;
     @Autowired(required = false)
     private UniversalModelService universalModelService;
     @Autowired(required = false)
     private ObjectMapper objectMapper;
-
-    @Value("${gateway.trust-forwarded-headers:false}")
-    private boolean trustForwardedHeaders;
 
     @GetMapping({"/v1", "/v1/"})
     public Map<String, Object> apiInfo() {
@@ -96,10 +94,6 @@ public class ChatController {
     }
 
     private String clientIp(HttpServletRequest httpRequest) {
-        String forwarded = httpRequest.getHeader("X-Forwarded-For");
-        if (trustForwardedHeaders && forwarded != null && !forwarded.isBlank()) {
-            return forwarded.split(",")[0].trim();
-        }
-        return httpRequest.getRemoteAddr();
+        return clientIps.resolve(httpRequest);
     }
 }

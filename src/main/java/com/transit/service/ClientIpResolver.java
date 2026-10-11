@@ -21,11 +21,9 @@ public class ClientIpResolver {
     public String resolve(HttpServletRequest request) {
         String remote = normalize(request.getRemoteAddr());
         if (trustedProxies.contains(remote)) {
-            String forwarded = request.getHeader("X-Forwarded-For");
-            if (forwarded != null && !forwarded.isBlank()) {
-                String candidate = forwarded.split(",", 2)[0].trim();
-                if (isValid(candidate)) return normalize(candidate);
-            }
+            // Only the trusted edge proxy may supply this header. A client can
+            // prepend arbitrary entries to X-Forwarded-For before Nginx appends
+            // its own address, so its leftmost value is not an identity.
             String realIp = request.getHeader("X-Real-IP");
             if (isValid(realIp)) return normalize(realIp);
         }

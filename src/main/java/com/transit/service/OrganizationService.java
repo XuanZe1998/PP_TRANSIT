@@ -49,6 +49,53 @@ public class OrganizationService {
         if (normalized.isBlank() || normalized.length() > 160) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Organization name is required");
         }
+        if (owner == null || owner.getId() == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Authenticated user is required");
+        }
+        // Serialize organization creation for this user. The controller's User is only a
+        // snapshot: never mint a new treasury from its potentially stale balance/org.
+        Map<String, Object> account = jdbcTemplate.queryForMap(
+                "SELECT balance, default_organization_id FROM users WHERE id=? FOR UPDATE", owner.getId());
+        long legacyBalance = ((Number) account.get("balance")).longValue();
+        Number previousId = (Number) account.get("default_organization_id");
+        Long previousOrg = previousId == null ? null : previousId.longValue();
+        long transferable = 0;
+        Long sourceWalletId = null;
+        if (previousOrg != null) {
+            Map<String, Object> membership = jdbcTemplate.queryForList("""
+                    SELECT o.organization_type, om.member_role FROM organizations o
+                    JOIN organization_members om ON om.organization_id=o.id
+                    WHERE o.id=? AND o.status='ACTIVE' AND om.user_id=? AND om.status='ACTIVE'
+                    """, previousOrg, owner.getId()).stream().findFirst().orElseThrow(() ->
+                    new ResponseStatusException(HttpStatus.CONFLICT, "Current organization membership is unavailable"));
+            boolean personalOwner = "PERSONAL".equals(membership.get("organization_type"))
+                    && "OWNER".equals(membership.get("member_role"));
+            if (personalOwner) {
+                Map<String, Object> source = jdbcTemplate.queryForList("""
+                        SELECT id, balance, held_balance FROM wallet_accounts
+                        WHERE organization_id=? AND user_id=? AND account_type='TREASURY' AND status='ACTIVE' FOR UPDATE
+                        """, previousOrg, owner.getId()).stream().findFirst().orElseThrow(() ->
+                        new ResponseStatusException(HttpStatus.CONFLICT, "Current wallet is unavailable"));
+                sourceWalletId = ((Number) source.get("id")).longValue();
+                transferable = ((Number) source.get("balance")).longValue();
+                long held = ((Number) source.get("held_balance")).longValue();
+                if (transferable < 0 || held != 0 || transferable != legacyBalance) {
+                    throw new ResponseStatusException(HttpStatus.CONFLICT, "Wallet requires reconciliation before creating an organization");
+                }
+                if (transferable > 0 && jdbcTemplate.update("""
+                        UPDATE wallet_accounts SET balance=0, version=version+1, updated_at=?
+                        WHERE id=? AND balance=? AND held_balance=0 AND status='ACTIVE'
+                        """, LocalDateTime.now(), source.get("id"), transferable) != 1) {
+                    throw new ResponseStatusException(HttpStatus.CONFLICT, "Wallet transfer could not be confirmed");
+                }
+            } else if (legacyBalance != 0) {
+                // Company allocations and treasuries are not the user's personal funds.
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Move organization funds through an authorized transfer first");
+            }
+        } else if (legacyBalance != 0) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Legacy wallet requires reconciliation before creating an organization");
+        }
+
         LocalDateTime now = LocalDateTime.now();
         KeyHolder organizationKey = new GeneratedKeyHolder();
         jdbcTemplate.update(connection -> {
@@ -65,19 +112,27 @@ public class OrganizationService {
                 INSERT INTO organization_members(organization_id,user_id,member_role,status,joined_at)
                 VALUES (?,?,'OWNER','ACTIVE',?)
                 """, id, owner.getId(), now);
-        long transferable = Math.max(0, owner.getBalance());
         jdbcTemplate.update("""
                 INSERT INTO wallet_accounts(organization_id,user_id,account_type,balance,status,created_at,updated_at)
                 VALUES (?,?,'TREASURY',?,'ACTIVE',?,?)
                 """, id, owner.getId(), transferable, now, now);
-        Long previousOrg = owner.getDefaultOrganizationId();
-        if (previousOrg != null && transferable > 0) {
+        if (sourceWalletId != null && transferable > 0) {
+            Long destinationWalletId = jdbcTemplate.queryForObject(
+                    "SELECT id FROM wallet_accounts WHERE organization_id=? AND user_id=?", Long.class, id, owner.getId());
+            String transactionId = UUID.randomUUID().toString();
             jdbcTemplate.update("""
-                    UPDATE wallet_accounts SET balance=0, version=version+1, updated_at=?
-                    WHERE organization_id=? AND user_id=? AND balance=?
-                    """, now, previousOrg, owner.getId(), transferable);
+                    INSERT INTO wallet_ledger_entries
+                    (transaction_id,wallet_account_id,organization_id,user_id,entry_type,direction,amount,balance_after,created_at)
+                    VALUES (?,?,?,?,'ORG_CREATE_TRANSFER','DEBIT',?,0,?)
+                    """, transactionId, sourceWalletId, previousOrg, owner.getId(), transferable, now);
+            jdbcTemplate.update("""
+                    INSERT INTO wallet_ledger_entries
+                    (transaction_id,wallet_account_id,organization_id,user_id,entry_type,direction,amount,balance_after,created_at)
+                    VALUES (?,?,?,?,'ORG_CREATE_TRANSFER','CREDIT',?,?,?)
+                    """, transactionId, destinationWalletId, id, owner.getId(), transferable, transferable, now);
         }
-        jdbcTemplate.update("UPDATE users SET default_organization_id=? WHERE id=?", id, owner.getId());
+        jdbcTemplate.update("UPDATE users SET default_organization_id=?, balance=? WHERE id=?",
+                id, transferable, owner.getId());
         return Map.of("id", id, "name", normalized, "role", "OWNER", "balance", transferable);
     }
 

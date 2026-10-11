@@ -8,15 +8,17 @@ import com.transit.dto.PageResponse;
 import com.transit.model.ServiceOrder;
 import com.transit.model.User;
 import com.transit.service.CurrentUserService;
+import com.transit.service.AdminAuditService;
+import com.transit.service.ClientIpResolver;
 import com.transit.service.ServiceOrderService;
 import com.transit.service.ServiceCommerceService;
 import com.transit.service.ServiceCouponAdminService;
 import com.transit.service.IdempotencyService;
+import com.transit.service.LegalDocumentService;
 import com.transit.model.ServiceCoupon;
 import com.transit.model.ServiceInventoryItem;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -35,9 +37,9 @@ public class ServiceOrderController {
     private final ServiceCommerceService serviceCommerceService;
     private final ServiceCouponAdminService couponAdminService;
     private final IdempotencyService idempotencyService;
-
-    @Value("${gateway.trust-forwarded-headers:false}")
-    private boolean trustForwardedHeaders;
+    private final ClientIpResolver clientIps;
+    private final AdminAuditService adminAuditService;
+    private final LegalDocumentService legalDocuments;
 
     @PostMapping("/service-orders")
     public Mono<Object> createServiceOrder(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
@@ -81,14 +83,18 @@ public class ServiceOrderController {
     public Mono<Object> startPayment(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
                                                 @RequestHeader("Idempotency-Key") String idempotencyKey,
                                                 @PathVariable Long id,
+                                                @RequestHeader("X-Checkout-Disclosure") String disclosureId,
                                                 HttpServletRequest httpRequest) {
         User user = currentUserService.requireUser(authHeader);
+        legalDocuments.requireCheckoutOpen();
         return Mono.fromCallable(() -> {
             IdempotencyService.Claim claim = idempotencyService.claim(
                     "USER", user.getId(), "START_SERVICE_ORDER_PAYMENT:" + id,
                     idempotencyKey, java.util.Map.of("id", id), true);
             if (claim.replay()) return claim.response();
             try {
+                serviceOrderService.getUserOrder(user, id);
+                legalDocuments.recordCheckoutConsent(user.getId(), "SERVICE_ORDER", id, disclosureId);
                 ServiceOrderResponse response = serviceOrderService.startPayment(user, id, clientIp(httpRequest));
                 idempotencyService.complete(claim, 200, response, "SERVICE_ORDER", id);
                 return response;
@@ -163,9 +169,10 @@ public class ServiceOrderController {
                                                         @RequestParam(defaultValue = "1") int page,
                                                         @RequestParam(defaultValue = "10") int size,
                                                         @RequestParam(required = false) String status,
-                                                        @RequestParam(required = false) String query) {
+                                                        @RequestParam(required = false) String query,
+                                                        @RequestParam(required = false) Long serviceId) {
         currentUserService.requireAdmin(authHeader);
-        return Mono.fromCallable(() -> serviceOrderService.listAllOrdersPage(page, size, status, query));
+        return Mono.fromCallable(() -> serviceOrderService.listAllOrdersPage(page, size, status, query, serviceId));
     }
 
     @GetMapping("/service-orders/admin/orders/{id}")
@@ -207,9 +214,10 @@ public class ServiceOrderController {
     @PostMapping("/service-orders/admin/services/{serviceId}/inventory/import")
     public Mono<java.util.Map<String, Integer>> importInventory(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
                                                                 @PathVariable Long serviceId,
-                                                                @RequestBody InventoryImportRequest request) {
-        currentUserService.requireAdmin(authHeader);
-        return Mono.fromCallable(() -> java.util.Map.of("imported", serviceCommerceService.importInventory(serviceId, request.getContent())));
+                                                                @RequestBody InventoryImportRequest request, HttpServletRequest servletRequest) {
+        User admin = currentUserService.requireAdmin(authHeader);
+        return Mono.fromCallable(() -> legacyInventoryOperation(admin, "IMPORT_SERVICE_INVENTORY", serviceId, serviceId, servletRequest,
+                () -> serviceCommerceService.importInventoryWithReport(serviceId, request == null ? null : request.getContent()), result -> result));
     }
 
     @GetMapping("/service-orders/admin/services/{serviceId}/inventory")
@@ -218,9 +226,10 @@ public class ServiceOrderController {
                                                 @RequestParam(required = false) String status,
                                                 @RequestParam(defaultValue = "true") boolean listPage,
                                                 @RequestParam(defaultValue = "1") int page,
-                                                @RequestParam(defaultValue = "10") int size) {
+                                                @RequestParam(defaultValue = "10") int size,
+                                                @RequestParam(required = false) String q) {
         currentUserService.requireAdmin(authHeader);
-        return Mono.fromCallable(() -> serviceCommerceService.listInventoryPage(serviceId, status, page, size));
+        return Mono.fromCallable(() -> serviceCommerceService.listInventoryPage(serviceId, status, page, size, q));
     }
 
     @GetMapping("/service-orders/admin/services/{serviceId}/inventory/stats")
@@ -233,9 +242,25 @@ public class ServiceOrderController {
     @DeleteMapping("/service-orders/admin/services/{serviceId}/inventory/{inventoryId}")
     public Mono<Void> deleteInventory(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
                                       @PathVariable Long serviceId,
-                                      @PathVariable Long inventoryId) {
-        currentUserService.requireAdmin(authHeader);
-        return Mono.fromRunnable(() -> serviceCommerceService.deleteAvailableInventory(serviceId, inventoryId));
+                                      @PathVariable Long inventoryId, HttpServletRequest servletRequest) {
+        User admin = currentUserService.requireAdmin(authHeader);
+        return Mono.fromRunnable(() -> legacyInventoryOperation(admin, "DELETE_SERVICE_INVENTORY", serviceId, inventoryId, servletRequest,
+                () -> { serviceCommerceService.deleteAvailableInventory(serviceId, inventoryId); return 1; }, result -> java.util.Map.of("deleted", result)));
+    }
+
+    private <T> T legacyInventoryOperation(User admin, String action, Long serviceId, Long targetId,
+                                           HttpServletRequest request, java.util.function.Supplier<T> operation,
+                                           java.util.function.Function<T, Object> summary) {
+        T result;
+        try { result = operation.get(); }
+        catch (RuntimeException failure) {
+            adminAuditService.record(admin, action, "SERVICE_INVENTORY", targetId, null,
+                    java.util.Map.of("serviceId", serviceId, "outcome", "FAILED"), clientIps.resolve(request), "FAILED");
+            throw failure;
+        }
+        adminAuditService.record(admin, action, "SERVICE_INVENTORY", targetId, null,
+                java.util.Map.of("serviceId", serviceId, "outcome", "SUCCESS", "summary", summary.apply(result)), clientIps.resolve(request));
+        return result;
     }
 
     @GetMapping("/service-orders/admin/coupons")
@@ -296,13 +321,6 @@ public class ServiceOrderController {
     }
 
     private String clientIp(HttpServletRequest request) {
-        if (trustForwardedHeaders) {
-            String forwarded = request.getHeader("X-Forwarded-For");
-            if (forwarded != null && !forwarded.isBlank()) {
-                String first = forwarded.split(",", 2)[0].trim();
-                if (!first.isBlank() && first.length() <= 64) return first;
-            }
-        }
-        return request.getRemoteAddr();
+        return clientIps.resolve(request);
     }
 }

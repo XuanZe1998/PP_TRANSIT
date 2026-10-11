@@ -72,6 +72,27 @@ class SecurityBoundaryIntegrationTests {
         adminToken = adminSession.get("access_token").toString();
     }
 
+    @Test
+    void paymentSwitchIsAdminOnlyAndCannotOverrideIncompleteLegalReview() {
+        client.put().uri("/admin/api/settings")
+                .bodyValue(Map.of("key", "commerce.payments_enabled", "value", "true"))
+                .exchange().expectStatus().isUnauthorized();
+        try {
+            client.put().uri("/admin/api/settings")
+                    .header(HttpHeaders.AUTHORIZATION, bearer(adminToken))
+                    .bodyValue(Map.of("key", "commerce.payments_enabled", "value", "true"))
+                    .exchange().expectStatus().isOk();
+            client.get().uri("/public/legal").exchange().expectStatus().isOk()
+                    .expectBody().jsonPath("$.payments_enabled").isEqualTo(true)
+                    .jsonPath("$.checkout_ready").isEqualTo(false);
+        } finally {
+            client.put().uri("/admin/api/settings")
+                    .header(HttpHeaders.AUTHORIZATION, bearer(adminToken))
+                    .bodyValue(Map.of("key", "commerce.payments_enabled", "value", "false"))
+                    .exchange().expectStatus().isOk();
+        }
+    }
+
     @ParameterizedTest(name = "anonymous caller may use {0}")
     @ValueSource(strings = {
             "/public/models",
@@ -87,6 +108,14 @@ class SecurityBoundaryIntegrationTests {
     void documentedPublicRoutesRemainAnonymous(String path) {
         client.get().uri(path).exchange().expectStatus().isOk()
                 .expectBody().consumeWith(ignored -> { });
+    }
+
+    @Test
+    void unsupportedLoginMethodReturns405InsteadOf500() {
+        client.get().uri("/auth/login").exchange()
+                .expectStatus().isEqualTo(405)
+                .expectHeader().value(HttpHeaders.ALLOW, value -> assertThat(value).contains("POST"))
+                .expectBody().jsonPath("$.error.code").isEqualTo("method_not_allowed");
     }
 
     @Test

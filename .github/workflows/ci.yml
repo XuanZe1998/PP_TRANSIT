@@ -62,6 +62,8 @@ jobs:
           cache-dependency-path: web/package-lock.json
       - name: Install exact dependencies
         run: npm ci
+      - name: Audit locked dependencies
+        run: npm audit --audit-level=high
       - name: Run frontend tests
         run: npm test
       - name: Verify complete English copy coverage

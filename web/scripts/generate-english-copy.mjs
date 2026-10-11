@@ -66,6 +66,10 @@ async function extractAll() {
   }
   return [...found]
     .filter((value) => value.length <= 1500)
+    // Template branches and code fragments are not visible copy; their leaf strings are scanned separately.
+    .filter((value) => !/^\{\{\s*(?:en|isLocal|isEnglish|row\.[\w.]+)\s*\?/u.test(value))
+    .filter((value) => !/^en\s*\?/u.test(value) && !/^\| null>/u.test(value) && !/^\d+" ref=/u.test(value))
+    .filter((value) => !/\b(?:const|async function)\s+[\w$]+[\s=(]/u.test(value))
     .sort((left, right) => left.localeCompare(right, 'zh-CN'))
 }
 
@@ -98,6 +102,10 @@ async function main() {
   let cache = {}
   try { cache = JSON.parse(await fs.readFile(cacheFile, 'utf8')) } catch { /* First generation. */ }
   const uncached = sources.filter((source) => !cache[source])
+  if (process.argv.includes('--list-missing')) {
+    process.stdout.write(`${JSON.stringify(uncached, null, 2)}\n`)
+    return
+  }
   if (process.argv.includes('--check')) {
     if (uncached.length) throw new Error(`English copy is missing ${uncached.length} entries:\n${uncached.slice(0, 20).join('\n')}`)
     process.stdout.write(`English copy covers all ${sources.length} extracted UI strings.\n`)

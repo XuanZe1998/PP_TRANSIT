@@ -272,34 +272,59 @@ public class ServiceCommerceService {
 
     @Transactional
     public int importInventory(Long serviceId, String content) {
-        OtherService service = otherServiceMapper.selectById(serviceId);
-        if (service == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Service not found");
-        if (!AUTOMATIC.equals(normalizeMode(service.getFulfillmentMode()))) throw conflict("Inventory can only be imported for automatic-delivery services");
+        return importInventoryWithReport(serviceId, content).get("imported");
+    }
+
+    @Transactional
+    public Map<String, Integer> importInventoryWithReport(Long serviceId, String content) {
+        requireLocalInventoryService(serviceId);
         if (!secretService.isConfigured()) throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Inventory encryption is not configured");
+        List<String> tokens = inventoryTokens(content);
+        List<String> items = tokens.stream().distinct().toList();
+        if (items.isEmpty()) throw badRequest("请输入至少一条卡密");
+        // Validate the entire batch before writing anything, including repeated entries.
+        if (tokens.size() > MAX_INVENTORY_IMPORT_ITEMS) throw badRequest("每批最多导入 10000 条卡密");
+        if (items.stream().anyMatch(item -> item.length() > 10000)) throw badRequest("每条卡密最多 10000 个字符");
         int inserted = 0;
-        for (String itemContent : parseInventoryItems(content)) {
-            if (itemContent.length() > 10000) throw badRequest("Each inventory item must be at most 10000 characters");
+        for (String itemContent : items) {
             ServiceInventoryItem item = new ServiceInventoryItem();
             item.setServiceId(serviceId); item.setContentEncrypted(secretService.encrypt(itemContent)); item.setContentFingerprint(fingerprint(itemContent));
             item.setSecretPreview(secretPreview(itemContent));
             item.setStatus(AVAILABLE); item.setCreatedAt(now());
-            try { inventoryMapper.insert(item); inserted++; } catch (RuntimeException duplicate) { /* duplicate import is ignored */ }
+            try {
+                inventoryMapper.insert(item);
+                inserted++;
+            } catch (org.springframework.dao.DuplicateKeyException duplicate) {
+                // Only a duplicate is an expected skip; all other failures roll back the batch.
+            }
         }
-        return inserted;
+        return Map.of("received", tokens.size(), "unique", items.size(), "imported", inserted,
+                "duplicateInInput", tokens.size() - items.size(), "duplicateInStock", items.size() - inserted);
+    }
+
+    private static List<String> inventoryTokens(String content) {
+        if (content == null || content.isBlank()) return List.of();
+        return Arrays.stream(INVENTORY_DELIMITER.split(content.trim()))
+                .map(String::trim).filter(item -> !item.isBlank()).toList();
     }
 
     static List<String> parseInventoryItems(String content) {
-        if (content == null || content.isBlank()) return List.of();
-        List<String> items = Arrays.stream(INVENTORY_DELIMITER.split(content.trim()))
-                .map(String::trim)
-                .filter(item -> !item.isBlank())
-                .distinct()
-                .toList();
-        if (items.size() > MAX_INVENTORY_IMPORT_ITEMS) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "At most " + MAX_INVENTORY_IMPORT_ITEMS + " inventory items can be imported at once");
+        List<String> tokens = inventoryTokens(content);
+        if (tokens.size() > MAX_INVENTORY_IMPORT_ITEMS) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                "At most " + MAX_INVENTORY_IMPORT_ITEMS + " inventory items can be imported at once");
+        return tokens.stream().distinct().toList();
+    }
+
+    private OtherService requireLocalInventoryService(Long serviceId) {
+        if (serviceId == null || serviceId < 1) throw badRequest("serviceId is required");
+        OtherService service = otherServiceMapper.selectById(serviceId);
+        if (service == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Service not found");
+        if (service.getSupplierType() != null && !service.getSupplierType().isBlank()
+                && !OtherServiceCatalogService.LOCAL_INVENTORY.equals(service.getSupplierType())) {
+            throw conflict("上游采购服务不使用本站卡密库存，请查看服务订单");
         }
-        return items;
+        if (!AUTOMATIC.equals(normalizeMode(service.getFulfillmentMode()))) throw conflict("Inventory is only available for automatic-delivery services");
+        return service;
     }
 
     private List<Long> reserveLateAutomatic(ServiceOrder order) {
@@ -325,7 +350,7 @@ public class ServiceCommerceService {
     }
 
     public Map<String, Long> inventoryStats(Long serviceId) {
-        if (otherServiceMapper.selectById(serviceId) == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Service not found");
+        requireLocalInventoryService(serviceId);
         Map<String, Long> result = new LinkedHashMap<>();
         for (String status : List.of(AVAILABLE, RESERVED, DELIVERED)) {
             result.put(status, inventoryMapper.selectCount(new LambdaQueryWrapper<ServiceInventoryItem>()
@@ -342,25 +367,58 @@ public class ServiceCommerceService {
     }
 
     public PageResponse<ServiceInventoryItem> listInventoryPage(Long serviceId, String status, int page, int size) {
+        return listInventoryPage(serviceId, status, page, size, null);
+    }
+
+    public PageResponse<ServiceInventoryItem> listInventoryPage(Long serviceId, String status, int page, int size, String q) {
         validatePage(page, size);
-        LambdaQueryWrapper<ServiceInventoryItem> count = inventoryFilter(serviceId, status);
-        long total = inventoryMapper.selectCount(count);
-        List<ServiceInventoryItem> items = inventoryMapper.selectList(inventoryFilter(serviceId, status)
-                .orderByDesc(ServiceInventoryItem::getId)
-                .last("LIMIT " + size + " OFFSET " + ((page - 1L) * size)));
+        requireLocalInventoryService(serviceId);
+        String normalizedStatus = status == null ? "" : status.trim().toUpperCase(Locale.ROOT);
+        if (!normalizedStatus.isEmpty() && !List.of(AVAILABLE, RESERVED, DELIVERED).contains(normalizedStatus)) throw badRequest("Invalid inventory status");
+        String needle = q == null ? "" : q.trim();
+        if (needle.length() > 160) throw badRequest("搜索条件最多 160 个字符");
+        String from = " FROM service_inventory_items i LEFT JOIN service_orders o ON o.id=i.reserved_order_id AND o.service_id=i.service_id WHERE i.service_id=?";
+        List<Object> args = new ArrayList<>();
+        args.add(serviceId);
+        if (!normalizedStatus.isEmpty()) { from += " AND i.status=?"; args.add(normalizedStatus); }
+        if (!needle.isEmpty()) {
+            from += " AND (i.id=? OR i.secret_preview LIKE ? ESCAPE '!' OR o.order_no LIKE ? ESCAPE '!')";
+            String like = "%" + needle.replace("!", "!!").replace("%", "!%").replace("_", "!_") + "%";
+            Long searchId = null;
+            try { searchId = Long.valueOf(needle); } catch (NumberFormatException ignored) { /* not an inventory ID */ }
+            args.add(searchId); args.add(like); args.add(like);
+        }
+        long total = Objects.requireNonNull(jdbcTemplate.queryForObject("SELECT COUNT(*)" + from, Long.class, args.toArray()));
+        args.add(size); args.add((page - 1L) * size);
+        List<ServiceInventoryItem> items = jdbcTemplate.query(
+                "SELECT i.id,i.service_id,i.secret_preview,i.status,i.reserved_order_id,i.reserved_until,i.delivered_at,i.created_at,o.order_no,o.user_id AS buyer_user_id,o.status AS order_status"
+                        + from + " ORDER BY i.id DESC LIMIT ? OFFSET ?",
+                new org.springframework.jdbc.core.BeanPropertyRowMapper<>(ServiceInventoryItem.class), args.toArray());
         PageResponse<ServiceInventoryItem> response = new PageResponse<>();
         response.setPage(page); response.setSize(size); response.setTotal(total); response.setItems(items);
         return response;
     }
 
-    private LambdaQueryWrapper<ServiceInventoryItem> inventoryFilter(Long serviceId, String status) {
-        if (serviceId == null) throw badRequest("serviceId is required");
-        LambdaQueryWrapper<ServiceInventoryItem> query = new LambdaQueryWrapper<ServiceInventoryItem>()
-                .eq(ServiceInventoryItem::getServiceId, serviceId);
-        if (status != null && !status.isBlank()) {
-            query.eq(ServiceInventoryItem::getStatus, status.trim().toUpperCase(Locale.ROOT));
-        }
-        return query;
+    public String revealInventory(Long serviceId, Long inventoryId) {
+        requireLocalInventoryService(serviceId);
+        ServiceInventoryItem item = inventoryMapper.selectById(inventoryId);
+        if (item == null || !Objects.equals(item.getServiceId(), serviceId)) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Inventory item not found");
+        if (!secretService.isConfigured()) throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Inventory encryption is not configured");
+        return secretService.decrypt(item.getContentEncrypted());
+    }
+
+    @Transactional
+    public int deleteAvailableInventoryBatch(Long serviceId, List<Long> ids) {
+        requireLocalInventoryService(serviceId);
+        if (ids == null || ids.isEmpty() || ids.size() > 100 || ids.stream().anyMatch(id -> id == null || id < 1)) throw badRequest("请提交 1–100 个有效卡密 ID");
+        List<Long> uniqueIds = ids.stream().distinct().sorted().toList();
+        String placeholders = String.join(",", Collections.nCopies(uniqueIds.size(), "?"));
+        List<Object> args = new ArrayList<>(); args.add(serviceId); args.addAll(uniqueIds);
+        List<String> statuses = jdbcTemplate.queryForList("SELECT status FROM service_inventory_items WHERE service_id=? AND id IN (" + placeholders + ") ORDER BY id FOR UPDATE", String.class, args.toArray());
+        if (statuses.size() != uniqueIds.size() || statuses.stream().anyMatch(status -> !AVAILABLE.equals(status))) throw conflict("部分卡密不存在或不再未售，未删除任何卡密，请刷新后重试");
+        int deleted = jdbcTemplate.update("DELETE FROM service_inventory_items WHERE service_id=? AND status='AVAILABLE' AND id IN (" + placeholders + ")", args.toArray());
+        if (deleted != uniqueIds.size()) throw conflict("库存状态发生变化，未删除任何卡密");
+        return deleted;
     }
 
     private void validatePage(int page, int size) {
@@ -369,6 +427,7 @@ public class ServiceCommerceService {
     }
 
     public void deleteAvailableInventory(Long serviceId, Long inventoryId) {
+        requireLocalInventoryService(serviceId);
         int deleted = inventoryMapper.delete(new LambdaQueryWrapper<ServiceInventoryItem>()
                 .eq(ServiceInventoryItem::getId, inventoryId).eq(ServiceInventoryItem::getServiceId, serviceId)
                 .eq(ServiceInventoryItem::getStatus, AVAILABLE));
@@ -376,6 +435,7 @@ public class ServiceCommerceService {
     }
 
     public ServiceInventoryItem replaceAvailableInventory(Long serviceId, Long inventoryId, String content) {
+        requireLocalInventoryService(serviceId);
         String normalized = content == null ? "" : content.trim();
         if (normalized.isBlank() || normalized.length() > 10000) throw badRequest("卡密内容需为 1–10000 个字符");
         if (!secretService.isConfigured()) throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Inventory encryption is not configured");

@@ -8,6 +8,9 @@
       <el-button :loading="loading" @click="fetchOrders">刷新</el-button>
     </div>
 
+    <el-alert v-if="serviceId" type="info" :closable="false">
+      <template #title><span data-no-auto-i18n>{{ isEnglish ? 'Viewing orders for service ID ' : '当前查看服务 ID ' }}{{ serviceId }}{{ isEnglish ? '' : ' 的订单' }}</span></template>
+    </el-alert>
     <el-alert v-if="pendingOnly" type="warning" :closable="false" title="当前仅显示待处理（PENDING / CONFIRMED）订单" />
     <PagedTable v-loading="loading" :data="orders" empty-text="暂无服务订单" list-id="AdminServiceOrders-1" pagination="external">
       <el-table-column prop="orderNo" label="订单号" min-width="190" />
@@ -92,7 +95,8 @@
 <script setup lang="ts">
 import PagedTable from '@/components/PagedTable.vue'
 import ListPagination from '@/components/ListPagination.vue'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import { isEnglish } from '@/i18n/locale'
 import { formatCurrencyCents } from '@/utils/money'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -119,6 +123,8 @@ type ServiceOrder = {
   createdAt: string
 }
 
+const props = defineProps<{ serviceId?: number | null }>()
+const serviceId = computed(() => props.serviceId || null)
 const orders = ref<ServiceOrder[]>([])
 const route=useRoute(),pendingOnly=computed(()=>route.query.status==='pending')
 const page = ref(1)
@@ -159,7 +165,7 @@ async function fetchOrders() {
   try {
     const response = await http.get('/api/service-orders/admin/orders', { params: {
       listPage: true, page: page.value, size: size.value,
-      status: pendingOnly.value ? 'PENDING,CONFIRMED' : undefined
+      status: pendingOnly.value ? 'PENDING,CONFIRMED' : undefined, serviceId: serviceId.value || undefined
     } })
     orders.value = response.data?.items || []
     total.value = Number(response.data?.total || 0)
@@ -170,12 +176,21 @@ async function fetchOrders() {
   }
 }
 
-async function openEdit(order: ServiceOrder) {
-  try {
-    const response = await http.get<ServiceOrder>(`/api/service-orders/admin/orders/${order.id}`)
-    selectedOrder.value = response.data
-  } catch {
-    selectedOrder.value = order
+async function openOrderById(id: number) {
+  const response = await http.get<ServiceOrder>(`/api/service-orders/admin/orders/${id}`)
+  await openEdit(response.data, true)
+}
+defineExpose({ openOrderById })
+
+async function openEdit(order: ServiceOrder, preloaded = false) {
+  if (preloaded) selectedOrder.value = order
+  else {
+    try {
+      const response = await http.get<ServiceOrder>(`/api/service-orders/admin/orders/${order.id}`)
+      selectedOrder.value = response.data
+    } catch {
+      selectedOrder.value = order
+    }
   }
   try {
     paymentIntent.value = (await http.get(`/api/admin/payment-intents/business/SERVICE_ORDER/${order.id}`)).data
@@ -271,6 +286,7 @@ async function deleteOrder(order: ServiceOrder) {
   }
 }
 
+watch(serviceId, () => { page.value = 1; void fetchOrders() })
 onMounted(fetchOrders)
 </script>
 
