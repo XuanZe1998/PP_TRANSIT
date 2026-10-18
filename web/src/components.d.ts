@@ -19,7 +19,9 @@ declare module 'vue' {
     AuthDialog: typeof import('./components/AuthDialog.vue')['default']
     AutoMovieStudio: typeof import('./components/AutoMovieStudio.vue')['default']
     BillingCheckoutFields: typeof import('./components/BillingCheckoutFields.vue')['default']
+    CheckoutDisclosure: typeof import('./components/CheckoutDisclosure.vue')['default']
     ContactWidget: typeof import('./components/ContactWidget.vue')['default']
+    CookieConsent: typeof import('./components/CookieConsent.vue')['default']
     DeveloperDocs: typeof import('./components/DeveloperDocs.vue')['default']
     ElAlert: typeof import('element-plus/es')['ElAlert']
     ElAside: typeof import('element-plus/es')['ElAside']
@@ -90,6 +92,8 @@ declare module 'vue' {
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     SelectablePagination: typeof import('./components/SelectablePagination.vue')['default']
+    ServiceInventoryManager: typeof import('./components/ServiceInventoryManager.vue')['default']
+    SiteFooter: typeof import('./components/SiteFooter.vue')['default']
     TechBackdrop: typeof import('./components/TechBackdrop.vue')['default']
     UsageTimelineChart: typeof import('./components/UsageTimelineChart.vue')['default']
   }

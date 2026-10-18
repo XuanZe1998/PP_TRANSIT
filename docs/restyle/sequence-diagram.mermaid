@@ -1,0 +1,27 @@
+sequenceDiagram
+    autonumber
+    participant B as Browser
+    participant M as main.ts
+    participant S as style.css (L4 业务布局)
+    participant T as tokens.css (L1 令牌)
+    participant F as foundation.css (L2 基础)
+    participant C as components.css (L3 组件)
+    participant EP as Element Plus 内置
+    participant SC as Scoped .vue 样式
+    participant R as 渲染与计算样式
+
+    M->>S: import './style.css'
+    M->>T: import './styles/tokens.css'
+    M->>F: import './styles/foundation.css'
+    M->>C: import './styles/components.css'
+    Note over M: 顺序被 uiDesignSystem.test.ts:9-20 强断言，不可改
+    B->>S: 解析 L4（无 :root、无 hex）
+    B->>T: 解析 L1；:root 定义 --lnx-* 与 --el-*
+    Note over T: 后加载 → 反转覆盖 style.css 旧 :root
+    B->>F: 解析 L2（元素基线 + 动画置零 + 焦点环）
+    B->>C: 解析 L3（#app 作用域 22 类组件 + 审计段）
+    B->>EP: 解析 EP 内置（--el-* 已被 T 覆盖为令牌）
+    B->>SC: 解析 scoped（data-v-* 提高特异性）
+    R->>R: 计算最终值
+    Note over R: 判据① !important 优先 ② 特异性 #app>.x>[data-v]>元素 ③ 同特异性看源顺序(后加载胜)
+    Note over R: 结论：components.css 最后加载 → 平局必胜 style.css 遗留规则

@@ -1,5 +1,5 @@
 <template>
-  <aside v-if="total" ref="widget" class="contact-widget" :class="{ open, dragging }" :style="positionStyle" aria-label="联系方式">
+  <aside v-if="total > 0" ref="widget" class="contact-widget" :class="{ open, dragging }" :style="positionStyle" aria-label="联系方式">
     <button class="contact-trigger" type="button" :aria-expanded="open" :title="copy.drag" @pointerdown="startDrag" @click="toggle">
       <el-icon><ChatDotRound /></el-icon>
       <span>{{ copy.title }}</span>

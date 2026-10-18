@@ -14,8 +14,10 @@ async function mockInventory(page: Page) {
     { id: 103, secretPreview: '****1003', status: 'DELIVERED', reservedOrderId: 900, orderNo: 'ORDER-900', buyerUserId: 23, deliveredAt: '2026-09-28 10:05:00' }
   ]
   const calls: { path: string; method: string; params: URLSearchParams; body: any }[] = []
-  await page.route('**/api/**', async route => {
+  await page.route(url => url.origin === 'https://api.linknux.com' || url.pathname.startsWith('/api/'), async route => {
     const request = route.request(), url = new URL(request.url()), method = request.method()
+    // Production calls the API subdomain directly; local preview uses /api.
+    if (!url.pathname.startsWith('/api/')) url.pathname = `/api${url.pathname}`
     let body: any = null; try { body = request.postDataJSON() } catch { /* no body */ }
     calls.push({ path: url.pathname, method, params: url.searchParams, body })
     if (url.pathname === '/api/admin/api/other-services') {

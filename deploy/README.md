@@ -113,3 +113,5 @@ See [线上压测与上线核验方案](../docs/线上压测与上线核验方�
 ## Linknux security hardening
 
 The 2026-09-26 host changes and the pending QQ SMTP alert activation are documented in [the security report](../docs/LINKNUX_SECURITY_2026-09-26.md). The application deployment script does not manage SSH, Nginx, Fail2ban, or SMTP. Do not commit sender credentials or mailbox authorization codes.
+
+Cloudflare/DNS onboarding is a separate reviewed change; see [readiness and rollback checklist](../docs/CLOUDFLARE_MIGRATION_READINESS.md). Do not switch NS or proxy as part of an application release.

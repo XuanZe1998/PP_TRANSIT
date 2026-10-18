@@ -6,7 +6,7 @@ const contactPage = {
 }
 
 test.beforeEach(async ({ page }) => {
-  await page.route('**/api/**', route => {
+  await page.route(url => url.origin === 'https://api.linknux.com' || url.pathname.startsWith('/api/'), route => {
     if (route.request().url().includes('/public/contact-methods')) {
       return route.fulfill({ json: contactPage })
     }

@@ -44,7 +44,20 @@ public class WalletBalanceService {
         if (balance < 0 || (wallet != null && ((Number) wallet.get("balance")).longValue() != balance)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Balance changed while creating organization");
         }
-        if (wallet == null || !"COMPANY".equals(wallet.get("organization_type"))) return balance;
+        // Preserve the deployed safeguards while retaining master's own-treasury selection.
+        // A member allocation or unavailable wallet is not a legacy personal balance.
+        if (wallet == null) {
+            Long defaultOrg = jdbcTemplate.queryForObject(
+                    "SELECT default_organization_id FROM users WHERE id=?", Long.class, userId);
+            if (defaultOrg != null && balance != 0) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Current wallet requires reconciliation before creating organization");
+            }
+            return balance;
+        }
+        if (((Number) wallet.get("held_balance")).longValue() != 0) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Held wallet funds cannot be transferred to another organization");
+        }
+        if (!"COMPANY".equals(wallet.get("organization_type"))) return balance;
         Long organizationId = ((Number) wallet.get("organization_id")).longValue();
         Long allocated = jdbcTemplate.queryForObject("""
                 SELECT COALESCE(SUM(wa.balance),0) FROM wallet_accounts wa
@@ -107,7 +120,7 @@ public class WalletBalanceService {
 
     private Map<String, Object> ownTreasuryWallet(Long userId) {
         List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
-                SELECT wa.id,wa.organization_id,wa.balance,o.organization_type
+                SELECT wa.id,wa.organization_id,wa.balance,wa.held_balance,o.organization_type
                 FROM wallet_accounts wa
                 JOIN organizations o ON o.id=wa.organization_id AND o.status='ACTIVE'
                 JOIN organization_members om ON om.organization_id=o.id AND om.user_id=wa.user_id

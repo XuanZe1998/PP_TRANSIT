@@ -20,4 +20,4 @@ onMounted(async () => {
   if (!published.value && props.modelValue) emit('update:modelValue', false)
 })
 </script>
-<style scoped>.checkout-legal{margin:14px 0;padding:14px;border:1px solid #cbd5e1;border-radius:8px;line-height:1.7}.checkout-legal p{margin:0 0 8px}.checkout-legal a{color:#2463ae}</style>
+<style scoped>.checkout-legal{margin:14px 0;padding:14px;border:1px solid var(--lnx-color-border);border-radius:8px;line-height:1.7}.checkout-legal p{margin:0 0 8px}.checkout-legal a{color:var(--lnx-text-link)}</style>

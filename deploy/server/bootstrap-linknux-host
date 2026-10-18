@@ -1,0 +1,178 @@
+#!/usr/bin/env bash
+# First installation of a fresh Linknux + Halo host. No credentials in source.
+set -Eeuo pipefail
+[[ $EUID -eq 0 ]] || { echo 'Run as root'; exit 1; }
+[[ ! -e /etc/api-transit/application-local.yaml && ! -e /etc/halo/application.yaml ]] \
+  || { echo 'Private application configuration already exists; refusing to overwrite'; exit 1; }
+mysql -N -e 'SELECT VERSION()' | grep '^8\.4\.' >/dev/null
+for account in api-transit halo; do
+  id "$account" >/dev/null 2>&1 || useradd --system --home-dir "/var/lib/$account" --shell /usr/sbin/nologin "$account"
+  install -d -m 0750 -o root -g "$account" "/etc/$account"
+  install -d -m 0750 -o "$account" -g "$account" "/var/lib/$account"
+  install -d -m 0755 -o root -g root "/opt/$account/releases"
+done
+install -d -m 0755 /var/www/linknux-releases /var/www/acme
+install -d -m 0700 /root/.linknux
+python3 - <<'PY'
+import base64, grp, json, os, pathlib, secrets, subprocess
+
+def token():
+    return secrets.token_hex(32)
+
+values = {name: token() for name in ('api_db', 'halo_db', 'redis', 'jwt', 'verification', 'admin')}
+values['encryption'] = base64.b64encode(secrets.token_bytes(32)).decode()
+sql = f"""
+CREATE DATABASE api_transit CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE DATABASE halo CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER 'api_transit_app'@'localhost' IDENTIFIED BY '{values['api_db']}';
+CREATE USER 'halo_app'@'localhost' IDENTIFIED BY '{values['halo_db']}';
+GRANT ALL PRIVILEGES ON api_transit.* TO 'api_transit_app'@'localhost';
+GRANT ALL PRIVILEGES ON halo.* TO 'halo_app'@'localhost';
+"""
+subprocess.run(['mysql'], input=sql, text=True, check=True, stdout=subprocess.DEVNULL)
+
+def write_private(path, content, group):
+    target = pathlib.Path(path)
+    target.write_text(content, encoding='utf-8')
+    os.chmod(target, 0o640)
+    os.chown(target, 0, grp.getgrnam(group).gr_gid)
+
+write_private('/etc/api-transit/application-local.yaml', f"""spring:
+  datasource:
+    url: jdbc:mysql://127.0.0.1:3306/api_transit?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+    username: api_transit_app
+    password: '{values['api_db']}'
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 2
+  data:
+    redis:
+      host: 127.0.0.1
+      password: '{values['redis']}'
+server:
+  address: 127.0.0.1
+  port: 8089
+security:
+  data-encryption-key: '{values['encryption']}'
+  jwt:
+    secret: '{values['jwt']}'
+  trusted-proxies: 127.0.0.1,::1
+  cors:
+    allowed-origins: https://linknux.com
+  bootstrap-admin:
+    username: admin
+    password: '{values['admin']}'
+verification:
+  hmac-secret: '{values['verification']}'
+  debug-code-enabled: false
+app:
+  seed-demo-catalog: false
+""", 'api-transit')
+write_private('/etc/halo/application.yaml', f"""server:
+  address: 127.0.0.1
+  port: 8090
+spring:
+  r2dbc:
+    url: r2dbc:mysql://127.0.0.1:3306/halo?allowPublicKeyRetrieval=true
+    username: halo_app
+    password: '{values['halo_db']}'
+    pool:
+      initial-size: 1
+      max-size: 5
+  sql:
+    init:
+      platform: mysql
+halo:
+  external-url: https://blog.linknux.com
+  work-dir: /var/lib/halo
+""", 'halo')
+redis_config = pathlib.Path('/etc/redis/redis.conf')
+with redis_config.open('a', encoding='utf-8') as out:
+    out.write(f"\nbind 127.0.0.1 ::1\nrequirepass {values['redis']}\nmaxmemory 96mb\nmaxmemory-policy noeviction\n")
+access = pathlib.Path('/root/.linknux/initial-admin.json')
+access.write_text(json.dumps({'url': 'https://linknux.com/admin/login', 'username': 'admin', 'password': values['admin']}, indent=2), encoding='utf-8')
+os.chmod(access, 0o600)
+print('Application private configuration created; credentials were not printed.')
+PY
+cat > /etc/mysql/mysql.conf.d/zz-linknux.cnf <<'CONF'
+[mysqld]
+bind-address=127.0.0.1
+mysqlx-bind-address=127.0.0.1
+innodb_buffer_pool_size=384M
+max_connections=80
+binlog_expire_logs_seconds=259200
+CONF
+systemctl restart mysql redis-server
+cat > /etc/systemd/system/api-transit.service <<'UNIT'
+[Unit]
+Description=Linknux API Transit Station
+After=network-online.target mysql.service redis-server.service
+Wants=network-online.target
+Requires=mysql.service redis-server.service
+[Service]
+Type=simple
+User=api-transit
+Group=api-transit
+WorkingDirectory=/var/lib/api-transit
+ExecStart=/usr/lib/jvm/java-17-openjdk-amd64/bin/java -Xms512m -Xmx2g -Dfile.encoding=UTF-8 -jar /opt/api-transit/current/api-transit.jar --spring.config.additional-location=file:/etc/api-transit/application-local.yaml
+Restart=on-failure
+RestartSec=5s
+SuccessExitStatus=143
+TimeoutStopSec=45s
+UMask=0027
+LimitNOFILE=65535
+MemoryMax=3G
+CPUWeight=200
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadOnlyPaths=/etc/api-transit
+ReadWritePaths=/var/lib/api-transit
+[Install]
+WantedBy=multi-user.target
+UNIT
+cat > /etc/systemd/system/halo.service <<'UNIT'
+[Unit]
+Description=Halo community blog
+After=network-online.target mysql.service
+Wants=network-online.target
+Requires=mysql.service
+[Service]
+Type=simple
+User=halo
+Group=halo
+WorkingDirectory=/var/lib/halo
+ExecStart=/usr/lib/jvm/java-21-openjdk-amd64/bin/java -Xms256m -Xmx512m -Dfile.encoding=UTF-8 -jar /opt/halo/current/halo.jar --spring.config.additional-location=file:/etc/halo/application.yaml
+Restart=on-failure
+RestartSec=10s
+TimeoutStopSec=60s
+UMask=0027
+MemoryMax=1G
+CPUWeight=100
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadOnlyPaths=/etc/halo
+ReadWritePaths=/var/lib/halo
+[Install]
+WantedBy=multi-user.target
+UNIT
+systemctl daemon-reload
+if [[ $(awk '/SwapTotal/ {print $2}' /proc/meminfo) == 0 ]]; then
+  [[ ! -e /swapfile-linknux ]] || { echo 'Swap file exists but is inactive; inspect manually'; exit 1; }
+  fallocate -l 4G /swapfile-linknux
+  chmod 600 /swapfile-linknux
+  mkswap /swapfile-linknux >/dev/null
+  swapon /swapfile-linknux
+  printf '/swapfile-linknux none swap sw 0 0\n' >> /etc/fstab
+fi
+printf 'vm.swappiness=10\n' > /etc/sysctl.d/90-linknux-swap.conf
+sysctl -p /etc/sysctl.d/90-linknux-swap.conf >/dev/null
+ufw allow 22/tcp
+ufw allow 80/tcp
+ufw allow 443/tcp
+ufw --force enable
+systemctl enable mysql redis-server nginx certbot.timer
+echo 'Host bootstrap completed. Applications are not started until release artifacts are installed.'

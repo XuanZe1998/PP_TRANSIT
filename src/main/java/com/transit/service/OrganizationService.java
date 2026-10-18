@@ -50,6 +50,11 @@ public class OrganizationService {
         if (normalized.isBlank() || normalized.length() > 160) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Organization name is required");
         }
+        if (owner == null || owner.getId() == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Authenticated user is required");
+        }
+        // Validate and lock the source before writing a destination organization.
+        long transferable = walletBalanceService.lockTransferableBalance(owner.getId());
         LocalDateTime now = LocalDateTime.now();
         KeyHolder organizationKey = new GeneratedKeyHolder();
         jdbcTemplate.update(connection -> {
@@ -66,16 +71,31 @@ public class OrganizationService {
                 INSERT INTO organization_members(organization_id,user_id,member_role,status,joined_at)
                 VALUES (?,?,'OWNER','ACTIVE',?)
                 """, id, owner.getId(), now);
-        long transferable = walletBalanceService.lockTransferableBalance(owner.getId());
+        WalletBalanceService.BalanceSnapshot source = null;
         if (transferable > 0) {
             // Debit the owner's treasury, not a MEMBER wallet in the current default organization.
             // A concurrent balance change must fail the transaction rather than mint a new wallet.
-            walletBalanceService.debit(owner.getId(), transferable, "Balance changed while creating organization");
+            source = walletBalanceService.debit(owner.getId(), transferable, "Balance changed while creating organization");
         }
         jdbcTemplate.update("""
                 INSERT INTO wallet_accounts(organization_id,user_id,account_type,balance,status,created_at,updated_at)
                 VALUES (?,?,'TREASURY',?,'ACTIVE',?,?)
                 """, id, owner.getId(), transferable, now, now);
+        if (source != null && source.walletAccountId() != null) {
+            Long destinationWalletId = jdbcTemplate.queryForObject(
+                    "SELECT id FROM wallet_accounts WHERE organization_id=? AND user_id=?", Long.class, id, owner.getId());
+            String transactionId = UUID.randomUUID().toString();
+            jdbcTemplate.update("""
+                    INSERT INTO wallet_ledger_entries
+                    (transaction_id,wallet_account_id,organization_id,user_id,entry_type,direction,amount,balance_after,created_at)
+                    VALUES (?,?,?,?,'ORG_CREATE_TRANSFER','DEBIT',?,?,?)
+                    """, transactionId, source.walletAccountId(), source.organizationId(), owner.getId(), transferable, source.balance(), now);
+            jdbcTemplate.update("""
+                    INSERT INTO wallet_ledger_entries
+                    (transaction_id,wallet_account_id,organization_id,user_id,entry_type,direction,amount,balance_after,created_at)
+                    VALUES (?,?,?,?,'ORG_CREATE_TRANSFER','CREDIT',?,?,?)
+                    """, transactionId, destinationWalletId, id, owner.getId(), transferable, transferable, now);
+        }
         int changed = jdbcTemplate.update("UPDATE users SET default_organization_id=?,balance=? WHERE id=? AND status='ACTIVE'",
                 id, transferable, owner.getId());
         if (changed != 1) {

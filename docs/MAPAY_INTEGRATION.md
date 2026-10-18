@@ -24,7 +24,7 @@ mapay:
 ## 支付流程
 
 1. 用户以 `Idempotency-Key` 创建充值订单或服务订单。
-2. 客户端对 `POST /payment-intents/{id}/start` 发送新的 `Idempotency-Key`。
+2. 客户端展示单笔订单金额、支付币种、付款方式和当前交易披露，用户主动勾选确认后，对 `POST /payment-intents/{id}/start` 或 `POST /service-orders/{id}/payment` 同时发送新的 `Idempotency-Key` 与 `X-Checkout-Disclosure`（来自 `/public/legal` 的 `checkout_disclosure_id`）。未开放结账、披露加载失败或缺少版本时，不允许发起付款；每次重新打开确认弹窗重新读取披露，清除旧勾选。
 3. 服务端调用 `/xpay/epay/mapi.php`，将 `payurl` / `qrcode` / `urlscheme` 映射为 `REDIRECT` / `QRCODE` / `URL_SCHEME`。
 4. MaPay 以 GET 或 POST 请求 `/webhooks/mapay`。服务端验证 MD5 签名、PID、订单号、两位 CNY 金额、支付方式、`param` 命名空间和 `TRADE_SUCCESS`。
 5. 条件更新首次成功时才结算。重复回调返回纯文本 `success`；验证或结算失败返回 `fail`。
@@ -39,6 +39,12 @@ mapay:
 - 服务订单只触发一次库存、卡密或 Dujiao-Next 采购。
 - 已过期订单后续收到可验证付款仍记为已付。库存或优惠资源已释放时，履约状态为 `REVIEW_REQUIRED`，不会丢弃付款事实。
 - 历史已付/已退款记录只读保留；历史提供方的未支付意图在一次性迁移中取消并释放资源。
+
+## 生产就绪检查
+
+- `mapay.enabled=true` 且商户 PID、KEY、通知地址齐全，不能用本地测试支付模式代替真实通道。
+- `/public/legal` 的 `publication_ready`、`payments_enabled`、`checkout_ready` 均为 `true`；公开信息须由运营方完善并审核，不得为通过支付请求自动批准条款或开启收款。
+- 2026-10-17 排查发现：服务订单前端漏传 `X-Checkout-Disclosure`，被必需请求头校验拦截为 HTTP 400 / `Invalid request`，尚未调用支付网关。生产环境同时未启用支付通道、未开放结账。另核实生产跨域预检未允许该请求头，因此前后端需一起修复 CORS 白名单（保持限定来源，不使用通配符）。补齐请求契约不等于已启用生产收款；发布和私有配置变更需单独确认。
 
 ## 人工联调
 
