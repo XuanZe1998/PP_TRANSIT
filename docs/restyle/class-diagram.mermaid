@@ -1,0 +1,64 @@
+classDiagram
+    class TokensLayer {
+        <<styles/tokens.css>>
+        +:root color-scheme light
+        +color : --lnx-color-*
+        +text : --lnx-text-*
+        +status : --lnx-status-*
+        +state : --lnx-state-*
+        +font : --lnx-font-* / --lnx-text-size-*
+        +space : --lnx-space-*
+        +radius : --lnx-radius-*
+        +shadow : --lnx-shadow-*
+        +z : --lnx-z-*
+        +layout : --lnx-layout-*
+        +elementPlus : --el-* mapping
+    }
+    class FoundationLayer {
+        <<styles/foundation.css>>
+        +html body baseline
+        +motionOff() animation/transition none
+        +focusVisible() outline token
+        +selection code headings
+    }
+    class ComponentsLayer {
+        <<styles/components.css>>
+        +scope : #app
+        +button input select switch
+        +tag badge table pagination
+        +dialog drawer message
+        +breadcrumb tabs menu
+        +cards empty stat code chart footer toolbar
+        +mobileDrawer() 3 shells
+        +contrastAudit()
+        +breakpoint980()
+        +breakpoint700()
+    }
+    class BusinessLayoutLayer {
+        <<style.css>>
+        +threeShellSkeletons()
+        +gridsAndBreakpoints()
+        +sizesOnly no color literals
+        +preservedGuardSelectors()
+    }
+    class ScopedStyles {
+        <<26 .vue files>>
+        +layoutNumbersOnly()
+        +colorsAsTokens()
+    }
+    class GuardTests {
+        +uiDesignSystem
+        +staticLightTheme
+        +consoleResilience
+        +brandGuard
+        +modelGateway
+        +modelMarket
+    }
+    TokensLayer <.. FoundationLayer : references --lnx-*
+    FoundationLayer <.. ComponentsLayer : references --lnx-*
+    TokensLayer <.. ComponentsLayer : references --lnx-*
+    ComponentsLayer <.. BusinessLayoutLayer : overridden by loads-later
+    TokensLayer <.. ScopedStyles : references --lnx-*
+    GuardTests ..> BusinessLayoutLayer : asserts selectors
+    GuardTests ..> ComponentsLayer : asserts tokens/breakpoints
+    GuardTests ..> TokensLayer : asserts token names/values

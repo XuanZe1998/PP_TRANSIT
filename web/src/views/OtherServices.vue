@@ -189,6 +189,35 @@
       </template>
     </el-dialog>
 
+    <el-dialog
+      v-model="checkoutDialogVisible"
+      title="确认支付"
+      width="min(560px, 94vw)"
+      :close-on-click-modal="!startingPayment"
+      :close-on-press-escape="!startingPayment"
+      :show-close="!startingPayment"
+    >
+      <template v-if="checkoutDialogVisible && checkoutOrder">
+        <el-descriptions :column="1" border>
+          <el-descriptions-item label="订单号">{{ checkoutOrder.orderNo }}</el-descriptions-item>
+          <el-descriptions-item label="服务">{{ checkoutOrder.productName }}</el-descriptions-item>
+          <el-descriptions-item label="订单金额">{{ formatMoney(checkoutOrder.amountCents, checkoutOrder.currency) }}</el-descriptions-item>
+          <el-descriptions-item label="支付金额">{{ formatMoney(checkoutOrder.paymentAmountCents ?? checkoutOrder.amountCents, checkoutOrder.paymentCurrency || checkoutOrder.currency) }}</el-descriptions-item>
+          <el-descriptions-item label="付款方式">{{ checkoutOrder.paymentMethod === 'wxpay' ? '微信支付' : '支付宝' }}</el-descriptions-item>
+        </el-descriptions>
+        <CheckoutDisclosure v-model="checkoutAccepted" v-model:disclosure-id="paymentDisclosureId" />
+      </template>
+      <template #footer>
+        <el-button :disabled="startingPayment" @click="checkoutDialogVisible = false">取消</el-button>
+        <el-button
+          type="primary"
+          :loading="startingPayment"
+          :disabled="!checkoutAccepted || !paymentDisclosureId || startingPayment"
+          @click="confirmPayment"
+        >确认支付</el-button>
+      </template>
+    </el-dialog>
+
     <el-dialog v-model="detailDialogVisible" title="卡密与订单详情" width="min(720px, 94vw)" @closed="cancelRedemptionCountdown">
       <template v-if="orderDetail">
         <el-descriptions :column="2" border>
@@ -280,6 +309,7 @@ type ServiceOrder = {
   currency: string
   paymentAmountCents?: number
   paymentCurrency?: string
+  paymentMethod?: string
   exchangeRate?: number
   status: string
   quantity?: number
@@ -311,6 +341,11 @@ const serviceTotal = ref(0)
 const orderPage = ref(1)
 const orderSize = ref(10)
 const orderTotal = ref(0)
+const checkoutDialogVisible = ref(false)
+const checkoutOrder = ref<ServiceOrder | null>(null)
+const checkoutAccepted = ref(false)
+const paymentDisclosureId = ref('')
+const startingPayment = ref(false)
 const paymentDialogVisible = ref(false)
 const paymentAction = ref<PaymentAction | null>(null)
 const paymentMethod = ref('alipay')
@@ -712,14 +747,26 @@ async function copyAllDelivery() {
   ElMessage.success('全部卡密已复制')
 }
 
-async function startPayment(order: ServiceOrder) {
+function startPayment(order: ServiceOrder) {
+  if (startingPayment.value || !canPay(order)) return
+  checkoutOrder.value = order
+  checkoutAccepted.value = false
+  paymentDisclosureId.value = ''
+  checkoutDialogVisible.value = true
+}
+
+async function confirmPayment() {
+  const order = checkoutOrder.value
+  if (!order || !checkoutDialogVisible.value || !checkoutAccepted.value || !paymentDisclosureId.value || startingPayment.value) return
+  startingPayment.value = true
   try {
-    const legal = (await http.get('/api/public/legal')).data
-    if (!legal?.publication_ready) return ElMessage.warning('运营方尚未发布完整交易条款')
-    try { await ElMessageBox.confirm('继续支付前，请核对订单详情并阅读退款与取消政策。', '支付确认', { confirmButtonText: '继续支付', cancelButtonText: '取消' }) } catch { return }
     const response = await http.post(`/api/service-orders/${order.id}/payment`, {}, {
-      headers: { 'Idempotency-Key': createIdempotencyKey(`service-payment-${order.id}`), 'X-Checkout-Disclosure': legal.checkout_disclosure_id }
+      headers: {
+        'Idempotency-Key': createIdempotencyKey(`service-payment-${order.id}`),
+        'X-Checkout-Disclosure': paymentDisclosureId.value
+      }
     })
+    checkoutDialogVisible.value = false
     await loadOrders()
     if (['PAID', 'FULFILLED'].includes(response.data?.order?.status)) {
       await finishPaidFlow(response.data.order, {
@@ -733,13 +780,15 @@ async function startPayment(order: ServiceOrder) {
     if (action) {
       rememberPendingPayment(response.data?.order || order)
       paymentAction.value = action
-      paymentMethod.value = response.data?.paymentIntent?.paymentMethod || orderForm.paymentMethod
+      paymentMethod.value = response.data?.paymentIntent?.paymentMethod || order.paymentMethod || 'alipay'
       paymentDialogVisible.value = true
     } else {
       ElMessage.warning('支付链接尚未生成')
     }
   } catch (error: unknown) {
     ElMessage.error(getHttpErrorMessage(error, '发起支付失败'))
+  } finally {
+    startingPayment.value = false
   }
 }
 

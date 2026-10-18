@@ -100,6 +100,15 @@ jobs:
       group: api-transit-production
       cancel-in-progress: false
     steps:
+      - name: Verify intended production host
+        shell: bash
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_PORT: ${{ secrets.PROD_PORT }}
+        run: |
+          # Do not send credentials or release artifacts to a retired deployment host.
+          test "$PROD_HOST" = "207.57.122.109" || { echo "Production host secret must match server-207 before deployment" >&2; exit 1; }
+          test "$PROD_PORT" = "22" || { echo "Production port must match the verified server-207 SSH endpoint" >&2; exit 1; }
       - name: Download backend artifact
         uses: actions/download-artifact@v8
         with:
