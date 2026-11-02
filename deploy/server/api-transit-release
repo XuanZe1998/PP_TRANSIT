@@ -9,6 +9,7 @@ readonly INCOMING_ROOT=/var/lib/api-transit-deploy/incoming
 readonly BACKUP_ROOT=/var/backups/api-transit
 readonly SERVICE=api-transit.service
 readonly KEEP_COUNT=5
+readonly HEALTH_TIMEOUT_SECONDS=300
 
 die() {
   echo "release error: $*" >&2
@@ -101,14 +102,16 @@ atomic_link() {
 }
 
 wait_for_backend() {
-  local attempt
-  for attempt in $(seq 1 45); do
+  local started_at=$SECONDS
+  while (( SECONDS - started_at < HEALTH_TIMEOUT_SECONDS )); do
     if curl --fail --silent --max-time 3 http://127.0.0.1:8089/actuator/health \
       | grep '"status":"UP"' >/dev/null; then
+      echo "backend healthy after $((SECONDS - started_at)) seconds"
       return 0
     fi
     sleep 2
   done
+  echo "backend did not become healthy within $HEALTH_TIMEOUT_SECONDS seconds" >&2
   return 1
 }
 

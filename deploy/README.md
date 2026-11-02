@@ -9,6 +9,9 @@ Production releases are built by GitHub Actions after `master` passes the backen
 - The server validates release identifiers, owners, archive paths, artifact size, and SHA-256 checksums.
 - A transactional MySQL dump is taken before activation.
 - Backend and frontend symlinks switch atomically and are restored if health checks fail.
+- Activation and rollback both allow up to 300 seconds for full backend health.
+  Spring's startup log can precede completion of initialization runners; it is
+  not a substitute for an `UP` response from `/actuator/health`.
 - Five application releases and five pre-deployment database backups are retained.
 
 ## Local deployment
