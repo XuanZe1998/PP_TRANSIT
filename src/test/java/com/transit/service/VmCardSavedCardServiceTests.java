@@ -75,7 +75,8 @@ class VmCardSavedCardServiceTests {
         org.mockito.Mockito.verify(cardMapper).insert(captor.capture());
         VmCardSavedCard stored = captor.getValue();
         assertThat(stored.getEncryptedPayload()).startsWith("enc:v1:");
-        assertThat(stored.getEncryptedPayload()).doesNotContain("4111111111111111", "123");
+        // Random Base64 ciphertext can contain a short sequence such as "123" by chance.
+        assertThat(stored.getEncryptedPayload()).doesNotContain("4111111111111111", "\"cvv\":\"123\"");
         assertThat(stored.getEmail()).isEqualTo("cardholder@example.com");
         assertThat(stored.getCardCreatedAt()).isEqualTo(LocalDateTime.of(2026, 7, 24, 12, 34, 56));
         assertThat(stored.getDisabledOrFrozenAt()).isNull();
@@ -88,6 +89,8 @@ class VmCardSavedCardServiceTests {
                 .isEqualTo("sandbox-card-1");
         assertThat(payload.path("cardDetailResponse").path("data").path("card_number").asText())
                 .isEqualTo("4111111111111111");
+        assertThat(payload.path("cardDetailResponse").path("data").path("cvv").asText())
+                .isEqualTo("123");
         assertThat(views.get(0))
                 .containsEntry("email", "cardholder@example.com")
                 .containsEntry("cardCreatedAt", LocalDateTime.of(2026, 7, 24, 12, 34, 56));
