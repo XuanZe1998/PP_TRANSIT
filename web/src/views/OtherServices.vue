@@ -182,7 +182,7 @@
           </el-form-item>
         </div>
       </el-form>
-      <CheckoutDisclosure v-model="checkoutAcknowledged" v-model:disclosure-id="checkoutDisclosureId" />
+      <CheckoutDisclosure purpose="order" v-model="checkoutAcknowledged" v-model:disclosure-id="checkoutDisclosureId" />
       <template #footer>
         <el-button @click="orderDialogVisible = false">取消</el-button>
         <el-button type="primary" :loading="buyingServiceId !== null" :disabled="!checkoutAcknowledged" @click="submitOrder">创建订单</el-button>

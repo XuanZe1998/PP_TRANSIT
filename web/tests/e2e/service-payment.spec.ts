@@ -76,11 +76,11 @@ for (const scenario of ['closed', 'unavailable', 'missing-version'] as const) {
       ready: scenario !== 'closed', disclosureId: scenario === 'missing-version' ? '' : 'current-disclosure',
       legalFails: scenario === 'unavailable'
     })
-    if (scenario === 'missing-version') await dialog.getByText('我已阅读交易条件和退款政策', { exact: true }).click()
-    else {
+    if (scenario === 'closed') {
       await expect(dialog.getByText('收款未开启或公开信息尚未审核完成，暂不能结账。', { exact: true })).toBeVisible()
-      await expect(dialog.getByRole('checkbox')).toBeDisabled()
     }
+    else await expect(dialog.getByText('交易条件暂不可用，请稍后重试。', { exact: true })).toBeVisible()
+    await expect(dialog.getByRole('checkbox')).toBeDisabled()
     await expect(dialog.getByRole('button', { name: '确认支付', exact: true })).toBeDisabled()
     expect(starts).toHaveLength(0)
   })
