@@ -107,17 +107,19 @@ class LegalDocumentServiceTests {
         assertThat(service(settings).publicDocuments().get("checkout_ready")).isEqualTo(true);
         settings.remove("legal.refund_en");
         assertThat(service(settings).isPublicationReady()).isFalse();
-        assertThat(service(settings).publicDocuments().get("checkout_ready")).isEqualTo(false);
+        assertThat(service(settings).publicDocuments().get("checkout_ready")).isEqualTo(true);
     }
 
-    @Test void paymentSwitchCannotBypassLegalReviewAndFailsClosed() {
+    @Test void paymentSwitchOpensCheckoutWithoutApprovingPublicationAndFailsClosedWhenDisabled() {
         Map<String, String> settings = new HashMap<>();
         settings.put("commerce.payments_enabled", "true");
-        assertThat(service(settings).publicDocuments().get("checkout_ready")).isEqualTo(false);
-        assertThatThrownBy(() -> service(settings).requireCheckoutOpen())
-                .isInstanceOf(org.springframework.web.server.ResponseStatusException.class);
+        assertThat(service(settings).publicDocuments().get("checkout_ready")).isEqualTo(true);
+        assertThat(service(settings).publicDocuments().get("publication_ready")).isEqualTo(false);
+        service(settings).requireCheckoutOpen();
         settings.put("commerce.payments_enabled", "TRUE ");
         assertThat(service(settings).publicDocuments().get("payments_enabled")).isEqualTo(false);
+        assertThatThrownBy(() -> service(settings).requireCheckoutOpen())
+                .isInstanceOf(org.springframework.web.server.ResponseStatusException.class);
     }
 
     @Test void operatorCanDisablePublicationGateWithoutApprovingMissingDisclosures() {
@@ -136,7 +138,7 @@ class LegalDocumentServiceTests {
                 .isInstanceOf(org.springframework.web.server.ResponseStatusException.class);
     }
 
-    @Test void disablingPublicationGateDoesNotEnablePaymentsOrChangeDisclosureDigest() {
+    @Test void legacyPublicationGateDoesNotControlPaymentsOrChangeDisclosureDigest() {
         Map<String, String> settings = new HashMap<>();
         LegalDocumentService legal = service(settings);
         Object digest = legal.publicDocuments().get("checkout_disclosure_id");
@@ -145,8 +147,8 @@ class LegalDocumentServiceTests {
         assertThat(legal.publicDocuments().get("payments_enabled")).isEqualTo(false);
         assertThat(legal.publicDocuments().get("checkout_disclosure_id")).isEqualTo(digest);
         settings.put("commerce.payments_enabled", "true");
-        settings.put("commerce.publication_review_required", "false ");
-        assertThat(legal.publicDocuments().get("publication_review_required")).isEqualTo(true);
-        assertThat(legal.publicDocuments().get("checkout_ready")).isEqualTo(false);
+        settings.put("commerce.publication_review_required", "true");
+        assertThat(legal.publicDocuments().get("publication_review_required")).isEqualTo(false);
+        assertThat(legal.publicDocuments().get("checkout_ready")).isEqualTo(true);
     }
 }

@@ -104,7 +104,7 @@ const navItems: NavItem[] = [
   ] },
   { path: '/admin/model-gateway', label: '模型网关', icon: Connection },
   { path: 'content-services', label: '内容与服务', icon: Grid, children: [
-    { path: '/admin/creative-config', label: 'AI 创作配置' }, { path: '/admin/other-services', label: '服务目录' }, { path: '/admin/subscription-services', label: '订阅服务' }
+    { path: '/admin/creative-config', label: 'AI 创作配置' }, { path: '/admin/other-services', label: 'AI订阅' }
   ] },
   { path: '/admin/contact-methods', label: '联系方式', icon: ChatDotRound },
   { path: 'finance-operations', label: '额度与财务', icon: Wallet, children: [

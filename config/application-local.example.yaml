@@ -229,13 +229,3 @@ service-orders:
   expiry-scan-ms: 60000
   # Legacy one-time import only. Manage domains in admin -> Services & Orders -> Redemption Domains.
   redemption-allowed-hosts: ""
-
-# 16688 Open API subscription-service integration. Never commit real credentials.
-subscription-service:
-  enabled: false
-  allow-mutations: false
-  gateway: https://www.16688.com.cn/openApi
-  app-id: "REPLACE_WITH_16688_APP_ID"
-  secret: "REPLACE_WITH_16688_SECRET"
-  request-timeout-seconds: 30
-  max-response-bytes: 2097152

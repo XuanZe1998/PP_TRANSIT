@@ -5,7 +5,7 @@ spring:
   config:
     # Local/private overrides live in one place. Environment variables still
     # take precedence, so the same artifact can be deployed in production.
-    import: optional:file:./config/application-local.yaml,optional:file:./config/subscription-service.local.yaml
+    import: optional:file:./config/application-local.yaml
   autoconfigure:
     exclude: org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
   lifecycle:
@@ -303,15 +303,6 @@ service-orders:
   expiry-scan-ms: ${SERVICE_ORDER_EXPIRY_SCAN_MS:60000}
   redemption-allowed-hosts: ${SERVICE_REDEMPTION_ALLOWED_HOSTS:}
 
-subscription-service:
-  enabled: ${SUBSCRIPTION_SERVICE_ENABLED:false}
-  # Keep mutations disabled until credentials, balance and business settlement have been verified.
-  allow-mutations: ${SUBSCRIPTION_SERVICE_ALLOW_MUTATIONS:false}
-  gateway: ${SUBSCRIPTION_SERVICE_GATEWAY:https://www.16688.com.cn/openApi}
-  app-id: ${SUBSCRIPTION_SERVICE_APP_ID:}
-  secret: ${SUBSCRIPTION_SERVICE_SECRET:}
-  request-timeout-seconds: ${SUBSCRIPTION_SERVICE_REQUEST_TIMEOUT_SECONDS:30}
-  max-response-bytes: ${SUBSCRIPTION_SERVICE_MAX_RESPONSE_BYTES:2097152}
 
 billing:
   model-currency: ${MODEL_BILLING_CURRENCY:USD}

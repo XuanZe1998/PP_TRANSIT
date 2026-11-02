@@ -2,8 +2,8 @@
   <section class="other-services-page site-section">
     <div class="services-hero">
       <div>
-        <p class="eyebrow">服务目录</p>
-        <h1>更多服务，按需选择</h1>
+        <p class="eyebrow">AI SUBSCRIPTIONS</p>
+        <h1>AI订阅</h1>
         <p>所有服务统一配置价格、服务费和购买状态，并支持创建订单、支付与进度跟踪。</p>
       </div>
       <div class="services-count">
@@ -14,7 +14,7 @@
     </div>
 
     <el-skeleton v-if="loading" :rows="6" animated />
-    <el-empty v-else-if="services.length === 0" description="暂无其他服务" />
+    <el-empty v-else-if="services.length === 0" description="暂无AI订阅" />
     <div v-else class="services-grid">
       <article v-for="(service, index) in services" :key="service.id" class="service-card">
         <div class="service-image">
@@ -47,6 +47,7 @@
             </div>
             <el-button
               type="primary"
+              class="service-buy-button"
               :loading="buyingServiceId === service.id"
               :disabled="!service.orderEnabled"
               @click="handleServiceAction(service)"
@@ -74,7 +75,6 @@
         </div>
         <el-button :loading="ordersLoading" @click="loadOrders">刷新订单</el-button>
       </div>
-      <p class="order-policy-links">付款前请核对订单金额与币种，并阅读 <router-link to="/terms" target="_blank">服务条款</router-link>、<router-link to="/refund" target="_blank">退款与取消</router-link>、<router-link to="/privacy" target="_blank">隐私政策</router-link>。</p>
       <PagedTable v-loading="ordersLoading" :data="orders" empty-text="暂无服务订单" list-id="OtherServices-1" pagination="external">
         <el-table-column prop="orderNo" label="订单号" min-width="190" />
         <el-table-column prop="productName" label="服务" min-width="170" />
@@ -815,7 +815,7 @@ onMounted(async () => {
       if (orders.value.some(awaitingFulfillment)) startFulfillmentPolling()
     }
   } catch {
-    ElMessage.error('其他服务加载失败，请稍后重试')
+    ElMessage.error('AI订阅加载失败，请稍后重试')
   } finally {
     loading.value = false
   }

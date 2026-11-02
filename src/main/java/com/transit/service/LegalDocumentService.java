@@ -80,13 +80,11 @@ public class LegalDocumentService {
         out.put("publication_ready", missing.isEmpty() && approved);
         // Payment activation is a separate, fail-closed operator decision.
         out.put("payments_enabled", "true".equalsIgnoreCase(settings.getOrDefault("commerce.payments_enabled", "false")));
-        boolean publicationReviewRequired = !"false".equalsIgnoreCase(
-                settings.getOrDefault("commerce.publication_review_required", "true"));
-        out.put("publication_review_required", publicationReviewRequired);
+        // Publication review remains independent from the operator's payment switch.
+        out.put("publication_review_required", false);
         out.put("local_checkout_test_mode", isLocalCheckoutTestMode());
         out.put("checkout_ready", isLocalCheckoutTestMode()
-                || (Boolean.TRUE.equals(out.get("payments_enabled"))
-                    && (!publicationReviewRequired || Boolean.TRUE.equals(out.get("publication_ready")))));
+                || Boolean.TRUE.equals(out.get("payments_enabled")));
         out.put("checkout_disclosure_id", checkoutDisclosureId(out));
         out.put("missing_fields", missing);
         out.put("legalReviewRequired", !approved);
@@ -97,7 +95,7 @@ public class LegalDocumentService {
 
     public void requireCheckoutOpen() {
         if (!Boolean.TRUE.equals(publicDocuments().get("checkout_ready")))
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Checkout is closed: payment switch or required disclosure review is not ready");
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Checkout is closed: online payments are disabled");
     }
 
     public void recordCheckoutConsent(Long userId, String businessType, Long businessId, String disclosureId) {

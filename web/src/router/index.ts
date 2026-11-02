@@ -14,8 +14,6 @@ const HomePage=()=>import('@/views/HomePage.vue')
 const ModelMarket=()=>import('@/views/ModelMarket.vue')
 const OtherServices=()=>import('@/views/OtherServices.vue')
 const PricingPage=()=>import('@/views/PricingPage.vue')
-const SubscriptionServices=()=>import('@/views/SubscriptionServices.vue')
-const AdminSubscriptionServices=()=>import('@/views/AdminSubscriptionServices.vue')
 const DocsPage=()=>import('@/views/DocsPage.vue')
 const AgentConsole=()=>import('@/views/AgentConsole.vue')
 const AdminAgents=()=>import('@/views/AdminAgents.vue')
@@ -53,8 +51,7 @@ const routes: RouteRecordRaw[] = [
     children: [
       { path: '', component: HomePage, meta: { title: '首页', role: 'public' } },
       { path: 'market', component: ModelMarket, meta: { title: '模型市场', role: 'public' } },
-      { path: 'services', component: OtherServices, meta: { title: '成品服务', role: 'public' } },
-      { path: 'subscriptions', component: SubscriptionServices, meta: { title: '订阅服务', role: 'public' } },
+      { path: 'services', component: OtherServices, meta: { title: 'AI订阅', role: 'public' } },
       { path: 'pricing', component: PricingPage, meta: { title: '套餐价格', role: 'public' } },
       { path: 'docs', component: DocsPage, meta: { title: '开发文档', role: 'public' } }
     ]
@@ -96,8 +93,7 @@ const routes: RouteRecordRaw[] = [
       adminChild('finance', 'finance', '钱包财务'),
       { path: 'agents', component: AdminAgents, meta: { title: '代理、号池与运维', role: 'admin' } },
       { path: 'model-probe', component: AdminModelProbe, meta: { title: '模型鉴别', role: 'admin' } },
-      { path: 'other-services', component: AdminOtherServices, meta: { title: '服务与订单', role: 'admin' } },
-      { path: 'subscription-services', component: AdminSubscriptionServices, meta: { title: '订阅服务', role: 'admin' } },
+      { path: 'other-services', component: AdminOtherServices, meta: { title: 'AI订阅与订单', role: 'admin' } },
       { path: 'contact-methods', component: AdminContactMethods, meta: { title: '联系方式', role: 'admin' } },
       { path: 'vmcard-test', component: AdminVmCardTest, meta: { title: 'VMCard 接口测试', role: 'admin' } },
       adminChild('security', 'security', '安全策略'),

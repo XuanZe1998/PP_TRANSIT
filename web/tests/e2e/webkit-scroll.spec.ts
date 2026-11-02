@@ -59,6 +59,8 @@ test('login dialog is geometrically centered', async ({ page }) => {
 test('opening login keeps the page horizontal position stable', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 })
   await page.goto('/')
+  // The generated SEO shell can be visible before the interactive Vue header mounts.
+  await expect(page.locator('.seo-public-shell')).toHaveCount(0)
   const anchor = page.locator('.site-brand').first()
   await expect(anchor).toBeVisible()
   const before = await anchor.boundingBox()

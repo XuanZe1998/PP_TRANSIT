@@ -73,7 +73,7 @@ class SecurityBoundaryIntegrationTests {
     }
 
     @Test
-    void paymentSwitchIsAdminOnlyAndCannotOverrideIncompleteLegalReview() {
+    void paymentSwitchIsAdminOnlyAndIndependentOfIncompleteLegalReview() {
         client.put().uri("/admin/api/settings")
                 .bodyValue(Map.of("key", "commerce.payments_enabled", "value", "true"))
                 .exchange().expectStatus().isUnauthorized();
@@ -84,7 +84,7 @@ class SecurityBoundaryIntegrationTests {
                     .exchange().expectStatus().isOk();
             client.get().uri("/public/legal").exchange().expectStatus().isOk()
                     .expectBody().jsonPath("$.payments_enabled").isEqualTo(true)
-                    .jsonPath("$.checkout_ready").isEqualTo(false);
+                    .jsonPath("$.checkout_ready").isEqualTo(true);
         } finally {
             client.put().uri("/admin/api/settings")
                     .header(HttpHeaders.AUTHORIZATION, bearer(adminToken))

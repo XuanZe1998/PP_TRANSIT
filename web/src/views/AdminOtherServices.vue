@@ -1,6 +1,6 @@
 <template>
   <section class="other-services-admin">
-    <AdminPageToolbar title="服务与订单" description="每项服务统一配置展示信息、价格、服务费、币种和购买状态，并在这里处理服务订单。">
+    <AdminPageToolbar title="AI订阅与订单" description="每项服务统一配置展示信息、价格、服务费、币种和购买状态，并在这里处理服务订单。">
       <template #actions>
         <el-button v-if="activeTab === 'catalog'" type="primary" @click="openCreate">新增服务</el-button>
       </template>
@@ -348,7 +348,7 @@ async function load() {
     services.value = response.data?.items || []
     serviceTotal.value = Number(response.data?.total || 0)
   } catch (error: any) {
-    ElMessage.error(error?.response?.data?.message || '其他服务加载失败')
+    ElMessage.error(error?.response?.data?.message || 'AI订阅加载失败')
   } finally {
     loading.value = false
   }

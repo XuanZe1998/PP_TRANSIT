@@ -74,7 +74,7 @@ describe('model marketplace helpers', () => {
     const router = source('src/router/index.ts')
     expect(home.match(/<section\b/g)).toHaveLength(1)
     expect(router).toContain("const ModelMarket=()=>import('@/views/ModelMarket.vue')")
-    expect(router).toContain("const SubscriptionServices=()=>import('@/views/SubscriptionServices.vue')")
+    expect(router).toContain("const OtherServices=()=>import('@/views/OtherServices.vue')")
     expect(router).toContain("const DocsPage=()=>import('@/views/DocsPage.vue')")
   })
 })

@@ -6982,3 +6982,15 @@ pre,
     padding: 12px;
   }
 }
+
+/* Keep AI subscription purchase actions readable on pointer and keyboard focus. */
+#app .other-services-page .service-buy-button.el-button--primary:not(.is-disabled):not(.is-link):not(.is-plain):not(.is-text):hover,
+#app .other-services-page .service-buy-button.el-button--primary:not(.is-disabled):not(.is-link):not(.is-plain):not(.is-text):focus-visible {
+  background: #1d4ed8 !important;
+  border-color: #1d4ed8 !important;
+  color: #ffffff !important;
+}
+#app .other-services-page .service-buy-button.el-button--primary:not(.is-disabled):active {
+  background: #1e40af !important;
+  color: #ffffff !important;
+}

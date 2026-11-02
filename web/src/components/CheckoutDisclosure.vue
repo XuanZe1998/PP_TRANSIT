@@ -7,8 +7,8 @@
       <p><router-link to="/terms" target="_blank">{{ en ? 'Terms' : '服务条款' }}</router-link> · <router-link to="/refund" target="_blank">{{ en ? 'Refunds and cancellation' : '退款与取消' }}</router-link> · <router-link to="/privacy" target="_blank">{{ en ? 'Privacy' : '隐私政策' }}</router-link> · <router-link to="/ai-data" target="_blank">{{ en ? 'AI data processing' : 'AI 数据处理' }}</router-link></p>
       <el-alert v-if="loading" type="info" :closable="false" :title="en ? 'Loading transaction terms…' : '正在加载交易条件…'" />
       <el-alert v-else-if="!disclosureAvailable" type="warning" :closable="false" :title="en ? 'Transaction terms are unavailable. Please try again later.' : '交易条件暂不可用，请稍后重试。'" />
-      <el-alert v-else-if="!published && purpose === 'order'" type="warning" :closable="false" :title="en ? 'Online payment is currently unavailable. You can still accept the terms and create an unpaid order.' : '当前在线付款暂未开放，你仍可确认条款并创建待支付订单。'" />
-      <el-alert v-else-if="!published" type="warning" :closable="false" :title="en ? 'Checkout is closed: payment activation or reviewed terms are not ready.' : '收款未开启或公开信息尚未审核完成，暂不能结账。'" />
+      <el-alert v-else-if="!published && purpose === 'order'" type="warning" :closable="false" :title="en ? 'Online payments are disabled. You can still accept the terms and create an unpaid order.' : '在线收款开关已关闭，你仍可确认条款并创建待支付订单。'" />
+      <el-alert v-else-if="!published" type="warning" :closable="false" :title="en ? 'Online payments are disabled. Please contact support.' : '在线收款开关已关闭，请联系平台客服。'" />
       <el-checkbox :model-value="modelValue" :disabled="!canAcknowledge" @update:model-value="emit('update:modelValue', Boolean($event))">{{ en ? 'I have read the transaction terms and refund policy' : '我已阅读交易条件和退款政策' }}</el-checkbox>
     </template>
   </div>

@@ -6,7 +6,6 @@
 | --- | --- | --- |
 | `application-local.example.yaml` | 后端完整配置模板 | 是 |
 | `application-local.yaml` | 后端本地/私有配置 | 否 |
-| `subscription-service.local.yaml` | 16688 订阅服务本地凭据（可选） | 否 |
 | `.env.example` | 仅前端 `VITE_*` 配置模板 | 是 |
 | `.env.local` | 前端本地配置 | 否 |
 

@@ -1496,7 +1496,7 @@ const quickActions = [
   { label: '创建 Key', desc: '为新项目分配调用凭证', path: '/console/keys', icon: Key },
   { label: '在线调试', desc: '验证模型、路由和响应', path: '/console/playground', icon: Monitor },
   { label: '模型广场', desc: '查看可用模型和供应商', path: '/market', icon: Compass },
-  { label: '购买服务', desc: '在其他服务中选择并创建订单', path: '/services', icon: ShoppingCart }
+  { label: '购买服务', desc: '在AI订阅中选择并创建订单', path: '/services', icon: ShoppingCart }
 ]
 
 const activities = computed(() => (dashboard.value.recentLogs || []).slice(0, 6).map((log: any) => ({

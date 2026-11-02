@@ -20,7 +20,8 @@ async function prepareCheckout(page: Page, state: CheckoutState) {
     const path = url.pathname.replace(/^\/api(?=\/)/, '')
     if (path === '/public/legal') return route.fulfill(state.legalFails
       ? { status: 503, json: { message: 'Legal disclosures unavailable' } }
-      : { json: { checkout_ready: state.ready, checkout_disclosure_id: state.disclosureId, local_checkout_test_mode: state.localTest === true } })
+      : { json: { checkout_ready: state.ready, payments_enabled: state.ready, publication_ready: false,
+        publication_review_required: false, checkout_disclosure_id: state.disclosureId, local_checkout_test_mode: state.localTest === true } })
     if (path === '/public/other-services') return route.fulfill({ json: { total: 0, page: 1, size: 10, items: [] } })
     if (path === '/service-orders') {
       orderPages.push(url.searchParams)
@@ -77,7 +78,7 @@ for (const scenario of ['closed', 'unavailable', 'missing-version'] as const) {
       legalFails: scenario === 'unavailable'
     })
     if (scenario === 'closed') {
-      await expect(dialog.getByText('收款未开启或公开信息尚未审核完成，暂不能结账。', { exact: true })).toBeVisible()
+      await expect(dialog.getByText('在线收款开关已关闭，请联系平台客服。', { exact: true })).toBeVisible()
     }
     else await expect(dialog.getByText('交易条件暂不可用，请稍后重试。', { exact: true })).toBeVisible()
     await expect(dialog.getByRole('checkbox')).toBeDisabled()

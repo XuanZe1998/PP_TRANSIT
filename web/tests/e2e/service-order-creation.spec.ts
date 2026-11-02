@@ -15,7 +15,7 @@ async function prepare(page: Page, state: 'closed-payment' | 'missing-terms' | '
     const req = route.request(), path = new URL(req.url()).pathname.replace(/^\/api(?=\/)/, '')
     if (path === '/public/legal') return route.fulfill(state === 'missing-terms'
       ? { status: 503, json: {} }
-      : { json: { payments_enabled: true, publication_ready: false, checkout_ready: false,
+      : { json: { payments_enabled: false, publication_ready: false, checkout_ready: false,
         checkout_disclosure_id: state === 'missing-version' ? '' : 'current-terms', local_checkout_test_mode: false } })
     if (path === '/public/other-services') return route.fulfill({ json: { total: 1, page: 1, size: 10,
       items: [{ id: 7, name: '测试商品', orderEnabled: true, priceCents: 100, amountCents: 100, currency: 'CNY', maxPurchaseQuantity: 1 }] } })
@@ -35,8 +35,27 @@ async function prepare(page: Page, state: 'closed-payment' | 'missing-terms' | '
 }
 
 test('payment readiness does not disable consent or creation of an unpaid service order', async ({ page }) => {
+  await page.setViewportSize({ width: 1716, height: 1000 })
   const { dialog, creates, payments } = await prepare(page, 'closed-payment')
-  await expect(dialog.getByText('当前在线付款暂未开放，你仍可确认条款并创建待支付订单。')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'AI订阅', exact: true })).toBeVisible()
+  await expect(page.locator('.site-links')).toContainText('AI订阅')
+  await expect(page.locator('.site-links')).not.toContainText('订阅服务')
+  const buy = page.getByRole('button', { name: '立即购买', exact: true })
+  // Close the dialog to inspect the actual purchase-button hover state.
+  await dialog.getByRole('button', { name: '取消', exact: true }).click()
+  await buy.hover()
+  await expect(buy).toHaveCSS('color', 'rgb(255, 255, 255)')
+  await expect(buy).toHaveCSS('background-color', 'rgb(29, 78, 216)')
+  const footerRows = await page.locator('.site-legal-footer nav a').evaluateAll(elements => {
+    const rows: Record<string, number> = {}
+    for (const el of elements) { const top = String(Math.round(el.getBoundingClientRect().top)); rows[top] = (rows[top] || 0) + 1 }
+    return Object.values(rows)
+  })
+  expect(footerRows).toEqual([5, 4])
+  await page.screenshot({ path: 'test-results/ai-subscriptions-refresh.png', fullPage: true })
+  await expect(page.locator('.order-policy-links')).toHaveCount(0)
+  await buy.click()
+  await expect(dialog.getByText('在线收款开关已关闭，你仍可确认条款并创建待支付订单。')).toBeVisible()
   const consent = dialog.getByRole('checkbox')
   await expect(consent).toBeEnabled()
   await expect(dialog.getByRole('button', { name: '创建订单', exact: true })).toBeDisabled()

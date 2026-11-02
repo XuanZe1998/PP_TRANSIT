@@ -82,7 +82,7 @@ class LegalPolicyDraftSeedTests {
         assertThat(value(jdbc, "legal.support")).isEqualTo(LegalPolicyDrafts.LEGACY_SUPPORT_TYPO);
         assertThat(value(jdbc, "commerce.payments_enabled")).isEqualTo("true");
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM system_settings WHERE setting_key=?", Integer.class, LegalPolicyDrafts.SEED_MARKER)).isZero();
-        assertThat(new LegalDocumentService(jdbc).publicDocuments().get("checkout_ready")).isEqualTo(false);
+        assertThat(new LegalDocumentService(jdbc).publicDocuments().get("checkout_ready")).isEqualTo(true);
     }
 
     @Test void correctsOnlyTheExactLegacySupportTypo() {

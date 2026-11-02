@@ -60,14 +60,14 @@ vmcard.enabled=false
 ## 生产就绪检查
 
 - `mapay.enabled=true` 且商户 PID、KEY、通知地址齐全，不能用本地测试支付模式代替真实通道。
-- `/public/legal` 的 `publication_ready`、`payments_enabled`、`checkout_ready` 均为 `true`；公开信息须由运营方完善并审核，不得为通过支付请求自动批准条款或开启收款。
+- `/public/legal` 的 `payments_enabled`、`checkout_ready` 均为 `true`；公开信息须由运营方完善并审核，不得为通过支付请求自动批准条款或开启收款。
 - 2026-10-17 排查发现：服务订单前端漏传 `X-Checkout-Disclosure`，被必需请求头校验拦截为 HTTP 400 / `Invalid request`，尚未调用支付网关。生产环境同时未启用支付通道、未开放结账。另核实生产跨域预检未允许该请求头，因此前后端需一起修复 CORS 白名单（保持限定来源，不使用通配符）。补齐请求契约不等于已启用生产收款；发布和私有配置变更需单独确认。
 
 ## 人工联调
 
 ### 运营方显式关闭公开资料结账门槛
 
-管理员可通过 `PUT /admin/api/settings` 设置 `commerce.publication_review_required=false`，并独立设置 `commerce.payments_enabled=true`。前者默认启用，仅显式 `false` 关闭公开资料对结账的拦截；不修改 `legal.publication_approved`、公开资料或审核事实。`/public/legal` 会返回 `publication_review_required=false`，同时保留真实的 `publication_ready`、`legalReviewRequired` 与 `missing_fields`。启用后仍要求当前协议确认及披露版本校验，真实支付通道配置、订单鉴权、金额和回调签名校验均保持有效。恢复门槛可将 `commerce.publication_review_required` 设为 `true`。
+线上付款由 `commerce.payments_enabled` 单独控制，旧 `commerce.publication_review_required` 不再影响结账。公开资料审核状态独立保留，不自动批准或伪造运营资料。当前协议确认、披露版本、支付通道配置、订单鉴权、金额和回调签名校验保持有效。
 
 CI 不发起真实支付。部署时配置 PID、KEY 和公网 HTTPS 回调地址，使用 MaPay 允许的最小金额完成一次创建支付、异步回调和主动查单闭环，再核对钱包流水或服务交付只发生一次。
 

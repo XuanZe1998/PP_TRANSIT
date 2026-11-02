@@ -179,7 +179,7 @@
       <LegalSettingsEditor :settings="rows" :missing-fields="legalStatus?.missing_fields || []" @saved="handleLegalFieldSaved" />
       <article class="panel" style="margin: 16px 0">
         <div class="panel-head"><h3>线上收款总开关</h3></div>
-        <p>默认关闭。开启前仍须完成真实经营主体、目标地区及双语政策审核；即使开启，公开信息未就绪时也无法发起付款。关闭后不再生成新的支付链接，已经发出的链接及支付回调仍可能完成，请核对待处理订单。</p>
+        <p>由此开关单独控制是否允许发起付款，公开资料审核状态单独维护。关闭后不再生成新的支付链接，已经发出的链接及支付回调仍可能完成，请核对待处理订单。</p>
         <el-switch :model-value="legalStatus?.payments_enabled === true" :loading="paymentSwitchSaving" :disabled="!legalApprovalStatusLoaded" active-text="允许发起付款" inactive-text="禁止发起付款" @change="setPaymentsEnabled(Boolean($event))" />
         <el-tag style="margin-left: 12px" :type="legalStatus?.checkout_ready ? 'success' : 'warning'">{{ legalStatus?.checkout_ready ? '结账开放' : '结账关闭' }}</el-tag>
       </article>
