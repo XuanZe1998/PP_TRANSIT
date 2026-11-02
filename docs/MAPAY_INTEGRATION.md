@@ -9,7 +9,7 @@
 ```yaml
 mapay:
   enabled: true
-  base-url: https://mzf.mapay.cc
+  base-url: https://mzf.mapay.cn
   merchant-id: "<MAPAY_PID>"
   merchant-key: "<MAPAY_KEY>"
   notify-url: "https://api.example.com/webhooks/mapay"
@@ -20,6 +20,8 @@ mapay:
 ```
 
 对应环境变量为 `MAPAY_ENABLED`、`MAPAY_BASE_URL`、`MAPAY_PID`、`MAPAY_KEY`、`MAPAY_NOTIFY_URL`、`MAPAY_RETURN_URL`、`MAPAY_SITE_NAME`、`MAPAY_ALLOWED_METHODS` 和 `MAPAY_REQUEST_TIMEOUT_SECONDS`。真实 KEY 只能放在未追踪的 `config/application-local.yaml` 或部署密钥管理器中。
+
+生产服务实际读取 `/etc/api-transit/application-local.yaml`；构建产物和 GitHub 自动发布不会同步本机被忽略的私有配置。启用收款前须单独核对该文件中的 MaPay 配置以及进程环境变量，不能仅检查业务收款开关。2026-11-02 核实旧 `mzf.mapay.cc` 会将接口请求重定向到新站首页并丢失路径，当前网关使用 `https://mzf.mapay.cn`，不依赖跨域重定向传递商户凭据。
 
 ## 支付流程
 
@@ -71,4 +73,4 @@ vmcard.enabled=false
 
 CI 不发起真实支付。部署时配置 PID、KEY 和公网 HTTPS 回调地址，使用 MaPay 允许的最小金额完成一次创建支付、异步回调和主动查单闭环，再核对钱包流水或服务交付只发生一次。
 
-官方文档：[API 支付](https://mzf.mapay.cc/docs/epay_mapi.md)、[异步通知](https://mzf.mapay.cc/docs/epay_notify.md)、[MD5 签名](https://mzf.mapay.cc/docs/epay_md5.md)、[订单查询](https://mzf.mapay.cc/docs/epay/api/order_one.md)。
+官方文档：[API 支付](https://mzf.mapay.cn/docs/epay_mapi.md)、[异步通知](https://mzf.mapay.cn/docs/epay_notify.md)、[MD5 签名](https://mzf.mapay.cn/docs/epay_md5.md)、[订单查询](https://mzf.mapay.cn/docs/epay/api/order_one.md)。

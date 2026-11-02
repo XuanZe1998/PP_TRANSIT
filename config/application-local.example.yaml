@@ -198,7 +198,7 @@ dujiao-next:
 # or deployment secret manager.
 mapay:
   enabled: false
-  base-url: https://mzf.mapay.cc
+  base-url: https://mzf.mapay.cn
   merchant-id: "REPLACE_WITH_MAPAY_PID"
   merchant-key: "REPLACE_WITH_MAPAY_KEY"
   notify-url: "https://your-domain.example/webhooks/mapay"

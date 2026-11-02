@@ -12,7 +12,7 @@ import java.util.Locale;
 @ConfigurationProperties(prefix = "mapay")
 public class MaPayProperties {
     private boolean enabled;
-    private String baseUrl = "https://mzf.mapay.cc";
+    private String baseUrl = "https://mzf.mapay.cn";
     private String merchantId;
     private String merchantKey;
     private String notifyUrl;

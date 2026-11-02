@@ -271,7 +271,7 @@ dujiao-next:
 
 mapay:
   enabled: ${MAPAY_ENABLED:false}
-  base-url: ${MAPAY_BASE_URL:https://mzf.mapay.cc}
+  base-url: ${MAPAY_BASE_URL:https://mzf.mapay.cn}
   merchant-id: ${MAPAY_PID:}
   merchant-key: ${MAPAY_KEY:}
   notify-url: ${MAPAY_NOTIFY_URL:}
