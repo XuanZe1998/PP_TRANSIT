@@ -1,0 +1,69 @@
+#!/usr/bin/env python3
+"""Forced SSH command for the dedicated production deployment account."""
+import os
+import pathlib
+import re
+import shlex
+import stat
+import sys
+
+INCOMING_ROOT = pathlib.PurePosixPath('/var/lib/api-transit-deploy/incoming')
+RELEASE_SCRIPT = '/usr/local/sbin/api-transit-release'
+SFTP_SERVER = '/usr/lib/openssh/sftp-server'
+RELEASE_ID = re.compile(r'[0-9]{8}-[0-9]{6}-[0-9a-f]{7}')
+
+
+def plan_command(command):
+    if not command or any(char in command for char in '\x00\r\n'):
+        raise ValueError('Deployment command refused')
+    arguments = shlex.split(command)
+    if arguments in ([SFTP_SERVER], ['internal-sftp'], ['sftp']):
+        return 'sftp', None
+    if len(arguments) == 5 and arguments[:4] == ['install', '-d', '-m', '0700']:
+        destination = pathlib.PurePosixPath(arguments[4])
+        release_id = destination.name
+        if RELEASE_ID.fullmatch(release_id) and arguments[4] == str(INCOMING_ROOT / release_id):
+            return 'prepare', release_id
+    if arguments[:1] == ['sudo']:
+        arguments = arguments[1:]
+        if arguments[:1] == ['-n']:
+            arguments = arguments[1:]
+        if len(arguments) == 2 and arguments[0] == RELEASE_SCRIPT and RELEASE_ID.fullmatch(arguments[1]):
+            return 'activate', arguments[1]
+    raise ValueError('Deployment command refused')
+
+
+def prepare_directory(release_id):
+    incoming = pathlib.Path(INCOMING_ROOT)
+    if incoming.is_symlink() or incoming.resolve() != incoming:
+        raise ValueError('Invalid incoming root')
+    destination = incoming / release_id
+    try:
+        destination.mkdir(mode=0o700)
+    except FileExistsError:
+        pass
+    metadata = destination.lstat()
+    if not stat.S_ISDIR(metadata.st_mode) or metadata.st_uid != os.geteuid():
+        raise ValueError('Invalid incoming directory')
+    destination.chmod(0o700)
+
+
+def main():
+    os.environ['PATH'] = '/usr/bin:/bin'
+    try:
+        action, release_id = plan_command(os.environ.get('SSH_ORIGINAL_COMMAND', ''))
+        if action == 'prepare':
+            prepare_directory(release_id)
+        elif action == 'sftp':
+            os.execv(SFTP_SERVER, [SFTP_SERVER, '-d', str(INCOMING_ROOT), '-u', '0077'])
+        else:
+            os.execv('/usr/bin/sudo', ['sudo', '-n', RELEASE_SCRIPT, release_id])
+    except (ValueError, OSError):
+        # Never echo the original command: it could contain credentials.
+        print('Deployment command refused', file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

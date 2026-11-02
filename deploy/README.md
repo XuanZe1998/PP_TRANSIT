@@ -38,6 +38,27 @@ The local machine must have the production deploy key at `~/.ssh/api-transit-dep
 
 Application secrets, SSH passwords, and database contents are intentionally outside this workflow.
 
+## Restricted deployment account
+
+`api-deploy` uses a dedicated key stored in the GitHub `production` environment
+and, for local releases, `~/.ssh/api-transit-deploy`. Private keys never belong in
+this repository. Use OpenSSH 9 or later for SFTP-based `scp` uploads.
+
+The root-owned `api-transit-deploy-ssh` forced-command helper permits only the
+existing incoming-directory command, SFTP uploads and activation of a strictly
+validated release ID. The account cannot open a remote shell or forward ports;
+its only sudo permission is the root-owned release script. The account home,
+`.ssh` directory and `authorized_keys` are root-owned so uploads cannot replace
+the key's `command="/usr/local/libexec/api-transit-deploy-ssh",restrict` options.
+The account password remains locked; administrator SSH settings are unchanged.
+
+The sudo template is `deploy/security/api-transit-deploy.sudoers.example`.
+Validate the guard with
+`python3 deploy/server/test_deploy_ssh.py`, validate SSH with `sshd -t` and sudo
+with `visudo -cf`, and keep a working administrator session until key authentication
+and the full CI release succeed. Installing this channel does not change the
+administrator's SSH policy or application secrets.
+
 ## Public SEO routes
 
 The frontend build emits readable public HTML for `/`, `/docs`, `/pricing`, plus

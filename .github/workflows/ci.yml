@@ -24,6 +24,8 @@ jobs:
         run: |
           chmod +x mvnw
           ./mvnw --batch-mode --no-transfer-progress verify
+      - name: Verify restricted deployment SSH commands
+        run: python3 deploy/server/test_deploy_ssh.py
       - name: Prepare backend deployment artifact
         if: github.ref == 'refs/heads/master' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         run: |
