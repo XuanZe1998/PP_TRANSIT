@@ -26,6 +26,8 @@ describe('bilingual product contract', () => {
   })
 
   it('translates dynamic and compound legacy copy', () => {
+    expect(toEnglishCopy('账单汇总：无法连接到服务，请检查网络或服务状态')).toBe('Bill summary: Unable to connect to service, please check network or service status')
+    expect(toEnglishCopy('用量明细：加载失败')).toBe('Usage details: failed to load')
     expect(toEnglishCopy('查看 12 个模型')).toBe('View 12 models')
     expect(toEnglishCopy('✦ 帮我写得更好')).toBe('✦ Help me write better')
     expect(toEnglishCopy('5 秒')).toBe('5 seconds')

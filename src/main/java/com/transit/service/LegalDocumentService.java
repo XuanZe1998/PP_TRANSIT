@@ -1,6 +1,7 @@
 package com.transit.service;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -19,6 +20,21 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class LegalDocumentService {
     private final JdbcTemplate jdbc;
+
+    @Value("${payment.local-test-mode:false}")
+    private boolean localPaymentTestMode;
+    @Value("${payment.local-checkout-bypass:false}")
+    private boolean localCheckoutBypass;
+    @Value("${mapay.enabled:false}")
+    private boolean realPaymentEnabled;
+    @Value("${server.address:}")
+    private String serverAddress = "";
+
+    public boolean isLocalCheckoutTestMode() {
+        // Never use the local override on a public/wildcard listener or with real payments.
+        return localPaymentTestMode && localCheckoutBypass && !realPaymentEnabled
+                && List.of("127.0.0.1", "::1", "0:0:0:0:0:0:0:1").contains(serverAddress);
+    }
     private static final Map<String,String> DEFAULTS = Map.of(
             "legal.operator", "LinkNux API 服务平台",
             "legal.contact_email", "support@linknux.com",
@@ -32,7 +48,7 @@ public class LegalDocumentService {
         Map<String,Object> out = new LinkedHashMap<>();
         Map<String, String> settings = new java.util.HashMap<>();
         for (Map<String, Object> row : jdbc.queryForList(
-                "SELECT setting_key, setting_value FROM system_settings WHERE setting_key LIKE 'legal.%' OR setting_key = 'commerce.payments_enabled'")) {
+                "SELECT setting_key, setting_value FROM system_settings WHERE setting_key LIKE 'legal.%' OR setting_key IN ('commerce.payments_enabled', 'commerce.publication_review_required')")) {
             if (row.get("setting_value") != null)
                 settings.put(String.valueOf(row.get("setting_key")), String.valueOf(row.get("setting_value")));
         }
@@ -64,7 +80,13 @@ public class LegalDocumentService {
         out.put("publication_ready", missing.isEmpty() && approved);
         // Payment activation is a separate, fail-closed operator decision.
         out.put("payments_enabled", "true".equalsIgnoreCase(settings.getOrDefault("commerce.payments_enabled", "false")));
-        out.put("checkout_ready", Boolean.TRUE.equals(out.get("publication_ready")) && Boolean.TRUE.equals(out.get("payments_enabled")));
+        boolean publicationReviewRequired = !"false".equalsIgnoreCase(
+                settings.getOrDefault("commerce.publication_review_required", "true"));
+        out.put("publication_review_required", publicationReviewRequired);
+        out.put("local_checkout_test_mode", isLocalCheckoutTestMode());
+        out.put("checkout_ready", isLocalCheckoutTestMode()
+                || (Boolean.TRUE.equals(out.get("payments_enabled"))
+                    && (!publicationReviewRequired || Boolean.TRUE.equals(out.get("publication_ready")))));
         out.put("checkout_disclosure_id", checkoutDisclosureId(out));
         out.put("missing_fields", missing);
         out.put("legalReviewRequired", !approved);
@@ -75,10 +97,16 @@ public class LegalDocumentService {
 
     public void requireCheckoutOpen() {
         if (!Boolean.TRUE.equals(publicDocuments().get("checkout_ready")))
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Checkout is closed: payment switch or reviewed disclosures are not ready");
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Checkout is closed: payment switch or required disclosure review is not ready");
     }
 
     public void recordCheckoutConsent(Long userId, String businessType, Long businessId, String disclosureId) {
+        if (isLocalCheckoutTestMode()) {
+            if (userId == null || userId < 1)
+                throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Authenticated user is required");
+            // Simulated checkout is not legal consent; never fabricate acceptance records.
+            return;
+        }
         Map<String, Object> current = publicDocuments();
         if (!Boolean.TRUE.equals(current.get("checkout_ready")) || !isCurrentAccepted(userId)
                 || disclosureId == null || !disclosureId.equals(current.get("checkout_disclosure_id")))
@@ -96,7 +124,7 @@ public class LegalDocumentService {
         StringBuilder material = new StringBuilder();
         // Any published copy relevant to a purchase must invalidate stale checkout confirmations.
         out.entrySet().stream().filter(entry -> !List.of("publication_ready", "missing_fields",
-                        "legalReviewRequired", "checkout_disclosure_id", "payments_enabled", "checkout_ready").contains(entry.getKey()))
+                        "legalReviewRequired", "checkout_disclosure_id", "payments_enabled", "publication_review_required", "checkout_ready", "local_checkout_test_mode").contains(entry.getKey()))
                 .sorted(Map.Entry.comparingByKey())
                 .forEach(entry -> material.append(entry.getKey()).append('\0').append(entry.getValue()).append('\0'));
         try {

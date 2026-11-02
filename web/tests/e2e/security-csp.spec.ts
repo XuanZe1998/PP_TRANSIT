@@ -27,7 +27,7 @@ test('proposed frontend CSP permits representative pages to load', async ({ page
     await route.fulfill({ response, headers: { ...response.headers(), 'content-security-policy': policy! } })
   })
   // Register the API stub last: Playwright runs the most recently registered route first.
-  await page.route('**/api/**', route => route.fulfill({ json: {} }))
+  await page.route(/^(?:https:\/\/api\.linknux\.com\/|https?:\/\/(?:127\.0\.0\.1|localhost):\d+\/api\/)/, route => route.fulfill({ json: {} }))
 
   for (const path of ['/', '/market', '/admin/login', '/console/profile', '/admin']) {
     await page.goto(path)

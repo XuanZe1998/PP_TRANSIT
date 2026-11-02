@@ -18,7 +18,8 @@
           <div class="rail-tip"><b>小提醒</b><p>使用真人照片、声音或品牌素材前，请确保你已获得相应授权。</p></div>
         </aside>
 
-        <AutoMovieStudio v-if="form.mode === 'AUTO_MOVIE'" class="composer-card auto-movie-host" />
+        <XiaoyunqueStudio v-if="form.mode === 'XIAOYUNQUE'" class="composer-card" />
+        <AutoMovieStudio v-else-if="form.mode === 'AUTO_MOVIE'" class="composer-card auto-movie-host" />
         <section v-else class="composer-card">
           <header class="composer-head"><div><p>{{ activeMode.kicker }}</p><h2>{{ activeMode.title }}</h2></div><button @click="showGuide = !showGuide">{{ showGuide ? '收起新手引导' : '查看新手引导' }}</button></header>
           <div v-if="showGuide" class="newbie-guide"><span>✦</span><p><b>一句好提示词：</b>主体 + 场景 + 动作 + 镜头 + 光线/风格。例：<em>一只橘猫在雨后窗台伸懒腰，镜头缓慢推近，暖色电影光。</em></p></div>
@@ -87,10 +88,11 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AutoMovieStudio from '@/components/AutoMovieStudio.vue'
+import XiaoyunqueStudio from '@/components/XiaoyunqueStudio.vue'
 import http, { getHttpErrorMessage } from '@/utils/http'
 import { getToken } from '@/utils/auth'
 
-type StudioMode = 'TEXT_TO_VIDEO' | 'IMAGE_TO_VIDEO' | 'FIRST_LAST_FRAME' | 'STORYBOARD' | 'VIDEO_EXTEND' | 'AUTO_MOVIE'
+type StudioMode = 'TEXT_TO_VIDEO' | 'IMAGE_TO_VIDEO' | 'FIRST_LAST_FRAME' | 'STORYBOARD' | 'VIDEO_EXTEND' | 'AUTO_MOVIE' | 'XIAOYUNQUE'
 type ModelOption = { key: string; label: string; description: string }
 type Template = { title: string; mode: StudioMode; prompt: string; ratio: string; category: string }
 type CreativeTask = { id: number; connectionId?: number; model: string; mode: StudioMode; projectName?: string; prompt: string; status: string; videoUrl?: string; thumbnailUrl?: string; errorMessage?: string; options?: { ratio?: string; duration?: number } }
@@ -103,6 +105,7 @@ const connections = ref<CreativeConnection[]>([]); const connectionDialogVisible
 const connectionForm = reactive({ id: null as number | null, provider: 'seedance', displayName: '我的火山方舟', baseUrl: 'https://ark.cn-beijing.volces.com', apiKey: '', modelsText: 'doubao-seedance-1-5-pro-251215', defaultModel: 'doubao-seedance-1-5-pro-251215', enabled: true })
 let pollTimer: number | undefined
 const modes: Array<{ key: StudioMode; icon: string; title: string; desc: string; kicker: string; placeholder: string }> = [
+  { key: 'XIAOYUNQUE', icon: '雀', title: '小云雀营销成片', desc: '使用自己的 Access Key', kicker: '小云雀创作', placeholder: '描述营销视频创作要求' },
   { key: 'AUTO_MOVIE', icon: '文', title: 'TXT 自动成片', desc: '原文到完整视频', kicker: '项目式 AI 影视流水线', placeholder: '上传 TXT 或粘贴原文，逐阶段生成剧本、画像和成片…' },
   { key: 'TEXT_TO_VIDEO', icon: '✦', title: '快速成片', desc: '一句话生成视频', kicker: '最适合第一次创作', placeholder: '描述你想看到的画面：谁、在哪里、做什么、镜头怎么动…' },
   { key: 'IMAGE_TO_VIDEO', icon: '▧', title: '图片动起来', desc: '用一张图做首帧', kicker: '让静态画面有生命力', placeholder: '描述这张图接下来发生的动作，例如：人物轻轻转身，镜头缓慢推进…' },

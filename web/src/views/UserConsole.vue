@@ -1165,12 +1165,12 @@ async function loadBilling() {
   ])
   const dataErrors: string[] = []
   if (summaryResult.status === 'fulfilled') billingSummary.value = summaryResult.value.data || []
-  else dataErrors.push(`账单汇总：${getHttpErrorNotice(summaryResult.reason, '加载失败')}`)
+  else dataErrors.push('账单汇总：' + getHttpErrorNotice(summaryResult.reason, '加载失败'))
   if (logsResult.status === 'fulfilled') {
     billingRows.value = logsResult.value.data?.items || []
     billingTotal.value = Number(logsResult.value.data?.total || 0)
   }
-  else dataErrors.push(`用量明细：${getHttpErrorNotice(logsResult.reason, '加载失败')}`)
+  else dataErrors.push('用量明细：' + getHttpErrorNotice(logsResult.reason, '加载失败'))
   billingDataError.value = dataErrors.join('；')
   if (analyticsResult.status === 'fulfilled') {
     usageAnalytics.value = analyticsResult.value.data || { daily: [], totals: {}, tokenComposition: [] }

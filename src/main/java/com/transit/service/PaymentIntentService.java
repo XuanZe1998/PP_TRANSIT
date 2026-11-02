@@ -101,10 +101,10 @@ public class PaymentIntentService {
             expire(intent);
             throw conflict("Payment intent has expired");
         }
-        if (!blank(intent.getPaymentUrl()) && !blank(intent.getPaymentActionType())) return response(intent);
         if (localTestMode) {
             return response(markPaid(intent, "LOCAL-" + intent.getOrderNo(), intent.getPaymentMethod(), "LOCAL_TEST"));
         }
+        if (!blank(intent.getPaymentUrl()) && !blank(intent.getPaymentActionType())) return response(intent);
         MaPayClient.PaymentStart started = maPayClient.start(intent.getOrderNo(), intent.getDescription(),
                 moneyService.gatewayMoney(intent.getSettlementAmountCents()), namespace(intent),
                 intent.getPaymentMethod(), clientIp, normalizeDevice(device));
@@ -283,7 +283,8 @@ public class PaymentIntentService {
     }
 
     private StartResponse response(PaymentIntent intent) {
-        PaymentAction action = blank(intent.getPaymentActionType()) || blank(intent.getPaymentUrl())
+        PaymentAction action = (localTestMode && "PAID".equals(intent.getStatus()))
+                || blank(intent.getPaymentActionType()) || blank(intent.getPaymentUrl())
                 ? null : new PaymentAction(intent.getPaymentActionType(), intent.getPaymentUrl());
         return new StartResponse(enrich(intent), action, intent.getExpiresAt());
     }

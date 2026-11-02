@@ -13,6 +13,20 @@ Production releases are built by GitHub Actions after `master` passes the backen
 
 ## Local deployment
 
+This repository uses only `master`. Develop, fix, commit and release on that
+branch; never create task, worktree, backup or release branches. Preserve local
+history with Git bundles in an ignored local directory when needed. Before a
+release, reconcile local changes with the latest `master` so deployed fixes are
+retained, complete verification, commit and synchronize `master`.
+
+Run `npm test`, `npm run i18n:check`, `npm run build` and `npm run test:e2e`
+inside `web` before publishing. Application browser tests use Vite preview;
+Nginx-specific routing, security-header and readable-HTML checks run separately
+with `npm run test:e2e:seo`. Set `SEO_TEST_BASE_URL` for an isolated Nginx
+installation, or run it against the deployed site (the default is
+`https://linknux.com`) as a post-release check. The SEO checks do not write
+business data.
+
 The local machine must have the production deploy key at `~/.ssh/api-transit-deploy` and the server host key in `~/.ssh/known_hosts`.
 
 ```powershell

@@ -16,10 +16,10 @@ async function mockGateway(page: Page, options: Options = {}) {
   }))
   const writes: string[] = [], errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
-  await page.route('**/api/**', async route => {
+  await page.route(/^(?:https:\/\/api\.linknux\.com\/|https?:\/\/(?:127\.0\.0\.1|localhost):\d+\/api\/)/, async route => {
     const request = route.request(), url = new URL(request.url())
     if (request.method() !== 'GET') {
-      writes.push(`${request.method()} ${url.pathname}`)
+      writes.push(`${request.method()} ${url.pathname.replace(/^\/api(?=\/)/, '')}`)
       if (request.method() === 'DELETE' && /\/gateway\/groups\/\d+$/.test(url.pathname)) {
         if (options.failDelete) return route.fulfill({ status: 409, json: { message: '分组或所属上游正在同步，请等待任务结束后再删除' } })
         const id = Number(url.pathname.split('/').at(-1))
@@ -76,7 +76,7 @@ test('cancel does not delete; confirmation removes only the chosen group and ref
   await expect(page.locator('.el-message--success')).toContainText('停用分组已删除')
   await expect(first).toContainText('Group 2')
   await expect(page.locator('.list-pagination')).toContainText('共 11 条')
-  expect(writes).toEqual(['DELETE /api/admin/api/gateway/groups/1'])
+  expect(writes).toEqual(['DELETE /admin/api/gateway/groups/1'])
   expect(errors).toEqual([])
 })
 
@@ -90,7 +90,7 @@ test('deleting the only row on the last page returns to the preceding valid page
   await page.locator('.el-message-box').getByRole('button', { name: '确认删除', exact: true }).click()
   await expect(rows).toHaveCount(10)
   await expect(page.locator('.list-pagination')).toContainText('共 10 条')
-  expect(writes).toEqual(['DELETE /api/admin/api/gateway/groups/11'])
+  expect(writes).toEqual(['DELETE /admin/api/gateway/groups/11'])
 })
 
 test('backend conflict is displayed and leaves the group available for retry', async ({ page }) => {

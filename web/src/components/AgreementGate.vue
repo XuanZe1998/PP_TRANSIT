@@ -8,7 +8,7 @@ import { getToken } from '@/utils/auth'
 const route=useRoute(),visible=ref(false),accepted=ref(false),saving=ref(false),legal=ref<any>(null)
 async function check(){
   if(!getToken()||route.meta.role!=='user')return
-  try{const[p,l]=await Promise.all([http.get('/api/user/profile'),http.get('/api/public/legal')]);legal.value=l.data;visible.value=p.data?.agreementRequired===true}catch{/* interceptor handles expired sessions */}
+  try{const[p,l]=await Promise.all([http.get('/api/user/profile'),http.get('/api/public/legal')]);legal.value=l.data;visible.value=p.data?.agreementRequired===true&&l.data?.local_checkout_test_mode!==true}catch{/* interceptor handles expired sessions */}
 }
 async function confirm(){
   saving.value=true

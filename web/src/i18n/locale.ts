@@ -146,6 +146,10 @@ type CopyPattern = { regex: RegExp; replace: (match: RegExpMatchArray) => string
 function compileCopyPattern(source: string, target: string): CopyPattern | null {
   const tokens = [...source.matchAll(templateToken)]
   if (!tokens.length) return null
+  // Expressions containing Chinese literals are source code, not rendered copy.
+  // Without literal Chinese outside the slots, a pattern can match arbitrary
+  // text (or any two values separated by a colon) and corrupt error messages.
+  if (!/[\u3400-\u9fff\uf900-\ufaff]/u.test(source.replace(templateToken, ''))) return null
   let cursor = 0
   const fragments: string[] = []
   for (const token of tokens) {
@@ -194,7 +198,7 @@ export function toEnglishCopy(value: string): string {
   for (const [source, target] of fragmentCopy) {
     if (translated.includes(source)) translated = translated.replaceAll(source, target)
   }
-  if (translated !== normalized) return translated
+  if (translated !== normalized) return normalizeCopy(translated)
   return value
 }
 

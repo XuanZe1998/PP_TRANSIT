@@ -6,7 +6,7 @@ async function openMockedUserConsole(page: import('@playwright/test').Page, path
     localStorage.setItem('user_info', JSON.stringify({ username: 'e2e-user', role: 'USER', accountType: 'PERSONAL' }))
     localStorage.setItem('user_last_active_at', String(Date.now()))
   })
-  await page.route('**/api/**', async route => {
+  await page.route(/^(?:https:\/\/api\.linknux\.com\/|https?:\/\/(?:127\.0\.0\.1|localhost):\d+\/api\/)/, async route => {
     const url = new URL(route.request().url())
     if (url.pathname.endsWith('/user/dashboard')) {
       return route.fulfill({ json: { stats: {}, recentLogs: [], tokens: [{ id: 1, name: 'E2E Key', enabled: true, allowAllModels: true }], modelCatalog: [{ publicName: 'e2e-model', available: true }] } })

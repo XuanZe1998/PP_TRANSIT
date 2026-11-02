@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 
 async function mockPublicApi(page: Page) {
-  await page.route('**/api/**', async route => {
+  await page.route(/^(?:https:\/\/api\.linknux\.com\/|https?:\/\/(?:127\.0\.0\.1|localhost):\d+\/api\/)/, async route => {
     const url = new URL(route.request().url())
     if (url.pathname.endsWith('/public/models/summary')) {
       return route.fulfill({ json: { total: 207, publisherCount: 12 } })
@@ -17,7 +17,7 @@ async function mockUserConsole(page: Page) {
     localStorage.setItem('user_info', JSON.stringify({ username: 'responsive-user', role: 'USER', accountType: 'PERSONAL' }))
     localStorage.setItem('user_last_active_at', String(Date.now()))
   })
-  await page.route('**/api/**', async route => {
+  await page.route(/^(?:https:\/\/api\.linknux\.com\/|https?:\/\/(?:127\.0\.0\.1|localhost):\d+\/api\/)/, async route => {
     const url = new URL(route.request().url())
     if (url.pathname.endsWith('/user/dashboard')) {
       return route.fulfill({
@@ -43,7 +43,7 @@ async function mockAdminConsole(page: Page) {
     sessionStorage.setItem('admin_info', JSON.stringify({ username: 'responsive-admin', role: 'ADMIN' }))
     sessionStorage.setItem('admin_last_active_at', String(Date.now()))
   })
-  await page.route('**/api/**', async route => {
+  await page.route(/^(?:https:\/\/api\.linknux\.com\/|https?:\/\/(?:127\.0\.0\.1|localhost):\d+\/api\/)/, async route => {
     const url = new URL(route.request().url())
     if (url.pathname.endsWith('/account-verification-status')) {
       return route.fulfill({ json: { registrationReady: true, emailConfigured: true } })
@@ -140,7 +140,7 @@ test.describe('tablet application shells', () => {
     await expect(page.getByRole('button', { name: '打开导航菜单' })).toBeVisible()
     await expectNoDocumentOverflow(page)
 
-    await page.unroute('**/api/**')
+    await page.unroute(/^(?:https:\/\/api\.linknux\.com\/|https?:\/\/(?:127\.0\.0\.1|localhost):\d+\/api\/)/)
     await mockUserConsole(page)
     await page.goto('/console')
     await expect(page.locator('.user-sidebar')).toBeHidden()

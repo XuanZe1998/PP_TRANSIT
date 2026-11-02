@@ -65,7 +65,7 @@ public class SecurityConfig {
                                 "/subscription-services/**",
                                 "/service-orders/**", "/payment-intents/**", "/shopgpt/**",
                                 "/organizations/**",
-                                "/creative/tasks/**",
+                                "/creative/tasks/**", "/creative/xiaoyunque/**",
                                 "/creative/projects/**",
                                 "/creative/prompt/**", "/creative/connections/**",
                                 "/auth/logout", "/oauth/logout", "/oauth/revoke").hasAnyRole("USER", "ADMIN")

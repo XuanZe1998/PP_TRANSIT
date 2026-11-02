@@ -16,7 +16,7 @@ async function mockSettings(page: Page, options: Options = {}) {
     { id: 2, setting_key: 'x'.repeat(3000), setting_value: longText, description: longText },
     ...Array.from({ length: 10 }, (_, i) => ({ id: i + 3, setting_key: `test.setting.${i}`, setting_value: longText, description: 'Test setting' }))
   ]
-  await page.route('**/api/**', async route => {
+  await page.route(/^(?:https:\/\/api\.linknux\.com\/|https?:\/\/(?:127\.0\.0\.1|localhost):\d+\/api\/)/, async route => {
     const url = new URL(route.request().url())
     if (url.pathname.endsWith('/admin/api/settings')) {
       if (route.request().method() === 'PUT') {

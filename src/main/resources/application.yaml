@@ -286,6 +286,7 @@ mapay:
 
 payment:
   local-test-mode: ${PAYMENT_LOCAL_TEST_MODE:false}
+  local-checkout-bypass: ${PAYMENT_LOCAL_CHECKOUT_BYPASS:false}
   usd-cny-rate: ${PAYMENT_USD_CNY_RATE:${BILLING_USD_CNY_RATE:6.76693506}}
   documents:
     merchant:

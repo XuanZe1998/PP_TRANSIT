@@ -119,4 +119,34 @@ class LegalDocumentServiceTests {
         settings.put("commerce.payments_enabled", "TRUE ");
         assertThat(service(settings).publicDocuments().get("payments_enabled")).isEqualTo(false);
     }
+
+    @Test void operatorCanDisablePublicationGateWithoutApprovingMissingDisclosures() {
+        Map<String, String> settings = new HashMap<>();
+        settings.put("commerce.payments_enabled", "true");
+        settings.put("commerce.publication_review_required", "false");
+        LegalDocumentService legal = service(settings);
+        Map<String, Object> result = legal.publicDocuments();
+        assertThat(result.get("publication_review_required")).isEqualTo(false);
+        assertThat(result.get("checkout_ready")).isEqualTo(true);
+        assertThat(result.get("publication_ready")).isEqualTo(false);
+        assertThat(result.get("legalReviewRequired")).isEqualTo(true);
+        assertThat((List<?>) result.get("missing_fields")).isNotEmpty();
+        legal.requireCheckoutOpen();
+        assertThatThrownBy(() -> legal.recordCheckoutConsent(1L, "PAYMENT_INTENT", 9L, "stale"))
+                .isInstanceOf(org.springframework.web.server.ResponseStatusException.class);
+    }
+
+    @Test void disablingPublicationGateDoesNotEnablePaymentsOrChangeDisclosureDigest() {
+        Map<String, String> settings = new HashMap<>();
+        LegalDocumentService legal = service(settings);
+        Object digest = legal.publicDocuments().get("checkout_disclosure_id");
+        settings.put("commerce.publication_review_required", "false");
+        assertThat(legal.publicDocuments().get("checkout_ready")).isEqualTo(false);
+        assertThat(legal.publicDocuments().get("payments_enabled")).isEqualTo(false);
+        assertThat(legal.publicDocuments().get("checkout_disclosure_id")).isEqualTo(digest);
+        settings.put("commerce.payments_enabled", "true");
+        settings.put("commerce.publication_review_required", "false ");
+        assertThat(legal.publicDocuments().get("publication_review_required")).isEqualTo(true);
+        assertThat(legal.publicDocuments().get("checkout_ready")).isEqualTo(false);
+    }
 }

@@ -4,7 +4,7 @@ test('gateway uses site/group hierarchy, red failures, unified jobs and selectab
  const sites=[{id:1,name:'AiAPIBank'},{id:2,name:'好易智算'},{id:3,name:'ahh'}]
  const groups=Array.from({length:24},(_,i)=>({id:i+1,site_id:i===0?3:i===1?2:1,site_name:i===0?'ahh':i===1?'好易智算':'AiAPIBank',name:i===0?'ahh':`group-${i}`,group_name:i===0?'Claude-Max':`分组 ${i}`,model_count:6,enabled:true,credential_configured:true,sync_enabled:true,sync_status:i===0?'ERROR':'SUCCESS',message:i===0?'上游凭据无效或已过期':'同步完成',http_status:i===0?401:null,suggestion:'更新该分组 Key 后重试',phase:'MODELS'}))
  const calls:string[]=[]
- await page.route('**/api/**',async route=>{const url=new URL(route.request().url());calls.push(url.pathname+'?'+url.searchParams.toString());
+ await page.route(/^(?:https:\/\/api\.linknux\.com\/|https?:\/\/(?:127\.0\.0\.1|localhost):\d+\/api\/)/,async route=>{const url=new URL(route.request().url());calls.push(url.pathname+'?'+url.searchParams.toString());
   if(url.pathname.endsWith('/gateway/sites'))return route.fulfill({json:{items:sites,total:3,page:1,size:100}})
   if(url.pathname.endsWith('/gateway/groups')){let rows=groups;if(url.searchParams.get('siteId'))rows=rows.filter(x=>x.site_id===Number(url.searchParams.get('siteId')));const size=Number(url.searchParams.get('size')||10),current=Number(url.searchParams.get('page')||1);return route.fulfill({json:{items:url.searchParams.get('all')==='true'?rows:rows.slice((current-1)*size,current*size),total:rows.length,page:current,size}})}
   if(url.pathname.endsWith('/gateway/sync'))return route.fulfill({json:{jobs:[{groupId:1,jobId:'job-test'}]}})

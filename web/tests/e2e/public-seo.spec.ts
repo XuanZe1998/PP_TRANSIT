@@ -36,7 +36,7 @@ test('text/XML routes do not fall back, headers are preserved, slash redirect ke
 })
 
 test('Vue mount, site-config loading, navigation and English keep correct page metadata', async ({ page }) => {
-  await page.route('**/api/**', route => route.fulfill({ json: {} }))
+  await page.route(/^(?:https:\/\/api\.linknux\.com\/|https?:\/\/(?:127\.0\.0\.1|localhost):\d+\/api\/)/, route => route.fulfill({ json: {} }))
   await page.route('**/public/**', route => route.fulfill({ json: {} }))
   await page.goto('/docs')
   await expect(page.locator('.public-page-intro h1')).toHaveText(publicPages[1].zh.heading)

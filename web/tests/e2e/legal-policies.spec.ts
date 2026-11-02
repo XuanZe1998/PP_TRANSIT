@@ -16,8 +16,8 @@ for (const language of ['zh-CN', 'en-US']) {
   test('all nine policy drafts render safely in ' + language, async ({ page }, testInfo) => {
     await page.setViewportSize(language === 'zh-CN' ? { width: 390, height: 844 } : { width: 1280, height: 900 })
     await page.addInitScript(locale => localStorage.setItem('linknux.locale', locale), language)
-    await page.route('**/api/**', route => route.fulfill({ json: {} }))
-    await page.route('**/api/public/legal', route => route.fulfill({ json: draft }))
+    await page.route(/^(?:https:\/\/api\.linknux\.com\/|https?:\/\/(?:127\.0\.0\.1|localhost):\d+\/api\/)/, route => route.fulfill({ json: {} }))
+    await page.route(/\/(?:api\/)?public\/legal(?:\?|$)/, route => route.fulfill({ json: draft }))
     const errors: string[] = []
     page.on('pageerror', error => errors.push(error.message))
     for (const kind of kinds) {

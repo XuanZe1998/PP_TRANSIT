@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 
-type CheckoutState = { ready: boolean; disclosureId: string; legalFails?: boolean; paymentFails?: boolean }
+type CheckoutState = { ready: boolean; disclosureId: string; legalFails?: boolean; paymentFails?: boolean; localTest?: boolean }
 
 async function prepareCheckout(page: Page, state: CheckoutState) {
   await page.addInitScript(() => {
@@ -20,7 +20,7 @@ async function prepareCheckout(page: Page, state: CheckoutState) {
     const path = url.pathname.replace(/^\/api(?=\/)/, '')
     if (path === '/public/legal') return route.fulfill(state.legalFails
       ? { status: 503, json: { message: 'Legal disclosures unavailable' } }
-      : { json: { checkout_ready: state.ready, checkout_disclosure_id: state.disclosureId } })
+      : { json: { checkout_ready: state.ready, checkout_disclosure_id: state.disclosureId, local_checkout_test_mode: state.localTest === true } })
     if (path === '/public/other-services') return route.fulfill({ json: { total: 0, page: 1, size: 10, items: [] } })
     if (path === '/service-orders') {
       orderPages.push(url.searchParams)
@@ -28,6 +28,10 @@ async function prepareCheckout(page: Page, state: CheckoutState) {
     }
     if (path === '/service-orders/41/payment') {
       starts.push(request.headers())
+      if (state.localTest && !state.paymentFails) {
+        order.status = 'PAID'
+        return route.fulfill({ json: { order, action: null } })
+      }
       return route.fulfill(state.paymentFails
         ? { status: 409, json: { message: 'Checkout disclosures changed; review and accept the current terms' } }
         : { json: { order, action: { type: 'QRCODE', url: 'weixin://test-only-checkout' } } })
@@ -110,3 +114,30 @@ test('a rejected payment stays in checkout and does not open a payment action', 
   await expect(page.getByRole('dialog', { name: '完成支付', exact: true })).not.toBeVisible()
   expect(starts).toHaveLength(1)
 })
+
+
+test('local checkout skips consent and real payment without opening a QR dialog', async ({ page }) => {
+  const { dialog, starts } = await prepareCheckout(page, {
+    ready: true, disclosureId: 'local-test-disclosure', localTest: true
+  })
+  await expect(dialog.getByText('本地测试：已跳过协议确认与真实付款，确认后直接模拟支付成功。', { exact: true })).toBeVisible()
+  await expect(dialog.getByRole('checkbox')).toHaveCount(0)
+  const confirm = dialog.getByRole('button', { name: '确认支付', exact: true })
+  await expect(confirm).toBeEnabled()
+  await confirm.click()
+  await expect(dialog).not.toBeVisible()
+  await expect(page.getByText('支付成功', { exact: true })).toBeVisible()
+  await expect(page.getByRole('dialog', { name: '完成支付', exact: true })).not.toBeVisible()
+  expect(starts).toHaveLength(1)
+  expect(starts[0]['x-checkout-disclosure']).toBe('local-test-disclosure')
+})
+
+for (const scenario of ['closed', 'missing-version'] as const) {
+  test(`local test hint cannot bypass ${scenario} checkout`, async ({ page }) => {
+    const { dialog, starts } = await prepareCheckout(page, {
+      ready: scenario !== 'closed', disclosureId: scenario === 'missing-version' ? '' : 'local', localTest: true
+    })
+    await expect(dialog.getByRole('button', { name: '确认支付', exact: true })).toBeDisabled()
+    expect(starts).toHaveLength(0)
+  })
+}

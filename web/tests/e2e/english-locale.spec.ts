@@ -12,7 +12,7 @@ async function prepareEnglishSession(page: Page) {
     sessionStorage.setItem('admin_info', JSON.stringify({ username: 'english-admin', role: 'ADMIN' }))
     sessionStorage.setItem('admin_last_active_at', String(Date.now()))
   })
-  await page.route('**/api/**', async route => {
+  await page.route(/^(?:https:\/\/api\.linknux\.com\/|https?:\/\/(?:127\.0\.0\.1|localhost):\d+\/api\/)/, async route => {
     const path = new URL(route.request().url()).pathname
     if (path.endsWith('/public/site-config')) return route.fulfill({ json: {} })
     if (path.endsWith('/public/models/summary')) return route.fulfill({ json: { total: 207, publisherCount: 12 } })

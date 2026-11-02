@@ -40,6 +40,23 @@ mapay:
 - 已过期订单后续收到可验证付款仍记为已付。库存或优惠资源已释放时，履约状态为 `REVIEW_REQUIRED`，不会丢弃付款事实。
 - 历史已付/已退款记录只读保留；历史提供方的未支付意图在一次性迁移中取消并释放资源。
 
+## 仅本地模拟结账
+
+在仅连接本机测试数据库的开发进程中同时设置：
+
+```properties
+server.address=127.0.0.1
+payment.local-test-mode=true
+payment.local-checkout-bypass=true
+mapay.enabled=false
+dujiao-next.allow-purchases=false
+vmcard.enabled=false
+```
+
+`local-checkout-bypass` 默认关闭，且只有模拟支付开启、真实支付禁用、服务显式绑定回环地址时才生效。`/public/legal` 会返回 `local_checkout_test_mode=true` 和 `checkout_ready=true`；真实收款开关、审核状态及缺失资料保持原值，不修改 `system_settings`，也不伪造法律同意记录。
+
+本地页面明确显示测试提示，省略协议勾选；确认支付后直接模拟成功，不展示真实付款二维码（包括已有付款链接的待支付订单）。登录、订单归属、库存及幂等校验仍然保留。模拟支付仍会改变本地订单、钱包和库存数据，不要连接生产数据库或开启供应商真实采购。停止使用上述启动参数即恢复正常结账限制。
+
 ## 生产就绪检查
 
 - `mapay.enabled=true` 且商户 PID、KEY、通知地址齐全，不能用本地测试支付模式代替真实通道。
@@ -47,6 +64,10 @@ mapay:
 - 2026-10-17 排查发现：服务订单前端漏传 `X-Checkout-Disclosure`，被必需请求头校验拦截为 HTTP 400 / `Invalid request`，尚未调用支付网关。生产环境同时未启用支付通道、未开放结账。另核实生产跨域预检未允许该请求头，因此前后端需一起修复 CORS 白名单（保持限定来源，不使用通配符）。补齐请求契约不等于已启用生产收款；发布和私有配置变更需单独确认。
 
 ## 人工联调
+
+### 运营方显式关闭公开资料结账门槛
+
+管理员可通过 `PUT /admin/api/settings` 设置 `commerce.publication_review_required=false`，并独立设置 `commerce.payments_enabled=true`。前者默认启用，仅显式 `false` 关闭公开资料对结账的拦截；不修改 `legal.publication_approved`、公开资料或审核事实。`/public/legal` 会返回 `publication_review_required=false`，同时保留真实的 `publication_ready`、`legalReviewRequired` 与 `missing_fields`。启用后仍要求当前协议确认及披露版本校验，真实支付通道配置、订单鉴权、金额和回调签名校验均保持有效。恢复门槛可将 `commerce.publication_review_required` 设为 `true`。
 
 CI 不发起真实支付。部署时配置 PID、KEY 和公网 HTTPS 回调地址，使用 MaPay 允许的最小金额完成一次创建支付、异步回调和主动查单闭环，再核对钱包流水或服务交付只发生一次。
 
