@@ -205,6 +205,9 @@ mapay:
   return-url: "https://your-domain.example/payment/result"
   site-name: Linknux
   allowed-methods: [alipay, wxpay]
+  # Optional merchant-owned channel IDs, for example: {alipay: 123, wxpay: 456}.
+  # Leave empty to let MaPay select accounts automatically.
+  channel-ids: {}
   request-timeout-seconds: 15
   reconcile-interval-ms: 30000
   reconcile-initial-delay-ms: 30000

@@ -23,6 +23,8 @@ mapay:
 
 生产服务实际读取 `/etc/api-transit/application-local.yaml`；构建产物和 GitHub 自动发布不会同步本机被忽略的私有配置。启用收款前须单独核对该文件中的 MaPay 配置以及进程环境变量，不能仅检查业务收款开关。2026-11-02 核实旧 `mzf.mapay.cc` 会将接口请求重定向到新站首页并丢失路径，当前网关使用 `https://mzf.mapay.cn`，不依赖跨域重定向传递商户凭据。
 
+如果商户使用指定渠道，在私有配置的 `mapay.channel-ids` 中按付款方式设置正整数渠道 ID，例如 `alipay: 123`、`wxpay: 456`。ID 必须来自该商户的 `/xpay/user-channels`，不能使用文档示例或其他商户的渠道。客户端会将对应的 `channel_id` 一并签名；未配置的方式继续使用 MaPay 自动选择。套餐有效、商户启用不代表收款账号可用，应分别验证渠道及实际创建付款入口。
+
 ## 支付流程
 
 1. 用户以 `Idempotency-Key` 创建充值订单或服务订单。

@@ -6,6 +6,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 @Data
 @Component
@@ -20,6 +21,7 @@ public class MaPayProperties {
     private String siteName = "Linknux";
     private long requestTimeoutSeconds = 15;
     private List<String> allowedMethods = List.of("alipay", "wxpay");
+    private Map<String, Long> channelIds = Map.of();
 
     public boolean credentialsConfigured() {
         return text(merchantId) && text(merchantKey) && text(notifyUrl);

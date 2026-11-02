@@ -14,11 +14,56 @@ import reactor.core.publisher.Mono;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.net.InetSocketAddress;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import com.sun.net.httpserver.HttpServer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class MaPayClientTests {
+
+    @Test
+    void sendsAndSignsTheConfiguredChannelForEachPaymentMethod() throws Exception {
+        List<Map<String, String>> requests = new ArrayList<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/xpay/epay/mapi.php", exchange -> {
+            String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            Map<String, String> fields = new LinkedHashMap<>();
+            for (String pair : body.split("&")) {
+                String[] parts = pair.split("=", 2);
+                fields.put(URLDecoder.decode(parts[0], StandardCharsets.UTF_8),
+                        URLDecoder.decode(parts[1], StandardCharsets.UTF_8));
+            }
+            requests.add(fields);
+            byte[] response = "{\"code\":1,\"trade_no\":\"M-1\",\"qrcode\":\"https://pay.example/qr\"}".getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+        server.start();
+        try {
+            MaPayProperties properties = properties();
+            properties.setBaseUrl("http://127.0.0.1:" + server.getAddress().getPort());
+            properties.setChannelIds(Map.of("alipay", 123L, "wxpay", 456L));
+            MaPayClient client = new MaPayClient(WebClient.create(), new ObjectMapper(), properties);
+            for (String method : List.of("alipay", "wxpay")) {
+                assertThat(client.start("CHANNEL-" + method, "Product", "0.01", "test", method,
+                        "127.0.0.1", "pc").action().type()).isEqualTo("QRCODE");
+            }
+            assertThat(requests).hasSize(2);
+            assertThat(requests.get(0)).containsEntry("type", "alipay").containsEntry("channel_id", "123");
+            assertThat(requests.get(1)).containsEntry("type", "wxpay").containsEntry("channel_id", "456");
+            for (Map<String, String> fields : requests) {
+                assertThat(fields.get("sign")).isEqualTo(MaPayClient.sign(fields, "secret"));
+            }
+        } finally {
+            server.stop(0);
+        }
+    }
 
     @Test
     void md5SignatureUsesAsciiOrderSkipsOnlyEmptyAndSupportsUtf8() {
@@ -115,6 +160,10 @@ class MaPayClientTests {
                 ClientResponse.create(HttpStatus.OK)
                         .header("Content-Type", "application/json")
                         .body(responseBody).build())).build();
+        return new MaPayClient(webClient, new ObjectMapper(), properties());
+    }
+
+    private MaPayProperties properties() {
         MaPayProperties properties = new MaPayProperties();
         properties.setEnabled(true);
         properties.setBaseUrl("https://mzf.mapay.test");
@@ -123,7 +172,7 @@ class MaPayClientTests {
         properties.setNotifyUrl("https://merchant.example/webhooks/mapay");
         properties.setReturnUrl("https://merchant.example/payment/result");
         properties.setAllowedMethods(List.of("alipay", "wxpay"));
-        return new MaPayClient(webClient, new ObjectMapper(), properties);
+        return properties;
     }
 
     private MultiValueMap<String, String> multi(Map<String, String> values) {

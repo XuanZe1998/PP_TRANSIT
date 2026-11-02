@@ -57,6 +57,11 @@ public class MaPayClient {
         Map<String, String> fields = new LinkedHashMap<>();
         fields.put("pid", merchantId());
         fields.put("type", method);
+        Long channelId = properties.getChannelIds() == null ? null : properties.getChannelIds().get(method);
+        if (channelId != null) {
+            if (channelId <= 0) throw new ResponseStatusException(SERVICE_UNAVAILABLE, "MaPay channel ID must be positive");
+            fields.put("channel_id", channelId.toString());
+        }
         fields.put("out_trade_no", required(outTradeNo, "out_trade_no", 80));
         fields.put("notify_url", required(properties.getNotifyUrl(), "notify_url", 2000));
         put(fields, "return_url", properties.getReturnUrl());
