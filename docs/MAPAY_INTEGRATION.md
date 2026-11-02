@@ -75,4 +75,6 @@ vmcard.enabled=false
 
 CI 不发起真实支付。部署时配置 PID、KEY 和公网 HTTPS 回调地址，使用 MaPay 允许的最小金额完成一次创建支付、异步回调和主动查单闭环，再核对钱包流水或服务交付只发生一次。
 
+固定原价场景还须验证两笔不同商户订单号、相同金额的未支付请求。部分云端通道会为同额待支付订单递增金额，即使商户全局随机范围为 0～0，仍不能据此认定通道支持固定原价。应比较 `PaymentIntentService.start` 全流程返回值，并核对网关创建与查单金额均等于本地 `settlement_amount_cents`；仅成功生成二维码不能视为支付启动验证通过。若通道改价，需在供应商侧关闭递增或更换支持固定金额的通道，保留金额、签名与结算校验，不得将本地订单改成网关浮动后的价格。已有网关流水中的金额不会随配置自动恢复，切换设置后须用新的未支付订单验证。
+
 官方文档：[API 支付](https://mzf.mapay.cn/docs/epay_mapi.md)、[异步通知](https://mzf.mapay.cn/docs/epay_notify.md)、[MD5 签名](https://mzf.mapay.cn/docs/epay_md5.md)、[订单查询](https://mzf.mapay.cn/docs/epay/api/order_one.md)。

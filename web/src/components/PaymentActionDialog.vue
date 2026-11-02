@@ -3,6 +3,7 @@
     <div v-if="action" class="payment-action">
       <template v-if="action.type === 'QRCODE'">
         <p>请使用{{ paymentMethodLabel }}扫码支付</p>
+        <el-alert title="支付完成后，状态更新可能稍有延迟。请稍等片刻并刷新页面查看订单状态，请勿重复支付。" type="info" :closable="false" show-icon />
         <div class="qr-frame"><QrcodeVue :value="action.url" :size="240" level="M" /></div>
       </template>
       <template v-else-if="action.type === 'URL_SCHEME'">
@@ -13,7 +14,7 @@
         <p>将在 MaPay 收银台完成付款，付款后可返回本页查看结果。</p>
         <el-button type="primary" size="large" @click="openAction">前往支付</el-button>
       </template>
-      <el-alert title="支付状态以服务端回调为准，请勿重复创建订单。" type="info" :closable="false" show-icon />
+      <el-alert v-if="action.type !== 'QRCODE'" title="支付状态以服务端回调为准，请勿重复创建订单。" type="info" :closable="false" show-icon />
     </div>
     <el-empty v-else description="支付动作尚未生成" />
   </el-dialog>

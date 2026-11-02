@@ -3423,6 +3423,7 @@
   "支付结果处理中": "Payment result is being processed",
   "支付金额": "Payment amount",
   "支付平台交易号或本地验证编号": "Payment platform transaction number or local verification number",
+  "支付完成后，状态更新可能稍有延迟。请稍等片刻并刷新页面查看订单状态，请勿重复支付。": "Payment status may take a little time to update after payment. Please wait briefly, then refresh the page to check your order status. Do not pay again.",
   "支付已确认，充值额度已到账": "Payment has been confirmed and the recharge amount has been received.",
   "支付意图": "Payment Intent",
   "支付意图创建失败": "Payment intent creation failed",
