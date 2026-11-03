@@ -1,5 +1,6 @@
 package com.transit.service;
 
+import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.transit.config.MaPayProperties;
 import com.transit.mapper.PaymentIntentMapper;
@@ -33,7 +34,7 @@ class MaPayStartAmountTests {
         assertThat(intent.getSettlementAmountCents()).isEqualTo(1L);
         assertThat(intent.getPaymentUrl()).isNull();
         assertThat(intent.getProviderTradeNo()).isNull();
-        verify(mapper, never()).updateById(any(PaymentIntent.class));
+        verify(mapper, never()).update(any(PaymentIntent.class), any());
         verifyNoInteractions(settlement);
     }
 
@@ -44,7 +45,7 @@ class MaPayStartAmountTests {
         assertThat(result.action().type()).isEqualTo("QRCODE");
         assertThat(result.intent().getSettlementAmountCents()).isEqualTo(1L);
         assertThat(result.intent().getStatus()).isEqualTo("PENDING");
-        verify(mapper).updateById(intent);
+        verify(mapper).update(eq(intent), any());
         verifyNoInteractions(settlement);
     }
 
@@ -57,6 +58,7 @@ class MaPayStartAmountTests {
         intent.setSettlementAmountCents(1L); intent.setSettlementCurrency("CNY");
         intent.setExpiresAt(LocalDateTime.now(ZoneOffset.UTC).plusMinutes(15));
         when(mapper.selectById(9L)).thenReturn(intent);
+        when(mapper.update(eq(intent), org.mockito.ArgumentMatchers.<Wrapper<PaymentIntent>>any())).thenReturn(1);
         return intent;
     }
 
