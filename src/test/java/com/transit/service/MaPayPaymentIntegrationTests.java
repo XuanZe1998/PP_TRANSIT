@@ -118,6 +118,25 @@ class MaPayPaymentIntegrationTests {
     }
 
     @Test
+    void laterSubscriptionWithUnpaidOrderAddsOneCentToSettlement() {
+        User user = verifiedUser();
+        OtherService firstService = automaticService("First subscription");
+        OtherService secondService = automaticService("Second subscription");
+        commerceService.importInventory(firstService.getId(), "FIRST-CARD");
+        commerceService.importInventory(secondService.getId(), "SECOND-CARD");
+
+        var first = orderService.createOrder(user, orderRequest(firstService, user));
+        var second = orderService.createOrder(user, orderRequest(secondService, user));
+
+        assertThat(first.getOrder().getPaymentAmountCents()).isEqualTo(first.getOrder().getAmountCents());
+        long expected = second.getOrder().getAmountCents() + 1;
+        assertThat(second.getOrder().getPaymentAmountCents()).isEqualTo(expected);
+        assertThat(second.getPaymentIntent().getSettlementAmountCents()).isEqualTo(expected);
+        paymentIntentService.receiveNotification(callback(second.getPaymentIntent(), "MAPAY-SVC-SURCHARGE"));
+        assertThat(orderMapper.selectById(second.getOrder().getId()).getStatus()).isEqualTo("FULFILLED");
+    }
+
+    @Test
     void fulfillmentExceptionRollsBackDeliverySideEffectsButKeepsPaymentFact() {
         User user = verifiedUser();
         OtherService service = automaticService("MaPay fulfillment failure " + UUID.randomUUID());

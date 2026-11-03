@@ -67,27 +67,30 @@ public class ServiceOrderService {
     private final ServiceCommerceService serviceCommerceService;
     private final PaymentIntentService paymentIntentService;
     private final AccountVerificationPolicy verificationPolicy;
+    private final MoneyService moneyService;
 
     @Autowired
     public ServiceOrderService(ServiceOrderMapper orderMapper,
                             ServiceCommerceService serviceCommerceService,
                             PaymentIntentService paymentIntentService,
-                            AccountVerificationPolicy verificationPolicy) {
+                            AccountVerificationPolicy verificationPolicy,
+                            MoneyService moneyService) {
         this.orderMapper = orderMapper;
         this.serviceCommerceService = serviceCommerceService;
         this.paymentIntentService = paymentIntentService;
         this.verificationPolicy = verificationPolicy;
+        this.moneyService = moneyService;
     }
 
     ServiceOrderService(ServiceOrderMapper orderMapper,
                      ServiceCommerceService serviceCommerceService) {
         this(orderMapper, serviceCommerceService, null,
-                new AccountVerificationPolicy("EMAIL_AND_PHONE"));
+                new AccountVerificationPolicy("EMAIL_AND_PHONE"), new MoneyService(new BigDecimal("6.76693506")));
     }
 
     // Focused unit tests that do not exercise an external payment provider use this constructor.
     ServiceOrderService(ServiceOrderMapper orderMapper) {
-        this(orderMapper, null, null, new AccountVerificationPolicy("EMAIL_AND_PHONE"));
+        this(orderMapper, null);
     }
 
     @Value("${payment.documents.merchant.legal-name:}")
@@ -123,9 +126,13 @@ public class ServiceOrderService {
             throw badRequest("serviceId is required");
         }
 
+        verificationPolicy.requireComplete(user, "购买");
+        // Serialize subscription checkouts for the same buyer.
+        if (orderMapper.lockBuyer(user.getId()) == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Authenticated user is required");
+        }
         ServiceOrderQuoteResponse serviceQuote = requireCommerce().quote(
                 request.getServiceId(), request.getQuantity(), request.getCouponCode());
-        verificationPolicy.requireComplete(user, "购买");
         long unitPriceCents = serviceQuote.getListUnitPriceCents();
         long effectiveUnitPriceCents = serviceQuote.getEffectiveUnitPriceCents();
         int quantity = serviceQuote.getQuantity();
@@ -139,8 +146,18 @@ public class ServiceOrderService {
         String billingPostalCode = normalizePostalCode(request.getBillingPostalCode(), billingCountry);
         String paymentMethod = normalizePaymentMethod(request.getPaymentMethod());
         String orderCurrency = normalizeCurrency(serviceQuote.getCurrency());
-        PaymentQuote paymentQuote = paymentQuote(amountCents, orderCurrency);
+        MoneyService.SettlementQuote paymentQuote = moneyService.settlementQuote(MoneyAmount.cents(amountCents, orderCurrency));
         LocalDateTime now = nowUtc();
+        boolean hasUnpaidSubscription = orderMapper.exists(new LambdaQueryWrapper<ServiceOrder>()
+                .eq(ServiceOrder::getUserId, user.getId())
+                .isNotNull(ServiceOrder::getServiceId)
+                .in(ServiceOrder::getStatus, PENDING, CONFIRMED)
+                .and(expiry -> expiry.isNull(ServiceOrder::getReservationExpiresAt)
+                        .or().gt(ServiceOrder::getReservationExpiresAt, now)));
+        long paymentAmountCents = paymentQuote.money().amount();
+        if (hasUnpaidSubscription) {
+            paymentAmountCents = Math.addExact(paymentAmountCents, 1);
+        }
         String orderNo = generateOrderNo();
         ServiceOrder order = ServiceOrder.builder()
                 .orderNo(orderNo)
@@ -159,8 +176,8 @@ public class ServiceOrderService {
                 .serviceFeeCents(serviceFeeCents)
                 .amountCents(amountCents)
                 .currency(orderCurrency)
-                .paymentAmountCents(paymentQuote.amountCents())
-                .paymentCurrency(paymentQuote.currency())
+                .paymentAmountCents(paymentAmountCents)
+                .paymentCurrency(paymentQuote.money().currency())
                 .exchangeRate(paymentQuote.exchangeRate())
                 .status(PENDING)
                 .contactEmail(contactEmail)

@@ -45,8 +45,13 @@ public class PaymentIntentService {
         PaymentIntent existing = findByBusiness(PaymentBusinessSettlementService.SERVICE_ORDER, order.getId());
         if (existing != null) return enrich(existing);
         MoneyAmount source = new MoneyAmount(order.getAmountCents(), order.getCurrency(), 100);
-        return create(order.getUserId(), PaymentBusinessSettlementService.SERVICE_ORDER, order.getId(),
-                order.getOrderNo(), order.getProductName(), source, order.getPaymentMethod(), order.getReservationExpiresAt());
+        MoneyService.SettlementQuote quote = order.getPaymentAmountCents() != null
+                && order.getPaymentAmountCents() > 0 && "CNY".equals(order.getPaymentCurrency())
+                && order.getExchangeRate() != null
+                ? new MoneyService.SettlementQuote(MoneyAmount.cents(order.getPaymentAmountCents(), "CNY"), order.getExchangeRate())
+                : moneyService.settlementQuote(source);
+        return insertIntent(order.getUserId(), PaymentBusinessSettlementService.SERVICE_ORDER, order.getId(),
+                order.getOrderNo(), order.getProductName(), source, order.getPaymentMethod(), order.getReservationExpiresAt(), quote);
     }
 
     @Transactional
@@ -55,7 +60,13 @@ public class PaymentIntentService {
                                 LocalDateTime expiresAt) {
         PaymentIntent existing = findByBusiness(businessType, businessId);
         if (existing != null) return enrich(existing);
-        MoneyService.SettlementQuote quote = moneyService.settlementQuote(source);
+        return insertIntent(userId, businessType, businessId, orderNo, description, source, paymentMethod,
+                expiresAt, moneyService.settlementQuote(source));
+    }
+
+    private PaymentIntent insertIntent(Long userId, String businessType, Long businessId, String orderNo,
+                                       String description, MoneyAmount source, String paymentMethod,
+                                       LocalDateTime expiresAt, MoneyService.SettlementQuote quote) {
         PaymentIntent intent = new PaymentIntent();
         intent.setOrderNo(required(orderNo, "orderNo", 80));
         intent.setUserId(Objects.requireNonNull(userId));
