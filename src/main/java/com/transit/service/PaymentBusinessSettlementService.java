@@ -48,7 +48,8 @@ public class PaymentBusinessSettlementService {
         ServiceOrder order = requireOrder(intent);
         String current = normalize(order.getStatus());
         if (List.of("PAID", "FULFILLED").contains(current)) return;
-        if (!List.of("PENDING", "CONFIRMED", "EXPIRED").contains(current)) {
+        // A provider may confirm funds after the administrator closed checkout.
+        if (!List.of("PENDING", "CONFIRMED", "EXPIRED", "CANCELLED").contains(current)) {
             throw conflict("Service order cannot accept payment");
         }
         LocalDateTime paidAt = now();
@@ -62,7 +63,7 @@ public class PaymentBusinessSettlementService {
         order.setUpdatedAt(paidAt);
         int updated = orderMapper.update(order, new LambdaUpdateWrapper<ServiceOrder>()
                 .eq(ServiceOrder::getId, order.getId()).eq(ServiceOrder::getStatus, current));
-        if (updated != 1) return;
+        if (updated != 1) throw conflict("Service order changed while settling payment");
         try {
             if (order.getServiceId() != null) {
                 TransactionTemplate fulfillment = new TransactionTemplate(transactionManager);

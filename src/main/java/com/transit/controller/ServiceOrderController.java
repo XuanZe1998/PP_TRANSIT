@@ -27,6 +27,7 @@ import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
 
 import jakarta.servlet.http.HttpServletRequest;
+import java.util.List;
 
 @RestController
 @RequiredArgsConstructor
@@ -170,9 +171,10 @@ public class ServiceOrderController {
                                                         @RequestParam(defaultValue = "10") int size,
                                                         @RequestParam(required = false) String status,
                                                         @RequestParam(required = false) String query,
-                                                        @RequestParam(required = false) Long serviceId) {
+                                                        @RequestParam(required = false) Long serviceId,
+                                                        @RequestParam(required = false) String userEmail) {
         currentUserService.requireAdmin(authHeader);
-        return Mono.fromCallable(() -> serviceOrderService.listAllOrdersPage(page, size, status, query, serviceId));
+        return Mono.fromCallable(() -> serviceOrderService.listAllOrdersPage(page, size, status, query, serviceId, userEmail));
     }
 
     @GetMapping("/service-orders/admin/orders/{id}")
@@ -181,6 +183,21 @@ public class ServiceOrderController {
         currentUserService.requireAdmin(authHeader);
         return Mono.fromCallable(() -> serviceOrderService.getAdminOrder(id));
     }
+
+    @PostMapping("/service-orders/admin/orders/bulk")
+    public Mono<ResponseEntity<Void>> bulkUpdateOrders(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+                                                       @RequestBody BulkOrderRequest request,
+                                                       HttpServletRequest servletRequest) {
+        User admin = currentUserService.requireAdmin(authHeader);
+        return Mono.fromCallable(() -> {
+            serviceOrderService.bulkUpdateOrders(request.ids(), request.status(), request.fulfillmentReference());
+            adminAuditService.record(admin, "BULK_" + request.status(), "SERVICE_ORDER", null,
+                    null, request.ids(), clientIps.resolve(servletRequest));
+            return ResponseEntity.noContent().build();
+        });
+    }
+
+    public record BulkOrderRequest(List<Long> ids, String status, String fulfillmentReference) {}
 
     @PutMapping("/service-orders/admin/orders/{id}")
     public Mono<ServiceOrder> fulfillOrder(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,

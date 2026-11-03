@@ -29,6 +29,9 @@ public class ServiceOrder {
     @TableField("user_id")
     private Long userId;
 
+    @TableField(exist = false)
+    private String userEmail;
+
     @TableField("service_id")
     private Long serviceId;
 

@@ -6,6 +6,9 @@ import com.transit.model.PaymentIntent;
 import com.transit.model.User;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.transaction.support.SimpleTransactionStatus;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDateTime;
@@ -20,7 +23,9 @@ class LocalPaymentStartTests {
     private final MaPayClient gateway = mock(MaPayClient.class);
     private final PaymentBusinessSettlementService settlement = mock(PaymentBusinessSettlementService.class);
     private final LegalDocumentService legal = mock(LegalDocumentService.class);
-    private final PaymentIntentService payments = new PaymentIntentService(mapper, null, gateway, settlement, null, legal);
+    private final PlatformTransactionManager transactions = mock(PlatformTransactionManager.class);
+    private final PaymentIntentService payments = new PaymentIntentService(mapper, null, gateway, settlement,
+            new TransactionTemplate(transactions), legal);
 
     private PaymentIntent pending() {
         ReflectionTestUtils.setField(payments, "localTestMode", true);
@@ -32,6 +37,8 @@ class LocalPaymentStartTests {
         intent.setExpiresAt(LocalDateTime.now(ZoneOffset.UTC).plusMinutes(15));
         intent.setPaymentActionType("QRCODE"); intent.setPaymentUrl("https://pay.example.test/old");
         when(mapper.selectById(9L)).thenReturn(intent);
+        when(mapper.selectOne(any())).thenReturn(intent, (PaymentIntent) null);
+        when(transactions.getTransaction(any())).thenReturn(new SimpleTransactionStatus());
         when(mapper.update(any(PaymentIntent.class), org.mockito.ArgumentMatchers.<Wrapper<PaymentIntent>>any())).thenReturn(1);
         return intent;
     }

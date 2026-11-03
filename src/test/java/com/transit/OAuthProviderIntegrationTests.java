@@ -2,6 +2,9 @@ package com.transit;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
+import com.transit.mapper.UserMapper;
+import com.transit.model.User;
+import com.transit.service.OAuthService;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -39,6 +42,9 @@ class OAuthProviderIntegrationTests {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired private UserMapper userMapper;
+    @Autowired private OAuthService oauthService;
 
     @DynamicPropertySource
     static void oauthProperties(DynamicPropertyRegistry registry) {
@@ -92,6 +98,27 @@ class OAuthProviderIntegrationTests {
                 """, provider);
         assertThat(binding.get("access_token")).isNull();
         assertThat(binding.get("refresh_token")).isNull();
+    }
+
+    @Test
+    void emailAccountCanBindBothProvidersToTheSameUser() {
+        User user = User.builder().username("email-binding-test").email("email-binding@example.com")
+                .password("test").role("USER").status("ACTIVE").balance(0).invoiceEnabled(false)
+                .emailVerifiedAt(java.time.LocalDateTime.now()).createdAt(java.time.LocalDateTime.now()).build();
+        userMapper.insert(user);
+        String token = (String) oauthService.issueUserSession(user, "email-bind-test").get("access_token");
+
+        for (String provider : List.of("github", "google")) {
+            String path = "/oauth/bind/authorize?provider=" + provider;
+            client.get().uri(path).exchange().expectStatus().isUnauthorized();
+            Map<?, ?> result = client.get().uri(path).headers(headers -> headers.setBearerAuth(token))
+                    .exchange().expectStatus().isOk().expectBody(Map.class).returnResult().getResponseBody();
+            Map<String, Object> session = callback(provider, "bind-existing-email", (String) result.get("state"), 200);
+            assertThat(session.get("oauthAction")).isEqualTo("BIND");
+        }
+        assertThat(jdbcTemplate.queryForList(
+                "SELECT provider FROM oauth_user_bindings WHERE user_id=?", String.class, user.getId()))
+                .containsExactlyInAnyOrder("github", "google");
     }
 
     @Test
@@ -231,6 +258,13 @@ class OAuthProviderIntegrationTests {
                 case "/google/user" -> "{\"sub\":\"google-provider-user\",\"name\":\"Google Test User\",\"email\":\"google-provider@example.com\",\"verified_email\":true}";
                 default -> "{\"error\":\"not_found\"}";
             };
+            if (path.endsWith("/token") && "bind-existing-email".equals(decodeForm(body).get("code"))) {
+                json = json.replace("provider-token-", "bind-token-");
+            }
+            String auth = exchange.getRequestHeaders().getFirst("Authorization");
+            if (path.endsWith("/user") && auth != null && auth.contains("bind-token-")) {
+                json = json.replace("-provider-user", "-binding-user");
+            }
             byte[] bytes = json.getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().set("Content-Type", "application/json");
             exchange.sendResponseHeaders(path.equals("/") ? 404 : 200, bytes.length);

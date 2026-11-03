@@ -9,6 +9,7 @@ import com.transit.dto.MoneyAmount;
 import com.transit.dto.PageResponse;
 import com.transit.dto.ShopGptCheckoutRequest;
 import com.transit.mapper.ServiceOrderMapper;
+import com.transit.mapper.UserMapper;
 import com.transit.model.ServiceOrder;
 import com.transit.model.User;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -68,24 +69,27 @@ public class ServiceOrderService {
     private final PaymentIntentService paymentIntentService;
     private final AccountVerificationPolicy verificationPolicy;
     private final MoneyService moneyService;
+    private final UserMapper userMapper;
 
     @Autowired
     public ServiceOrderService(ServiceOrderMapper orderMapper,
                             ServiceCommerceService serviceCommerceService,
                             PaymentIntentService paymentIntentService,
                             AccountVerificationPolicy verificationPolicy,
-                            MoneyService moneyService) {
+                            MoneyService moneyService,
+                            UserMapper userMapper) {
         this.orderMapper = orderMapper;
         this.serviceCommerceService = serviceCommerceService;
         this.paymentIntentService = paymentIntentService;
         this.verificationPolicy = verificationPolicy;
         this.moneyService = moneyService;
+        this.userMapper = userMapper;
     }
 
     ServiceOrderService(ServiceOrderMapper orderMapper,
                      ServiceCommerceService serviceCommerceService) {
         this(orderMapper, serviceCommerceService, null,
-                new AccountVerificationPolicy("EMAIL_AND_PHONE"), new MoneyService(new BigDecimal("6.76693506")));
+                new AccountVerificationPolicy("EMAIL_AND_PHONE"), new MoneyService(new BigDecimal("6.76693506")), null);
     }
 
     // Focused unit tests that do not exercise an external payment provider use this constructor.
@@ -295,13 +299,31 @@ public class ServiceOrderService {
     }
 
     public PageResponse<ServiceOrder> listAllOrdersPage(int page, int size, String status, String query, Long serviceId) {
+        return listAllOrdersPage(page, size, status, query, serviceId, null);
+    }
+
+    public PageResponse<ServiceOrder> listAllOrdersPage(int page, int size, String status, String query,
+                                                       Long serviceId, String userEmail) {
         validateListPage(page, size);
         if (serviceId != null && serviceId < 1) throw badRequest("Invalid serviceId");
-        long total = orderMapper.selectCount(orderFilter(null, status, query).eq(serviceId != null, ServiceOrder::getServiceId, serviceId));
-        List<ServiceOrder> items = orderMapper.selectList(orderFilter(null, status, query).eq(serviceId != null, ServiceOrder::getServiceId, serviceId)
-                        .orderByDesc(ServiceOrder::getCreatedAt)
+        LambdaQueryWrapper<ServiceOrder> filter = orderFilter(null, status, query)
+                .eq(serviceId != null, ServiceOrder::getServiceId, serviceId);
+        if (userEmail != null && !userEmail.isBlank()) {
+            filter.apply("user_id IN (SELECT id FROM users WHERE LOWER(email) = {0})",
+                    requiredText(userEmail, "userEmail", 255).toLowerCase(Locale.ROOT));
+        }
+        long total = orderMapper.selectCount(filter);
+        List<ServiceOrder> items = orderMapper.selectList(filter
+                        .orderByDesc(ServiceOrder::getCreatedAt, ServiceOrder::getId)
                         .last("LIMIT " + size + " OFFSET " + ((page - 1L) * size)))
                 .stream().map(this::enrichOrderMoney).toList();
+        List<Long> userIds = items.stream().map(ServiceOrder::getUserId).filter(Objects::nonNull).distinct().toList();
+        if (!userIds.isEmpty()) {
+            Map<Long, String> emails = new java.util.HashMap<>();
+            userMapper.selectList(new LambdaQueryWrapper<User>().select(User::getId, User::getEmail)
+                    .in(User::getId, userIds)).forEach(user -> emails.put(user.getId(), user.getEmail()));
+            items.forEach(order -> order.setUserEmail(emails.get(order.getUserId())));
+        }
         return page(page, size, total, items);
     }
 
@@ -356,6 +378,24 @@ public class ServiceOrderService {
     }
 
     @Transactional
+    public void bulkUpdateOrders(List<Long> ids, String status, String fulfillmentReference) {
+        if (ids == null || ids.isEmpty() || ids.size() > 100
+                || ids.stream().anyMatch(id -> id == null || id < 1)) {
+            throw badRequest("请选择 1 至 100 笔订单");
+        }
+        String target = normalizeStatus(status);
+        if (!Set.of(CONFIRMED, CANCELLED, FULFILLED).contains(target)) {
+            throw badRequest("不支持此批量操作");
+        }
+        String reference = FULFILLED.equals(target)
+                ? requiredText(fulfillmentReference, "fulfillmentReference", 255) : null;
+        for (Long id : ids.stream().distinct().sorted().toList()) {
+            if (CANCELLED.equals(target)) paymentIntentService.closeServicePayment(id);
+            fulfillOrder(id, target, null, null, reference);
+        }
+    }
+
+    @Transactional
     public ServiceOrder fulfillOrder(Long id,
                                   String status,
                                   String fulfillmentNote,
@@ -407,6 +447,7 @@ public class ServiceOrderService {
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "Fulfillment evidence is immutable after verification");
             }
             order.setFulfillmentReference(fulfillmentEvidence);
+            order.setFulfillmentStatus("COMPLETED");
             if (order.getFulfilledAt() == null) {
                 order.setFulfilledAt(now);
             }

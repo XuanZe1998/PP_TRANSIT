@@ -7,12 +7,28 @@
       </div>
       <el-button :loading="loading" @click="fetchOrders">刷新</el-button>
     </div>
+    <el-form inline @submit.prevent="searchOrders">
+      <el-form-item label="账号邮箱">
+        <el-input v-model="emailInput" clearable maxlength="255" placeholder="输入完整邮箱" @clear="searchOrders" />
+      </el-form-item>
+      <el-form-item>
+        <el-button native-type="submit" :disabled="bulkSaving">搜索</el-button>
+      </el-form-item>
+    </el-form>
+    <el-space wrap>
+      <span>本页已选 {{ selectedOrders.length }} 笔</span>
+      <el-button :disabled="!canBulk('CONFIRMED')" @click="bulkUpdate('CONFIRMED')">批量确认</el-button>
+      <el-button :disabled="!canBulk('CANCELLED')" @click="bulkUpdate('CANCELLED')">批量取消</el-button>
+      <el-button :disabled="!canBulk('FULFILLED')" @click="bulkUpdate('FULFILLED')">批量标记已交付</el-button>
+    </el-space>
 
     <el-alert v-if="serviceFilter" type="info" :closable="false" :title="`当前查看服务 ID ${serviceFilter} 的订单`" />
     <el-alert v-if="pendingOnly" type="warning" :closable="false" title="当前仅显示待处理（PENDING / CONFIRMED）订单" />
-    <PagedTable v-loading="loading" :data="orders" empty-text="暂无服务订单" list-id="AdminServiceOrders-1" pagination="external">
+    <PagedTable ref="orderTable" v-loading="loading || bulkSaving" :data="orders" empty-text="暂无服务订单" list-id="AdminServiceOrders-1" pagination="external" @selection-change="selectedOrders = $event">
+      <el-table-column type="selection" width="48" />
       <el-table-column prop="orderNo" label="订单号" min-width="190" />
       <el-table-column prop="userId" label="用户 ID" width="90" />
+      <el-table-column prop="userEmail" label="账号邮箱" min-width="210" show-overflow-tooltip />
       <el-table-column prop="productName" label="服务名称" min-width="180" />
       <el-table-column label="金额" width="120">
         <template #default="{ row }">
@@ -104,6 +120,7 @@ type ServiceOrder = {
   orderNo: string
   userId: number
   productName: string
+  userEmail?: string
   amountCents: number
   currency: string
   paymentAmountCents?: number
@@ -121,6 +138,11 @@ type ServiceOrder = {
 }
 
 const orders = ref<ServiceOrder[]>([])
+const orderTable = ref<InstanceType<typeof PagedTable>>()
+const selectedOrders = ref<ServiceOrder[]>([])
+const emailInput = ref('')
+const userEmail = ref('')
+const bulkSaving = ref(false)
 const router = useRouter()
 const route=useRoute(),pendingOnly=computed(()=>route.query.status==='pending')
 const serviceFilter = computed(() => {
@@ -163,12 +185,15 @@ const statusLabel = (status: string) => ({
 }[status] || status)
 
 async function fetchOrders() {
+  orderTable.value?.clearSelection()
+  selectedOrders.value = []
   const request = ++listRequest
   loading.value = true
   try {
     const response = await http.get('/api/service-orders/admin/orders', { params: {
       listPage: true, page: page.value, size: size.value,
-      status: pendingOnly.value ? 'PENDING,CONFIRMED' : undefined, serviceId: serviceFilter.value
+      status: pendingOnly.value ? 'PENDING,CONFIRMED' : undefined, serviceId: serviceFilter.value,
+      userEmail: userEmail.value || undefined
     } })
     if (request !== listRequest) return
     orders.value = response.data?.items || []
@@ -177,6 +202,55 @@ async function fetchOrders() {
     if (request === listRequest) ElMessage.error(getHttpErrorMessage(error, '服务订单加载失败'))
   } finally {
     if (request === listRequest) loading.value = false
+  }
+}
+
+function searchOrders() {
+  userEmail.value = emailInput.value.trim()
+  page.value = 1
+  void fetchOrders()
+}
+
+const bulkActions = {
+  CONFIRMED: { label: '批量确认', allowed: ['PENDING'] },
+  CANCELLED: { label: '批量取消', allowed: ['PENDING', 'CONFIRMED'] },
+  FULFILLED: { label: '批量标记已交付', allowed: ['PAID'] }
+}
+type BulkStatus = keyof typeof bulkActions
+
+function canBulk(status: BulkStatus) {
+  return !loading.value && !bulkSaving.value && selectedOrders.value.length > 0
+    && selectedOrders.value.every(order => bulkActions[status].allowed.includes(order.status))
+}
+
+async function bulkUpdate(status: BulkStatus) {
+  if (!canBulk(status)) return
+  const ids = selectedOrders.value.map(order => order.id)
+  const label = bulkActions[status].label
+  let fulfillmentReference: string | undefined
+  bulkSaving.value = true
+  try {
+    try {
+      if (status === 'FULFILLED') {
+        const result = await ElMessageBox.prompt(
+          `已在站外完成所选 ${ids.length} 笔订单的交付后，请填写共同的交付凭证。`, label,
+          { inputValidator: value => Boolean(value?.trim() && value.trim().length <= 255) || '请输入 1 至 255 个字符' }
+        )
+        fulfillmentReference = result.value.trim()
+      } else {
+        await ElMessageBox.confirm(`确定对本页所选的 ${ids.length} 笔订单执行「${label}」？`, label)
+      }
+    } catch {
+      return
+    }
+    await http.post('/api/service-orders/admin/orders/bulk', { ids, status, fulfillmentReference })
+    ElMessage.success(`已处理 ${ids.length} 笔订单`)
+    await fetchOrders()
+  } catch (error: unknown) {
+    ElMessage.error(getHttpErrorMessage(error, '批量处理失败'))
+    await fetchOrders()
+  } finally {
+    bulkSaving.value = false
   }
 }
 

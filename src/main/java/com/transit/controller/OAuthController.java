@@ -43,6 +43,16 @@ public class OAuthController {
                 .map(ResponseEntity::ok);
     }
 
+    @GetMapping("/bind/authorize")
+    public Mono<Map<String, String>> authorizeBinding(@RequestParam String provider,
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+        return Mono.fromCallable(() -> {
+            User user = currentUserService.requireUser(authHeader);
+            OAuthService.AuthorizationStart start = oauthService.beginAuthorization(provider, user.getId());
+            return Map.of("url", start.url(), "state", start.state());
+        });
+    }
+
     @PostMapping("/token")
     public Mono<ResponseEntity<Map<String, Object>>> token(
             @RequestParam("client_id") String clientId,

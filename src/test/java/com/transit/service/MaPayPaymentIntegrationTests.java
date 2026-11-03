@@ -137,6 +137,40 @@ class MaPayPaymentIntegrationTests {
     }
 
     @Test
+    void adminFiltersByAccountEmailAndProcessesOrdersInBulk() {
+        User user = verifiedUser();
+        OtherService service = automaticService("Bulk subscription");
+        commerceService.importInventory(service.getId(), "BULK-FIRST BULK-SECOND");
+        var firstRequest = orderRequest(service, user);
+        firstRequest.setContactEmail("billing@example.com");
+        var first = orderService.createOrder(user, firstRequest);
+        var second = orderService.createOrder(user, orderRequest(service, user));
+        var ids = java.util.List.of(first.getOrder().getId(), second.getOrder().getId());
+        var page = orderService.listAllOrdersPage(1, 10, "PENDING", null, service.getId(),
+                user.getEmail().toUpperCase(java.util.Locale.ROOT));
+        assertThat(page.getTotal()).isEqualTo(2);
+        assertThat(page.getItems()).extracting(ServiceOrder::getUserEmail).containsOnly(user.getEmail());
+        assertThat(orderService.listAllOrdersPage(1, 10, null, null, null, "billing@example.com").getTotal())
+                .isZero();
+
+        orderService.bulkUpdateOrders(ids, "CONFIRMED", null);
+        assertThat(orderMapper.selectById(ids.get(0)).getStatus()).isEqualTo("CONFIRMED");
+        orderService.bulkUpdateOrders(ids, "CANCELLED", null);
+        assertThat(orderMapper.selectById(ids.get(1)).getStatus()).isEqualTo("CANCELLED");
+        assertThat(paymentIntentMapper.selectById(first.getPaymentIntent().getId()).getStatus())
+                .isEqualTo("EXPIRED");
+
+        for (ServiceInventoryItem item : inventoryMapper.selectList(new LambdaQueryWrapper<ServiceInventoryItem>()
+                .eq(ServiceInventoryItem::getServiceId, service.getId()))) {
+            commerceService.deleteAvailableInventory(service.getId(), item.getId());
+        }
+        paymentIntentService.receiveNotification(callback(first.getPaymentIntent(), "MAPAY-BULK-LATE"));
+        assertThat(orderMapper.selectById(ids.get(0)).getStatus()).isEqualTo("PAID");
+        orderService.bulkUpdateOrders(java.util.List.of(ids.get(0)), "FULFILLED", "EXTERNAL-DELIVERY");
+        assertThat(orderMapper.selectById(ids.get(0)).getFulfillmentReference()).isEqualTo("EXTERNAL-DELIVERY");
+    }
+
+    @Test
     void fulfillmentExceptionRollsBackDeliverySideEffectsButKeepsPaymentFact() {
         User user = verifiedUser();
         OtherService service = automaticService("MaPay fulfillment failure " + UUID.randomUUID());

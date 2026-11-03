@@ -61,7 +61,7 @@ public class SecurityConfig {
                                 "/service-orders/admin/**",
                                 "/channels/**", "/tokens/**", "/mappings/**", "/ops/overview",
                                 "/actuator/prometheus").hasRole("ADMIN")
-                        .requestMatchers("/user/**", "/platform/user/**",
+                        .requestMatchers("/user/**", "/platform/user/**", "/oauth/bind/authorize",
                                 "/service-orders/**", "/payment-intents/**", "/shopgpt/**",
                                 "/organizations/**",
                                 "/creative/tasks/**", "/creative/xiaoyunque/**",

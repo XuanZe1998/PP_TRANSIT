@@ -14,6 +14,8 @@ describe('HTTP client production defaults', () => {
     expect(authScope('/api/service-orders/admin/coupons')).toBe('admin')
     expect(authScope('/api/admin/api/other-services')).toBe('admin')
     expect(authScope('/api/service-orders')).toBe('user')
+    expect(authScope('/api/oauth/authorize')).toBe('public')
+    expect(authScope('/api/oauth/bind/authorize')).toBe('user')
   })
 
   it('uses a finite default timeout', () => {

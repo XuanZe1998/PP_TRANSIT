@@ -102,6 +102,15 @@ public class PaymentIntentService {
         return enrich(intent);
     }
 
+    void closeServicePayment(Long orderId) {
+        mapper.update(null, new LambdaUpdateWrapper<PaymentIntent>()
+                .set(PaymentIntent::getStatus, "EXPIRED")
+                .set(PaymentIntent::getUpdatedAt, now())
+                .eq(PaymentIntent::getBusinessType, PaymentBusinessSettlementService.SERVICE_ORDER)
+                .eq(PaymentIntent::getBusinessId, orderId)
+                .eq(PaymentIntent::getStatus, "PENDING"));
+    }
+
     public StartResponse start(User user, Long id, String clientIp, String device) {
         legalDocuments.requireCheckoutOpen();
         PaymentIntent intent = getUserIntent(user, id);
@@ -113,7 +122,8 @@ public class PaymentIntentService {
             throw conflict("Payment intent has expired");
         }
         if (localTestMode) {
-            return response(markPaid(intent, "LOCAL-" + intent.getOrderNo(), intent.getPaymentMethod(), "LOCAL_TEST"));
+            return transactionTemplate.execute(ignored ->
+                    response(markPaid(intent, "LOCAL-" + intent.getOrderNo(), intent.getPaymentMethod(), "LOCAL_TEST")));
         }
         if (!blank(intent.getPaymentUrl()) && !blank(intent.getPaymentActionType())) return response(intent);
         MaPayClient.PaymentStart started = maPayClient.start(intent.getOrderNo(), intent.getDescription(),
@@ -126,7 +136,9 @@ public class PaymentIntentService {
         intent.setPaymentUrl(started.action().url());
         intent.setLastError(null);
         intent.setUpdatedAt(now());
-        mapper.updateById(intent);
+        int changed = mapper.update(intent, new LambdaUpdateWrapper<PaymentIntent>()
+                .eq(PaymentIntent::getId, intent.getId()).eq(PaymentIntent::getStatus, "PENDING"));
+        if (changed != 1) throw conflict("Payment status changed while opening checkout");
         return response(enrich(intent));
     }
 
@@ -215,13 +227,17 @@ public class PaymentIntentService {
         validateFacts(intent, result.outTradeNo(), result.money(), result.param(), result.type());
         intent.setLastQueriedAt(now());
         intent.setLastError(null);
-        mapper.updateById(intent);
+        mapper.update(null, new LambdaUpdateWrapper<PaymentIntent>()
+                .set(PaymentIntent::getLastQueriedAt, intent.getLastQueriedAt())
+                .set(PaymentIntent::getLastError, null)
+                .eq(PaymentIntent::getId, intent.getId()));
         if (result.paid()) return markPaid(intent, required(result.tradeNo(), "trade_no", 120), result.type(), "QUERY");
         return enrich(intent);
     }
 
     private PaymentIntent markPaid(PaymentIntent intent, String tradeNo, String type, String source) {
-        PaymentIntent latest = mapper.selectById(intent.getId());
+        PaymentIntent latest = mapper.selectOne(new LambdaQueryWrapper<PaymentIntent>()
+                .eq(PaymentIntent::getId, intent.getId()).last("FOR UPDATE"));
         if ("PAID".equals(latest.getStatus())) {
             if (!blank(latest.getProviderTradeNo()) && !latest.getProviderTradeNo().equals(tradeNo)) throw conflict("Payment evidence does not match the settled intent");
             return enrich(latest);
