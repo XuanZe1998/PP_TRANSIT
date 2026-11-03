@@ -23,7 +23,7 @@
     </el-space>
 
     <el-alert v-if="serviceFilter" type="info" :closable="false" :title="`当前查看服务 ID ${serviceFilter} 的订单`" />
-    <el-alert v-if="pendingOnly" type="warning" :closable="false" title="当前仅显示待处理（PENDING / CONFIRMED）订单" />
+    <el-alert v-if="pendingOnly" type="warning" :closable="false" title="当前仅显示待付款和已确认订单" />
     <PagedTable ref="orderTable" v-loading="loading || bulkSaving" :data="orders" empty-text="暂无服务订单" list-id="AdminServiceOrders-1" pagination="external" @selection-change="selectedOrders = $event">
       <el-table-column type="selection" width="48" />
       <el-table-column prop="orderNo" label="订单号" min-width="190" />
@@ -40,7 +40,7 @@
       </el-table-column>
       <el-table-column label="状态" width="110">
         <template #default="{ row }">
-          <el-tag :type="statusType(row.status)">{{ statusLabel(row.status) }}</el-tag>
+          <el-tag :type="statusType(row.status)">{{ orderStatusLabel(row.status) }}</el-tag>
         </template>
       </el-table-column>
       <el-table-column prop="createdAt" label="创建时间" min-width="170" />
@@ -59,14 +59,7 @@
           <el-input :model-value="selectedOrder?.orderNo || ''" readonly />
         </el-form-item>
         <el-form-item label="状态">
-          <el-select v-if="false" v-model="form.status" style="width: 100%">
-            <el-option label="待付款" value="PENDING" />
-            <el-option label="已确认" value="CONFIRMED" />
-            <el-option label="已付款" value="PAID" />
-            <el-option label="已履约" value="FULFILLED" />
-            <el-option label="失败" value="FAILED" />
-            <el-option label="已取消" value="CANCELLED" />
-          </el-select>
+          <el-tag v-if="selectedOrder" :type="statusType(selectedOrder.status)">{{ orderStatusLabel(selectedOrder.status) }}</el-tag>
         </el-form-item>
         <el-form-item v-if="form.status === 'PAID'" label="付款凭证号" required>
           <el-input v-model="form.paymentReference" placeholder="支付平台交易号或本地验证编号" />
@@ -79,14 +72,14 @@
         </el-form-item>
         <el-descriptions v-if="selectedOrder?.supplierDetails" title="Dujiao-Next 采购" :column="2" border>
           <el-descriptions-item label="Product / SKU">{{ selectedOrder.supplierDetails.productId || '-' }} / {{ selectedOrder.supplierDetails.skuId || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="上游状态">{{ selectedOrder.supplierDetails.status || selectedOrder.fulfillmentStatus || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="上游状态">{{ selectedOrder.supplierDetails.status ? supplierStatusLabel(selectedOrder.supplierDetails.status) : fulfillmentStatusLabel(selectedOrder.fulfillmentStatus) }}</el-descriptions-item>
           <el-descriptions-item label="上游订单号">{{ selectedOrder.supplierDetails.orderNo || '-' }}</el-descriptions-item>
           <el-descriptions-item label="采购金额">{{ selectedOrder.supplierDetails.amount || '-' }} {{ selectedOrder.supplierDetails.currency || '' }}</el-descriptions-item>
           <el-descriptions-item v-if="selectedOrder.supplierDetails.lastError" label="最近错误" :span="2">{{ selectedOrder.supplierDetails.lastError }}</el-descriptions-item>
         </el-descriptions>
         <el-descriptions v-if="paymentIntent" title="MaPay 支付" :column="2" border>
           <el-descriptions-item label="支付意图">{{ paymentIntent.orderNo }}</el-descriptions-item>
-          <el-descriptions-item label="状态">{{ paymentIntent.status }}</el-descriptions-item>
+          <el-descriptions-item label="状态">{{ orderStatusLabel(paymentIntent.status) }}</el-descriptions-item>
           <el-descriptions-item label="方式">{{ paymentIntent.paymentMethod }}</el-descriptions-item>
           <el-descriptions-item label="平台交易号">{{ paymentIntent.providerTradeNo || '-' }}</el-descriptions-item>
         </el-descriptions>
@@ -111,6 +104,7 @@ import PagedTable from '@/components/PagedTable.vue'
 import ListPagination from '@/components/ListPagination.vue'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { formatCurrencyCents } from '@/utils/money'
+import { fulfillmentStatusLabel, orderStatusLabel, supplierStatusLabel } from '@/utils/serviceOrderStatus'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import http, { getHttpErrorMessage } from '@/utils/http'
@@ -175,15 +169,6 @@ const statusType = (status: string) => {
   if (['FAILED', 'CANCELLED'].includes(status)) return 'info'
   return 'warning'
 }
-const statusLabel = (status: string) => ({
-  PENDING: '待付款',
-  CONFIRMED: '已确认',
-  PAID: '已付款',
-  FULFILLED: '已履约',
-  FAILED: '失败',
-  CANCELLED: '已取消'
-}[status] || status)
-
 async function fetchOrders() {
   orderTable.value?.clearSelection()
   selectedOrders.value = []

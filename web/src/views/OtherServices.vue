@@ -88,7 +88,7 @@
         </el-table-column>
         <el-table-column label="状态" width="110">
           <template #default="{ row }">
-            <el-tag :type="statusType(row.status)">{{ statusLabel(row.status) }}</el-tag>
+            <el-tag :type="statusType(row.status)">{{ orderStatusLabel(row.status) }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="createdAt" label="创建时间" min-width="170" />
@@ -222,7 +222,7 @@
       <template v-if="orderDetail">
         <el-descriptions :column="2" border>
           <el-descriptions-item label="订单号">{{ orderDetail.orderNo }}</el-descriptions-item>
-          <el-descriptions-item label="履约状态">{{ orderDetail.fulfillmentStatus || orderDetail.status }}</el-descriptions-item>
+          <el-descriptions-item label="履约状态">{{ orderDetail.fulfillmentStatus ? fulfillmentStatusLabel(orderDetail.fulfillmentStatus) : orderStatusLabel(orderDetail.status) }}</el-descriptions-item>
           <el-descriptions-item label="数量">{{ orderDetail.quantity || 1 }}</el-descriptions-item>
           <el-descriptions-item label="最终金额">{{ formatMoney(orderDetail.amountCents, orderDetail.currency) }}</el-descriptions-item>
           <el-descriptions-item label="商品小计">{{ formatMoney(orderDetail.merchandiseSubtotalCents, orderDetail.currency) }}</el-descriptions-item>
@@ -260,6 +260,7 @@ import ListPagination from '@/components/ListPagination.vue'
 import PaymentActionDialog, { type PaymentAction } from '@/components/PaymentActionDialog.vue'
 import CheckoutDisclosure from '@/components/CheckoutDisclosure.vue'
 import { paymentActionOf } from '@/utils/payment'
+import { fulfillmentStatusLabel, orderStatusLabel } from '@/utils/serviceOrderStatus'
 import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { formatCurrencyCents } from '@/utils/money'
 import { useRoute, useRouter } from 'vue-router'
@@ -427,15 +428,6 @@ const statusType = (status: string) => {
   if (['FAILED', 'CANCELLED'].includes(status)) return 'info'
   return 'warning'
 }
-
-const statusLabel = (status: string) => ({
-  PENDING: '待付款',
-  CONFIRMED: '已确认',
-  PAID: '已付款',
-  FULFILLED: '已履约',
-  FAILED: '失败',
-  CANCELLED: '已取消'
-}[status] || status)
 
 function markImageFailed(id: number) {
   failedImages.value = new Set(failedImages.value).add(id)
