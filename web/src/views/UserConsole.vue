@@ -606,32 +606,59 @@
              list-id="UserConsole-2"/>
           </section>
 
-          <el-drawer v-model="rechargeVisible" title="充值方案" size="min(680px, 94vw)" destroy-on-close>
-            <div class="recharge-drawer-plans">
-              <PagedList :data="wallet.plans" list-id="UserConsole.vue-3" v-slot="{items:pagedItems}"><button v-for="plan in pagedItems" :key="plan.id" type="button"
-                :class="{ selected: !customRecharge && selectedRechargePlan?.id === plan.id }" @click="selectRechargePlan(plan)">
-                <span><strong>{{ plan.name }}</strong><small>赠送 {{ Number(plan.bonus || 0).toFixed(2) }}%</small></span>
-                <b>{{ formatMoneyDto(plan.paymentMoney) }}</b>
-                <small class="recharge-credit-note">到账 {{ formatMoneyDto(plan.totalCreditMoney) }}</small>
-              </button></PagedList>
-              <button type="button" :class="{ selected: customRecharge }" @click="selectCustomRecharge">
-                <span><strong>自定义充值</strong><small>无赠送</small></span>
-                <b>自定义金额</b>
-                <small class="recharge-credit-note">充值多少，到账多少</small>
+          <el-dialog
+            v-model="rechargeVisible"
+            class="recharge-dialog"
+            modal-class="recharge-overlay"
+            title="充值方案"
+            width="620px"
+            destroy-on-close
+            :close-on-click-modal="!rechargeSubmitting"
+            :close-on-press-escape="!rechargeSubmitting"
+            :show-close="!rechargeSubmitting"
+          >
+            <div class="recharge-choices">
+              <PagedList v-if="wallet.plans.length" :data="wallet.plans" list-id="UserConsole.vue-3" v-slot="{ items }">
+                <button
+                  v-for="plan in items"
+                  :key="plan.id"
+                  type="button"
+                  class="recharge-choice"
+                  :aria-pressed="selectedRechargePlan?.id === plan.id"
+                  :disabled="rechargeSubmitting"
+                  @click="selectRechargePlan(plan)"
+                >
+                  <span><strong>{{ plan.name }}</strong><small>赠送 {{ Number(plan.bonus || 0).toFixed(2) }}%</small></span>
+                  <b>{{ formatMoneyDto(plan.paymentMoney) }}</b>
+                </button>
+              </PagedList>
+              <button
+                type="button"
+                class="recharge-choice recharge-choice-custom"
+                :aria-pressed="customRecharge"
+                :disabled="rechargeSubmitting"
+                @click="selectCustomRecharge"
+              >
+                <strong>自定义充值</strong>
+                <small>无赠送</small>
               </button>
             </div>
-            <el-form label-position="top">
-              <el-alert v-if="selectedRechargePlan" type="info" :closable="false" :title="`实付 ${formatMoneyDto(selectedRechargePlan.paymentMoney)}，到账 ${formatMoneyDto(selectedRechargePlan.totalCreditMoney)}`" />
-              <el-form-item v-if="customRecharge" label="充值金额（CNY）" required>
-                <el-input-number v-model="customRechargeAmount" :min="0.01" :precision="2" :step="10" controls-position="right" style="width:100%" />
+            <el-form class="recharge-form" label-position="top" :disabled="rechargeSubmitting" @submit.prevent>
+              <dl v-if="selectedRechargePlan" class="recharge-totals">
+                <div><dt>实付</dt><dd>{{ formatMoneyDto(selectedRechargePlan.paymentMoney) }}</dd></div>
+                <div><dt>到账</dt><dd>{{ formatMoneyDto(selectedRechargePlan.totalCreditMoney) }}</dd></div>
+              </dl>
+              <el-form-item v-if="customRecharge" required>
+                <template #label><span>充值金额</span> ({{ displayCurrency }})</template>
+                <el-input-number v-model="customRechargeAmount" :min="0.01" :precision="2" :controls="false" class="recharge-amount" />
                 <div class="form-hint">金额必须大于 0，最多保留两位小数。</div>
               </el-form-item>
-              <p class="checkout-disclosure">{{ customRecharge ? `实付 ${customRechargeAmount.toFixed(2)} ${getDisplayCurrency()}，到账金额以服务端订单确认页为准。` : `实付 ${formatMoneyDto(selectedRechargePlan?.paymentMoney)}，到账 ${formatMoneyDto(selectedRechargePlan?.totalCreditMoney)}。` }}
-                模型调用按实际用量另行扣费；税费、汇率和最终金额请以支付订单为准。充值前请阅读
-                <router-link to="/refund" target="_blank">退款与取消</router-link>、<router-link to="/terms" target="_blank">服务条款</router-link>和<router-link to="/ai-data" target="_blank">AI 数据处理</router-link>。</p>
-              <el-alert v-if="!rechargeLegal?.checkout_ready" type="warning" :closable="false" title="收款未开启或公开信息尚未审核完成，暂不能付款。" />
-              <el-checkbox v-model="checkoutAcknowledged" :disabled="!rechargeLegal?.checkout_ready">我已阅读本次交易条件、退款与取消政策</el-checkbox>
-              <el-form-item label="支付方式"><el-radio-group v-model="rechargeForm.paymentMethod"><el-radio value="alipay">支付宝</el-radio><el-radio value="wxpay">微信支付</el-radio></el-radio-group></el-form-item>
+              <el-form-item label="支付方式">
+                <el-radio-group v-model="rechargeForm.paymentMethod" class="recharge-methods">
+                  <el-radio border value="alipay">支付宝</el-radio>
+                  <el-radio border value="wxpay">微信支付</el-radio>
+                </el-radio-group>
+              </el-form-item>
               <el-form-item v-if="wallet.invoiceEnabled" label="需要开具账单 / 发票"><el-switch v-model="rechargeForm.needInvoice" /></el-form-item>
               <template v-if="wallet.invoiceEnabled && rechargeForm.needInvoice">
                 <el-form-item label="姓名或公司名称"><el-input v-model="rechargeForm.billingName" /></el-form-item>
@@ -641,9 +668,28 @@
                 <el-row :gutter="12"><el-col :span="12"><el-form-item label="省份"><el-input v-model="rechargeForm.billingProvince" /></el-form-item></el-col><el-col :span="12"><el-form-item label="邮编"><el-input v-model="rechargeForm.billingPostalCode" /></el-form-item></el-col></el-row>
                 <el-form-item label="国家/地区"><el-input v-model="rechargeForm.billingCountry" /></el-form-item>
               </template>
+              <div class="recharge-disclosure">
+                <p>模型调用按实际用量另行扣费；税费、汇率和最终金额请以支付订单为准。</p>
+                <p class="recharge-policy-links">
+                  <router-link to="/refund" target="_blank">退款与取消</router-link>
+                  <router-link to="/terms" target="_blank">服务条款</router-link>
+                  <router-link to="/ai-data" target="_blank">AI 数据处理</router-link>
+                </p>
+              </div>
             </el-form>
-            <template #footer><el-button @click="rechargeVisible=false">取消</el-button><el-button type="primary" :disabled="!rechargeLegal?.checkout_ready || !checkoutAcknowledged || (customRecharge ? customRechargeAmount <= 0 : !selectedRechargePlan)" :loading="rechargeSubmitting" @click="submitRecharge">立即支付</el-button></template>
-          </el-drawer>
+            <template #footer>
+              <div class="recharge-consent">
+                <el-alert v-if="rechargeLegalLoading" type="info" :closable="false" title="正在加载交易条件…" />
+                <el-alert v-else-if="rechargeLegal?.checkout_ready === false" type="warning" :closable="false" title="在线收款开关已关闭，请联系平台客服。" />
+                <el-alert v-else-if="!rechargeCheckoutReady" type="warning" :closable="false" title="交易条件暂不可用，请稍后重试。" />
+                <el-checkbox v-model="checkoutAcknowledged" :disabled="!rechargeCheckoutReady || rechargeSubmitting">我已阅读本次交易条件、退款与取消政策</el-checkbox>
+              </div>
+              <div class="recharge-actions">
+                <el-button :disabled="rechargeSubmitting" @click="rechargeVisible = false">取消</el-button>
+                <el-button type="primary" :disabled="!canSubmitRecharge" :loading="rechargeSubmitting" @click="submitRecharge">立即支付</el-button>
+              </div>
+            </template>
+          </el-dialog>
         </section>
 
         <section v-else class="console-panel">
@@ -747,7 +793,7 @@ import { ElMessage } from 'element-plus'
 import { clearAuth, getUser } from '@/utils/auth'
 import http, { createIdempotencyKey, getHttpErrorMessage, getHttpErrorNotice } from '@/utils/http'
 import { formatCny, formatMoneyDto as formatLocalizedMoneyDto, formatPerMillionUsd, formatSignedCny, formatUsd, type AmountUnits } from '@/utils/money'
-import { getDisplayCurrency } from '@/i18n/locale'
+import { displayCurrency } from '@/i18n/locale'
 import { DEFAULT_PAGE_SIZE } from '@/utils/listPage'
 import ModelSalePricing from '@/components/ModelSalePricing.vue'
 import DeveloperDocs from '@/components/DeveloperDocs.vue'
@@ -862,10 +908,17 @@ type RechargePlan = { id: number | string; name: string; amount: AmountUnits; bo
 const rechargeVisible = ref(false)
 const rechargeSubmitting = ref(false)
 const rechargeLegal = ref<Record<string, any> | null>(null)
+const rechargeLegalLoading = ref(false)
 const checkoutAcknowledged = ref(false)
 const selectedRechargePlan = ref<RechargePlan | null>(null)
 const customRecharge = ref(false)
-const customRechargeAmount = ref(1)
+const customRechargeAmount = ref<number | undefined>(1)
+const rechargeCheckoutReady = computed(() => rechargeLegal.value?.checkout_ready === true
+  && Boolean(rechargeLegal.value.checkout_disclosure_id))
+const canSubmitRecharge = computed(() => rechargeCheckoutReady.value && checkoutAcknowledged.value
+  && (customRecharge.value
+    ? Number.isFinite(customRechargeAmount.value) && (customRechargeAmount.value ?? 0) >= 0.01
+    : Boolean(selectedRechargePlan.value)))
 const rechargeOrders = ref<Array<Record<string, any>>>([])
 const rechargeOrderPage = ref(1)
 const rechargeOrderPageSize = ref(DEFAULT_PAGE_SIZE)
@@ -1294,7 +1347,15 @@ function formatMoneyDto(money?: MoneyDto | null) {
 
 async function loadCheckoutDisclosure() {
   checkoutAcknowledged.value = false
-  try { rechargeLegal.value = (await http.get('/api/public/legal')).data } catch { rechargeLegal.value = null }
+  rechargeLegalLoading.value = true
+  rechargeLegal.value = null
+  try {
+    rechargeLegal.value = (await http.get('/api/public/legal')).data
+  } catch {
+    rechargeLegal.value = null
+  } finally {
+    rechargeLegalLoading.value = false
+  }
 }
 
 function openRecharge(plan: RechargePlan) {
@@ -1342,38 +1403,32 @@ async function openRechargePanel() {
 }
 
 async function submitRecharge() {
-  if (!checkoutAcknowledged.value || !rechargeLegal.value?.publication_ready) return
-  const currentLegal = await http.get('/api/public/legal').then(response => response.data).catch(() => null)
-  if (!currentLegal?.checkout_ready || currentLegal.terms_version !== rechargeLegal.value.terms_version
-      || currentLegal.privacy_version !== rechargeLegal.value.privacy_version) {
-    checkoutAcknowledged.value = false
-    rechargeLegal.value = currentLegal
-    ElMessage.warning('公开条款已更新或暂不可用，请重新阅读后确认')
-    return
-  }
-  if (customRecharge.value) {
-    if (!Number.isFinite(customRechargeAmount.value) || customRechargeAmount.value <= 0) {
-      ElMessage.warning('自定义充值金额必须大于 0')
-      return
-    }
-  } else if (!selectedRechargePlan.value) return
+  if (!canSubmitRecharge.value || rechargeSubmitting.value) return
   if (rechargeForm.value.needInvoice && Object.entries(rechargeForm.value)
     .some(([key, value]) => !['paymentMethod', 'needInvoice'].includes(key) && !String(value).trim())) {
     ElMessage.warning('请完整填写账单信息')
     return
   }
+  const rechargeTarget = customRecharge.value
+    ? { customAmount: customRechargeAmount.value, currency: displayCurrency.value }
+    : { planId: selectedRechargePlan.value!.id }
+  const disclosureId = rechargeLegal.value?.checkout_disclosure_id
   rechargeSubmitting.value = true
   try {
-    const rechargeTarget = customRecharge.value
-      ? { customAmount: customRechargeAmount.value, currency: getDisplayCurrency() }
-      : { planId: selectedRechargePlan.value!.id }
+    const currentLegal = await http.get('/api/public/legal').then(response => response.data).catch(() => null)
+    if (!currentLegal?.checkout_ready || currentLegal.checkout_disclosure_id !== disclosureId) {
+      checkoutAcknowledged.value = false
+      rechargeLegal.value = currentLegal
+      ElMessage.warning('公开条款已更新或暂不可用，请重新阅读后确认')
+      return
+    }
     const created = await http.post('/api/platform/user/recharge-orders',
       { ...rechargeTarget, ...rechargeForm.value, needInvoice: wallet.value.invoiceEnabled && rechargeForm.value.needInvoice },
       { headers: { 'Idempotency-Key': createIdempotencyKey('wallet-recharge-order') } })
     const intentId = created.data?.paymentIntent?.id
     if (!intentId) throw new Error('支付意图创建失败')
     const started = await http.post(`/api/payment-intents/${intentId}/start`, {},
-      { headers: { 'Idempotency-Key': createIdempotencyKey(`payment-start-${intentId}`), 'X-Checkout-Disclosure': currentLegal.checkout_disclosure_id } })
+      { headers: { 'Idempotency-Key': createIdempotencyKey(`payment-start-${intentId}`), 'X-Checkout-Disclosure': disclosureId } })
     rechargeVisible.value = false
     paymentAction.value = paymentActionOf(started.data)
     paymentDialogVisible.value = Boolean(paymentAction.value)
@@ -1526,3 +1581,92 @@ const genericRows = [
   { name: '日志审计', desc: '记录请求、模型、耗时、Token 和错误原因。', status: '运行中' }
 ]
 </script>
+
+<style scoped>
+:global(#app .recharge-dialog.el-dialog) { padding: 0; overflow: hidden; }
+:global(#app .recharge-dialog .el-dialog__header) { padding: 16px 20px; }
+:global(#app .recharge-dialog .el-dialog__body) { padding: 16px 20px; max-height: none; }
+:global(#app .recharge-dialog .el-dialog__footer) { padding: 10px 20px 14px; }
+
+.recharge-choices {
+  display: grid;
+  gap: 8px;
+}
+
+.recharge-choice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 52px;
+  padding: 10px 14px;
+  border: 1px solid var(--el-border-color);
+  border-radius: 10px;
+  background: var(--el-bg-color);
+  color: var(--el-text-color-primary);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.recharge-choice span {
+  display: grid;
+  gap: 3px;
+  overflow-wrap: anywhere;
+}
+
+.recharge-choice small { color: var(--el-text-color-secondary); }
+.recharge-choice b { flex-shrink: 0; }
+.recharge-choice[aria-pressed="true"] {
+  border-color: var(--el-color-primary);
+  background: var(--el-color-primary-light-9);
+  color: var(--el-color-primary);
+}
+.recharge-choice:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: 2px; }
+.recharge-choice:disabled { cursor: default; }
+.recharge-choices :deep(.list-pagination) { padding: 0; gap: 8px; }
+.recharge-form { margin-top: 16px; }
+.recharge-amount { width: 100%; }
+
+.recharge-totals {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--el-fill-color-light);
+}
+.recharge-totals dt { color: var(--el-text-color-secondary); font-size: 13px; }
+.recharge-totals dd { margin: 4px 0 0; color: var(--el-text-color-primary); font-size: 18px; font-weight: 700; overflow-wrap: anywhere; }
+.recharge-methods { width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.recharge-methods :deep(.el-radio) { justify-content: center; margin: 0; min-width: 0; min-height: 40px; }
+
+.recharge-disclosure {
+  padding: 12px 14px;
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 10px;
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.recharge-disclosure p { margin: 0 0 8px; }
+.recharge-policy-links { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.recharge-policy-links a { color: var(--el-color-primary); }
+.recharge-policy-links:last-child { margin-bottom: 0; }
+.recharge-consent { margin-bottom: 6px; text-align: start; }
+.recharge-consent :deep(.el-checkbox) { height: auto; min-height: 32px; max-width: 100%; white-space: normal; }
+.recharge-consent :deep(.el-checkbox__label) { line-height: 1.5; }
+.recharge-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.recharge-actions :deep(.el-button + .el-button) { margin: 0; }
+:global(#app .recharge-dialog .recharge-actions .el-button--primary.is-disabled) {
+  opacity: .5 !important;
+  box-shadow: none !important;
+}
+@media (max-width: 520px) {
+  :global(.recharge-overlay .el-overlay-dialog) { padding-bottom: 56px; }
+  :global(#app .recharge-dialog.el-dialog) { max-height: calc(100dvh - 68px); }
+  .recharge-actions :deep(.el-button--primary) { flex: 1; }
+}
+</style>
