@@ -165,9 +165,9 @@ const logout = async () => {
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   padding: 24px 16px;
-  border-right: 1px solid #d7e4f7;
+  border-right: 1px solid var(--lnx-line);
   background: linear-gradient(180deg, rgba(250,253,255,.98), rgba(235,244,255,.96));
-  color: #183354;
+  color: var(--lnx-text);
   box-shadow: 12px 0 36px rgba(23,105,255,.06);
 }
 
@@ -185,19 +185,19 @@ const logout = async () => {
   border-radius: 8px;
   display: grid;
   place-items: center;
-  background: #eef6ff;
+  background: var(--lnx-brand-50);
 }
 
 .brand-mark img { width: 38px; height: 38px; object-fit: contain; }
 
 .brand-title {
   font-weight: 800;
-  color: #102541;
+  color: var(--lnx-text);
 }
 
 .brand-subtitle {
   margin-top: 2px;
-  color: #6d7f98;
+  color: var(--lnx-text-muted);
   font-size: 12px;
 }
 
@@ -205,9 +205,9 @@ const logout = async () => {
   border-right: none;
   background: transparent;
   --el-menu-bg-color: transparent;
-  --el-menu-text-color: #4e6380;
-  --el-menu-hover-bg-color: #e5f0ff;
-  --el-menu-active-color: #1769ff;
+  --el-menu-text-color: var(--lnx-text-muted);
+  --el-menu-hover-bg-color: var(--lnx-brand-50);
+  --el-menu-active-color: var(--lnx-brand-600);
 }
 
 .admin-menu :deep(.el-menu-item),
@@ -215,40 +215,40 @@ const logout = async () => {
   height: 42px;
   margin-bottom: 6px;
   border-radius: 8px;
-  color: #4e6380;
+  color: var(--lnx-text-muted);
   font-weight: 600;
 }
 
 .admin-menu :deep(.el-menu-item .el-icon),
 .admin-menu :deep(.el-sub-menu__title .el-icon),
 .admin-menu :deep(.el-sub-menu__icon-arrow) {
-  color: #6a7e99;
+  color: var(--lnx-text-muted);
 }
 
 .admin-menu :deep(.el-sub-menu .el-menu-item) {
   min-width: 0;
   padding-left: 48px !important;
-  color: #607590;
+  color: var(--lnx-text-muted);
   font-weight: 500;
 }
 
 .admin-menu :deep(.el-menu-item.is-active),
 .admin-menu :deep(.el-menu-item.is-active:hover) {
-  background: linear-gradient(135deg, #1769ff, #00a9cc);
-  color: #fff;
+  background: var(--lnx-brand-50);
+  color: var(--lnx-brand-700);
 }
 
 .admin-menu :deep(.el-menu-item:hover),
 .admin-menu :deep(.el-sub-menu__title:hover),
 .admin-menu :deep(.el-sub-menu.is-opened > .el-sub-menu__title) {
-  background: #e5f0ff;
-  color: #1769ff;
+  background: var(--lnx-brand-50);
+  color: var(--lnx-brand-600);
 }
 
 .admin-menu :deep(.el-menu-item.is-active .el-icon),
 .admin-menu :deep(.el-sub-menu.is-opened > .el-sub-menu__title .el-icon),
 .admin-menu :deep(.el-sub-menu.is-opened > .el-sub-menu__title .el-sub-menu__icon-arrow) {
-  color: #1769ff;
+  color: var(--lnx-brand-600);
 }
 
 .admin-header {
@@ -258,19 +258,19 @@ const logout = async () => {
   min-height: 82px;
   padding: 18px 30px;
   background: #fff;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid var(--lnx-line);
 }
 
 .header-copy strong {
   display: block;
   margin: 0;
   font-size: 24px;
-  color: #111827;
+  color: var(--lnx-text);
 }
 
 .header-copy p {
   margin: 6px 0 0;
-  color: #6b7280;
+  color: var(--lnx-text-muted);
 }
 
 .header-actions {

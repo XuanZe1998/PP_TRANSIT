@@ -25,5 +25,5 @@ onMounted(() => { window.addEventListener('open-cookie-preferences', open); if (
 onBeforeUnmount(() => window.removeEventListener('open-cookie-preferences', open))
 </script>
 <style scoped>
-.cookie-banner{position:fixed;bottom:12px;left:12px;right:12px;z-index:2100;background:var(--lnx-color-surface);color:var(--lnx-text-primary);border:1px solid var(--lnx-color-border);border-radius:12px;padding:16px;box-shadow:var(--lnx-shadow-md);display:flex;align-items:center;gap:12px;flex-wrap:wrap}.cookie-banner p{flex:1;min-width:240px;margin:0}.cookie-banner button{cursor:pointer;padding:8px 12px;border:1px solid var(--lnx-color-border-strong);border-radius:7px;background:var(--lnx-color-brand-50);color:var(--lnx-color-brand-700)}.cookie-banner a{color:var(--lnx-text-link)}
+.cookie-banner{position:fixed;bottom:12px;left:12px;right:12px;z-index:2100;background:var(--lnx-surface);color:var(--lnx-text);border:1px solid var(--lnx-color-border);border-radius:12px;padding:16px;box-shadow:var(--lnx-shadow-overlay);display:flex;align-items:center;gap:12px;flex-wrap:wrap}.cookie-banner p{flex:1;min-width:240px;margin:0}.cookie-banner button{cursor:pointer;padding:8px 12px;border:1px solid var(--lnx-line-strong);border-radius:7px;background:var(--lnx-brand-50);color:var(--lnx-brand-700)}.cookie-banner a{color:var(--lnx-text-link)}
 </style>

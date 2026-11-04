@@ -13,6 +13,8 @@ body {
   background-repeat: no-repeat;
   font-family: Inter, "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
   line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 *,
@@ -37,6 +39,22 @@ body {
   color: var(--lnx-text);
   text-wrap: balance;
 }
+
+:where(h1, h2, h3) { letter-spacing: -.025em; }
+:where(input, button, textarea, select) { font-family: inherit; }
+:where(img, video, canvas) { max-width: 100%; }
+:where(.form-hint, .field-hint) { font-size: 12px; line-height: 1.6; }
+:where(.el-statistic, .el-table, .console-stat, .metric-card) { font-variant-numeric: tabular-nums; }
+
+/* Keep long translated labels and identifiers within their own layout cells. */
+:where(.panel-head, .page-heading, .card-head, .toolbar, .filter-row) {
+  min-width: 0;
+  flex-wrap: wrap;
+  row-gap: 12px;
+}
+
+:where(.panel-head, .page-heading, .card-head) > div { min-width: 0; }
+:where(.el-dialog, .el-drawer) :where(p, small, .form-hint) { overflow-wrap: anywhere; }
 
 :where(p, small, .muted, .form-hint, .field-hint) {
   color: var(--lnx-text-muted);

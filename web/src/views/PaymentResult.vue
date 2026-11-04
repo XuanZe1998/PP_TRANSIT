@@ -80,6 +80,6 @@ onBeforeUnmount(stopPolling)
 </script>
 
 <style scoped>
-.payment-result { min-height:70vh; display:grid; place-items:center; padding:32px 16px; background:#f6f8fb; }
+.payment-result { min-height:70vh; display:grid; place-items:center; padding:32px 16px; background:var(--lnx-surface-soft); }
 .payment-result .el-card { width:min(680px, 100%); }
 </style>

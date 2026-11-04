@@ -38,7 +38,7 @@ onMounted(() => window.setTimeout(redirect, 500))
   display: grid;
   place-items: center;
   padding: 24px;
-  background: radial-gradient(circle at top, #eff6ff, #f8fafc 55%);
+  background: radial-gradient(circle at top, var(--lnx-brand-50), var(--lnx-surface-soft) 55%);
 }
 
 .redirect-card {
@@ -48,7 +48,7 @@ onMounted(() => window.setTimeout(redirect, 500))
   flex-direction: column;
   gap: 16px;
   padding: 48px;
-  border: 1px solid #dbeafe;
+  border: 1px solid var(--lnx-brand-100);
   border-radius: 20px;
   background: #fff;
   box-shadow: 0 24px 70px rgb(15 23 42 / 10%);
@@ -61,7 +61,7 @@ onMounted(() => window.setTimeout(redirect, 500))
   display: grid;
   place-items: center;
   border-radius: 18px;
-  background: #2563eb;
+  background: var(--lnx-brand-600);
   color: #fff;
   font-size: 26px;
   font-weight: 700;
@@ -73,7 +73,7 @@ onMounted(() => window.setTimeout(redirect, 500))
 }
 
 .redirect-card p {
-  color: #64748b;
+  color: var(--lnx-text-muted);
   line-height: 1.75;
 }
 </style>

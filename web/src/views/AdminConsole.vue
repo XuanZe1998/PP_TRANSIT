@@ -2865,7 +2865,7 @@ function healthType(value: string) {
   min-width: 0;
   overflow: hidden;
   padding: 18px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--lnx-line);
   border-radius: 8px;
   background: #fff;
   box-shadow: 0 12px 28px rgba(15, 23, 42, 0.05);
@@ -2914,9 +2914,9 @@ function healthType(value: string) {
 }
 .security-toolbar { margin: 14px 0; }
 .security-toolbar span,
-.sensitive-test-box span { display: block; margin-top: 4px; color: #71829b; font-size: 12px; }
+.sensitive-test-box span { display: block; margin-top: 4px; color: var(--lnx-text-muted); font-size: 12px; }
 .security-toolbar > div:last-child { display: flex; gap: 8px; }
-.sensitive-test-box { display: grid; gap: 10px; margin-top: 18px; padding: 16px; border: 1px solid #d8e5f7; border-radius: 12px; background: #f7fbff; }
+.sensitive-test-box { display: grid; gap: 10px; margin-top: 18px; padding: 16px; border: 1px solid var(--lnx-line); border-radius: 12px; background: var(--lnx-surface-soft); }
 .sensitive-form-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 0 12px; }
 .sensitive-form-grid :deep(.el-select) { width: 100%; }
 
@@ -2940,7 +2940,7 @@ function healthType(value: string) {
 }
 
 .admin-table-shell :deep(.el-scrollbar__thumb) {
-  background-color: #64748b;
+  background-color: var(--lnx-text-muted);
 }
 
 .admin-table-channels :deep(.el-table__body),
@@ -2973,7 +2973,7 @@ function healthType(value: string) {
 
 .panel-head h3 {
   margin: 0;
-  color: #111827;
+  color: var(--lnx-text);
   font-size: 18px;
 }
 
@@ -3025,19 +3025,19 @@ function healthType(value: string) {
   min-height: 76px;
   padding: 12px;
   border-radius: 8px;
-  background: #f8fafc;
+  background: var(--lnx-surface-soft);
 }
 
 .report-summary span {
   display: block;
-  color: #64748b;
+  color: var(--lnx-text-muted);
   font-size: 12px;
 }
 
 .report-summary strong {
   display: block;
   margin-top: 10px;
-  color: #111827;
+  color: var(--lnx-text);
   font-size: 22px;
 }
 
@@ -3048,7 +3048,7 @@ function healthType(value: string) {
 
 .field-hint {
   width: 100%;
-  color: #64748b;
+  color: var(--lnx-text-muted);
   font-size: 12px;
 }
 
@@ -3061,9 +3061,9 @@ function healthType(value: string) {
 
 .discovery-summary div {
   padding: 12px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--lnx-line);
   border-radius: 8px;
-  background: #f8fafc;
+  background: var(--lnx-surface-soft);
 }
 
 .discovery-summary span,
@@ -3072,13 +3072,13 @@ function healthType(value: string) {
 }
 
 .discovery-summary span {
-  color: #64748b;
+  color: var(--lnx-text-muted);
   font-size: 12px;
 }
 
 .discovery-summary strong {
   margin-top: 6px;
-  color: #0f172a;
+  color: var(--lnx-text);
 }
 
 .discovery-switch {
@@ -3120,7 +3120,7 @@ function healthType(value: string) {
 
 .channel-model-manager .form-hint {
   margin: 0;
-  color: #64748b;
+  color: var(--lnx-text-muted);
   font-size: 12px;
 }
 
@@ -3140,8 +3140,8 @@ function healthType(value: string) {
   overflow-wrap: anywhere;
   padding: 14px;
   border-radius: 8px;
-  background: #0f172a;
-  color: #e2e8f0;
+  background: var(--lnx-code-bg);
+  color: var(--lnx-line);
 }
 
 .channel-pricing-editor {
@@ -3149,7 +3149,7 @@ function healthType(value: string) {
   gap: 16px;
   margin-top: 22px;
   padding-top: 20px;
-  border-top: 1px solid #e2e8f0;
+  border-top: 1px solid var(--lnx-line);
 }
 
 .channel-pricing-head,
@@ -3174,7 +3174,7 @@ function healthType(value: string) {
 .channel-model-pricing-title span {
   display: block;
   margin-top: 5px;
-  color: #64748b;
+  color: var(--lnx-text-muted);
   font-size: 12px;
 }
 
@@ -3182,9 +3182,9 @@ function healthType(value: string) {
   display: grid;
   gap: 16px;
   padding: 18px;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--lnx-line-strong);
   border-radius: 12px;
-  background: #f8fafc;
+  background: var(--lnx-surface-soft);
 }
 
 .credential-pool-card {
@@ -3193,26 +3193,26 @@ function healthType(value: string) {
   padding: 14px;
   border: 1px solid #cfe0f6;
   border-radius: 12px;
-  background: #f7fbff;
+  background: var(--lnx-surface-soft);
 }
 
 .credential-pool-head { display:flex;align-items:center;justify-content:space-between;gap:12px; }
 .credential-pool-head div { display:grid;gap:3px; }
-.credential-pool-head strong { color:#17345f;font-size:14px; }
-.credential-pool-head span { color:#64748b;font-size:11px; }
+.credential-pool-head strong { color:var(--lnx-text);font-size:14px; }
+.credential-pool-head span { color:var(--lnx-text-muted);font-size:11px; }
 .credential-form-grid { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 14px; }
 .unit-price-card { display:grid;gap:14px;padding:16px;border:1px solid #b9d8f5;border-radius:12px;background:#fff; }
 .unit-price-head { display:flex;align-items:center;justify-content:space-between;gap:12px; }
-.unit-price-head strong { color:#17345f; }
-.unit-price-head span { color:#64748b;font-size:12px; }
+.unit-price-head strong { color:var(--lnx-text); }
+.unit-price-head span { color:var(--lnx-text-muted);font-size:12px; }
 .unit-price-grid { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px; }
 .unit-price-grid.metadata { grid-template-columns:repeat(2,minmax(0,1fr)); }
-.unit-price-grid label { display:grid;gap:6px;min-width:0;color:#475569;font-size:12px; }
+.unit-price-grid label { display:grid;gap:6px;min-width:0;color:var(--lnx-text-regular);font-size:12px; }
 .unit-price-grid :deep(.el-input-number) { width:100%; }
 
 .channel-model-pricing-title strong {
   display: block;
-  color: #0f172a;
+  color: var(--lnx-text);
   font-size: 18px;
 }
 
@@ -3237,7 +3237,7 @@ function healthType(value: string) {
   display: grid;
   gap: 6px;
   min-width: 0;
-  color: #475569;
+  color: var(--lnx-text-regular);
   font-size: 12px;
 }
 
@@ -3256,7 +3256,7 @@ function healthType(value: string) {
   display: grid;
   gap: 14px;
   padding: 16px;
-  border: 1px solid #dbeafe;
+  border: 1px solid var(--lnx-brand-100);
   border-radius: 10px;
   background: #fff;
 }
@@ -3282,11 +3282,11 @@ function healthType(value: string) {
   gap: 12px;
   min-width: 0;
   padding: 12px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--lnx-line);
   border-radius: 10px;
 }
 
-.official-group { background: #f8fafc; }
+.official-group { background: var(--lnx-surface-soft); }
 .cost-group { background: #fff7ed; border-color: #fed7aa; }
 .sale-group { background: #f0fdf4; border-color: #bbf7d0; }
 
@@ -3303,7 +3303,7 @@ function healthType(value: string) {
 
 .price-group-head strong {
   flex: 0 0 auto;
-  color: #0f172a;
+  color: var(--lnx-text);
   font-size: 12px;
 }
 
@@ -3333,13 +3333,13 @@ function healthType(value: string) {
 
 .channel-price-actions {
   align-items: flex-start;
-  color: #475569;
+  color: var(--lnx-text-regular);
   font-size: 12px;
 }
 
 .channel-price-actions .loss,
 .negative-profit {
-  color: #dc2626;
+  color: var(--lnx-danger);
 }
 
 .sensitive-guide-grid {
@@ -3352,7 +3352,7 @@ function healthType(value: string) {
 .sensitive-guide-grid article {
   min-width: 0;
   padding: 12px;
-  border: 1px solid #dbe7f8;
+  border: 1px solid var(--lnx-line);
   border-radius: 10px;
   background: #f8fbff;
 }
@@ -3362,8 +3362,8 @@ function healthType(value: string) {
   display: block;
 }
 
-.sensitive-guide-grid strong { color: #17345f; font-size: 13px; }
-.sensitive-guide-grid span { margin-top: 5px; color: #64748b; font-size: 12px; line-height: 1.55; }
+.sensitive-guide-grid strong { color: var(--lnx-text); font-size: 13px; }
+.sensitive-guide-grid span { margin-top: 5px; color: var(--lnx-text-muted); font-size: 12px; line-height: 1.55; }
 
 .tier-table-cell {
   display: grid;
@@ -3374,7 +3374,7 @@ function healthType(value: string) {
 
 .tier-table-cell span + span {
   padding-top: 8px;
-  border-top: 1px dashed #e2e8f0;
+  border-top: 1px dashed var(--lnx-line);
 }
 
 .model-market-priority-toolbar {
@@ -3384,7 +3384,7 @@ function healthType(value: string) {
 }
 
 .model-market-priority-toolbar span {
-  color: #64748b;
+  color: var(--lnx-text-muted);
   font-size: 12px;
 }
 

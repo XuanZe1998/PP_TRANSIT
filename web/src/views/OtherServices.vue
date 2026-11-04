@@ -850,7 +850,7 @@ onBeforeUnmount(() => {
 .service-order-row {
   margin-top: auto;
   padding-top: 18px;
-  border-top: 1px solid #e2e8f0;
+  border-top: 1px solid var(--lnx-line);
 }
 
 .service-order-row div {
@@ -860,18 +860,18 @@ onBeforeUnmount(() => {
 }
 
 .service-order-row strong {
-  color: #0f172a;
+  color: var(--lnx-text);
   font-size: 22px;
 }
 
 .service-order-row small {
-  color: #64748b;
+  color: var(--lnx-text-muted);
 }
 
 .service-orders {
   margin-top: 12px;
   padding: 24px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--lnx-line);
   border-radius: 12px;
   background: #fff;
 }

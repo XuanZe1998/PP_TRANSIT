@@ -75,10 +75,11 @@ describe('console layout contracts', () => {
     expect(css).not.toContain('.market-page .el-button--primary')
   })
 
-  it('uses the bright technology administrator navigation palette', () => {
+  it('uses the shared administrator navigation palette', () => {
     const layout = source('src/components/AdminLayout.vue')
     expect(layout).toContain('rgba(250,253,255,.98)')
-    expect(layout).toContain('linear-gradient(135deg, #1769ff, #00a9cc)')
+    expect(layout).toContain('background: var(--lnx-brand-50)')
+    expect(layout).toContain('color: var(--lnx-brand-700)')
     expect(layout).toContain('.el-sub-menu__title')
   })
 

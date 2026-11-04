@@ -95,5 +95,5 @@ onMounted(async()=>{await loadAll();await loadDiagnostics()})
 </script>
 
 <style scoped>
-.creative-admin{display:grid;gap:18px}.config-tabs,.form-card{padding:20px;border:1px solid #e5e7eb;border-radius:12px;background:#fff}.toolbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}.toolbar p{margin:0;color:#6b7280}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 18px}.tag-gap{margin-left:6px}.el-select,.el-input-number{width:100%}@media(max-width:760px){.grid{grid-template-columns:1fr}.toolbar{align-items:flex-start;flex-direction:column;gap:12px}}
+.creative-admin{display:grid;gap:18px}.config-tabs,.form-card{padding:20px;border:1px solid var(--lnx-line);border-radius:12px;background:#fff}.toolbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}.toolbar p{margin:0;color:var(--lnx-text-muted)}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 18px}.tag-gap{margin-left:6px}.el-select,.el-input-number{width:100%}@media(max-width:760px){.grid{grid-template-columns:1fr}.toolbar{align-items:flex-start;flex-direction:column;gap:12px}}
 </style>

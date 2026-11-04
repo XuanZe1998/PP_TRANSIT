@@ -6,15 +6,15 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  --tech-bg: #f2f7ff;
+  --tech-bg: var(--lnx-bg);
   --tech-surface: rgba(255, 255, 255, 0.9);
   --tech-surface-strong: #ffffff;
-  --tech-line: #d7e4f7;
-  --tech-line-strong: #b9cff0;
-  --tech-text: #102541;
-  --tech-muted: #647792;
-  --tech-blue: #1769ff;
-  --tech-cyan: #00a9cc;
+  --tech-line: var(--lnx-line);
+  --tech-line-strong: var(--lnx-line-strong);
+  --tech-text: var(--lnx-text);
+  --tech-muted: var(--lnx-text-muted);
+  --tech-blue: var(--lnx-brand-600);
+  --tech-cyan: var(--lnx-cyan-600);
   --tech-indigo: #6559f5;
   --tech-glow: 0 16px 45px rgba(23, 105, 255, 0.09);
   --el-color-primary: #1769ff;
@@ -4363,15 +4363,15 @@ html {
    -------------------------------------------------------------------------- */
 :root {
   color-scheme: dark;
-  --tech-bg: #050916;
+  --tech-bg: var(--lnx-bg);
   --tech-surface: rgba(11, 23, 49, 0.9);
   --tech-surface-strong: #0c1934;
-  --tech-line: rgba(106, 145, 220, 0.24);
-  --tech-line-strong: rgba(102, 145, 239, 0.42);
-  --tech-text: #eaf2ff;
-  --tech-muted: #8fa2c1;
-  --tech-blue: #3b82f6;
-  --tech-cyan: #22d3ee;
+  --tech-line: var(--lnx-line);
+  --tech-line-strong: var(--lnx-line-strong);
+  --tech-text: var(--lnx-text);
+  --tech-muted: var(--lnx-text-muted);
+  --tech-blue: var(--lnx-brand-600);
+  --tech-cyan: var(--lnx-cyan-600);
   --tech-indigo: #716bff;
   --tech-glow: 0 18px 48px rgba(0, 0, 0, 0.26), inset 0 1px rgba(255,255,255,.035);
   --el-bg-color: #0a1429;
@@ -5777,15 +5777,15 @@ code,
    -------------------------------------------------------------------------- */
 :root {
   color-scheme: light;
-  --tech-bg: #f4f7fb;
+  --tech-bg: var(--lnx-bg);
   --tech-surface: #ffffff;
   --tech-surface-strong: #ffffff;
-  --tech-line: #d8e3f0;
-  --tech-line-strong: #bfd0e4;
-  --tech-text: #18314f;
-  --tech-muted: #52657e;
-  --tech-blue: #2563eb;
-  --tech-cyan: #0891b2;
+  --tech-line: var(--lnx-line);
+  --tech-line-strong: var(--lnx-line-strong);
+  --tech-text: var(--lnx-text);
+  --tech-muted: var(--lnx-text-muted);
+  --tech-blue: var(--lnx-brand-600);
+  --tech-cyan: var(--lnx-cyan-600);
   --tech-indigo: #6366f1;
   --tech-glow: 0 8px 24px rgba(51, 75, 105, 0.08);
   --el-bg-color: #ffffff;
@@ -6217,9 +6217,9 @@ pre,
 
 /* Contrast and color harmony audit: final foreground/background guarantees. */
 :root {
-  --ui-text: #18314f;
-  --ui-muted: #52657e;
-  --ui-subtle: #5f7087;
+  --ui-text: var(--lnx-text);
+  --ui-muted: var(--lnx-text-muted);
+  --ui-subtle: var(--lnx-text-muted);
   --ui-primary-surface: #e2efff;
   --ui-primary-text: #0d4f9f;
   --ui-success-surface: #e8f8f1;
@@ -6687,15 +6687,15 @@ pre,
 /* The complete admin area uses one calm, high-contrast light palette. */
 #app > .admin-shell,
 #app > .admin-login {
-  --admin-bg: #f3f7fc;
-  --admin-surface: #ffffff;
-  --admin-surface-soft: #f7faff;
-  --admin-line: #d8e3f0;
-  --admin-line-strong: #bfd0e4;
-  --admin-text: #18314f;
-  --admin-muted: #52657e;
-  --admin-primary: #2563eb;
-  --admin-primary-hover: #1d4ed8;
+  --admin-bg: var(--lnx-bg);
+  --admin-surface: var(--lnx-surface);
+  --admin-surface-soft: var(--lnx-surface-soft);
+  --admin-line: var(--lnx-line);
+  --admin-line-strong: var(--lnx-line-strong);
+  --admin-text: var(--lnx-text);
+  --admin-muted: var(--lnx-text-muted);
+  --admin-primary: var(--lnx-brand-600);
+  --admin-primary-hover: var(--lnx-brand-700);
   color: var(--admin-text) !important;
 }
 

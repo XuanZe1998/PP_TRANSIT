@@ -548,14 +548,14 @@ onMounted(async () => {
 .operation-list h3,
 .response-head h3 {
   margin: 0;
-  color: #111827;
+  color: var(--lnx-text);
 }
 
 .webhook-head p,
 .saved-card-head p,
 .product-code-head p {
   margin: 8px 0 0;
-  color: #64748b;
+  color: var(--lnx-text-muted);
 }
 
 .vmcard-status-grid {
@@ -573,16 +573,16 @@ onMounted(async () => {
   padding: 14px;
   border: 1px solid #edf2f7;
   border-radius: 8px;
-  background: #f8fafc;
+  background: var(--lnx-surface-soft);
 }
 
 .vmcard-status-grid span {
-  color: #64748b;
+  color: var(--lnx-text-muted);
   font-size: 13px;
 }
 
 .vmcard-status-grid strong {
-  color: #111827;
+  color: var(--lnx-text);
 }
 
 .vmcard-tabs :deep(.el-tabs__content) {
@@ -614,7 +614,7 @@ onMounted(async () => {
   border: 1px solid transparent;
   border-radius: 8px;
   background: transparent;
-  color: #334155;
+  color: var(--lnx-text);
   text-align: left;
   cursor: pointer;
 }
@@ -622,7 +622,7 @@ onMounted(async () => {
 .operation-list button:hover,
 .operation-list button.active {
   border-color: #bfdbfe;
-  background: #eff6ff;
+  background: var(--lnx-brand-50);
 }
 
 .operation-list button strong,
@@ -632,7 +632,7 @@ onMounted(async () => {
 
 .operation-list button small {
   margin-top: 4px;
-  color: #94a3b8;
+  color: var(--lnx-text-placeholder);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
@@ -647,7 +647,7 @@ onMounted(async () => {
 .json-label {
   display: block;
   margin: 18px 0 8px;
-  color: #475569;
+  color: var(--lnx-text-regular);
   font-weight: 700;
 }
 
@@ -662,7 +662,7 @@ onMounted(async () => {
 }
 
 .response-head span {
-  color: #64748b;
+  color: var(--lnx-text-muted);
   font-size: 12px;
 }
 
@@ -672,8 +672,8 @@ onMounted(async () => {
   margin: 10px 0 0;
   padding: 18px;
   border-radius: 8px;
-  background: #0f172a;
-  color: #dbeafe;
+  background: var(--lnx-code-bg);
+  color: var(--lnx-code-text);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 13px;
   line-height: 1.6;

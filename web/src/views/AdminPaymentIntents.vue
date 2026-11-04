@@ -149,7 +149,7 @@ onMounted(load)
 .payment-intent-admin { display: flex; flex-direction: column; gap: 18px; padding: 8px 0; }
 .panel-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .panel-head h2 { margin: 0; }
-.panel-head p { margin: 8px 0 0; color: #64748b; }
+.panel-head p { margin: 8px 0 0; color: var(--lnx-text-muted); }
 .filters { display: grid; grid-template-columns: minmax(240px, 1fr) 180px auto; gap: 12px; }
 @media (max-width: 720px) { .filters { grid-template-columns: 1fr; } }
 </style>

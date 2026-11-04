@@ -387,6 +387,6 @@ onMounted(fetchOrders)
 
 .panel-head p {
   margin: 8px 0 0;
-  color: #64748b;
+  color: var(--lnx-text-muted);
 }
 </style>

@@ -47,4 +47,4 @@ async function saveCoupon(){const p={code:couponForm.code,discountCents:Math.rou
 async function disableCoupon(id:number){await http.delete(`/api/service-orders/admin/coupons/${id}`);await loadCoupons()}
 onMounted(()=>load().catch(e=>ElMessage.error(getHttpErrorMessage(e,'商品能力加载失败'))))
 </script>
-<style scoped>.commerce-admin{display:grid;gap:18px;margin-top:24px}.panel{padding:18px;border:1px solid #e2e8f0;border-radius:10px}.inventory-panel{display:grid;gap:12px}.panel-title,.inventory-import-actions{display:flex;align-items:center;justify-content:space-between;gap:16px}.inventory-import-actions span,.security-hint{color:#64748b;font-size:12px}.security-hint{display:block;margin-top:6px}</style>
+<style scoped>.commerce-admin{display:grid;gap:18px;margin-top:24px}.panel{padding:18px;border:1px solid var(--lnx-line);border-radius:10px}.inventory-panel{display:grid;gap:12px}.panel-title,.inventory-import-actions{display:flex;align-items:center;justify-content:space-between;gap:16px}.inventory-import-actions span,.security-hint{color:var(--lnx-text-muted);font-size:12px}.security-hint{display:block;margin-top:6px}</style>

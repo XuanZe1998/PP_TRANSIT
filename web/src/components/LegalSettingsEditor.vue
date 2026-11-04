@@ -70,13 +70,13 @@ async function saveField(field: LegalSettingField) {
 .legal-settings-editor :deep(.el-collapse) { border: 0; }
 .legal-settings-title { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
 .legal-settings-title h3 { margin: 0; }
-.legal-settings-title > span { font-size: 12px; color: #64748b; }
+.legal-settings-title > span { font-size: 12px; color: var(--lnx-text-muted); }
 .legal-settings-group { margin-top: 24px; }
 .legal-settings-group h4 { margin: 0 0 14px; }
 .legal-settings-field { padding: 16px 0; border-top: 1px solid #e4e7ed; }
 .legal-settings-field-head, .legal-settings-field-actions { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 8px; }
 .legal-settings-field-head code { font-size: 12px; font-weight: normal; overflow-wrap: anywhere; }
 .legal-settings-field-actions { margin: 8px 0 0; }
-.legal-settings-field-actions small { color: #64748b; }
+.legal-settings-field-actions small { color: var(--lnx-text-muted); }
 @media (max-width: 640px) { .legal-settings-field-head, .legal-settings-field-actions { align-items: flex-start; flex-direction: column; } }
 </style>

@@ -92,7 +92,7 @@ const submit = async () => {
 .login-panel {
   width: min(460px, 100%);
   padding: 34px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--lnx-line);
   border-radius: 8px;
   background: #fff;
   box-shadow: 0 24px 70px rgba(15, 23, 42, 0.12);
@@ -112,7 +112,7 @@ const submit = async () => {
   border-radius: 8px;
   display: grid;
   place-items: center;
-  background: #eef6ff;
+  background: var(--lnx-brand-50);
 }
 
 .brand-mark img { width: 38px; height: 38px; object-fit: contain; }
@@ -120,12 +120,12 @@ const submit = async () => {
 h1 {
   margin: 0;
   font-size: 28px;
-  color: #0f172a;
+  color: var(--lnx-text);
 }
 
 p {
   margin: 8px 0 0;
-  color: #64748b;
+  color: var(--lnx-text-muted);
   line-height: 1.7;
 }
 

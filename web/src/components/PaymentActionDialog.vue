@@ -42,7 +42,7 @@ function openAction() {
 
 <style scoped>
 .payment-action { display:grid; justify-items:center; gap:18px; text-align:center; }
-.payment-action p { margin:0; color:#475569; }
+.payment-action p { margin:0; color:var(--lnx-text-regular); }
 .payment-action .el-alert { text-align:left; }
 .qr-frame { padding:14px; border:1px solid #dbe3ec; border-radius:14px; background:#fff; line-height:0; }
 </style>

@@ -104,6 +104,7 @@ defineProps<{
 
   .admin-page-toolbar__filters > :deep(*),
   .admin-page-toolbar__actions > :deep(*) {
+    flex: 0 0 auto !important;
     width: 100% !important;
     margin-left: 0 !important;
   }

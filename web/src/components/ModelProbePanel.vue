@@ -242,21 +242,21 @@ onUnmounted(() => {
 <style scoped>
 .model-probe-panel { display: flex; flex-direction: column; gap: 18px; }
 .probe-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
-.probe-head h2 { margin: 0 0 6px; font-size: 20px; color: #111827; }
-.probe-head p { margin: 0; color: #6b7280; font-size: 13px; line-height: 1.6; max-width: 720px; }
-.probe-form { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 18px; }
+.probe-head h2 { margin: 0 0 6px; font-size: 20px; color: var(--lnx-text); }
+.probe-head p { margin: 0; color: var(--lnx-text-muted); font-size: 13px; line-height: 1.6; max-width: 720px; }
+.probe-form { background: #fff; border: 1px solid var(--lnx-line); border-radius: 12px; padding: 18px; }
 .probe-form-actions { display: flex; justify-content: space-between; align-items: center; margin-top: 4px; gap: 12px; flex-wrap: wrap; }
 .probe-table { width: 100%; }
 .probe-pagination { display: flex; justify-content: flex-end; }
-.score-max { color: #9ca3af; font-size: 12px; }
-.muted { color: #9ca3af; }
-.score-high { color: #16a34a; font-weight: 700; }
-.score-mid { color: #f59e0b; font-weight: 700; }
-.score-low { color: #ef4444; font-weight: 700; }
+.score-max { color: var(--lnx-text-placeholder); font-size: 12px; }
+.muted { color: var(--lnx-text-placeholder); }
+.score-high { color: var(--lnx-success); font-weight: 700; }
+.score-mid { color: var(--lnx-warning); font-weight: 700; }
+.score-low { color: var(--lnx-danger); font-weight: 700; }
 .probe-desc { margin-bottom: 16px; }
-.report-title { margin: 4px 0 10px; font-size: 15px; color: #111827; }
+.report-title { margin: 4px 0 10px; font-size: 15px; color: var(--lnx-text); }
 .report-json {
-  background: #0f172a; color: #d1e5ff; border-radius: 10px; padding: 16px;
+  background: var(--lnx-code-bg); color: var(--lnx-code-text); border-radius: 10px; padding: 16px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12px; line-height: 1.6; max-height: 420px; overflow: auto; white-space: pre-wrap; word-break: break-word;
 }

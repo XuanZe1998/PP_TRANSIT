@@ -391,8 +391,8 @@ onMounted(() => {
     linear-gradient(180deg, rgba(255, 255, 255, 0.86), rgba(246, 248, 251, 0.96)),
     radial-gradient(circle at 18% 12%, rgba(20, 184, 166, 0.16), transparent 30%),
     radial-gradient(circle at 82% 18%, rgba(37, 99, 235, 0.14), transparent 34%),
-    #f6f8fb;
-  color: #111827;
+    var(--lnx-surface-soft);
+  color: var(--lnx-text);
 }
 
 .item-nav {
@@ -422,7 +422,7 @@ onMounted(() => {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  color: #0f172a;
+  color: var(--lnx-text);
   font-weight: 800;
 }
 
@@ -432,7 +432,7 @@ onMounted(() => {
   height: 34px;
   place-items: center;
   border-radius: 8px;
-  background: #0f172a;
+  background: var(--lnx-code-bg);
   color: #ffffff;
 }
 
@@ -440,7 +440,7 @@ onMounted(() => {
   display: flex;
   gap: 4px;
   padding: 4px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--lnx-line);
   border-radius: 8px;
   background: #ffffff;
 }
@@ -457,8 +457,8 @@ onMounted(() => {
 
 .item-links button.active,
 .item-links button:hover {
-  background: #eef5ff;
-  color: #0b63ce;
+  background: var(--lnx-brand-50);
+  color: var(--lnx-brand-700);
 }
 
 .item-search {
@@ -467,10 +467,10 @@ onMounted(() => {
   align-items: center;
   gap: 10px;
   padding: 0 14px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--lnx-line);
   border-radius: 8px;
   background: #ffffff;
-  color: #64748b;
+  color: var(--lnx-text-muted);
 }
 
 .item-search input {
@@ -479,7 +479,7 @@ onMounted(() => {
   border: 0;
   outline: 0;
   background: transparent;
-  color: #111827;
+  color: var(--lnx-text);
 }
 
 .item-actions {
@@ -504,7 +504,7 @@ onMounted(() => {
 .buy-panel,
 .detail-panel,
 .tier-panel {
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--lnx-line);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.96);
   box-shadow: 0 18px 46px rgba(15, 23, 42, 0.08);
@@ -527,7 +527,7 @@ onMounted(() => {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
   padding: 14px;
-  border-top: 1px solid #e2e8f0;
+  border-top: 1px solid var(--lnx-line);
 }
 
 .gallery-strip span {
@@ -535,8 +535,8 @@ onMounted(() => {
   min-height: 38px;
   place-items: center;
   border-radius: 8px;
-  background: #f6f8fb;
-  color: #475569;
+  background: var(--lnx-surface-soft);
+  color: var(--lnx-text-regular);
   font-size: 13px;
   font-weight: 700;
 }
@@ -553,14 +553,14 @@ onMounted(() => {
 
 .item-eyebrow {
   margin: 0 0 9px;
-  color: #0b63ce;
+  color: var(--lnx-brand-700);
   font-size: 13px;
   font-weight: 800;
 }
 
 .buy-heading h1 {
   margin: 0;
-  color: #0f172a;
+  color: var(--lnx-text);
   font-size: 32px;
   line-height: 1.18;
   letter-spacing: 0;
@@ -589,7 +589,7 @@ onMounted(() => {
 }
 
 .badge.blue {
-  color: #0b63ce;
+  color: var(--lnx-brand-700);
   background: #e8f2ff;
 }
 
@@ -602,20 +602,20 @@ onMounted(() => {
   margin-top: 22px;
   padding: 18px;
   border-radius: 8px;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
+  background: var(--lnx-surface-soft);
+  border: 1px solid var(--lnx-line);
 }
 
 .price-block span,
 .price-block small {
   display: block;
-  color: #64748b;
+  color: var(--lnx-text-muted);
 }
 
 .price-block strong {
   display: block;
   margin: 8px 0 4px;
-  color: #e11d48;
+  color: var(--lnx-danger);
   font-size: 42px;
   line-height: 1;
 }
@@ -629,7 +629,7 @@ onMounted(() => {
 .order-form label > span {
   display: block;
   margin-bottom: 7px;
-  color: #334155;
+  color: var(--lnx-text);
   font-size: 14px;
   font-weight: 700;
 }
@@ -645,17 +645,17 @@ onMounted(() => {
   display: grid;
   min-height: 44px;
   place-items: center;
-  border: 1px solid #dbe3ee;
+  border: 1px solid var(--lnx-line);
   border-radius: 8px;
   background: #ffffff;
-  color: #334155;
+  color: var(--lnx-text);
   cursor: pointer;
 }
 
 .quantity-control input {
   min-width: 0;
   min-height: 44px;
-  border: 1px solid #dbe3ee;
+  border: 1px solid var(--lnx-line);
   border-radius: 8px;
   text-align: center;
   outline: 0;
@@ -672,8 +672,8 @@ onMounted(() => {
   border: 0;
   border-radius: 8px;
   background:
-    repeating-linear-gradient(135deg, #e2e8f0 0, #e2e8f0 6px, #f8fafc 6px, #f8fafc 12px);
-  color: #0f172a;
+    repeating-linear-gradient(135deg, var(--lnx-line) 0, var(--lnx-line) 6px, var(--lnx-surface-soft) 6px, var(--lnx-surface-soft) 12px);
+  color: var(--lnx-text);
   font-weight: 900;
   letter-spacing: 3px;
   cursor: pointer;
@@ -691,13 +691,13 @@ onMounted(() => {
 .sync-status {
   min-height: 22px;
   margin: -2px 0 0;
-  color: #0b63ce;
+  color: var(--lnx-brand-700);
   font-size: 13px;
   line-height: 1.5;
 }
 
 .sync-status.error {
-  color: #dc2626;
+  color: var(--lnx-danger);
 }
 
 .pay-methods {
@@ -712,17 +712,17 @@ onMounted(() => {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  border: 1px solid #dbe3ee;
+  border: 1px solid var(--lnx-line);
   border-radius: 8px;
   background: #ffffff;
-  color: #475569;
+  color: var(--lnx-text-regular);
   cursor: pointer;
 }
 
 .pay-methods button.selected {
-  border-color: #0b63ce;
-  background: #eef5ff;
-  color: #0b63ce;
+  border-color: var(--lnx-brand-700);
+  background: var(--lnx-brand-50);
+  color: var(--lnx-brand-700);
   font-weight: 800;
 }
 
@@ -732,15 +732,15 @@ onMounted(() => {
   justify-content: space-between;
   gap: 16px;
   padding: 14px 0 0;
-  border-top: 1px solid #e2e8f0;
+  border-top: 1px solid var(--lnx-line);
 }
 
 .order-summary span {
-  color: #64748b;
+  color: var(--lnx-text-muted);
 }
 
 .order-summary strong {
-  color: #e11d48;
+  color: var(--lnx-danger);
   font-size: 28px;
 }
 
@@ -770,7 +770,7 @@ onMounted(() => {
 .section-title h2,
 .tier-panel h2 {
   margin: 0;
-  color: #111827;
+  color: var(--lnx-text);
   font-size: 20px;
 }
 
@@ -785,7 +785,7 @@ onMounted(() => {
 }
 
 .detail-copy a {
-  color: #0b63ce;
+  color: var(--lnx-brand-700);
   font-weight: 700;
 }
 
@@ -808,9 +808,9 @@ onMounted(() => {
 .tier-grid div {
   min-height: 82px;
   padding: 14px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--lnx-line);
   border-radius: 8px;
-  background: #f8fafc;
+  background: var(--lnx-surface-soft);
 }
 
 .tier-grid span,
@@ -819,12 +819,12 @@ onMounted(() => {
 }
 
 .tier-grid span {
-  color: #64748b;
+  color: var(--lnx-text-muted);
 }
 
 .tier-grid strong {
   margin-top: 10px;
-  color: #111827;
+  color: var(--lnx-text);
   font-size: 24px;
 }
 

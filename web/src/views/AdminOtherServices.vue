@@ -693,10 +693,10 @@ onMounted(() => { load(); if (activeTab.value === 'redemption-hosts') loadHosts(
   overflow: hidden;
   display: grid;
   place-items: center;
-  border: 1px dashed #cbd5e1;
+  border: 1px dashed var(--lnx-line-strong);
   border-radius: 8px;
-  background: #f8fafc;
-  color: #94a3b8;
+  background: var(--lnx-surface-soft);
+  color: var(--lnx-text-placeholder);
   font-size: 11px;
 }
 
@@ -708,7 +708,7 @@ onMounted(() => { load(); if (activeTab.value === 'redemption-hosts') loadHosts(
 
 .form-tip {
   margin-top: 6px;
-  color: #94a3b8;
+  color: var(--lnx-text-placeholder);
   font-size: 12px;
 }
 
@@ -731,10 +731,10 @@ onMounted(() => { load(); if (activeTab.value === 'redemption-hosts') loadHosts(
   display: grid;
   place-items: center;
   overflow: hidden;
-  border: 1px dashed #cbd5e1;
+  border: 1px dashed var(--lnx-line-strong);
   border-radius: 8px;
-  background: #f8fafc;
-  color: #94a3b8;
+  background: var(--lnx-surface-soft);
+  color: var(--lnx-text-placeholder);
   font-size: 12px;
 }
 
