@@ -1,0 +1,1 @@
+ALTER TABLE referral_rules ADD COLUMN display_text VARCHAR(500) NOT NULL DEFAULT '';

@@ -110,6 +110,53 @@ class ReferralServiceIntegrationTests {
         assertThat(ReferralService.calculate(6000,2000,2,fixed)).isEqualTo(1000);
         assertThat(ReferralService.calculate(999,1000,1,fixed)).isZero();
         assertThat(ReferralService.calculate(1234,100,1,new ReferralService.Rule(true,"PERCENT",0,555,100))).isEqualTo(68);
+        assertThat(ReferralService.calculate(13000,13000,1,fixed)).isZero();
+        assertThat(ReferralService.calculate(14000,13000,1,fixed)).isEqualTo(500);
+        assertThat(ReferralService.calculate(13999,13000,1,fixed)).isEqualTo(499);
+    }
+
+    @Test
+    void previewExplainsZeroProfitLossQuantityAndDisabledRules() {
+        User admin=user(); OtherService product=product(admin);
+        var rule=new ReferralService.Rule(true,"FIXED",500,0,13000);
+        var zero=referrals.preview(admin,product.getId(),new ReferralService.RulePreview(1,rule,13000,1));
+        assertThat(zero).containsEntry("commissionCents",0L).containsEntry("grossCents",0L)
+                .containsEntry("merchandiseCents",13000L).containsEntry("totalCostCents",13000L)
+                .containsEntry("configuredCommissionCents",500L).containsEntry("profitCapCents",0L);
+        var loss=referrals.preview(admin,product.getId(),new ReferralService.RulePreview(1,rule,12000,1));
+        assertThat(loss).containsEntry("grossCents",-1000L).containsEntry("commissionCents",0L);
+        var multiple=referrals.preview(admin,product.getId(),new ReferralService.RulePreview(1,rule,27999,2));
+        assertThat(multiple).containsEntry("totalCostCents",26000L).containsEntry("configuredCommissionCents",1000L)
+                .containsEntry("profitCapCents",999L).containsEntry("commissionCents",999L);
+        var disabled=referrals.preview(admin,product.getId(),new ReferralService.RulePreview(1,
+                new ReferralService.Rule(false,"FIXED",500,0,13000),14000,1));
+        assertThat(disabled).containsEntry("commissionCents",0L).containsEntry("enabled",false);
+    }
+
+    @Test
+    void customCopyUsesPreviewVersionAndOnlyNewOrdersUseChangedRules() {
+        User inviter=user(),buyer=user(); enable(inviter);
+        referrals.bindInvite(buyer.getId(),invite(inviter),"REGISTER");
+        OtherService product=product(inviter);
+        ServiceOrder oldOrder=order(buyer,product);
+        var change=referrals.preview(inviter,product.getId(),new ReferralService.RulePreview(1,
+                new ReferralService.Rule(true,"FIXED",700,0,1000,"  专属邀请奖励\n以订单为准  "),3000,1));
+        assertThat(referrals.publicOffer(product.getId())).containsEntry("display_text","");
+        referrals.applyRule(inviter,product.getId(),(String)change.get("token"));
+        assertThat(referrals.publicOffer(product.getId())).containsEntry("display_text","专属邀请奖励\n以订单为准")
+                .doesNotContainKeys("cost_cents");
+        assertThat(jdbc.queryForObject("SELECT commission_cents FROM referral_orders WHERE order_id=?",Long.class,oldOrder.getId())).isEqualTo(500);
+        assertThat(order(buyer,product).getReferralCommissionCents()).isEqualTo(700);
+        assertThatThrownBy(()->referrals.preview(inviter,product.getId(),new ReferralService.RulePreview(1,
+                new ReferralService.Rule(true,"FIXED",700,0,1000,"stale"),3000,1))).isInstanceOf(ResponseStatusException.class);
+        assertThatThrownBy(()->referrals.preview(inviter,product.getId(),new ReferralService.RulePreview(2,
+                new ReferralService.Rule(true,"FIXED",700,0,1000,"x".repeat(501)),3000,1))).isInstanceOf(ResponseStatusException.class);
+        var clear=referrals.preview(inviter,product.getId(),new ReferralService.RulePreview(2,
+                new ReferralService.Rule(true,"FIXED",700,0,1000,"  "),3000,1));
+        referrals.applyRule(inviter,product.getId(),(String)clear.get("token"));
+        assertThat(referrals.publicOffer(product.getId())).containsEntry("display_text","");
+        jdbc.update("UPDATE referral_rules SET enabled=FALSE WHERE service_id=?",product.getId());
+        assertThat(referrals.publicOffer(product.getId())).isEmpty();
     }
 
     @Test

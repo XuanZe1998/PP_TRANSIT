@@ -11,3 +11,6 @@ export const referralMoney = (value: number = 0) => '¥' + (value / 100).toFixed
 export function referralOffer(rule: { mode: string; fixed_cents: number; rate_bps: number }) {
   return rule.mode === 'FIXED' ? '每份最高返 ' + referralMoney(rule.fixed_cents) : '最高返商品实付的 ' + (rule.rate_bps / 100).toFixed(2) + '%'
 }
+export function referralDescription(rule: { mode: string; fixed_cents: number; rate_bps: number; display_text?: string }) {
+  return rule.display_text?.trim() || referralOffer(rule) + '，以订单确认金额为准，佣金不超过商品毛利的 50%。'
+}

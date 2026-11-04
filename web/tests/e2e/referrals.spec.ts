@@ -29,7 +29,15 @@ async function prepare(page: Page, admin: boolean) {
     if (path.endsWith('/claim')) { withdrawalStatus = 'PAYING'; return route.fulfill({ json: {} }) }
     if (path.endsWith('/reveal')) return route.fulfill({ json: { channel: 'ALIPAY', account: 'test@example.com', name: '测试收款人' } })
     if (path.endsWith('/paid')) { withdrawalStatus = 'PAID'; return route.fulfill({ json: {} }) }
-    if (path.endsWith('/preview')) return route.fulfill({ json: { token: 'PREVIEW', commissionCents: 500, grossCents: 2000 } })
+    if (path.endsWith('/preview')) {
+      const totalCostCents = body.rule.costCents * body.quantity
+      const grossCents = body.merchandiseCents - totalCostCents
+      const configuredCommissionCents = body.rule.fixedCents * body.quantity
+      const profitCapCents = Math.floor(Math.max(0, grossCents) / 2)
+      return route.fulfill({ json: { token: 'PREVIEW', enabled: body.rule.enabled,
+        commissionCents: body.rule.enabled ? Math.min(configuredCommissionCents, profitCapCents) : 0,
+        grossCents, totalCostCents, merchandiseCents: body.merchandiseCents, configuredCommissionCents, profitCapCents } })
+    }
     return route.fulfill({ json: { items: [], total: 0, page: 1, size: 10 } })
   })
   await page.goto(admin ? '/admin/referrals' : '/console/referrals')
@@ -83,4 +91,64 @@ test('administrator previews a rule and claims payout before revealing private d
   await page.getByRole('dialog', { name: '登记已打款', exact: true }).getByRole('button', { name: '确定', exact: true }).click()
   await expect.poll(() => calls.some(call => call.path.endsWith('/paid') && call.body.reference === 'ALIPAY-TEST-9')).toBeTruthy()
   await page.screenshot({ path: 'test-results/referrals-admin.png', fullPage: true })
+})
+
+test('rule preview explains zero profit and requires a fresh preview after changing custom copy', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  const calls = await prepare(page, true)
+  await page.getByRole('button', { name: '配置规则' }).click()
+  const dialog = page.getByRole('dialog', { name: '商品返佣规则', exact: true })
+  await dialog.getByRole('spinbutton', { name: '可靠的人民币单份成本（元）', exact: true }).fill('130')
+  await dialog.getByRole('spinbutton', { name: '模拟优惠后商品总实付（人民币元）', exact: true }).fill('130')
+  await dialog.getByRole('button', { name: '预览计算' }).click()
+  await expect(dialog).toContainText('本次模拟返佣 ¥0.00，毛利 ¥0.00')
+  await expect(dialog).toContainText('商品实付未超过总成本')
+  await expect(dialog.locator('.rule-breakdown')).toContainText('¥130.00')
+  await dialog.getByRole('spinbutton', { name: '模拟优惠后商品总实付（人民币元）', exact: true }).fill('140')
+  await dialog.getByRole('button', { name: '预览计算' }).click()
+  await expect(dialog).toContainText('本次模拟返佣 ¥5.00，毛利 ¥10.00')
+  await dialog.getByRole('textbox', { name: 'AI订阅卡片返佣文案', exact: true }).fill('邀请好友，每份最高奖励5元')
+  await expect(dialog.getByRole('button', { name: '应用已预览规则' })).toBeDisabled()
+  await dialog.getByRole('button', { name: '预览计算' }).click()
+  await expect(dialog.getByRole('button', { name: '应用已预览规则' })).toBeEnabled()
+  expect(calls.filter(call => call.path.endsWith('/preview')).at(-1)!.body.rule.displayText).toBe('邀请好友，每份最高奖励5元')
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy()
+  await page.screenshot({ path: 'test-results/referral-rule-mobile.png' })
+})
+
+test('a delayed response cannot authorize a rule edited during preview', async ({ page }) => {
+  await prepare(page, true)
+  let release: (() => void) | undefined
+  const gate = new Promise<void>(resolve => { release = resolve })
+  await page.route('**/products/1/preview', async route => {
+    await gate
+    await route.fulfill({ json: { token: 'STALE', commissionCents: 500, grossCents: 2000, enabled: true } })
+  })
+  await page.getByRole('button', { name: '配置规则' }).click()
+  const dialog = page.getByRole('dialog', { name: '商品返佣规则', exact: true })
+  const pending = page.waitForRequest('**/products/1/preview')
+  await dialog.getByRole('button', { name: '预览计算' }).click()
+  await pending
+  await dialog.getByRole('textbox', { name: 'AI订阅卡片返佣文案', exact: true }).fill('新的说明')
+  release!()
+  await expect(dialog.getByRole('button', { name: '预览计算' })).toBeEnabled()
+  await expect(dialog.getByRole('button', { name: '应用已预览规则' })).toBeDisabled()
+  await expect(dialog).not.toContainText('本次模拟返佣')
+})
+
+test('subscription cards render independent custom text as plain text and retain default copy', async ({ page }) => {
+  await prepare(page, false)
+  await page.route('**/public/other-services?**', route => route.fulfill({ json: { total: 2, page: 1, size: 10, items: [
+    { id: 1, name: 'Custom subscription', priceCents: 14000, amountCents: 14000, currency: 'CNY',
+      referralOffer: { mode: 'FIXED', fixed_cents: 500, rate_bps: 0, display_text: '专属奖励 <b>5元</b>\n到账以订单为准' } },
+    { id: 2, name: 'Default subscription', priceCents: 14000, amountCents: 14000, currency: 'CNY',
+      referralOffer: { mode: 'FIXED', fixed_cents: 500, rate_bps: 0, display_text: '' } }
+  ] } }))
+  await page.goto('/services')
+  const custom = page.locator('.service-card').filter({ hasText: 'Custom subscription' })
+  await expect(custom.locator('.service-referral-copy')).toHaveText('专属奖励 <b>5元</b>\n到账以订单为准')
+  await expect(custom.locator('.service-referral-copy b')).toHaveCount(0)
+  await expect(custom).not.toContainText('佣金不超过')
+  await expect(page.locator('.service-card').filter({ hasText: 'Default subscription' }))
+    .toContainText('每份最高返 ¥5.00，以订单确认金额为准，佣金不超过商品毛利的 50%。')
 })

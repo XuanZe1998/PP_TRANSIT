@@ -36,7 +36,7 @@
             <el-tag v-if="service.productType === 'CARD_KEY'" type="success" effect="plain">卡密自动发货</el-tag>
           </div>
           <h2>{{ service.name }}</h2>
-          <p v-if="service.referralOffer?.mode">{{ referralOffer(service.referralOffer) }}，以订单确认金额为准，佣金不超过商品毛利的 50%。</p>
+          <p v-if="service.referralOffer?.mode" class="service-referral-copy">{{ referralDescription(service.referralOffer) }}</p>
           <p>{{ service.description || '服务内容待完善' }}</p>
           <div class="service-order-row">
             <div>
@@ -263,7 +263,7 @@ import PaymentActionDialog, { type PaymentAction } from '@/components/PaymentAct
 import CheckoutDisclosure from '@/components/CheckoutDisclosure.vue'
 import { paymentActionOf } from '@/utils/payment'
 import { fulfillmentStatusLabel, orderStatusLabel } from '@/utils/serviceOrderStatus'
-import { referralOffer } from '@/utils/referral'
+import { referralDescription } from '@/utils/referral'
 import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { formatCurrencyCents } from '@/utils/money'
 import { useRoute, useRouter } from 'vue-router'
@@ -273,7 +273,7 @@ import http, { createIdempotencyKey, getHttpErrorMessage, resolveApiResourceUrl 
 import { getToken } from '@/utils/auth'
 
 type OtherService = {
-  referralOffer?: { mode: string; fixed_cents: number; rate_bps: number }
+  referralOffer?: { mode: string; fixed_cents: number; rate_bps: number; display_text?: string }
   id: number
   name: string
   description?: string
@@ -825,6 +825,7 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.service-referral-copy { white-space: pre-wrap; overflow-wrap: anywhere; }
 .other-services-page,
 .service-orders {
   display: flex;

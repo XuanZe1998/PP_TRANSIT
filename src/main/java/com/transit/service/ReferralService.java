@@ -32,7 +32,12 @@ public class ReferralService {
     private final AdminAuditService audit;
     @Value("${billing.amount-scale:10000}") private long amountScale;
 
-    public record Rule(boolean enabled, String mode, long fixedCents, int rateBps, long costCents) {}
+    public record Rule(boolean enabled, String mode, long fixedCents, int rateBps, long costCents, String displayText) {
+        public Rule { displayText=displayText==null?"":displayText.trim(); }
+        public Rule(boolean enabled, String mode, long fixedCents, int rateBps, long costCents) {
+            this(enabled,mode,fixedCents,rateBps,costCents,"");
+        }
+    }
     public record RulePreview(long version, Rule rule, long merchandiseCents, int quantity) {}
     public record Account(String channel, String account, String name) {}
     public record Withdrawal(long amountCents, String requestKey, String accountToken) {}
@@ -67,7 +72,7 @@ public class ReferralService {
     public Map<String,Object> settings() { return jdbc.queryForMap("SELECT * FROM referral_settings WHERE id=1"); }
     public Map<String,Object> publicOffer(Long serviceId) {
         Map<String,Object> result=first("""
-                SELECT r.mode,r.fixed_cents,r.rate_bps FROM referral_rules r
+                SELECT r.mode,r.fixed_cents,r.rate_bps,r.display_text FROM referral_rules r
                 JOIN referral_settings s ON s.id=1 WHERE r.service_id=? AND r.enabled=TRUE AND s.enabled=TRUE
                 """,serviceId);
         return result==null?Map.of():result;
@@ -130,19 +135,23 @@ public class ReferralService {
 
     public static long calculate(long sale, long cost, int quantity, Rule rule) {
         if (sale<0 || cost<0 || quantity<1) throw new IllegalArgumentException("Invalid money inputs");
+        return Math.min(configuredCommission(sale,quantity,rule),Math.max(0,sale-cost)/2);
+    }
+    private static long configuredCommission(long sale, int quantity, Rule rule) {
         BigDecimal configured="FIXED".equals(rule.mode())
                 ? BigDecimal.valueOf(rule.fixedCents()).multiply(BigDecimal.valueOf(quantity))
                 : BigDecimal.valueOf(sale).multiply(BigDecimal.valueOf(rule.rateBps())).divide(BigDecimal.valueOf(10000),0,RoundingMode.DOWN);
-        return configured.min(BigDecimal.valueOf(Math.max(0,sale-cost)/2)).longValueExact();
+        return configured.longValueExact();
     }
     private void validateRule(Rule rule) {
         if (rule==null || rule.mode()==null || !Set.of("FIXED","PERCENT").contains(rule.mode()) || rule.fixedCents()<0 || rule.fixedCents()>100000000
                 || rule.rateBps()<0 || rule.rateBps()>10000 || rule.costCents()<0 || rule.costCents()>100000000)
             throw invalid("返佣规则无效");
         if (rule.enabled() && rule.costCents()<=0) throw invalid("开启返佣前必须填写可靠的人民币单份成本");
+        if (rule.displayText().length()>500) throw invalid("返佣展示文案最多500字");
     }
     private Rule rule(Map<String,Object> row) {
-        return new Rule(flag(row,"enabled"),String.valueOf(row.get("mode")),number(row,"fixed_cents"),(int)number(row,"rate_bps"),number(row,"cost_cents"));
+        return new Rule(flag(row,"enabled"),String.valueOf(row.get("mode")),number(row,"fixed_cents"),(int)number(row,"rate_bps"),number(row,"cost_cents"),(String)row.get("display_text"));
     }
 
     @Transactional(isolation=org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
@@ -157,8 +166,11 @@ public class ReferralService {
         jdbc.update("INSERT INTO referral_previews(token,admin_id,service_id,version,payload,expires_at) VALUES (?,?,?,?,?,?)",
                 token,admin.getId(),serviceId,request.version(),encode(request.rule()),now().plusMinutes(15));
         long cost=Math.multiplyExact(request.rule().costCents(),request.quantity());
-        return Map.of("token",token,"commissionCents",calculate(request.merchandiseCents(),cost,request.quantity(),request.rule()),
-                "grossCents",Math.max(0,request.merchandiseCents()-cost),"version",request.version());
+        long gross=request.merchandiseCents()-cost;
+        return Map.of("token",token,"commissionCents",request.rule().enabled()?calculate(request.merchandiseCents(),cost,request.quantity(),request.rule()):0L,
+                "grossCents",gross,"version",request.version(),"merchandiseCents",request.merchandiseCents(),
+                "totalCostCents",cost,"configuredCommissionCents",configuredCommission(request.merchandiseCents(),request.quantity(),request.rule()),
+                "profitCapCents",Math.max(0,gross)/2,"enabled",request.rule().enabled());
     }
 
     @Transactional(isolation=org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
@@ -171,10 +183,10 @@ public class ReferralService {
         if ((existing==null?0:number(existing,"version"))!=number(p,"version")) throw conflict("规则已更新，请重新预览");
         Rule r;
         try { r=json.readValue(String.valueOf(p.get("payload")),Rule.class); } catch(Exception e) { throw new IllegalStateException(e); }
-        if (existing==null) jdbc.update("INSERT INTO referral_rules(service_id,enabled,mode,fixed_cents,rate_bps,cost_cents) VALUES (?,?,?,?,?,?)",
-                serviceId,r.enabled(),r.mode(),r.fixedCents(),r.rateBps(),r.costCents());
-        else jdbc.update("UPDATE referral_rules SET enabled=?,mode=?,fixed_cents=?,rate_bps=?,cost_cents=?,version=version+1,updated_at=? WHERE service_id=?",
-                r.enabled(),r.mode(),r.fixedCents(),r.rateBps(),r.costCents(),now(),serviceId);
+        if (existing==null) jdbc.update("INSERT INTO referral_rules(service_id,enabled,mode,fixed_cents,rate_bps,cost_cents,display_text) VALUES (?,?,?,?,?,?,?)",
+                serviceId,r.enabled(),r.mode(),r.fixedCents(),r.rateBps(),r.costCents(),r.displayText());
+        else jdbc.update("UPDATE referral_rules SET enabled=?,mode=?,fixed_cents=?,rate_bps=?,cost_cents=?,display_text=?,version=version+1,updated_at=? WHERE service_id=?",
+                r.enabled(),r.mode(),r.fixedCents(),r.rateBps(),r.costCents(),r.displayText(),now(),serviceId);
         jdbc.update("DELETE FROM referral_previews WHERE token=?",token);
         audit.record(admin,"REFERRAL_RULE","SERVICE",serviceId,existing,r,null);
     }
@@ -498,7 +510,7 @@ public class ReferralService {
         String select,table,where=" WHERE 1=1",sort;
         switch(kind) {
             case "products" -> {
-                select="s.id,s.name,s.price_cents,s.currency,COALESCE(r.enabled,FALSE) enabled,r.mode,r.fixed_cents,r.rate_bps,r.cost_cents,COALESCE(r.version,0) version";
+                select="s.id,s.name,s.price_cents,s.currency,COALESCE(r.enabled,FALSE) enabled,r.mode,r.fixed_cents,r.rate_bps,r.cost_cents,r.display_text,COALESCE(r.version,0) version";
                 table="other_services s LEFT JOIN referral_rules r ON r.service_id=s.id";
                 sort="s.id DESC";
                 if(owner!=null) where+=" AND s.enabled=TRUE AND r.enabled=TRUE AND EXISTS (SELECT 1 FROM referral_settings WHERE id=1 AND enabled=TRUE)";

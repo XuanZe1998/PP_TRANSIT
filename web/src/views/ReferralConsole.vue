@@ -117,12 +117,23 @@
         <el-form-item label="返佣方式"><el-select v-model="rule.mode" @change="preview = null"><el-option label="每份固定金额" value="FIXED"/><el-option label="商品实付百分比" value="PERCENT"/></el-select></el-form-item>
         <el-form-item v-if="rule.mode === 'FIXED'" label="每份返佣（元）"><el-input-number v-model="fixedYuan" :min="0" :precision="2"/></el-form-item>
         <el-form-item v-else label="返佣比例（%）"><el-input-number v-model="ratePercent" :min="0" :max="100" :precision="2"/></el-form-item>
-        <el-form-item label="可靠的人民币单份成本（元）"><el-input-number v-model="costYuan" :min="0" :precision="2"/></el-form-item>
-        <el-form-item label="模拟购买数量"><el-input-number v-model="previewQuantity" :min="1" :max="10000"/></el-form-item>
+        <el-form-item label="可靠的人民币单份成本（元）"><el-input-number v-model="costYuan" :min="0" :precision="2"/><p class="form-hint">填写每份商品的实际采购成本，不是对外售价。售价与成本相同时，毛利和返佣均为零。</p></el-form-item>
+        <el-form-item label="AI订阅卡片返佣文案"><el-input v-model="rule.displayText" type="textarea" :rows="3" maxlength="500" show-word-limit placeholder="留空使用默认返佣说明"/><p class="form-hint">只修改当前服务的展示文案，不改变实际返佣计算。保存后卡片立即更新，已创建订单的返佣金额不变。</p></el-form-item>
+        <el-form-item label="模拟购买数量"><el-input-number v-model="previewQuantity" :min="1" :max="10000" :precision="0"/></el-form-item>
         <el-form-item label="模拟优惠后商品总实付（人民币元）"><el-input-number v-model="previewSale" :min="0" :precision="2"/></el-form-item>
+        <p class="form-hint">此处填写本次购买全部份数优惠后的商品总额，不含服务费和支付加价。外币商品请填写折算后的人民币金额。</p>
       </el-form>
       <p>最终佣金不超过商品毛利的 50%，向下取整到分。修改规则后只影响后续新订单。</p>
-      <el-alert v-if="preview" :title="'本次模拟返佣 ' + money(preview.commissionCents) + '，毛利 ' + money(preview.grossCents)" type="success" :closable="false"/>
+      <div v-if="preview" ref="previewResult">
+        <el-descriptions :column="1" border class="rule-breakdown">
+          <el-descriptions-item label="商品总实付">{{ money(preview.merchandiseCents) }}</el-descriptions-item>
+          <el-descriptions-item label="总成本（单份成本 × 数量）">{{ money(preview.totalCostCents) }}</el-descriptions-item>
+          <el-descriptions-item label="商品毛利（实付 − 成本）">{{ money(preview.grossCents) }}</el-descriptions-item>
+          <el-descriptions-item label="按配置计算的返佣">{{ money(preview.configuredCommissionCents) }}</el-descriptions-item>
+          <el-descriptions-item label="毛利的50%上限（向下取整到分）">{{ money(preview.profitCapCents) }}</el-descriptions-item>
+        </el-descriptions>
+        <el-alert :title="'本次模拟返佣 ' + money(preview.commissionCents) + '，毛利 ' + money(preview.grossCents)" :type="preview.commissionCents > 0 ? 'success' : 'warning'" :closable="false" :description="previewExplanation"/>
+      </div>
       <template #footer><el-button :loading="busy" @click="previewRule">预览计算</el-button><el-button type="primary" :disabled="!preview" :loading="busy" @click="applyRule">应用已预览规则</el-button></template>
     </el-dialog>
     <el-dialog v-model="payoutDialog" title="人工打款" width="min(580px, 95vw)" @closed="payoutAccount = null">
@@ -135,7 +146,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import PagedTable from '@/components/PagedTable.vue'
@@ -252,21 +263,40 @@ function claim(row: Row) { return run(async () => { await confirm('领取后由�
 function inspectBalance(row: Row) { return run(async () => { const { data } = await http.get(base + '/users/' + row.user_id); await ElMessageBox.alert('可提现 ' + money(data.availableCents) + ' · 提现处理中 ' + money(data.withdrawingCents) + ' · 待抵扣 ' + money(data.debtCents), '账户核对') }) }
 
 const ruleDialog = ref(false), ruleRow = ref<Row>({})
-const rule = reactive({ enabled: false, mode: 'FIXED' })
-const fixedYuan = ref(5), ratePercent = ref(5), costYuan = ref(0), previewSale = ref(0), previewQuantity = ref(1)
+const rule = reactive({ enabled: false, mode: 'FIXED', displayText: '' })
+const fixedYuan = ref(5), ratePercent = ref(5), costYuan = ref(0), previewSale = ref<number>(), previewQuantity = ref(1)
 const preview = ref<Row | null>(null)
-watch([() => rule.enabled, () => rule.mode, fixedYuan, ratePercent, costYuan, previewSale, previewQuantity], () => { preview.value = null }, { flush: 'sync' })
+const previewResult = ref<HTMLElement>()
+let ruleRevision = 0
+watch([() => rule.enabled, () => rule.mode, () => rule.displayText, fixedYuan, ratePercent, costYuan, previewSale, previewQuantity], () => { ruleRevision++; preview.value = null }, { flush: 'sync' })
+const previewExplanation = computed(() => {
+  if (!preview.value) return ''
+  if (!preview.value.enabled) return '当前商品未参与活动，实际返佣为零。'
+  if (preview.value.grossCents <= 0) return '商品实付未超过总成本，没有可分配毛利，因此返佣为零。请核对成本与模拟实付金额。'
+  if (preview.value.configuredCommissionCents > preview.value.profitCapCents) return '配置金额超过毛利的50%上限，本次按上限计算。'
+  return '配置金额未超过毛利上限，本次按配置计算。'
+})
 function editRule(row: Row) {
+  ruleRevision++
   ruleRow.value = row
-  Object.assign(rule, { enabled: !!row.enabled, mode: row.mode || 'FIXED' })
+  Object.assign(rule, { enabled: !!row.enabled, mode: row.mode || 'FIXED', displayText: row.display_text || '' })
   fixedYuan.value = (row.fixed_cents ?? 500) / 100; ratePercent.value = (row.rate_bps ?? 500) / 100; costYuan.value = (row.cost_cents || 0) / 100
-  previewSale.value = row.currency === 'CNY' ? (row.price_cents || 0) / 100 : 0
+  previewSale.value = row.currency === 'CNY' ? (row.price_cents || 0) / 100 : undefined
   previewQuantity.value = 1; preview.value = null; ruleDialog.value = true
 }
-function previewRule() { return run(async () => { preview.value = (await http.post(base + '/products/' + ruleRow.value.id + '/preview', {
+function previewRule() { return run(async () => {
+  if (previewSale.value == null || !Number.isFinite(previewSale.value)) throw new Error('请填写模拟优惠后商品总实付（人民币元）')
+  const revision = ruleRevision
+  const { data } = await http.post(base + '/products/' + ruleRow.value.id + '/preview', {
   version: ruleRow.value.version, rule: { ...rule, fixedCents: Math.round(fixedYuan.value * 100), rateBps: Math.round(ratePercent.value * 100), costCents: Math.round(costYuan.value * 100) },
   merchandiseCents: Math.round(previewSale.value * 100), quantity: previewQuantity.value
-})).data }) }
+  })
+  if (revision === ruleRevision && ruleDialog.value) {
+    preview.value = data
+    await nextTick()
+    previewResult.value?.scrollIntoView({ block: 'nearest' })
+  }
+}) }
 function applyRule() { return run(async () => { await http.post(base + '/products/' + ruleRow.value.id + '/apply', { token: preview.value?.token }); ruleDialog.value = false; await refresh() }) }
 
 const payoutDialog = ref(false), payout = ref<Row | null>(null), payoutAccount = ref<Row | null>(null)
@@ -288,6 +318,7 @@ onMounted(refresh)
 </script>
 
 <style scoped>
+.rule-breakdown { margin-bottom: 16px; }
 .referral-console{grid-template-columns:minmax(0,1fr);width:100%;box-sizing:border-box}.referral-console>*{min-width:0}.referral-console :deep(.el-date-editor){max-width:100%}.referral-console h2{color:var(--lnx-text,var(--lnx-text))!important}
 .referral-console{display:grid;gap:20px;max-width:1400px;margin:0 auto;padding:24px;min-width:0}.referral-heading{display:flex;justify-content:space-between;align-items:center;gap:16px}.referral-console h1,.referral-console h2{margin:0 0 12px}.referral-console p{color:var(--lnx-text-muted);line-height:1.7}.referral-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.referral-metrics article{padding:20px;border:1px solid var(--lnx-line);border-radius:12px;background:white}.referral-metrics span{display:block;color:var(--lnx-text-muted)}.referral-metrics strong{display:block;font-size:24px;margin-top:10px}.referral-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.invite-input{width:min(460px,65vw)}@media(max-width:640px){.referral-console{padding:12px}.referral-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.referral-form{grid-template-columns:1fr}.referral-heading{align-items:flex-start;flex-direction:column}}
 </style>
