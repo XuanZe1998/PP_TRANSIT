@@ -891,6 +891,7 @@ const navItems = [
   { key: 'logs', label: '用量日志', path: '/console/logs', icon: Tickets, title: '用量日志', eyebrow: '审计记录', subtitle: '按 Key、模型、日期追踪请求消耗。', action: '导出 CSV', actionPath: '/console/logs' },
   { key: 'wallet', label: '钱包充值', path: '/console/wallet', icon: Wallet, title: '钱包充值', eyebrow: '余额中心', subtitle: '充值余额、查看消耗和账单状态。', action: '去充值', actionPath: '/pricing' },
   { key: 'agent', label: '代理中心', path: '/console/agent', icon: Promotion, title: '代理中心', eyebrow: '合作伙伴', subtitle: '查看邀请客户、返利、佣金和提现。', action: '进入代理中心', actionPath: '/console/agent' },
+  { key: 'referrals', label: '邀请有礼', path: '/console/referrals', icon: Promotion, title: '邀请有礼', eyebrow: '邀请好友', subtitle: '分享订阅、查看佣金并申请提现。', action: '进入邀请有礼', actionPath: '/console/referrals' },
   { key: 'docs', label: '文档 SDK', path: '/console/docs', icon: Document, title: '开发文档', eyebrow: '接入指南', subtitle: '在工作台内查看多客户端配置和调用方式。', action: '查看文档', actionPath: '/console/docs' },
   { key: 'model-probe', label: '模型鉴别', path: '/console/model-probe', icon: MagicStick, title: '模型鉴别', eyebrow: '质量与身份', subtitle: '对任意 OpenAI 兼容端点执行探针，检测模型调包 / 降级并获取 0-100 评分报告。', action: '开始鉴别', actionPath: '/console/model-probe' },
   { key: 'profile', label: '个人中心', path: '/console/profile', icon: User, title: '个人中心', eyebrow: '账户安全', subtitle: '管理头像、联系方式、密码、第三方账号和登录设备。', action: '保存信息', actionPath: '/console/profile' }

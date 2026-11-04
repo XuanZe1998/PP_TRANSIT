@@ -37,6 +37,28 @@ class AuthFlowIntegrationTests {
     @Autowired
     private OAuthService oauthService;
 
+    @Autowired private com.transit.service.ReferralService referrals;
+
+    @Test
+    void emailSignupBindsInviteAndReferralAdminEndpointsRejectOrdinaryUsers() {
+        var session=register(uniqueEmail(),"StrongPass123");
+        String token=(String)session.get("access_token");
+        var inviter=oauthService.getUserFromToken(token);
+        jdbcTemplate.update("UPDATE referral_settings SET enabled=TRUE WHERE id=1");
+        try {
+            client.post().uri("/user/referrals/enroll").headers(h->h.setBearerAuth(token)).exchange().expectStatus().isOk();
+            String code=jdbcTemplate.queryForObject("SELECT invite_code FROM agent_profiles WHERE user_id=?",String.class,inviter.getId());
+            var buyer=oauthService.getUserFromToken((String)register(uniqueEmail(),"StrongPass123",code).get("access_token"));
+            assertThat(jdbcTemplate.queryForObject("SELECT agent_user_id FROM agent_customer_bindings WHERE customer_user_id=?",Long.class,buyer.getId())).isEqualTo(inviter.getId());
+            var invalid=register(uniqueEmail(),"StrongPass123","invalid");
+            assertThat(invalid.get("access_token")).isNotNull();
+            client.get().uri("/admin/api/referrals").headers(h->h.setBearerAuth(token)).exchange().expectStatus().isForbidden();
+            client.post().uri("/admin/api/referrals/withdrawals/1/reveal").headers(h->h.setBearerAuth(token)).exchange().expectStatus().isForbidden();
+            client.get().uri("/user/referrals/lists/invitations").headers(h->h.setBearerAuth(token)).exchange().expectStatus().isOk()
+                    .expectBody().jsonPath("$.total").isEqualTo(1).jsonPath("$.items[0].customer_email").value(v->assertThat(v.toString()).contains("***"));
+        } finally { jdbcTemplate.update("UPDATE referral_settings SET enabled=FALSE WHERE id=1"); }
+    }
+
     @Autowired
     private BCryptPasswordEncoder passwordEncoder;
 
@@ -329,6 +351,11 @@ class AuthFlowIntegrationTests {
 
     @SuppressWarnings("unchecked")
     private Map<String, Object> register(String identifier, String password) {
+        return register(identifier,password,"");
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> register(String identifier, String password,String inviteCode) {
         Map<String, Object> verification = client.post()
                 .uri("/auth/verification/email/send")
                 .bodyValue(Map.of("recipient", identifier, "purpose", "REGISTER"))
@@ -341,7 +368,7 @@ class AuthFlowIntegrationTests {
         String emailCode = verification.get("debugCode").toString();
         Map<String, Object> response = client.post()
                 .uri("/auth/register")
-                .bodyValue(Map.of("email", identifier, "emailCode", emailCode, "password", password))
+                .bodyValue(Map.of("email", identifier, "emailCode", emailCode, "password", password,"inviteCode",inviteCode))
                 .exchange()
                 .expectStatus().isOk()
                 .expectBody(Map.class)

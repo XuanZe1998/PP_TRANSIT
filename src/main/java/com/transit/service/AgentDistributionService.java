@@ -17,9 +17,12 @@ import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
+@lombok.extern.slf4j.Slf4j
 public class AgentDistributionService {
     private final JdbcTemplate jdbc;
     private final WalletBalanceService walletBalanceService;
+    private final ReferralService referrals;
+    private final org.springframework.transaction.support.TransactionTemplate transactions;
 
     @Value("${features.linknux.agent.enabled:false}")
     private boolean enabled;
@@ -59,13 +62,16 @@ public class AgentDistributionService {
 
     @Transactional
     public void bindByInvite(Long customerUserId, String inviteCode, String source) {
-        if (!enabled || inviteCode == null || inviteCode.isBlank()) return;
+        if (inviteCode == null || inviteCode.isBlank()) return;
+        if (referrals.bindInvite(customerUserId, inviteCode, source)) return;
+        if (!enabled) return;
         Map<String, Object> agent = jdbc.queryForList("""
                 SELECT ap.user_id,ap.invite_code,ap.requested_rebate_bps,t.max_customer_rebate_bps
                 FROM agent_profiles ap JOIN agent_tiers t ON t.tier_code=ap.tier_code
                 WHERE UPPER(ap.invite_code)=UPPER(?) AND ap.status='ACTIVE' AND t.enabled=TRUE
                 """, inviteCode.trim()).stream().findFirst()
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "邀请码无效或代理不可用"));
+                .orElse(null);
+        if (agent == null) return;
         long agentUserId = ((Number) agent.get("user_id")).longValue();
         if (agentUserId == customerUserId) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "不能绑定自己的邀请码");
         int requested = ((Number) agent.get("requested_rebate_bps")).intValue();
@@ -145,25 +151,37 @@ public class AgentDistributionService {
     @Scheduled(fixedDelayString = "${features.linknux.agent.service-settlement-ms:3600000}", initialDelayString = "${features.linknux.agent.service-settlement-initial-ms:300000}")
     public void settleEligibleServiceOrders() {
         if (!enabled) return;
-        for (Map<String, Object> row : jdbc.queryForList("""
-                SELECT so.order_no,so.user_id,so.payment_amount_cents,so.amount_cents,so.quantity,so.fulfilled_at,
+        long cursor = 0;
+        List<Map<String,Object>> batch;
+        do {
+        batch = jdbc.queryForList("""
+                SELECT so.id,so.order_no,so.user_id,so.payment_amount_cents,so.amount_cents,so.quantity,so.fulfilled_at,
                        os.cost_cents,os.commission_refund_window_days
                 FROM service_orders so JOIN other_services os ON os.id=so.service_id
                 WHERE so.status='FULFILLED' AND so.fulfillment_status='COMPLETED' AND so.fulfilled_at IS NOT NULL
                   AND os.cost_cents IS NOT NULL AND os.cost_cents>0
+                  AND so.id>?
+                  AND NOT EXISTS (SELECT 1 FROM referral_orders r WHERE r.order_id=so.id)
                   AND NOT EXISTS (SELECT 1 FROM agent_commission_events e WHERE e.business_event_id=CONCAT('SERVICE_ORDER:',so.order_no))
                 ORDER BY so.id LIMIT 500
-                """)) {
+                """, cursor);
+        for (Map<String,Object> row : batch) {
+            cursor = ((Number)row.get("id")).longValue();
             Object fulfilledValue = row.get("fulfilled_at");
             LocalDateTime fulfilledAt = fulfilledValue instanceof LocalDateTime value ? value
                     : ((java.sql.Timestamp) fulfilledValue).toLocalDateTime();
             int refundDays = row.get("commission_refund_window_days") == null ? 7 : ((Number) row.get("commission_refund_window_days")).intValue();
-            if (fulfilledAt.plusDays(Math.max(0, refundDays)).isAfter(LocalDateTime.now())) continue;
+            if (fulfilledAt.plusDays(Math.max(0, refundDays)).isAfter(LocalDateTime.now(java.time.ZoneOffset.UTC))) continue;
             long cents = row.get("payment_amount_cents") == null ? ((Number) row.get("amount_cents")).longValue() : ((Number) row.get("payment_amount_cents")).longValue();
             long quantity = Math.max(1, ((Number) row.get("quantity")).longValue());
-            settleServiceOrder(String.valueOf(row.get("order_no")), ((Number) row.get("user_id")).longValue(),
-                    Math.multiplyExact(cents, amountScale / 100), Math.multiplyExact(Math.multiplyExact(((Number) row.get("cost_cents")).longValue(), quantity), amountScale / 100));
+            try {
+                transactions.executeWithoutResult(tx -> settleServiceOrder(String.valueOf(row.get("order_no")), ((Number) row.get("user_id")).longValue(),
+                        Math.multiplyExact(cents, amountScale / 100), Math.multiplyExact(Math.multiplyExact(((Number) row.get("cost_cents")).longValue(), quantity), amountScale / 100)));
+            } catch (RuntimeException failure) {
+                log.warn("Legacy commission settlement failed for order {}; retrying on next scan",cursor);
+            }
         }
+        } while (batch.size()==500);
     }
 
     @Transactional

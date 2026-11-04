@@ -108,7 +108,7 @@ const navItems: NavItem[] = [
   ] },
   { path: '/admin/contact-methods', label: '联系方式', icon: ChatDotRound },
   { path: 'finance-operations', label: '额度与财务', icon: Wallet, children: [
-    { path: '/admin/finance', label: '钱包财务' }, { path: '/admin/agents', label: '代理、号池与运维' }, { path: '/admin/vmcard-test', label: 'VMCard 测试' }
+    { path: '/admin/finance', label: '钱包财务' }, { path: '/admin/referrals', label: '邀请返佣' }, { path: '/admin/agents', label: '代理、号池与运维' }, { path: '/admin/vmcard-test', label: 'VMCard 测试' }
   ] },
   { path: 'audit-security', label: '审计与安全', icon: Lock, children: [
     { path: '/admin/audit-logs', label: '调用审计' }, { path: '/admin/security', label: '安全策略' }, { path: '/admin/model-probe', label: '模型鉴别' }

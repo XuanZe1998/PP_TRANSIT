@@ -38,6 +38,31 @@ The local machine must have the production deploy key at `~/.ssh/api-transit-dep
 
 Application secrets, SSH passwords, and database contents are intentionally outside this workflow.
 
+## Subscription referral rollout
+
+Migration V39 creates the subscription referral tables with the campaign disabled,
+a seven-day delivery freeze and a CNY 20 withdrawal minimum. Existing API-agent
+balances and withdrawal history remain in the agent console; new subscription
+orders use referral snapshots and cannot also enter the legacy subscription
+commission scheduler. Pre-release orders are not retroactively enrolled.
+
+After deployment, open `/admin/referrals`, choose the actual Plus product, enter
+its verified per-unit CNY cost, set the fixed commission to CNY 5, preview and
+apply the rule. Enable the campaign explicitly in activity settings. The existing
+`security.data-encryption-key` must be configured before activation; do not rotate
+or discard it without migrating the encrypted payout snapshots.
+
+Users enroll at `/console/referrals`. Check one authorized invitation and purchase
+through payment, delivery and scheduled unfreezing before routine operation.
+Verify that available funds, withdrawal holds and paid references reconcile.
+Administrators approve withdrawals in batches but claim and record each transfer
+individually. A transfer with an uncertain result stays in progress; reject it
+only after confirming that no transfer occurred. Enter both the total refund and
+its merchandise portion in CNY when recording a completed manual refund. Fees and
+payment adjustments do not reverse referral commission. Account details are
+encrypted and are revealed only to the administrator who claimed the payout;
+that access and financial actions are audited.
+
 ## Restricted deployment account
 
 `api-deploy` uses a dedicated key stored in the GitHub `production` environment

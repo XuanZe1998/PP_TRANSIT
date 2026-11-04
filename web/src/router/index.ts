@@ -74,6 +74,7 @@ const routes: RouteRecordRaw[] = [
   { path: '/console/model-probe', component: UserConsole, meta: { title: '模型鉴别', role: 'user' } },
   { path: '/console/organization', component: OrganizationConsole, meta: { title: '企业账户', role: 'user' } },
   { path: '/console/agent', component: AgentConsole, meta: { title: '代理中心', role: 'user' } },
+  { path: '/console/referrals', component: () => import('@/views/ReferralConsole.vue'), meta: { title: '邀请有礼', role: 'user' } },
   { path: '/console/orders', redirect: '/services', meta: { role: 'user' } },
   { path: '/admin/login', component: AdminLogin, meta: { title: '管理员登录', role: 'public' } },
   {
@@ -92,6 +93,7 @@ const routes: RouteRecordRaw[] = [
       adminChild('audit-logs', 'audit', '调用审计'),
       adminChild('finance', 'finance', '钱包财务'),
       { path: 'agents', component: AdminAgents, meta: { title: '代理、号池与运维', role: 'admin' } },
+      { path: 'referrals', component: () => import('@/views/ReferralConsole.vue'), props: { admin: true }, meta: { title: '邀请返佣', role: 'admin' } },
       { path: 'model-probe', component: AdminModelProbe, meta: { title: '模型鉴别', role: 'admin' } },
       { path: 'other-services', component: AdminOtherServices, meta: { title: 'AI订阅与订单', role: 'admin' } },
       { path: 'contact-methods', component: AdminContactMethods, meta: { title: '联系方式', role: 'admin' } },

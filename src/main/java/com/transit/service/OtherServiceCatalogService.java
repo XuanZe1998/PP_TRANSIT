@@ -35,6 +35,8 @@ public class OtherServiceCatalogService {
     private final ServiceInventoryItemMapper inventoryItemMapper;
     private final ObjectMapper objectMapper;
     private final RedemptionHostService redemptionHostService;
+    @Autowired(required = false)
+    private ReferralService referrals;
 
     @Autowired
     public OtherServiceCatalogService(OtherServiceMapper otherServiceMapper,
@@ -94,6 +96,7 @@ public class OtherServiceCatalogService {
         OtherService service = otherServiceMapper.selectById(id);
         if (service == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Service not found");
         enrich(service); Map<String,Object> view = new LinkedHashMap<>();
+        view.put("referralOffer",service.getReferralOffer());
         view.put("id", service.getId()); view.put("name", service.getName()); view.put("description", service.getDescription());
         view.put("imageUrl", service.getImageUrl()); view.put("sortOrder", service.getSortOrder()); view.put("enabled", service.getEnabled());
         view.put("actionLabel", service.getActionLabel()); view.put("priceCents", service.getPriceCents()); view.put("serviceFeeCents", service.getServiceFeeCents());
@@ -251,6 +254,7 @@ public class OtherServiceCatalogService {
     }
 
     private OtherService enrich(OtherService service) {
+        if(referrals!=null) service.setReferralOffer(referrals.publicOffer(service.getId()));
         long price = service.getPriceCents() == null ? 0 : service.getPriceCents();
         long fee = service.getServiceFeeCents() == null ? 0 : service.getServiceFeeCents();
         try {

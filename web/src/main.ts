@@ -9,6 +9,7 @@ import { initInactivityGuard } from './utils/auth'
 import { shouldPromptUserLogin } from './utils/authNavigation'
 import { loadSiteConfig } from './config/site'
 import { initLocale, installDomLocalization } from './i18n/locale'
+import { captureInvite } from './utils/referralInvite'
 
 const app = createApp(App)
 
@@ -17,6 +18,7 @@ app.use(router)
 app.mount('#app')
 installDomLocalization()
 void loadSiteConfig()
+void captureInvite(new URLSearchParams(location.search).get('aff'))
 
 const configuredIdleTimeout = Number(import.meta.env.VITE_AUTH_IDLE_TIMEOUT_MS)
 const idleTimeoutMs = Number.isFinite(configuredIdleTimeout) && configuredIdleTimeout >= 5 * 60 * 1000

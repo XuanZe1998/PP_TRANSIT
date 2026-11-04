@@ -36,7 +36,7 @@
         <el-form-item v-if="form.accountType==='ENTERPRISE'" label="企业名称"><el-input v-model="form.companyName" size="large" maxlength="160" autocomplete="organization" /></el-form-item>
         <el-form-item :label="form.accountType==='ENTERPRISE'?'联系人姓名':'显示名称'"><el-input v-model="form.contactName" size="large" maxlength="80" autocomplete="name" /></el-form-item>
         <el-form-item label="邮箱"><el-input v-model="form.email" size="large" autocomplete="email" placeholder="team@example.com" /></el-form-item>
-        <el-form-item v-if="form.inviteCode" label="代理邀请码"><el-input v-model="form.inviteCode" size="large" readonly /></el-form-item>
+        <el-form-item v-if="form.inviteCode" label="邀请码"><el-input v-model="form.inviteCode" size="large" readonly /></el-form-item>
         <el-form-item label="邮箱验证码"><div class="verify-row"><el-input v-model="form.emailCode" size="large" maxlength="6" inputmode="numeric" /><el-button :disabled="emailCountdown>0" @click="sendCode('email')">{{ emailCountdown ? `${emailCountdown}s` : '发送验证码' }}</el-button></div></el-form-item>
         <el-form-item v-if="phoneRequired" label="手机号"><el-input v-model="form.phone" size="large" autocomplete="tel" placeholder="13800138000 / +8613800138000" /></el-form-item>
         <el-form-item v-if="requiresPhone && form.accountType==='PERSONAL'" label="短信验证码"><div class="verify-row"><el-input v-model="form.phoneCode" size="large" maxlength="6" inputmode="numeric" /><el-button :disabled="phoneCountdown>0" @click="sendCode('phone')">{{ phoneCountdown ? `${phoneCountdown}s` : '发送验证码' }}</el-button></div></el-form-item>
@@ -62,6 +62,7 @@ import { ElMessage } from 'element-plus'
 import http, { getHttpErrorMessage } from '@/utils/http'
 import { setAuth } from '@/utils/auth'
 import { clearOAuthState, saveOAuthState, type OAuthProvider } from '@/utils/oauthState'
+import { captureInvite, savedInvite } from '@/utils/referralInvite'
 import { siteConfig } from '@/config/site'
 
 const route = useRoute(), router = useRouter()
@@ -77,7 +78,7 @@ const verificationMode = ref<'EMAIL_ONLY'|'EMAIL_AND_PHONE'>('EMAIL_AND_PHONE')
 const requiresPhone = computed(() => verificationMode.value === 'EMAIL_AND_PHONE')
 const phoneRequired = computed(() => form.accountType === 'ENTERPRISE' || requiresPhone.value)
 const identifierStatus = ref<{ valid: boolean; available: boolean; type: string } | null>(null)
-const form = reactive({ identifier: '', accountType:'PERSONAL' as 'PERSONAL'|'ENTERPRISE',companyName:'',contactName:'',email:'', emailCode:'', phone:'', phoneCode:'', password: '', confirmPassword: '',acceptedAgreements:false,inviteCode:String(route.query.aff || '').trim().slice(0,32) })
+const form = reactive({ identifier: '', accountType:'PERSONAL' as 'PERSONAL'|'ENTERPRISE',companyName:'',contactName:'',email:'', emailCode:'', phone:'', phoneCode:'', password: '', confirmPassword: '',acceptedAgreements:false,inviteCode:savedInvite() })
 const resetForm = reactive({ email: '', code: '', password: '', confirmPassword: '' })
 const legal=ref<any>(null),ipChallengeId=ref(''),maskedEmail=ref(''),ipVerifyCode=ref('')
 const emailCountdown=ref(0),phoneCountdown=ref(0),resetCountdown=ref(0)
@@ -95,6 +96,9 @@ watch(() => form.identifier, value => {
 function receiveIpChallenge(event: Event){const detail=(event as CustomEvent).detail||{};ipChallengeId.value=String(detail.challengeId||'');maskedEmail.value=String(detail.maskedEmail||'邮箱');mode.value='login'}
 onBeforeUnmount(() => { window.clearTimeout(timer); window.removeEventListener('ip-login-challenge',receiveIpChallenge) })
 onMounted(async () => {
+  const hadInvite = !!form.inviteCode || !!route.query.aff
+  form.inviteCode = await captureInvite(route.query.aff)
+  if (hadInvite && !form.inviteCode) ElMessage.info('邀请链接已失效，可以继续正常注册')
   window.addEventListener('ip-login-challenge',receiveIpChallenge)
   try {
     const { data } = await http.get('/api/auth/verification/policy')
@@ -181,6 +185,7 @@ async function submit() {
   loading.value = true
   try {
     const endpoint = mode.value === 'register' ? '/api/auth/register' : '/api/auth/login'
+    if (mode.value === 'register') form.inviteCode = await captureInvite(form.inviteCode || route.query.aff)
     const registration = {accountType:form.accountType,companyName:form.companyName.trim(),contactName:form.contactName.trim(),email:form.email.trim(),emailCode:form.emailCode,phone:form.phone.trim(),phoneCode:form.phoneCode,password:form.password,confirmPassword:form.confirmPassword,acceptedAgreements:form.acceptedAgreements,termsVersion:legal.value?.terms_version,privacyVersion:legal.value?.privacy_version,inviteCode:form.inviteCode}
     const response = await http.post(endpoint, mode.value === 'register' ? registration : { username: form.identifier.trim(), password: form.password })
     if(response.data?.verificationRequired){ipChallengeId.value=String(response.data.challengeId);maskedEmail.value=String(response.data.maskedEmail||'邮箱');ElMessage.warning('请验证新的登录 IP');return}
@@ -197,9 +202,12 @@ async function submit() {
 }
 async function verifyLoginIp(){if(!/^\d{6}$/.test(ipVerifyCode.value))return ElMessage.warning('请输入 6 位验证码');loading.value=true;try{const response=await http.post('/api/auth/login/ip-verify',{challengeId:ipChallengeId.value,code:ipVerifyCode.value});const token=response.data?.access_token;if(!token)throw new Error('Missing access token');setAuth(token,{username:response.data?.username||form.identifier,role:response.data?.role||'USER',displayName:response.data?.displayName,avatarPath:response.data?.avatarPath,accountType:response.data?.accountType},response.data?.refresh_token);ElMessage.success('验证成功');ipChallengeId.value='';await router.push(response.data?.accountType==='ENTERPRISE'?'/console/organization':'/console')}catch(e){ElMessage.error(getHttpErrorMessage(e,'登录地址验证失败'))}finally{loading.value=false}}
 async function startOAuth(provider: OAuthProvider) {
+  if (loading.value) return
+  loading.value = true
   try {
+    form.inviteCode = await captureInvite(form.inviteCode || route.query.aff)
     const response = await http.get('/api/oauth/authorize', {
-      params: { provider, inviteCode: mode.value === 'register' ? form.inviteCode : undefined }
+      params: { provider, inviteCode: form.inviteCode || undefined }
     })
     const url = String(response.data?.url || ''), state = String(response.data?.state || '')
     const parsed = new URL(url)
@@ -209,7 +217,7 @@ async function startOAuth(provider: OAuthProvider) {
   } catch (error: unknown) {
     try { clearOAuthState() } catch { /* keep original error */ }
     ElMessage.error(getHttpErrorMessage(error, `${provider} OAuth 尚未配置或暂不可用`))
-  }
+  } finally { loading.value = false }
 }
 const isEmail = (value: string) => /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(value.trim())
 const isPhone = (value: string) => /^(1[3-9]\d{9}|\+[1-9]\d{7,14})$/.test(value.trim())

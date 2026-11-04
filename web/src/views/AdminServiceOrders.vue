@@ -88,6 +88,7 @@
         </el-form-item>
       </el-form>
       <template #footer>
+        <ReferralRefund v-if="selectedOrder" :order="selectedOrder" />
         <el-button @click="dialogVisible = false">取消</el-button>
         <el-button type="primary" :loading="saving" @click="saveOrder">保存</el-button>
         <el-button v-if="paymentIntent && ['PENDING','EXPIRED'].includes(paymentIntent.status)" type="success" :loading="queryingPayment" @click="queryPayment">手动查单</el-button>
@@ -102,6 +103,7 @@
 <script setup lang="ts">
 import PagedTable from '@/components/PagedTable.vue'
 import ListPagination from '@/components/ListPagination.vue'
+import ReferralRefund from '@/components/ReferralRefund.vue'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { formatCurrencyCents } from '@/utils/money'
 import { fulfillmentStatusLabel, orderStatusLabel, supplierStatusLabel } from '@/utils/serviceOrderStatus'

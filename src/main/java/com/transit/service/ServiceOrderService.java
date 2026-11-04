@@ -70,6 +70,7 @@ public class ServiceOrderService {
     private final AccountVerificationPolicy verificationPolicy;
     private final MoneyService moneyService;
     private final UserMapper userMapper;
+    private final ReferralService referrals;
 
     @Autowired
     public ServiceOrderService(ServiceOrderMapper orderMapper,
@@ -77,19 +78,20 @@ public class ServiceOrderService {
                             PaymentIntentService paymentIntentService,
                             AccountVerificationPolicy verificationPolicy,
                             MoneyService moneyService,
-                            UserMapper userMapper) {
+                            UserMapper userMapper, ReferralService referrals) {
         this.orderMapper = orderMapper;
         this.serviceCommerceService = serviceCommerceService;
         this.paymentIntentService = paymentIntentService;
         this.verificationPolicy = verificationPolicy;
         this.moneyService = moneyService;
         this.userMapper = userMapper;
+        this.referrals = referrals;
     }
 
     ServiceOrderService(ServiceOrderMapper orderMapper,
                      ServiceCommerceService serviceCommerceService) {
         this(orderMapper, serviceCommerceService, null,
-                new AccountVerificationPolicy("EMAIL_AND_PHONE"), new MoneyService(new BigDecimal("6.76693506")), null);
+                new AccountVerificationPolicy("EMAIL_AND_PHONE"), new MoneyService(new BigDecimal("6.76693506")), null, null);
     }
 
     // Focused unit tests that do not exercise an external payment provider use this constructor.
@@ -207,6 +209,7 @@ public class ServiceOrderService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Insufficient stock");
         }
         requireCommerce().reserve(order, request.getCustomFields());
+        if (referrals != null) referrals.snapshot(order);
 
         com.transit.model.PaymentIntent paymentIntent = paymentIntentService == null ? null
                 : paymentIntentService.ensureServiceIntent(order);
@@ -846,6 +849,7 @@ public class ServiceOrderService {
 
     private ServiceOrder enrichOrderMoney(ServiceOrder order) {
         if (order == null) return null;
+        if (referrals != null) order.setReferralCommissionCents(referrals.orderCommission(order.getId()));
         String currency = order.getCurrency() == null ? "CNY" : order.getCurrency();
         order.setUnitPriceMoney(MoneyAmount.cents(value(order.getUnitPriceCents()), currency));
         order.setEffectiveUnitPriceMoney(MoneyAmount.cents(value(order.getEffectiveUnitPriceCents()), currency));

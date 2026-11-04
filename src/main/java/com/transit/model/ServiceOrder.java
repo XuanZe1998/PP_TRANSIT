@@ -31,6 +31,8 @@ public class ServiceOrder {
 
     @TableField(exist = false)
     private String userEmail;
+    @TableField(exist = false)
+    private Long referralCommissionCents;
 
     @TableField("service_id")
     private Long serviceId;

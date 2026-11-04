@@ -36,6 +36,7 @@
             <el-tag v-if="service.productType === 'CARD_KEY'" type="success" effect="plain">卡密自动发货</el-tag>
           </div>
           <h2>{{ service.name }}</h2>
+          <p v-if="service.referralOffer?.mode">{{ referralOffer(service.referralOffer) }}，以订单确认金额为准，佣金不超过商品毛利的 50%。</p>
           <p>{{ service.description || '服务内容待完善' }}</p>
           <div class="service-order-row">
             <div>
@@ -202,6 +203,7 @@
           <el-descriptions-item label="订单号">{{ checkoutOrder.orderNo }}</el-descriptions-item>
           <el-descriptions-item label="服务">{{ checkoutOrder.productName }}</el-descriptions-item>
           <el-descriptions-item label="订单金额">{{ formatMoney(checkoutOrder.amountCents, checkoutOrder.currency) }}</el-descriptions-item>
+          <el-descriptions-item v-if="checkoutOrder.referralCommissionCents != null" label="邀请人预计返佣">{{ formatMoney(checkoutOrder.referralCommissionCents, 'CNY') }}</el-descriptions-item>
           <el-descriptions-item label="支付金额">{{ formatMoney(checkoutOrder.paymentAmountCents ?? checkoutOrder.amountCents, checkoutOrder.paymentCurrency || checkoutOrder.currency) }}</el-descriptions-item>
           <el-descriptions-item label="付款方式">{{ checkoutOrder.paymentMethod === 'wxpay' ? '微信支付' : '支付宝' }}</el-descriptions-item>
         </el-descriptions>
@@ -261,6 +263,7 @@ import PaymentActionDialog, { type PaymentAction } from '@/components/PaymentAct
 import CheckoutDisclosure from '@/components/CheckoutDisclosure.vue'
 import { paymentActionOf } from '@/utils/payment'
 import { fulfillmentStatusLabel, orderStatusLabel } from '@/utils/serviceOrderStatus'
+import { referralOffer } from '@/utils/referral'
 import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { formatCurrencyCents } from '@/utils/money'
 import { useRoute, useRouter } from 'vue-router'
@@ -270,6 +273,7 @@ import http, { createIdempotencyKey, getHttpErrorMessage, resolveApiResourceUrl 
 import { getToken } from '@/utils/auth'
 
 type OtherService = {
+  referralOffer?: { mode: string; fixed_cents: number; rate_bps: number }
   id: number
   name: string
   description?: string
@@ -309,6 +313,7 @@ type ServiceOrder = {
   amountCents: number
   currency: string
   paymentAmountCents?: number
+  referralCommissionCents?: number
   paymentCurrency?: string
   paymentMethod?: string
   exchangeRate?: number

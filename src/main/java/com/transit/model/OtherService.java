@@ -124,6 +124,8 @@ public class OtherService {
 
     @TableField(exist = false)
     private Boolean supplierConfigured;
+    @TableField(exist = false)
+    private java.util.Map<String,Object> referralOffer;
 
     @TableField("created_at")
     private LocalDateTime createdAt;

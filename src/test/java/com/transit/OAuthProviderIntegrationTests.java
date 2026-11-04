@@ -45,6 +45,29 @@ class OAuthProviderIntegrationTests {
 
     @Autowired private UserMapper userMapper;
     @Autowired private OAuthService oauthService;
+    @Autowired private com.transit.service.ReferralService referrals;
+
+    @ParameterizedTest
+    @ValueSource(strings = {"github", "google"})
+    void newOAuthRegistrationBindsInviteButLaterLoginCannotChangeIt(String provider) {
+        String name="oauth-inviter-"+java.util.UUID.randomUUID();
+        User inviter=User.builder().username(name).email(name+"@example.com").password("test")
+                .role("USER").status("ACTIVE").balance(0).invoiceEnabled(false)
+                .emailVerifiedAt(java.time.LocalDateTime.now()).createdAt(java.time.LocalDateTime.now()).build();
+        userMapper.insert(inviter);
+        jdbcTemplate.update("UPDATE referral_settings SET enabled=TRUE WHERE id=1");
+        try {
+            referrals.enroll(inviter.getId());
+            String invite=jdbcTemplate.queryForObject("SELECT invite_code FROM agent_profiles WHERE user_id=?",String.class,inviter.getId());
+            String state=oauthService.beginAuthorization(provider,null,invite).state();
+            var session=callback(provider,"referral-new-user",state,200);
+            User buyer=oauthService.getUserFromToken((String)session.get("access_token"));
+            assertThat(jdbcTemplate.queryForObject("SELECT agent_user_id FROM agent_customer_bindings WHERE customer_user_id=?",Long.class,buyer.getId())).isEqualTo(inviter.getId());
+            callback(provider,"referral-new-user",state,400);
+            callback(provider,"referral-new-user",oauthService.beginAuthorization(provider,null,"invalid").state(),200);
+            assertThat(jdbcTemplate.queryForObject("SELECT agent_user_id FROM agent_customer_bindings WHERE customer_user_id=?",Long.class,buyer.getId())).isEqualTo(inviter.getId());
+        } finally { jdbcTemplate.update("UPDATE referral_settings SET enabled=FALSE WHERE id=1"); }
+    }
 
     @DynamicPropertySource
     static void oauthProperties(DynamicPropertyRegistry registry) {
@@ -261,9 +284,15 @@ class OAuthProviderIntegrationTests {
             if (path.endsWith("/token") && "bind-existing-email".equals(decodeForm(body).get("code"))) {
                 json = json.replace("provider-token-", "bind-token-");
             }
+            if (path.endsWith("/token") && "referral-new-user".equals(decodeForm(body).get("code"))) {
+                json = json.replace("provider-token-", "referral-token-");
+            }
             String auth = exchange.getRequestHeaders().getFirst("Authorization");
             if (path.endsWith("/user") && auth != null && auth.contains("bind-token-")) {
                 json = json.replace("-provider-user", "-binding-user");
+            }
+            if (auth != null && auth.contains("referral-token-")) {
+                json = json.replace("-provider-user", "-referral-user").replace("-provider@example.com", "-referral@example.com");
             }
             byte[] bytes = json.getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().set("Content-Type", "application/json");
