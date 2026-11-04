@@ -78,8 +78,13 @@ public class MaPayClient {
         fields.forEach(form::add);
         JsonNode json = postForm("/xpay/epay/mapi.php", form);
         if (json.path("code").asInt(0) != 1) {
-            throw new ResponseStatusException(BAD_GATEWAY,
-                    safeMessage(json.path("msg").asText(), "MaPay rejected the payment request"));
+            String reason = safeMessage(json.path("msg").asText(), "MaPay rejected the payment request");
+            if (reason.contains("余额不足")) {
+                log.warn("MaPay rejected payment creation due to insufficient balance: orderNo={} method={}",
+                        fields.get("out_trade_no"), method);
+                throw new ResponseStatusException(BAD_GATEWAY, "支付通道暂不可用，请稍后重试或联系平台客服。");
+            }
+            throw new ResponseStatusException(BAD_GATEWAY, reason);
         }
         String tradeNo = required(json.path("trade_no").asText(null), "trade_no", 120);
         List<PaymentAction> actions = new ArrayList<>();

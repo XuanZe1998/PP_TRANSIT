@@ -117,6 +117,17 @@ class MaPayClientTests {
     }
 
     @Test
+    void reportsGatewayBalanceRejectionAsUnavailablePaymentChannel() {
+        MaPayClient rejected = client("{\"code\":-1,\"msg\":\"余额不足\"}");
+        assertThatThrownBy(() -> rejected.start("LOCAL-1", "Product", "1.00", "payment-intent:1",
+                "alipay", "127.0.0.1", "pc"))
+                .isInstanceOfSatisfying(ResponseStatusException.class, exception -> {
+                    assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.BAD_GATEWAY);
+                    assertThat(exception.getReason()).isEqualTo("支付通道暂不可用，请稍后重试或联系平台客服。");
+                });
+    }
+
+    @Test
     void acceptsMultipleProviderActionsByPriorityAndRejectsUnsupportedPaymentMethod() {
         MaPayClient multiple = client("{\"code\":1,\"trade_no\":\"M-1\",\"money\":\"1.00\","
                 + "\"payurl\":\"https://pay.example\",\"qrcode\":\"weixin://pay\"}");
