@@ -24,7 +24,22 @@ test('administrators edit and hide the announcement; public pages render plain m
   await expect(page.locator('.subscription-notice p')).toHaveText('第一行\n<b>按商品说明兑换</b>')
   await expect(page.locator('.subscription-notice b')).toHaveCount(0)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
-  await page.screenshot({ path: 'test-results/subscription-notice-mobile.png', fullPage: true })
+  for (const width of [1440, 768, 390, 320]) {
+    await page.setViewportSize({ width, height: 900 })
+    const heading = await page.locator('.services-heading').boundingBox()
+    const banner = await page.locator('.subscription-notice').boundingBox()
+    const count = await page.locator('.services-count').boundingBox()
+    const pagePadding = await page.locator('.other-services-page').evaluate(el => parseFloat(getComputedStyle(el).paddingTop))
+    expect(pagePadding).toBeLessThanOrEqual(16)
+    if (width > 640) {
+      expect(banner!.x).toBeGreaterThan(heading!.x + heading!.width)
+      expect(banner!.x + banner!.width).toBeLessThan(count!.x)
+    } else {
+      expect(banner!.y).toBeGreaterThanOrEqual(heading!.y + heading!.height)
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    await page.screenshot({ path: `test-results/subscription-compact-${width}.png`, fullPage: true })
+  }
   await page.goto('/admin/other-services?tab=notice')
   await expect(page.getByRole('switch', { name: '显示公告', exact: true })).toBeChecked()
   await page.locator('.el-switch').click()

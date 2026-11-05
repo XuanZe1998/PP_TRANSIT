@@ -1,25 +1,24 @@
 <template>
   <section class="other-services-page site-section">
-    <div class="services-hero">
-      <div>
+    <div class="services-hero" :class="{ 'without-notice': !notice.enabled }">
+      <div class="services-heading">
         <p class="eyebrow">AI SUBSCRIPTIONS</p>
         <h1>AI订阅</h1>
-        <p>所有服务统一配置价格、服务费和购买状态，并支持创建订单、支付与进度跟踪。</p>
       </div>
+      <aside v-if="notice.enabled" class="subscription-notice" aria-labelledby="subscription-notice-title">
+        <span class="subscription-notice-icon" aria-hidden="true">!</span>
+        <div>
+          <h2 id="subscription-notice-title">{{ notice.title }}</h2>
+          <p>{{ notice.content }}</p>
+        </div>
+      </aside>
       <div class="services-count">
         <span>当前可用</span>
         <strong>{{ serviceTotal }}</strong>
         <small>项服务</small>
       </div>
+      <p class="services-description">所有服务统一配置价格、服务费和购买状态，并支持创建订单、支付与进度跟踪。</p>
     </div>
-
-    <aside v-if="notice.enabled" class="subscription-notice" aria-labelledby="subscription-notice-title">
-      <span class="subscription-notice-icon" aria-hidden="true">!</span>
-      <div>
-        <h2 id="subscription-notice-title">{{ notice.title }}</h2>
-        <p>{{ notice.content }}</p>
-      </div>
-    </aside>
 
     <el-skeleton v-if="loading" :rows="6" animated />
     <el-empty v-else-if="services.length === 0" description="暂无AI订阅" />
@@ -846,34 +845,70 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.other-services-page.site-section { padding-top: 16px; padding-bottom: 24px; }
+.services-hero {
+  grid-template-columns: 150px minmax(0, 1fr) 110px;
+  grid-template-areas: "heading notice count" "description description count";
+  align-items: center;
+  gap: 8px 14px;
+  margin-bottom: 0;
+}
+.services-hero.without-notice {
+  grid-template-columns: minmax(0, 1fr) 110px;
+  grid-template-areas: "heading count" "description count";
+}
+.services-heading { grid-area: heading; }
+.services-heading .eyebrow { margin: 0 0 6px; font-size: 11px; }
+.services-heading h1 { font-size: 34px; }
+.services-description { grid-area: description; margin: 0; font-size: 13px; line-height: 1.5; }
+.services-count { grid-area: count; align-self: stretch; display: flex; flex-direction: column; justify-content: center; padding: 10px 12px; }
+.services-count span, .services-count small { font-size: 12px; }
+.services-count strong { font-size: 28px; margin: 2px 0; line-height: 1.2; }
+.services-grid { gap: 12px; }
+.service-card h2 { margin-top: 8px; font-size: 18px; line-height: 1.35; }
+.service-card p { margin: 8px 0 12px; font-size: 14px; line-height: 1.5; }
+.other-services-page :deep(.list-pagination) { padding: 6px 0; gap: 8px; }
+
 .subscription-notice {
   display: flex;
-  gap: 18px;
+  grid-area: notice;
+  min-width: 0;
+  gap: 12px;
   align-items: flex-start;
-  padding: 24px;
+  padding: 12px 14px;
   border: 2px solid #f59e0b;
-  border-left-width: 6px;
-  border-radius: 16px;
+  border-left-width: 4px;
+  border-radius: 10px;
   background: linear-gradient(115deg, #fff7db, #fffdf5);
   color: #78350f;
   box-shadow: 0 8px 24px rgb(180 83 9 / 10%);
 }
 .subscription-notice-icon {
-  flex: 0 0 36px;
-  height: 36px;
+  flex: 0 0 28px;
+  height: 28px;
   display: grid;
   place-items: center;
   border-radius: 50%;
   background: #b45309;
   color: #fff;
-  font-size: 24px;
+  font-size: 20px;
   font-weight: 800;
 }
-.subscription-notice h2 { margin: 0 0 8px; font-size: 20px; color: #78350f; }
-.subscription-notice p { margin: 0; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; }
+.subscription-notice h2 { margin: 0 0 4px; font-size: 16px; overflow-wrap: anywhere; color: #78350f; }
+.subscription-notice p { margin: 0; font-size: 13px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
 .subscription-notice > div { min-width: 0; }
 @media (max-width: 640px) {
-  .subscription-notice { padding: 18px 14px; gap: 12px; }
+  .other-services-page.site-section { padding: 12px 8px 20px; }
+  .services-hero, .services-hero.without-notice {
+    grid-template-columns: minmax(0, 1fr) 90px;
+    grid-template-areas: "heading count" "notice notice" "description description";
+    gap: 10px;
+  }
+  .services-hero.without-notice { grid-template-areas: "heading count" "description description"; }
+  .services-heading h1 { font-size: 28px; }
+  .services-count { padding: 8px 10px; }
+  .services-count strong { font-size: 24px; }
+  .subscription-notice { padding: 10px 12px; gap: 10px; }
 }
 
 .service-card {
@@ -883,6 +918,8 @@ onBeforeUnmount(() => {
 }
 
 .service-image {
+  aspect-ratio: 2 / 1;
+  max-height: 180px;
   flex-shrink: 0;
 }
 
@@ -890,14 +927,15 @@ onBeforeUnmount(() => {
 .service-orders {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 14px;
 }
 
 .service-card-body {
   display: flex;
   flex: 1;
   min-width: 0;
-  min-height: 210px;
+  min-height: 180px;
+  padding: 14px;
   flex-direction: column;
 }
 
@@ -907,14 +945,14 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 10px;
 }
 
 .service-order-row {
   flex-direction: column;
   align-items: stretch;
   margin-top: auto;
-  padding-top: 18px;
+  padding-top: 12px;
   border-top: 1px solid var(--lnx-line);
 }
 
@@ -940,7 +978,7 @@ onBeforeUnmount(() => {
 .service-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 8px;
 }
 
 .service-actions .el-button + .el-button {
@@ -948,8 +986,8 @@ onBeforeUnmount(() => {
 }
 
 .service-orders {
-  margin-top: 12px;
-  padding: 24px;
+  margin-top: 0;
+  padding: 16px;
   border: 1px solid var(--lnx-line);
   border-radius: 12px;
   background: #fff;
