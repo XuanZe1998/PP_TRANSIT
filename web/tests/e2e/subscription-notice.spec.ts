@@ -30,7 +30,7 @@ test('administrators edit and hide the announcement; public pages render plain m
     const banner = await page.locator('.subscription-notice').boundingBox()
     const count = await page.locator('.services-count').boundingBox()
     const pagePadding = await page.locator('.other-services-page').evaluate(el => parseFloat(getComputedStyle(el).paddingTop))
-    expect(pagePadding).toBeLessThanOrEqual(16)
+    expect(pagePadding).toBeLessThanOrEqual(28)
     if (width > 640) {
       expect(banner!.x).toBeGreaterThan(heading!.x + heading!.width)
       expect(banner!.x + banner!.width).toBeLessThan(count!.x)
