@@ -36,32 +36,33 @@
             <el-tag v-if="service.productType === 'CARD_KEY'" type="success" effect="plain">卡密自动发货</el-tag>
           </div>
           <h2>{{ service.name }}</h2>
-          <p v-if="service.referralOffer?.mode" class="service-referral-copy">{{ referralDescription(service.referralOffer) }}</p>
           <p>{{ service.description || '服务内容待完善' }}</p>
           <div class="service-order-row">
-            <div>
+            <div class="service-price">
               <strong>{{ formatMoney(service.amountCents, service.currency) }}</strong>
               <small>
                 商品 {{ formatMoney(service.priceCents, service.currency) }}
                 + 服务费 {{ formatMoney(service.serviceFeeCents, service.currency) }}
               </small>
             </div>
-            <el-button
-              type="primary"
-              class="service-buy-button"
-              :loading="buyingServiceId === service.id"
-              :disabled="!service.orderEnabled"
-              @click="handleServiceAction(service)"
-            >
-              {{ service.availableStock === 0 ? '已售罄' : (service.actionLabel || '立即购买') }}
-            </el-button>
-            <el-button
-              v-if="service.redemptionConfigured"
-              plain
-              @click="router.push(service.redemptionPath || `/services/${service.id}/redeem`)"
-            >
-              去兑换
-            </el-button>
+            <div class="service-actions">
+              <el-button
+                type="primary"
+                class="service-buy-button"
+                :loading="buyingServiceId === service.id"
+                :disabled="!service.orderEnabled"
+                @click="handleServiceAction(service)"
+              >
+                {{ service.availableStock === 0 ? '已售罄' : (service.actionLabel || '立即购买') }}
+              </el-button>
+              <el-button
+                v-if="service.redemptionConfigured"
+                plain
+                @click="router.push(service.redemptionPath || `/services/${service.id}/redeem`)"
+              >
+                去兑换
+              </el-button>
+            </div>
           </div>
         </div>
       </article>
@@ -263,7 +264,6 @@ import PaymentActionDialog, { type PaymentAction } from '@/components/PaymentAct
 import CheckoutDisclosure from '@/components/CheckoutDisclosure.vue'
 import { paymentActionOf } from '@/utils/payment'
 import { fulfillmentStatusLabel, orderStatusLabel } from '@/utils/serviceOrderStatus'
-import { referralDescription } from '@/utils/referral'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { formatCurrencyCents } from '@/utils/money'
 import { useRoute, useRouter } from 'vue-router'
@@ -846,7 +846,16 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.service-referral-copy { white-space: pre-wrap; overflow-wrap: anywhere; }
+.service-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.service-image {
+  flex-shrink: 0;
+}
+
 .other-services-page,
 .service-orders {
   display: flex;
@@ -856,6 +865,8 @@ onBeforeUnmount(() => {
 
 .service-card-body {
   display: flex;
+  flex: 1;
+  min-width: 0;
   min-height: 210px;
   flex-direction: column;
 }
@@ -870,24 +881,40 @@ onBeforeUnmount(() => {
 }
 
 .service-order-row {
+  flex-direction: column;
+  align-items: stretch;
   margin-top: auto;
   padding-top: 18px;
   border-top: 1px solid var(--lnx-line);
 }
 
-.service-order-row div {
+.service-price {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  overflow-x: auto;
 }
 
 .service-order-row strong {
   color: var(--lnx-text);
   font-size: 22px;
+  white-space: nowrap;
 }
 
 .service-order-row small {
   color: var(--lnx-text-muted);
+  font-size: clamp(10px, 2.6vw, 12px);
+  white-space: nowrap;
+}
+
+.service-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.service-actions .el-button + .el-button {
+  margin-left: 0;
 }
 
 .service-orders {

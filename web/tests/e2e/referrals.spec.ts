@@ -12,7 +12,7 @@ async function prepare(page: Page, admin: boolean) {
     }
   }, admin)
   const calls: { path: string; method: string; body: any; page: string | null }[] = []
-  const settings = { enabled: true, freeze_days: 7, minimum_cents: 2000, service_notice: '两个工作日内审核', version: 1 }
+  const settings = { enabled: true, first_purchase_coupon_cents: 500, freeze_days: 7, minimum_cents: 2000, service_notice: '两个工作日内审核', version: 1 }
   const summary = { ...settings, verified: true, profile: { invite_code: 'RF-TEST', status: 'ACTIVE' }, invited: 4, earnedCents: 2000, availableCents: 2000, debtCents: 0, paidCents: 0 }
   let withdrawalStatus = 'APPROVED'
   await page.route(url => url.pathname.startsWith('/api/') || url.origin === 'https://api.linknux.com', async route => {
@@ -33,22 +33,21 @@ async function prepare(page: Page, admin: boolean) {
       const totalCostCents = body.rule.costCents * body.quantity
       const grossCents = body.merchandiseCents - totalCostCents
       const configuredCommissionCents = body.rule.fixedCents * body.quantity
-      const profitCapCents = Math.floor(Math.max(0, grossCents) / 2)
       return route.fulfill({ json: { token: 'PREVIEW', enabled: body.rule.enabled,
-        commissionCents: body.rule.enabled ? Math.min(configuredCommissionCents, profitCapCents) : 0,
-        grossCents, totalCostCents, merchandiseCents: body.merchandiseCents, configuredCommissionCents, profitCapCents } })
+        commissionCents: body.rule.enabled ? configuredCommissionCents : 0,
+        grossCents, totalCostCents, merchandiseCents: body.merchandiseCents, configuredCommissionCents } })
     }
     return route.fulfill({ json: { items: [], total: 0, page: 1, size: 10 } })
   })
   await page.goto(admin ? '/admin/referrals' : '/console/referrals')
-  await expect(page.getByRole('heading', { name: admin ? '邀请返佣管理' : '邀请有礼', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: admin ? '邀请与佣金管理' : '邀请有礼', exact: true })).toBeVisible()
   return calls
 }
 
 test('user confirms destination and amount before submitting an idempotent withdrawal', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   const calls = await prepare(page, false)
-  await expect(page.getByText('每份最高返 ¥5.00')).toBeVisible()
+  await expect(page.getByText('当前首购券面额 ¥5.00。')).toBeVisible()
   await page.getByRole('button', { name: '确认并申请提现' }).click()
   const dialog = page.getByRole('dialog', { name: '确认提现' })
   await expect(dialog).toContainText('¥20.00')
@@ -73,6 +72,7 @@ test('user confirms destination and amount before submitting an idempotent withd
 
 test('administrator previews a rule and claims payout before revealing private details', async ({ page }) => {
   const calls = await prepare(page, true)
+  await page.getByRole('tab', { name: '订阅代理佣金', exact: true }).click()
   await page.getByRole('button', { name: '配置规则' }).click()
   const rule = page.getByRole('dialog', { name: '商品返佣规则', exact: true })
   await expect(rule.getByRole('button', { name: '应用已预览规则' })).toBeDisabled()
@@ -93,16 +93,17 @@ test('administrator previews a rule and claims payout before revealing private d
   await page.screenshot({ path: 'test-results/referrals-admin.png', fullPage: true })
 })
 
-test('rule preview explains zero profit and requires a fresh preview after changing custom copy', async ({ page }) => {
+test('fixed commission preview is independent of profit and requires a fresh preview after editing', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   const calls = await prepare(page, true)
+  await page.getByRole('tab', { name: '订阅代理佣金', exact: true }).click()
   await page.getByRole('button', { name: '配置规则' }).click()
   const dialog = page.getByRole('dialog', { name: '商品返佣规则', exact: true })
   await dialog.getByRole('spinbutton', { name: '可靠的人民币单份成本（元）', exact: true }).fill('130')
   await dialog.getByRole('spinbutton', { name: '模拟优惠后商品总实付（人民币元）', exact: true }).fill('130')
   await dialog.getByRole('button', { name: '预览计算' }).click()
-  await expect(dialog).toContainText('本次模拟返佣 ¥0.00，毛利 ¥0.00')
-  await expect(dialog).toContainText('商品实付未超过总成本')
+  await expect(dialog).toContainText('本次模拟返佣 ¥5.00，毛利 ¥0.00')
+  await expect(dialog).toContainText('按每份固定金额乘以购买份数计算。')
   await expect(dialog.locator('.rule-breakdown')).toContainText('¥130.00')
   await dialog.getByRole('spinbutton', { name: '模拟优惠后商品总实付（人民币元）', exact: true }).fill('140')
   await dialog.getByRole('button', { name: '预览计算' }).click()
@@ -118,6 +119,7 @@ test('rule preview explains zero profit and requires a fresh preview after chang
 
 test('a delayed response cannot authorize a rule edited during preview', async ({ page }) => {
   await prepare(page, true)
+  await page.getByRole('tab', { name: '订阅代理佣金', exact: true }).click()
   let release: (() => void) | undefined
   const gate = new Promise<void>(resolve => { release = resolve })
   await page.route('**/products/1/preview', async route => {
@@ -136,19 +138,39 @@ test('a delayed response cannot authorize a rule edited during preview', async (
   await expect(dialog).not.toContainText('本次模拟返佣')
 })
 
-test('subscription cards render independent custom text as plain text and retain default copy', async ({ page }) => {
+test('subscription cards hide referral copy and align single-line prices', async ({ page }) => {
   await prepare(page, false)
   await page.route('**/service-orders/catalog?**', route => route.fulfill({ json: { total: 2, page: 1, size: 10, items: [
-    { id: 1, name: 'Custom subscription', priceCents: 14000, amountCents: 14000, currency: 'CNY',
+    { id: 1, name: 'Custom subscription', description: '短说明', orderEnabled: true, priceCents: 125000, serviceFeeCents: 0, amountCents: 125000, currency: 'CNY',
       referralOffer: { mode: 'FIXED', fixed_cents: 500, rate_bps: 0, display_text: '专属奖励 <b>5元</b>\n到账以订单为准' } },
-    { id: 2, name: 'Default subscription', priceCents: 14000, amountCents: 14000, currency: 'CNY',
+    { id: 2, name: 'Default subscription', description: '较长的服务说明，包含订阅使用方式、有效期和注意事项。'.repeat(8), orderEnabled: true, redemptionConfigured: true, priceCents: 125000, serviceFeeCents: 0, amountCents: 125000, currency: 'CNY',
       referralOffer: { mode: 'FIXED', fixed_cents: 500, rate_bps: 0, display_text: '' } }
   ] } }))
   await page.goto('/services')
-  const custom = page.locator('.service-card').filter({ hasText: 'Custom subscription' })
-  await expect(custom.locator('.service-referral-copy')).toHaveText('专属奖励 <b>5元</b>\n到账以订单为准')
-  await expect(custom.locator('.service-referral-copy b')).toHaveCount(0)
-  await expect(custom).not.toContainText('佣金不超过')
-  await expect(page.locator('.service-card').filter({ hasText: 'Default subscription' }))
-    .toContainText('每份最高返 ¥5.00，以订单确认金额为准，佣金不超过商品毛利的 50%。')
+  for (const width of [1440, 1024, 640, 390, 320]) {
+    await page.setViewportSize({ width, height: 1000 })
+    await expect(page.locator('.service-card')).toHaveCount(2)
+    await expect(page.locator('.service-card')).not.toContainText(['专属奖励', '每份最高返'])
+    await expect(page.locator('.service-referral-copy')).toHaveCount(0)
+    const cards = await page.locator('.service-card').evaluateAll(elements => elements.map(card => {
+      const price = card.querySelector('.service-price')!
+      const total = price.querySelector('strong')!
+      const detail = price.querySelector('small')!
+      const range = document.createRange()
+      range.selectNodeContents(detail)
+      return { cardTop: card.getBoundingClientRect().top, priceTop: price.getBoundingClientRect().top,
+        totalLines: total.getClientRects().length, detailLines: range.getClientRects().length,
+        fits: price.scrollWidth <= price.clientWidth + 1 }
+    }))
+    for (const card of cards) {
+      expect(card.totalLines).toBe(1)
+      expect(card.detailLines).toBe(1)
+      expect(card.fits).toBeTruthy()
+    }
+    if (Math.abs(cards[0].cardTop - cards[1].cardTop) < 1) {
+      expect(Math.abs(cards[0].priceTop - cards[1].priceTop)).toBeLessThan(1)
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy()
+    await page.screenshot({ path: `test-results/subscription-prices-${width}.png`, fullPage: true })
+  }
 })
