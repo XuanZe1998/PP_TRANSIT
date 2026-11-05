@@ -13,6 +13,14 @@
       </div>
     </div>
 
+    <aside v-if="notice.enabled" class="subscription-notice" aria-labelledby="subscription-notice-title">
+      <span class="subscription-notice-icon" aria-hidden="true">!</span>
+      <div>
+        <h2 id="subscription-notice-title">{{ notice.title }}</h2>
+        <p>{{ notice.content }}</p>
+      </div>
+    </aside>
+
     <el-skeleton v-if="loading" :rows="6" animated />
     <el-empty v-else-if="services.length === 0" description="暂无AI订阅" />
     <div v-else class="services-grid">
@@ -239,6 +247,8 @@
           :closable="false"
           :title="`卡密已发货，${redemptionCountdown} 秒后自动前往兑换页。卡密也会永久保留在此订单中。`"
         />
+        <el-alert v-if="awaitingFulfillment(orderDetail)" class="detail-block" title="支付成功，正在等待发货；卡密到账后会自动显示。" type="info" :closable="false" />
+        <el-alert v-else-if="orderDetail.fulfillmentStatus === 'REVIEW_REQUIRED' || orderDetail.fulfillmentStatus === 'FAILED'" class="detail-block" title="支付已记录，履约需要管理员补充处理" type="warning" :closable="false" />
         <div v-if="orderDetail.deliveryItems?.length" class="delivery-box">
           <strong>已发货卡密</strong>
           <PagedList :data="orderDetail.deliveryItems" list-id="OtherServices.vue-2" v-slot="{items:pagedItems}"><div v-for="(item, index) in pagedItems" :key="index" class="delivery-row">
@@ -248,6 +258,7 @@
         </div>
       </template>
       <template #footer>
+        <el-button v-if="orderDetail" @click="showOrderDetail(orderDetail)">刷新状态</el-button>
         <el-button v-if="orderDetail?.deliveryItems?.length" @click="copyAllDelivery">复制全部卡密</el-button>
         <el-button v-if="orderDetailRedemptionPath" type="primary" @click="goToRedemption">前往兑换</el-button>
       </template>
@@ -358,6 +369,7 @@ const paymentDialogVisible = ref(false)
 const paymentAction = ref<PaymentAction | null>(null)
 const paymentMethod = ref('alipay')
 const paymentMethodLabels: Record<string, string> = { alipay: '支付宝', wxpay: '微信支付', balance: '余额扣款' }
+const notice = ref({ enabled: false, title: '', content: '' })
 const loading = ref(true)
 const ordersLoading = ref(false)
 const buyingServiceId = ref<number | null>(null)
@@ -375,6 +387,7 @@ const orderDetailRedemptionPath = ref('')
 const redemptionCountdown = ref(0)
 let redemptionTimer: number | undefined
 let fulfillmentTimer: number | undefined
+let disposed = false
 let fulfillmentPolling = false
 let fulfillmentPollAttempts = 0
 let fulfillmentTargetOrderId: number | null = null
@@ -486,61 +499,37 @@ function clearPendingPayment() {
 
 const wait = (milliseconds: number) => new Promise(resolve => window.setTimeout(resolve, milliseconds))
 
-async function finishPaidFlow(order: ServiceOrder, pending: PendingServicePayment, message?: string) {
+async function finishPaidFlow(order: ServiceOrder, _pending: PendingServicePayment, message?: string) {
   clearPendingPayment()
-  await Promise.all([loadCatalog(), loadOrders()])
-  const latestOrder = orders.value.find(item => item.id === order.id) || order
-  const serviceId = latestOrder.serviceId || pending.serviceId
-  const service = services.value.find(item => item.id === serviceId)
-  if (service?.productType === 'CARD_KEY' && service.redemptionConfigured) {
-    if (deliveryComplete(latestOrder)) {
-      ElMessage.success(message || '支付成功，卡密已自动发货')
-      const opened = await showOrderDetail(latestOrder, service.redemptionPath || `/services/${service.id}/redeem`)
-      if (!opened) await router.replace(service.redemptionPath || `/services/${service.id}/redeem`)
-    } else {
-      ElMessage.success(message || '支付成功，上游正在发货')
-      startFulfillmentPolling(latestOrder.id)
-    }
-    return
-  }
+  paymentDialogVisible.value = false
   ElMessage.success(message || '支付成功')
+  await showOrderDetail(order)
+  await loadOrders()
+  if (awaitingFulfillment(order)) startFulfillmentPolling(order.id)
 }
 
 async function resumePendingPayment() {
-  const pending = readPendingPayment()
+  const queryId = Number(route.query.orderId)
+  const pending = Number.isSafeInteger(queryId) && queryId > 0
+    ? { orderId: queryId, serviceId: 0, createdAt: Date.now() }
+    : readPendingPayment()
   if (!pending) return
-
-  const localOrder = orders.value.find(item => item.id === pending.orderId)
-  if (localOrder && ['PAID', 'FULFILLED'].includes(localOrder.status)) {
-    await finishPaidFlow(localOrder, pending)
-    return
-  }
-  if (localOrder && ['FAILED', 'CANCELLED'].includes(localOrder.status)) {
-    clearPendingPayment()
-    return
-  }
-
-  // Returning to the page triggers one provider query. Subsequent polling reads local state only.
-  try { await http.post(`/api/service-orders/${pending.orderId}/payment/query`) } catch { /* local polling continues */ }
-  for (let attempt = 0; attempt < 5; attempt += 1) {
-    try {
-      const response = await http.get(`/api/service-orders/${pending.orderId}`)
-      const order = response.data as ServiceOrder | undefined
-      if (order && ['PAID', 'FULFILLED'].includes(order.status)) {
-        await finishPaidFlow(order, pending)
-        return
-      }
-      if (order && ['FAILED', 'CANCELLED'].includes(order.status)) {
-        clearPendingPayment()
-        return
-      }
-    } catch {
-      // A delayed provider response is retried below; the normal catalog stays visible.
+  try {
+    const { data: order } = await http.get<ServiceOrder>(`/api/service-orders/${pending.orderId}`)
+    if (['PAID', 'FULFILLED'].includes(order.status)) {
+      await finishPaidFlow(order, pending)
+    } else if (canPay(order)) {
+      rememberPendingPayment(order)
+      startFulfillmentPolling(order.id)
+      // Query the provider once on return; polling below only reads local state.
+      try { await http.post(`/api/service-orders/${order.id}/payment/query`) } catch { /* local polling continues */ }
+    } else {
+      clearPendingPayment()
+      await showOrderDetail(order)
     }
-    if (attempt < 4) await wait(1500)
+  } catch (error) {
+    ElMessage.error(getHttpErrorMessage(error, '订单详情加载失败'))
   }
-  await loadOrders()
-  ElMessage.info('支付结果正在同步，请稍后刷新订单')
 }
 
 async function loadCatalog() {
@@ -575,48 +564,51 @@ function stopFulfillmentPolling() {
 }
 
 function startFulfillmentPolling(targetOrderId?: number) {
+  if (disposed) return
+  if (targetOrderId && targetOrderId !== fulfillmentTargetOrderId) stopFulfillmentPolling()
   if (targetOrderId) fulfillmentTargetOrderId = targetOrderId
   if (fulfillmentTimer !== undefined) return
   fulfillmentPollAttempts = 0
   fulfillmentTimer = window.setInterval(async () => {
     if (fulfillmentPolling) return
     fulfillmentPolling = true
+    const targetId = fulfillmentTargetOrderId
     try {
-      const response = await http.get('/api/service-orders', { params: { listPage: true, page: orderPage.value, size: orderSize.value } })
-      orders.value = response.data?.items || []
-      orderTotal.value = Number(response.data?.total || 0)
       fulfillmentPollAttempts += 1
-      const target = fulfillmentTargetOrderId === null
-        ? undefined
-        : orders.value.find(item => item.id === fulfillmentTargetOrderId)
-      if (target && deliveryComplete(target)) {
-        const completedOrderId = fulfillmentTargetOrderId
-        stopFulfillmentPolling()
-        const completedOrder = orders.value.find(item => item.id === completedOrderId)
-        const service = services.value.find(item => item.id === completedOrder?.serviceId)
-        ElMessage.success('卡密已发货')
-        if (completedOrder) {
-          await showOrderDetail(completedOrder, service?.redemptionConfigured
-            ? (service.redemptionPath || `/services/${service.id}/redeem`) : '')
+      if (targetId !== null) {
+        const { data: target } = await http.get<ServiceOrder>(`/api/service-orders/${targetId}`)
+        if (disposed || targetId !== fulfillmentTargetOrderId) return
+        if (['PAID', 'FULFILLED'].includes(target.status)) {
+          paymentDialogVisible.value = false
+          clearPendingPayment()
+          if (orderDetail.value?.id !== target.id || !detailDialogVisible.value) {
+            orderDetail.value = target
+            detailDialogVisible.value = true
+          } else orderDetail.value = target
+          if (!awaitingFulfillment(target)) {
+            stopFulfillmentPolling()
+            await showOrderDetail(target)
+            await loadOrders()
+            return
+          }
+        } else if (!canPay(target)) {
+          stopFulfillmentPolling()
+          clearPendingPayment()
+          paymentDialogVisible.value = false
+          await showOrderDetail(target)
+          await loadOrders()
+          return
         }
-        return
+      } else {
+        await loadOrders()
+        if (!orders.value.some(awaitingFulfillment)) stopFulfillmentPolling()
       }
-      if (['FAILED', 'REVIEW_REQUIRED'].includes(target?.fulfillmentStatus || '') || target?.status === 'FAILED') {
+      if (fulfillmentPollAttempts >= 300) {
         stopFulfillmentPolling()
-        ElMessage.warning('支付已记录，履约需要管理员补充处理')
-        return
-      }
-      if (!orders.value.some(awaitingFulfillment)) {
-        stopFulfillmentPolling()
-        return
-      }
-      if (fulfillmentPollAttempts >= 60) {
-        stopFulfillmentPolling()
-        ElMessage.info('上游仍在发货，可稍后刷新订单查看卡密')
+        ElMessage.info('支付或发货结果仍在同步，请稍后刷新订单')
       }
     } catch {
-      fulfillmentPollAttempts += 1
-      if (fulfillmentPollAttempts >= 60) stopFulfillmentPolling()
+      if (fulfillmentPollAttempts >= 300) stopFulfillmentPolling()
     } finally {
       fulfillmentPolling = false
     }
@@ -702,6 +694,11 @@ async function submitOrder() {
     })
     ElMessage.success(response.data?.message || '订单已创建')
     orderDialogVisible.value = false
+    const createdOrder = response.data?.order as ServiceOrder | undefined
+    if (createdOrder && canPay(createdOrder)) startPayment(createdOrder)
+    else if (createdOrder && ['PAID', 'FULFILLED'].includes(createdOrder.status)) {
+      await finishPaidFlow(createdOrder, { orderId: createdOrder.id, serviceId: createdOrder.serviceId, createdAt: Date.now() })
+    }
     await loadOrders()
   } catch (error: unknown) {
     ElMessage.error(getHttpErrorMessage(error, '订单创建失败'))
@@ -795,6 +792,7 @@ async function confirmPayment() {
       paymentAction.value = action
       paymentMethod.value = response.data?.paymentIntent?.paymentMethod || order.paymentMethod || 'alipay'
       paymentDialogVisible.value = true
+      startFulfillmentPolling(order.id)
     } else {
       ElMessage.warning('支付链接尚未生成')
     }
@@ -825,6 +823,7 @@ watch(agentCode, () => {
   void loadCatalog().catch(error => ElMessage.error(getHttpErrorMessage(error, '订阅商品加载失败')))
 })
 onMounted(async () => {
+  void http.get('/api/public/subscription-notice').then(({ data }) => { notice.value = data }).catch(() => undefined)
   try {
     await loadCatalog()
     if (authenticated) {
@@ -840,12 +839,43 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  disposed = true
   cancelRedemptionCountdown()
   stopFulfillmentPolling()
 })
 </script>
 
 <style scoped>
+.subscription-notice {
+  display: flex;
+  gap: 18px;
+  align-items: flex-start;
+  padding: 24px;
+  border: 2px solid #f59e0b;
+  border-left-width: 6px;
+  border-radius: 16px;
+  background: linear-gradient(115deg, #fff7db, #fffdf5);
+  color: #78350f;
+  box-shadow: 0 8px 24px rgb(180 83 9 / 10%);
+}
+.subscription-notice-icon {
+  flex: 0 0 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #b45309;
+  color: #fff;
+  font-size: 24px;
+  font-weight: 800;
+}
+.subscription-notice h2 { margin: 0 0 8px; font-size: 20px; color: #78350f; }
+.subscription-notice p { margin: 0; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; }
+.subscription-notice > div { min-width: 0; }
+@media (max-width: 640px) {
+  .subscription-notice { padding: 18px 14px; gap: 12px; }
+}
+
 .service-card {
   display: flex;
   flex-direction: column;

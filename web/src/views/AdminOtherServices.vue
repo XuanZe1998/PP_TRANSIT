@@ -7,6 +7,15 @@
     </AdminPageToolbar>
 
     <el-tabs v-model="activeTab" @tab-change="syncTab">
+      <el-tab-pane label="订阅公告" name="notice">
+        <el-form v-loading="noticeLoading" label-position="top" style="max-width: 800px">
+          <el-form-item label="显示公告"><el-switch v-model="notice.enabled" /></el-form-item>
+          <el-form-item label="公告标题"><el-input v-model="notice.title" maxlength="80" show-word-limit /></el-form-item>
+          <el-form-item label="公告内容"><el-input v-model="notice.content" type="textarea" :rows="6" maxlength="3000" show-word-limit /></el-form-item>
+          <el-button type="primary" :loading="noticeSaving" :disabled="noticeLoading || !noticeLoaded" @click="saveNotice">保存公告</el-button>
+          <el-alert v-if="notice.enabled" :title="notice.title" :description="notice.content" type="warning" :closable="false" style="margin-top: 20px; white-space: pre-wrap" />
+        </el-form>
+      </el-tab-pane>
       <el-tab-pane label="服务目录" name="catalog">
     <PagedTable v-loading="loading" :data="services" empty-text="暂无服务" list-id="AdminOtherServices-1" pagination="external">
       <el-table-column label="图片" width="116">
@@ -301,7 +310,23 @@ const hostSize = ref(10)
 const hostTotal = ref(0)
 const hostLoading = ref(false)
 const hostSaving = ref(false)
-const allowedTabs = ['catalog', 'orders', 'payments', 'redemption-hosts']
+const notice = reactive({ enabled: false, title: '', content: '' })
+const noticeLoading = ref(false), noticeSaving = ref(false), noticeLoaded = ref(false)
+async function loadNotice() {
+  noticeLoading.value = true
+  noticeLoaded.value = false
+  try { Object.assign(notice, (await http.get('/api/public/subscription-notice')).data); noticeLoaded.value = true }
+  catch (error) { ElMessage.error(getHttpErrorMessage(error, '公告加载失败')) }
+  finally { noticeLoading.value = false }
+}
+async function saveNotice() {
+  if (notice.enabled && (!notice.title.trim() || !notice.content.trim())) { ElMessage.warning('请填写公告标题和内容'); return }
+  noticeSaving.value = true
+  try { await http.put('/api/admin/api/subscription-notice', notice); ElMessage.success('公告已保存') }
+  catch (error) { ElMessage.error(getHttpErrorMessage(error, '公告保存失败')) }
+  finally { noticeSaving.value = false }
+}
+const allowedTabs = ['catalog', 'orders', 'payments', 'redemption-hosts', 'notice']
 const initialTab = typeof route.query.tab === 'string' && allowedTabs.includes(route.query.tab) ? route.query.tab : 'catalog'
 const activeTab = ref(initialTab)
 const form = reactive({
@@ -339,6 +364,7 @@ function syncTab(tab: string | number) {
   const value = String(tab)
   router.replace({ query: value === 'catalog' ? {} : value === 'orders' ? { ...route.query, tab: value } : { tab: value } })
   if (value === 'redemption-hosts') loadHosts()
+  if (value === 'notice') loadNotice()
 }
 
 async function load() {
@@ -659,7 +685,7 @@ async function remove(service: OtherService) {
   }
 }
 
-onMounted(() => { load(); if (activeTab.value === 'redemption-hosts') loadHosts() })
+onMounted(() => { load(); if (activeTab.value === 'notice') loadNotice(); if (activeTab.value === 'redemption-hosts') loadHosts() })
 </script>
 
 <style scoped>

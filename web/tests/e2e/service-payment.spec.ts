@@ -142,3 +142,39 @@ for (const scenario of ['closed', 'missing-version'] as const) {
     expect(starts).toHaveLength(0)
   })
 }
+
+
+test('QR payment opens delivered keys even when the order is outside the current list page', async ({ page }) => {
+  const { dialog } = await prepareCheckout(page, { ready: true, disclosureId: 'current-disclosure' })
+  let fulfilled = false
+  await page.route('**/service-orders/41', route => route.fulfill({ json: {
+    id: 41, serviceId: 7, orderNo: 'CHECKOUT-TEST-41', status: fulfilled ? 'FULFILLED' : 'PENDING',
+    fulfillmentStatus: fulfilled ? 'COMPLETED' : 'PENDING', deliveryItems: fulfilled ? ['TEST-KEY-ONLY'] : []
+  } }))
+  await dialog.getByText('我已阅读交易条件和退款政策', { exact: true }).click()
+  await dialog.getByRole('button', { name: '确认支付', exact: true }).click()
+  await expect(page.getByRole('dialog', { name: '完成支付', exact: true })).toBeVisible()
+  await page.route('**/service-orders?**', route => route.fulfill({ json: { total: 11, page: 1, size: 10, items: [] } }))
+  fulfilled = true
+  const detail = page.getByRole('dialog', { name: '卡密与订单详情', exact: true })
+  await expect(detail).toBeVisible({ timeout: 10000 })
+  await expect(detail).toContainText('TEST-KEY-ONLY')
+  await expect(page.getByRole('dialog', { name: '完成支付', exact: true })).not.toBeVisible()
+})
+
+test('verified payment return opens delivery and waits for delayed keys', async ({ page }) => {
+  await prepareCheckout(page, { ready: true, disclosureId: 'current-disclosure' })
+  let delivered = false
+  await page.route('**/payment-intents/9/query', route => route.fulfill({ json: {} }))
+  await page.route('**/payment-intents/9', route => route.fulfill({ json: { id: 9, status: 'PAID', businessType: 'SERVICE_ORDER', businessId: 41 } }))
+  await page.route('**/service-orders/41', route => route.fulfill({ json: {
+    id: 41, serviceId: 7, orderNo: 'CHECKOUT-TEST-41', status: delivered ? 'FULFILLED' : 'PAID',
+    fulfillmentStatus: delivered ? 'COMPLETED' : 'PROCESSING', deliveryItems: delivered ? ['RETURN-KEY-ONLY'] : []
+  } }))
+  await page.goto('/payment/result?intentId=9')
+  await expect(page).toHaveURL(/services\?orderId=41/)
+  const detail = page.getByRole('dialog', { name: '卡密与订单详情', exact: true })
+  await expect(detail).toContainText('正在等待发货')
+  delivered = true
+  await expect(detail).toContainText('RETURN-KEY-ONLY', { timeout: 10000 })
+})

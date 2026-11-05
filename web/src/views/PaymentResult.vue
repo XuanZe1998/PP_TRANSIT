@@ -23,6 +23,7 @@ const order = ref<Record<string, any> | null>(null)
 const error = ref('')
 const refreshing = ref(false)
 let timer: number | undefined
+let disposed = false
 
 const intentId = computed(() => {
   const direct = Number(route.query.intentId || route.query.intent)
@@ -44,12 +45,17 @@ const subtitle = computed(() => reviewRequired.value ? '付款事实已记录，
 async function loadLocal() {
   if (!intentId.value) throw new Error('返回链接缺少支付意图标识')
   const response = await http.get(`/api/payment-intents/${intentId.value}`)
+  if (disposed) return
   intent.value = response.data
   if (intent.value?.businessType === 'SERVICE_ORDER' && intent.value?.businessId) {
     const serviceOrder = await http.get(`/api/service-orders/${intent.value.businessId}`)
+    if (disposed) return
     order.value = serviceOrder.data
   }
   if (['PAID', 'EXPIRED', 'CANCELLED'].includes(String(intent.value?.status))) stopPolling()
+  if (intent.value?.status === 'PAID' && order.value?.id) {
+    await router.replace({ path: '/services', query: { orderId: String(order.value.id) } })
+  }
 }
 
 async function refresh() {
@@ -68,15 +74,17 @@ async function refresh() {
 
 function stopPolling() { if (timer !== undefined) window.clearInterval(timer); timer = undefined }
 function startPolling() {
+  if (disposed) return
   stopPolling()
   timer = window.setInterval(() => void loadLocal().catch(() => undefined), 2500)
 }
 function goBack() {
-  void router.push(intent.value?.businessType === 'WALLET_RECHARGE' ? '/console/wallet' : '/services')
+  void router.push(intent.value?.businessType === 'WALLET_RECHARGE' ? '/console/wallet'
+    : { path: '/services', query: order.value?.id ? { orderId: String(order.value.id) } : {} })
 }
 
 onMounted(async () => { await refresh(); if (!['PAID', 'EXPIRED', 'CANCELLED'].includes(String(intent.value?.status))) startPolling() })
-onBeforeUnmount(stopPolling)
+onBeforeUnmount(() => { disposed = true; stopPolling() })
 </script>
 
 <style scoped>
