@@ -8,6 +8,7 @@ import com.transit.dto.PublicModelPricing;
 import com.transit.dto.MoneyAmount;
 import com.transit.mapper.ModelMappingMapper;
 import com.transit.model.OtherService;
+import com.transit.service.AgentSubscriptionPricingService;
 import com.transit.service.OtherServiceCatalogService;
 import com.transit.service.OtherServiceImageStorageService;
 import com.transit.service.ModelContextPricingService;
@@ -49,6 +50,7 @@ public class PublicController {
     private final AiApiBankPublicCatalogService aiApiBankPublicCatalogService;
     private final PublicModelPresentationService publicModelPresentationService;
     private final PublicModelMarketplaceService publicModelMarketplaceService;
+    private final AgentSubscriptionPricingService agentPricing;
 
     @Value("${billing.model-currency:USD}")
     private String billingCurrency;
@@ -150,12 +152,17 @@ public class PublicController {
     }
 
     @GetMapping("/other-services")
-    public Mono<PageResponse<OtherService>> otherServices(
+    public Mono<ResponseEntity<PageResponse<OtherService>>> otherServices(
             @RequestParam(value = "listPage", defaultValue = "true") boolean listPage,
             @RequestParam(value = "page", defaultValue = "1") int page,
             @RequestParam(value = "size", defaultValue = "10") int size,
-            @RequestParam(value = "query", required = false) String query) {
-        return Mono.fromCallable(() -> otherServiceCatalogService.listPage(true, page, size, query));
+            @RequestParam(value = "query", required = false) String query,
+            @RequestParam(required = false) String agentCode) {
+        return Mono.fromCallable(() -> {
+            var result = otherServiceCatalogService.listPage(true, page, size, query);
+            agentPricing.applyCatalogPrices(result.getItems(), null, agentCode);
+            return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(result);
+        });
     }
 
     @GetMapping("/other-services/{id}/redeem")

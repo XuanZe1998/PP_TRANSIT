@@ -200,6 +200,12 @@ public class AgentDistributionService {
                         WHERE r.inviter_id=? AND r.mode='AGENT_FIXED'
                           AND r.status IN ('AWAITING_PAYMENT','AWAITING_DELIVERY','FROZEN')
                           AND o.status IN ('PAID','FULFILLED')
+                        """, userId) * (amountScale / 100)
+                        + sum("""
+                        SELECT COALESCE(SUM(r.resale_cents-r.resale_reversed_cents),0)
+                        FROM referral_orders r JOIN service_orders o ON o.id=r.order_id
+                        WHERE r.resale_agent_id=? AND r.status IN ('AWAITING_PAYMENT','AWAITING_DELIVERY','FROZEN')
+                          AND o.status IN ('PAID','FULFILLED')
                         """, userId) * (amountScale / 100),
                 "availableCommission", Math.max(0, availableCommission(userId)),
                 "withdrawals", includeLegacyWithdrawals
@@ -309,7 +315,7 @@ public class AgentDistributionService {
                 eventId, businessId, beneficiary, agent, customer, type, amount, status, availableAt, note, LocalDateTime.now());
     }
 
-    private long availableCommission(Long userId) { return sum("SELECT COALESCE(SUM(amount),0) FROM agent_commission_ledger WHERE beneficiary_user_id=? AND status='AVAILABLE' AND entry_type IN ('AGENT_COMMISSION','AGENT_COMMISSION_REVERSAL','TRANSFER_OUT','WITHDRAWAL_HOLD','WITHDRAWAL_RELEASE')", userId); }
+    private long availableCommission(Long userId) { return sum("SELECT COALESCE(SUM(amount),0) FROM agent_commission_ledger WHERE beneficiary_user_id=? AND status='AVAILABLE' AND entry_type IN ('AGENT_COMMISSION','AGENT_COMMISSION_REVERSAL','AGENT_RESALE','AGENT_RESALE_REVERSAL','TRANSFER_OUT','WITHDRAWAL_HOLD','WITHDRAWAL_RELEASE')", userId); }
     private long sum(String sql, Long userId) { Long value = jdbc.queryForObject(sql, Long.class, userId); return value == null ? 0 : value; }
     private long count(String sql, Long userId) { Long value = jdbc.queryForObject(sql, Long.class, userId); return value == null ? 0 : value; }
     private long minimumWithdrawal() {

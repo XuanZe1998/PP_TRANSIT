@@ -264,7 +264,7 @@ import CheckoutDisclosure from '@/components/CheckoutDisclosure.vue'
 import { paymentActionOf } from '@/utils/payment'
 import { fulfillmentStatusLabel, orderStatusLabel } from '@/utils/serviceOrderStatus'
 import { referralDescription } from '@/utils/referral'
-import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { formatCurrencyCents } from '@/utils/money'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -338,6 +338,8 @@ const pendingPaymentStorageKey = 'pending-service-payment'
 const pendingPaymentMaxAge = 2 * 60 * 60 * 1000
 
 const route = useRoute()
+const agentCode = computed(() => typeof route.query.agent === 'string' ? route.query.agent.trim() : '')
+
 const router = useRouter()
 const services = ref<OtherService[]>([])
 const orders = ref<ServiceOrder[]>([])
@@ -542,7 +544,10 @@ async function resumePendingPayment() {
 }
 
 async function loadCatalog() {
-  const response = await http.get('/api/public/other-services', { params: { listPage: true, page: servicePage.value, size: serviceSize.value } })
+  const endpoint = authenticated ? '/api/service-orders/catalog' : '/api/public/other-services'
+  const code = agentCode.value
+  const response = await http.get(endpoint, { params: { listPage: true, page: servicePage.value, size: serviceSize.value, agentCode: code || undefined } })
+  if (code !== agentCode.value) return
   services.value = response.data?.items || []
   serviceTotal.value = Number(response.data?.total || 0)
 }
@@ -620,7 +625,7 @@ function startFulfillmentPolling(targetOrderId?: number) {
 
 async function openOrderDialog(service: OtherService) {
   if (!authenticated) {
-    router.push({ path: '/login', query: { redirect: route.fullPath } })
+    router.push({ path: '/login', query: { redirect: route.fullPath, aff: agentCode.value || undefined } })
     return
   }
   if (!service.orderEnabled) {
@@ -643,7 +648,8 @@ async function refreshQuote() {
     const response = await http.post<Quote>('/api/service-orders/quote', {
       serviceId: selectedService.value.id,
       quantity: orderForm.quantity,
-      couponCode: orderForm.couponCode || undefined
+      couponCode: orderForm.couponCode || undefined,
+      agentCode: agentCode.value || undefined
     })
     quote.value = response.data
     for (const field of quote.value.inputFields || []) {
@@ -658,19 +664,26 @@ async function refreshQuote() {
 }
 
 async function submitOrder() {
-  if (!checkoutAcknowledged.value || !checkoutDisclosureId.value) return
+  if (!checkoutAcknowledged.value || !checkoutDisclosureId.value || quoteLoading.value || !quote.value) return
   const service = selectedService.value
   if (!service) return
+  const code = agentCode.value
   try {
     await orderFormRef.value?.validate()
   } catch {
     return
   }
+  const shownAmount = quote.value.amountCents
   buyingServiceId.value = service.id
   try {
     await refreshQuote()
+    if (!orderDialogVisible.value || code !== agentCode.value) return
     if (!quote.value?.available) {
       ElMessage.warning('库存不足')
+      return
+    }
+    if (quote.value.amountCents !== shownAmount) {
+      ElMessage.warning('订单报价已更新，请核对金额后重新提交')
       return
     }
     for (const field of quote.value.inputFields || []) {
@@ -681,7 +694,9 @@ async function submitOrder() {
     }
     const response = await http.post('/api/service-orders', {
       serviceId: service.id,
-      ...orderForm
+      ...orderForm,
+      agentCode: code || undefined,
+      expectedAmountCents: shownAmount
     }, {
       headers: { 'Idempotency-Key': createIdempotencyKey('service-order') }
     })
@@ -804,6 +819,11 @@ async function downloadDocument(id: number, type: 'invoice' | 'receipt') {
   }
 }
 
+watch(agentCode, () => {
+  orderDialogVisible.value = false
+  servicePage.value = 1
+  void loadCatalog().catch(error => ElMessage.error(getHttpErrorMessage(error, '订阅商品加载失败')))
+})
 onMounted(async () => {
   try {
     await loadCatalog()

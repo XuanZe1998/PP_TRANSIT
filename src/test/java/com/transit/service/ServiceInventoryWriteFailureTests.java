@@ -27,7 +27,7 @@ class ServiceInventoryWriteFailureTests {
         when(services.selectById(1L)).thenReturn(upstream);
         when(jdbc.update(anyString(), any(java.time.LocalDateTime.class), eq(50L))).thenReturn(1);
         when(procurement.enqueue(order, upstream)).thenReturn(order);
-        var commerce = new ServiceCommerceService(null, services, orders, inventory, null, jdbc, null, secrets, procurement);
+        var commerce = new ServiceCommerceService(null, services, orders, inventory, null, jdbc, null, secrets, procurement, null);
         assertThat(commerce.settlePaid(order)).isSameAs(order);
         verify(procurement).enqueue(order, upstream);
         verifyNoInteractions(inventory, secrets);
@@ -49,7 +49,7 @@ class ServiceInventoryWriteFailureTests {
             if ("FAIL".equals(item.getContentEncrypted())) throw new DataAccessResourceFailureException("write failed");
             return jdbc.update("INSERT INTO items(content) VALUES (?)", item.getContentEncrypted());
         });
-        ServiceCommerceService service = new ServiceCommerceService(null, services, null, inventory, null, jdbc, null, secrets, null);
+        ServiceCommerceService service = new ServiceCommerceService(null, services, null, inventory, null, jdbc, null, secrets, null, null);
         var transactions = new org.springframework.transaction.support.TransactionTemplate(new org.springframework.jdbc.datasource.DataSourceTransactionManager(source));
         assertThatThrownBy(() -> transactions.execute(tx -> service.importInventoryWithReport(1L, "ONE FAIL")))
                 .isInstanceOf(DataAccessResourceFailureException.class);
@@ -65,7 +65,7 @@ class ServiceInventoryWriteFailureTests {
         ChannelSecretService secrets = mock(ChannelSecretService.class);
         when(services.selectById(1L)).thenReturn(OtherService.builder().id(1L).fulfillmentMode("AUTOMATIC_DELIVERY").supplierType("LOCAL_INVENTORY").build());
         when(secrets.isConfigured()).thenReturn(true); when(secrets.encrypt(anyString())).thenReturn("encrypted");
-        ServiceCommerceService service = new ServiceCommerceService(null, services, null, inventory, null, null, null, secrets, null);
+        ServiceCommerceService service = new ServiceCommerceService(null, services, null, inventory, null, null, null, secrets, null, null);
         when(inventory.insert(any(ServiceInventoryItem.class))).thenThrow(new DuplicateKeyException("duplicate")).thenReturn(1);
         assertThat(service.importInventoryWithReport(1L, "ONE TWO")).containsEntry("imported", 1).containsEntry("duplicateInStock", 1);
         reset(inventory); when(inventory.insert(any(ServiceInventoryItem.class))).thenThrow(new DataAccessResourceFailureException("write failed"));

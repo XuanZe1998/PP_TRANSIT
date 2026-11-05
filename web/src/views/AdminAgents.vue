@@ -6,7 +6,7 @@
     <section class="admin-evolution">
     <el-tabs v-model="tab" @tab-change="load">
       <el-tab-pane label="代理与提现" name="agents">
-        <h3>代理资料</h3><PagedTable :data="agents" list-id="AdminAgents-1" pagination="external"><el-table-column prop="username" label="用户"/><el-table-column prop="tier_code" label="等级"/><el-table-column prop="status" label="状态"/><el-table-column prop="customer_count" label="客户"/><el-table-column label="操作" min-width="260"><template #default="scope"><el-button size="small" type="success" @click="review(scope.row.id,'ACTIVE')">通过</el-button><el-button size="small" @click="review(scope.row.id,'SUSPENDED')">暂停</el-button><el-button size="small" type="danger" @click="review(scope.row.id,'REJECTED')">拒绝</el-button></template></el-table-column></PagedTable>
+        <h3>代理资料</h3><PagedTable :data="agents" list-id="AdminAgents-1" pagination="external"><el-table-column prop="username" label="用户"/><el-table-column prop="tier_code" label="等级"/><el-table-column prop="status" label="状态"/><el-table-column prop="customer_count" label="客户"/><el-table-column label="操作" min-width="260"><template #default="scope"><el-button size="small" type="success" @click="review(scope.row.id,'ACTIVE')">通过</el-button><el-button v-if="scope.row.status === 'ACTIVE'" size="small" @click="pricingAgent = scope.row">订阅底价</el-button><el-button size="small" @click="review(scope.row.id,'SUSPENDED')">暂停</el-button><el-button size="small" type="danger" @click="review(scope.row.id,'REJECTED')">拒绝</el-button></template></el-table-column></PagedTable>
         <ListPagination v-model:page="agentPage.page" v-model:size="agentPage.size" :total="agentPage.total" :allow-all="false" @change="load" />
         <h3>提现审核</h3><PagedTable :data="withdrawals" list-id="AdminAgents-2" pagination="external"><el-table-column prop="request_no" label="请求号" min-width="180"/><el-table-column prop="username" label="代理"/><el-table-column prop="amount" label="金额（账务单位）"/><el-table-column prop="destination_type" label="方式"/><el-table-column prop="status" label="状态"/><el-table-column label="操作" min-width="240"><template #default="scope"><el-button size="small" type="success" @click="reviewWithdrawal(scope.row.id,'APPROVED')">批准</el-button><el-button size="small" @click="reviewWithdrawal(scope.row.id,'PAID')">已结算</el-button><el-button size="small" type="danger" @click="reviewWithdrawal(scope.row.id,'REJECTED')">驳回</el-button></template></el-table-column></PagedTable>
         <ListPagination v-model:page="withdrawalPage.page" v-model:size="withdrawalPage.size" :total="withdrawalPage.total" :allow-all="false" @change="load" />
@@ -46,11 +46,15 @@
       <el-tab-pane label="实时运维" name="ops"><div class="ops-grid"><article v-for="(value,key) in opsCards" :key="key"><span>{{ key }}</span><strong>{{ value }}</strong></article></div><PagedTable :data="ops.heartbeats||[]" list-id="AdminAgents-8"><el-table-column prop="task_key" label="任务"/><el-table-column prop="status" label="状态"/><el-table-column prop="updated_at" label="心跳"/></PagedTable></el-tab-pane>
       <el-tab-pane label="公告与备份" name="platform"><div class="platform-actions"><el-input v-model="announcement.title" placeholder="公告标题"/><el-input v-model="announcement.content" type="textarea" placeholder="公告内容"/><el-button type="primary" @click="createAnnouncement">发布公告</el-button><el-button @click="requestBackup">登记手工备份</el-button></div><h3>备份记录</h3><PagedTable :data="backups" list-id="AdminAgents-9"><el-table-column prop="request_no" label="请求号"/><el-table-column prop="status" label="状态"/><el-table-column prop="created_at" label="创建时间"/></PagedTable></el-tab-pane>
     </el-tabs>
+    <el-dialog :model-value="!!pricingAgent" :title="`代理订阅底价 · ${pricingAgent?.username || ''}`" width="min(860px, 95vw)" destroy-on-close @close="pricingAgent = null">
+      <AgentSubscriptionPrices v-if="pricingAgent" :key="pricingAgent.user_id" admin :endpoint="`/api/admin/api/agents/${pricingAgent.user_id}/subscription-prices`" />
+    </el-dialog>
     </section>
   </div>
 </template>
 
 <script setup lang="ts">
+import AgentSubscriptionPrices from '@/components/AgentSubscriptionPrices.vue'
 import PagedTable from '@/components/PagedTable.vue'
 import ListPagination from '@/components/ListPagination.vue'
 import AdminPageToolbar from '@/components/AdminPageToolbar.vue'
@@ -58,6 +62,7 @@ import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import http,{getHttpErrorMessage} from '@/utils/http'
 const tab=ref('agents'),agents=ref<any[]>([]),withdrawals=ref<any[]>([]),accounts=ref<any[]>([]),proxies=ref<any[]>([]),backups=ref<any[]>([]),priceTemplates=ref<any[]>([]),oauthClients=ref<any[]>([]),ops=reactive<any>({}),accountStatus=ref<any>(null),announcement=reactive({title:'',content:'',audience:'ALL'})
+const pricingAgent=ref<{user_id:number;username:string}|null>(null)
 const agentPage=reactive({page:1,size:10,total:0}),withdrawalPage=reactive({page:1,size:10,total:0})
 const oauthPlatforms=['CODEX','CLAUDE','GEMINI','ANTIGRAVITY','GROK'],authorizeDialog=ref(false),manualDialog=ref(false),priceDialog=ref(false),oauthClientDialog=ref(false),oauthClientSaving=ref(false)
 const oauthClientForm=reactive<any>({platform:'CODEX',enabled:false,version:0,clientIdPreview:'',hasClientSecret:false,callbackBaseUrl:'',clientId:'',clientSecret:'',clearClientSecret:false,authorizationUri:'',tokenUri:'',userinfoUri:'',modelsUri:'',probeUri:'',upstreamBaseUrl:'',scopes:''})

@@ -18,6 +18,21 @@
           <div class="invite-row"><el-input :model-value="inviteLink" readonly /><el-button type="primary" :disabled="summary.profile.status !== 'ACTIVE'" @click="copyInvite">复制</el-button></div>
           <el-descriptions :column="3" border><el-descriptions-item label="API 消费佣金">1%</el-descriptions-item><el-descriptions-item label="订阅佣金">按商品设定的固定金额</el-descriptions-item><el-descriptions-item label="下游客户">不返利</el-descriptions-item></el-descriptions>
         </section>
+        <section v-if="summary.feature?.enabled && summary.profile.status === 'ACTIVE'" class="agent-card">
+          <h2>AI 订阅售价</h2>
+          <p>通过分享链接购买时使用代理售价。差价按扣除优惠后的商品实付与底价计算。</p>
+          <div class="invite-row"><el-input :model-value="subscriptionLink" readonly /><el-button type="primary" @click="copySubscriptionLink">复制订阅分享链接</el-button></div>
+          <AgentSubscriptionPrices endpoint="/api/user/agent/subscription-prices" />
+        </section>
+        <section class="agent-card">
+          <h2>订阅差价明细</h2>
+          <PagedTable :data="resaleRows" list-id="agent-subscription-resale-ledger" pagination="external">
+            <el-table-column prop="note" label="来源与订单" min-width="250" />
+            <el-table-column label="金额" min-width="110"><template #default="{row}">{{ money(row.amount) }}</template></el-table-column>
+            <el-table-column prop="created_at" label="入账时间" min-width="170" />
+          </PagedTable>
+          <ListPagination v-model:page="resalePage" v-model:size="resaleSize" :total="resaleTotal" :allow-all="false" @change="loadResale" />
+        </section>
         <section class="agent-card">
           <h2>佣金操作</h2><p>消费佣金冻结 {{ summary.feature.freezeDays }} 天；提现最低 {{ money(summary.feature.minimumWithdrawal) }}。</p>
           <el-form inline><el-form-item label="金额（元）"><el-input-number v-model="amount" :min="0.01" :precision="2" /></el-form-item><el-form-item><el-button @click="transfer">转入平台余额</el-button><el-button type="primary" @click="withdraw">申请人工提现</el-button></el-form-item></el-form>
@@ -30,6 +45,7 @@
 </template>
 
 <script setup lang="ts">
+import AgentSubscriptionPrices from '@/components/AgentSubscriptionPrices.vue'
 import PagedTable from '@/components/PagedTable.vue'
 import ListPagination from '@/components/ListPagination.vue'
 import { computed, onMounted, reactive, ref } from 'vue'
@@ -40,9 +56,22 @@ import { formatCny } from '@/utils/money'
 
 const router=useRouter(),summary=reactive<any>({feature:{},profile:{}}),amount=ref(0.01)
 const withdrawals=ref<any[]>([]),page=ref(1),size=ref(10),total=ref(0)
+const resaleRows=ref<any[]>([]),resalePage=ref(1),resaleSize=ref(10),resaleTotal=ref(0)
+const subscriptionLink=computed(()=>`${location.origin}/services?agent=${encodeURIComponent(summary.profile?.invite_code || '')}`)
 const amountUnits=computed(()=>Math.round(amount.value * Number(summary.feature?.amountScale || 10_000)))
 const inviteLink=computed(()=>`${location.origin}/?auth=register&aff=${encodeURIComponent(summary.profile?.invite_code||'')}`)
-async function load(){try{Object.assign(summary,(await http.get('/api/user/agent',{params:{includeLegacyWithdrawals:false}})).data||{});await loadWithdrawals()}catch(e){ElMessage.error(getHttpErrorMessage(e,'代理数据加载失败'))}}
+async function load(){try{Object.assign(summary,(await http.get('/api/user/agent',{params:{includeLegacyWithdrawals:false}})).data||{});await Promise.all([loadWithdrawals(),loadResale()])}catch(e){ElMessage.error(getHttpErrorMessage(e,'代理数据加载失败'))}}
+async function loadResale() {
+  try {
+    const { data } = await http.get('/api/user/agent/subscription-resale', { params: { page: resalePage.value, size: resaleSize.value } })
+    resaleRows.value = data.items
+    resaleTotal.value = data.total
+  } catch (error) { ElMessage.error(getHttpErrorMessage(error, '订阅差价明细加载失败')) }
+}
+async function copySubscriptionLink() {
+  await navigator.clipboard.writeText(subscriptionLink.value)
+  ElMessage.success('订阅分享链接已复制')
+}
 async function loadWithdrawals() {
   try {
     const { data } = await http.get('/api/user/agent/withdrawals', { params: { page: page.value, size: size.value } })

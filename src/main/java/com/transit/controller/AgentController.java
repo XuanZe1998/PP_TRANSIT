@@ -3,6 +3,7 @@ package com.transit.controller;
 import com.transit.dto.PageResponse;
 import com.transit.model.User;
 import com.transit.service.AgentDistributionService;
+import com.transit.service.AgentSubscriptionPricingService;
 import com.transit.service.CurrentUserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
@@ -16,6 +17,40 @@ import java.util.Map;
 public class AgentController {
     private final CurrentUserService currentUsers;
     private final AgentDistributionService agents;
+    private final AgentSubscriptionPricingService pricing;
+
+    @GetMapping("/user/agent/subscription-prices")
+    public PageResponse<Map<String, Object>> subscriptionPrices(@RequestHeader(HttpHeaders.AUTHORIZATION) String auth,
+            @RequestParam(defaultValue = "1") int page, @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) String query) {
+        return pricing.prices(currentUsers.requireUser(auth).getId(), false, page, size, query);
+    }
+
+    @PutMapping("/user/agent/subscription-prices/{service}")
+    public void retailPrice(@RequestHeader(HttpHeaders.AUTHORIZATION) String auth, @PathVariable long service,
+                            @RequestBody AgentSubscriptionPricingService.PriceChange change) {
+        pricing.setRetail(currentUsers.requireUser(auth).getId(), service, change);
+    }
+
+    @GetMapping("/user/agent/subscription-resale")
+    public PageResponse<Map<String, Object>> subscriptionResale(@RequestHeader(HttpHeaders.AUTHORIZATION) String auth,
+            @RequestParam(defaultValue = "1") int page, @RequestParam(defaultValue = "10") int size) {
+        return pricing.resaleLedger(currentUsers.requireUser(auth).getId(), page, size);
+    }
+
+    @GetMapping("/admin/api/agents/{agent}/subscription-prices")
+    public PageResponse<Map<String, Object>> adminSubscriptionPrices(@RequestHeader(HttpHeaders.AUTHORIZATION) String auth,
+            @PathVariable long agent, @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "10") int size, @RequestParam(required = false) String query) {
+        currentUsers.requireAdmin(auth);
+        return pricing.prices(agent, true, page, size, query);
+    }
+
+    @PutMapping("/admin/api/agents/{agent}/subscription-prices/{service}")
+    public void basePrice(@RequestHeader(HttpHeaders.AUTHORIZATION) String auth, @PathVariable long agent,
+                          @PathVariable long service, @RequestBody AgentSubscriptionPricingService.PriceChange change) {
+        pricing.setBase(currentUsers.requireAdmin(auth), agent, service, change);
+    }
 
     @GetMapping("/user/agent")
     public Map<String, Object> summary(@RequestHeader(HttpHeaders.AUTHORIZATION) String auth,

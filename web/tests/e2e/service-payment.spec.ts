@@ -22,7 +22,7 @@ async function prepareCheckout(page: Page, state: CheckoutState) {
       ? { status: 503, json: { message: 'Legal disclosures unavailable' } }
       : { json: { checkout_ready: state.ready, payments_enabled: state.ready, publication_ready: false,
         publication_review_required: false, checkout_disclosure_id: state.disclosureId, local_checkout_test_mode: state.localTest === true } })
-    if (path === '/public/other-services') return route.fulfill({ json: { total: 0, page: 1, size: 10, items: [] } })
+    if (path === '/service-orders/catalog') return route.fulfill({ json: { total: 0, page: 1, size: 10, items: [] } })
     if (path === '/service-orders') {
       orderPages.push(url.searchParams)
       return route.fulfill({ json: { total: 1, page: 1, size: 10, items: [order] } })

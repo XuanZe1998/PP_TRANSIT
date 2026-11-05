@@ -6,6 +6,7 @@ import com.transit.dto.ServiceOrderQuoteRequest;
 import com.transit.dto.ServiceOrderQuoteResponse;
 import com.transit.dto.PageResponse;
 import com.transit.model.ServiceOrder;
+import com.transit.model.OtherService;
 import com.transit.model.User;
 import com.transit.service.CurrentUserService;
 import com.transit.service.AdminAuditService;
@@ -13,6 +14,8 @@ import com.transit.service.ClientIpResolver;
 import com.transit.service.ServiceOrderService;
 import com.transit.service.ServiceCommerceService;
 import com.transit.service.ServiceCouponAdminService;
+import com.transit.service.AgentSubscriptionPricingService;
+import com.transit.service.OtherServiceCatalogService;
 import com.transit.service.IdempotencyService;
 import com.transit.service.LegalDocumentService;
 import com.transit.model.ServiceCoupon;
@@ -42,6 +45,18 @@ public class ServiceOrderController {
     private final ClientIpResolver clientIps;
     private final AdminAuditService adminAuditService;
     private final LegalDocumentService legalDocuments;
+    private final OtherServiceCatalogService catalog;
+    private final AgentSubscriptionPricingService agentPricing;
+
+    @GetMapping("/service-orders/catalog")
+    public ResponseEntity<PageResponse<OtherService>> catalog(@RequestHeader(HttpHeaders.AUTHORIZATION) String auth,
+            @RequestParam(defaultValue = "1") int page, @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) String agentCode) {
+        User buyer = currentUserService.requireUser(auth);
+        var result = catalog.listPage(true, page, size, null);
+        agentPricing.applyCatalogPrices(result.getItems(), buyer.getId(), agentCode);
+        return ResponseEntity.ok().cacheControl(org.springframework.http.CacheControl.noStore()).body(result);
+    }
 
     @PostMapping("/service-orders")
     public Mono<Object> createServiceOrder(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
@@ -78,7 +93,8 @@ public class ServiceOrderController {
             throw new org.springframework.web.server.ResponseStatusException(
                     org.springframework.http.HttpStatus.BAD_REQUEST, "serviceId is required");
         }
-        return Mono.fromCallable(() -> serviceOrderService.quote(user, request.getServiceId(), request.getQuantity(), request.getCouponCode()));
+        return Mono.fromCallable(() -> serviceOrderService.quote(user, request.getServiceId(), request.getQuantity(),
+                request.getCouponCode(), request.getAgentCode()));
     }
 
     @GetMapping("/service-orders/user-coupons")

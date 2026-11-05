@@ -138,7 +138,7 @@ test('a delayed response cannot authorize a rule edited during preview', async (
 
 test('subscription cards render independent custom text as plain text and retain default copy', async ({ page }) => {
   await prepare(page, false)
-  await page.route('**/public/other-services?**', route => route.fulfill({ json: { total: 2, page: 1, size: 10, items: [
+  await page.route('**/service-orders/catalog?**', route => route.fulfill({ json: { total: 2, page: 1, size: 10, items: [
     { id: 1, name: 'Custom subscription', priceCents: 14000, amountCents: 14000, currency: 'CNY',
       referralOffer: { mode: 'FIXED', fixed_cents: 500, rate_bps: 0, display_text: '专属奖励 <b>5元</b>\n到账以订单为准' } },
     { id: 2, name: 'Default subscription', priceCents: 14000, amountCents: 14000, currency: 'CNY',

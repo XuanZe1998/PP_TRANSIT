@@ -140,7 +140,8 @@ public class ServiceOrderService {
         if (orderMapper.lockBuyer(user.getId()) == null) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Authenticated user is required");
         }
-        ServiceOrderQuoteResponse serviceQuote = quote(user, request.getServiceId(), request.getQuantity(), request.getCouponCode());
+        ServiceOrderQuoteResponse serviceQuote = quote(user, request.getServiceId(), request.getQuantity(),
+                request.getCouponCode(), request.getAgentCode());
         long unitPriceCents = serviceQuote.getListUnitPriceCents();
         long effectiveUnitPriceCents = serviceQuote.getEffectiveUnitPriceCents();
         int quantity = serviceQuote.getQuantity();
@@ -149,6 +150,9 @@ public class ServiceOrderService {
         long couponDiscountCents = serviceQuote.getCouponDiscountCents();
         long serviceFeeCents = serviceQuote.getServiceFeeCents();
         long amountCents = serviceQuote.getAmountCents();
+        if (request.getExpectedAmountCents() != null && request.getExpectedAmountCents() != amountCents) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "订单报价已变化，请核对最新金额后重新提交");
+        }
         String contactEmail = normalizeContactEmail(request.getContactEmail(), user);
         String billingCountry = requiredText(request.getBillingCountry(), "billingCountry", 120);
         String billingPostalCode = normalizePostalCode(request.getBillingPostalCode(), billingCountry);
@@ -211,7 +215,7 @@ public class ServiceOrderService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Insufficient stock");
         }
         requireCommerce().reserve(order, request.getCustomFields());
-        if (referrals != null) referrals.snapshot(order);
+        if (referrals != null) referrals.snapshot(order, serviceQuote.getResaleAgentId(), serviceQuote.getResaleBaseCents());
 
         com.transit.model.PaymentIntent paymentIntent = paymentIntentService == null || "balance".equals(paymentMethod) ? null
                 : paymentIntentService.ensureServiceIntent(order);
@@ -254,7 +258,11 @@ public class ServiceOrderService {
     }
 
     public ServiceOrderQuoteResponse quote(User user, Long serviceId, Integer quantity, String couponCode) {
-        return requireCommerce().quote(serviceId, quantity, couponCode, user.getId());
+        return quote(user, serviceId, quantity, couponCode, null);
+    }
+
+    public ServiceOrderQuoteResponse quote(User user, Long serviceId, Integer quantity, String couponCode, String agentCode) {
+        return requireCommerce().quote(serviceId, quantity, couponCode, user.getId(), agentCode);
     }
 
     public ServiceOrderResponse startPayment(User user, Long id, String clientIp) {

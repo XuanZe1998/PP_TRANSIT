@@ -211,7 +211,7 @@ public class ReferralService {
     }
 
     /** The order transaction snapshots ineligible orders too, excluding them from legacy settlement. */
-    public void snapshot(ServiceOrder order) {
+    public void snapshot(ServiceOrder order, Long resaleAgent, Long resaleBaseCents) {
         Map<String,Object> binding=first("SELECT agent_user_id FROM agent_customer_bindings WHERE customer_user_id=?",order.getUserId());
         Long inviter=binding==null?null:number(binding,"agent_user_id");
         Map<String,Object> r=first("SELECT * FROM referral_rules WHERE service_id=?",order.getServiceId());
@@ -227,11 +227,20 @@ public class ReferralService {
         Rule rule=r==null?new Rule(false,"FIXED",0,0,0):rule(r);
         long cost=Math.multiplyExact(rule.costCents(),order.getQuantity());
         long amount=eligible?configuredCommission(sale,order.getQuantity(),rule):0;
+        long resale = 0;
+        if (resaleAgent != null) {
+            long base = Math.multiplyExact(resaleBaseCents, order.getQuantity());
+            long netMerchandise = order.getAmountCents() - order.getServiceFeeCents();
+            resale = BigDecimal.valueOf(Math.max(0, netMerchandise - base))
+                    .multiply(order.getExchangeRate()).setScale(0, RoundingMode.DOWN).longValueExact();
+        }
         jdbc.update("""
-                INSERT INTO referral_orders(order_id,inviter_id,customer_id,rule_version,mode,fixed_cents,rate_bps,sale_cents,cost_cents,commission_cents,freeze_days,status)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+                INSERT INTO referral_orders(order_id,inviter_id,customer_id,rule_version,mode,fixed_cents,rate_bps,sale_cents,cost_cents,commission_cents,freeze_days,status,
+                    resale_agent_id,resale_base_cents,resale_cents)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,order.getId(),inviter,order.getUserId(),r==null?0:number(r,"version"),AGENT_FIXED,rule.fixedCents(),0,sale,cost,amount,
-                Math.max(0, agentFreezeDays),eligible && amount>0?"AWAITING_PAYMENT":"INELIGIBLE");
+                Math.max(0, agentFreezeDays),amount>0 || resale>0?"AWAITING_PAYMENT":"INELIGIBLE",
+                resaleAgent,resaleBaseCents,resale);
         order.setReferralCommissionCents(eligible?amount:null);
     }
 
@@ -240,6 +249,10 @@ public class ReferralService {
         return Math.multiplyExact(cents,amountScale/100);
     }
     private void entry(String key,long inviter,long customer,long cents,String type) {
+        entry(key,inviter,customer,cents,type,"订阅邀请返佣");
+    }
+
+    private void entry(String key,long inviter,long customer,long cents,String type,String note) {
         if (first("SELECT id FROM agent_commission_events WHERE business_event_id=?",key)!=null) return;
         jdbc.update("""
                 INSERT INTO agent_commission_events(business_event_id,business_type,customer_user_id,agent_user_id,sale_amount,cost_amount,gross_profit,commission_pool,customer_rebate_amount,agent_commission_amount,amount_scale,status)
@@ -248,8 +261,14 @@ public class ReferralService {
         long id=jdbc.queryForObject("SELECT id FROM agent_commission_events WHERE business_event_id=?",Long.class,key);
         jdbc.update("""
                 INSERT INTO agent_commission_ledger(event_id,business_event_id,beneficiary_user_id,agent_user_id,customer_user_id,entry_type,amount,status,note)
-                VALUES (?,?,?,?,?,?,?,'AVAILABLE','订阅邀请返佣')
-                """,id,key,inviter,inviter,customer,type,units(cents));
+                VALUES (?,?,?,?,?,?,?,'AVAILABLE',?)
+                """,id,key,inviter,inviter,customer,type,units(cents),note);
+    }
+
+    private void lockOrderBeneficiaries(Map<String,Object> row) {
+        java.util.stream.Stream.of(row.get("inviter_id"),row.get("resale_agent_id"))
+                .filter(Objects::nonNull).map(value -> ((Number)value).longValue())
+                .distinct().sorted().forEach(this::lockUser);
     }
     private long rawBalance(long userId) {
         return sum("""
@@ -324,13 +343,12 @@ public class ReferralService {
         } while (batch.size() == 100);
     }
     void settleOne(long id) {
-        Map<String,Object> initial=first("SELECT inviter_id FROM referral_orders WHERE order_id=?",id);
-        if (initial==null || initial.get("inviter_id")==null) return;
-        long inviter=number(initial,"inviter_id");
-        lockUser(inviter);
+        Map<String,Object> initial=first("SELECT inviter_id,resale_agent_id FROM referral_orders WHERE order_id=?",id);
+        if (initial==null) return;
+        lockOrderBeneficiaries(initial);
         Map<String,Object> r=jdbc.queryForMap("SELECT * FROM referral_orders WHERE order_id=? FOR UPDATE",id);
         if (!Set.of("AWAITING_PAYMENT","AWAITING_DELIVERY","FROZEN","VOID").contains(r.get("status"))) return;
-        Map<String,Object> order=first("SELECT status,fulfilled_at FROM service_orders WHERE id=?",id);
+        Map<String,Object> order=first("SELECT status,fulfilled_at,order_no FROM service_orders WHERE id=?",id);
         if(order==null || Set.of("FAILED","CANCELLED","EXPIRED").contains(order.get("status"))) {
             jdbc.update("UPDATE referral_orders SET status='VOID' WHERE order_id=?",id); return;
         }
@@ -344,9 +362,12 @@ public class ReferralService {
             jdbc.update("UPDATE referral_orders SET status='FROZEN',available_at=? WHERE order_id=?",due,id); return;
         }
         long net=number(r,"commission_cents")-number(r,"reversed_cents");
-        if (net>0) entry("REFERRAL_ORDER:"+id,inviter,number(r,"customer_id"),net,
+        if (net>0) entry("REFERRAL_ORDER:"+id,number(r,"inviter_id"),number(r,"customer_id"),net,
                 AGENT_FIXED.equals(r.get("mode"))?"AGENT_COMMISSION":"REFERRAL_CREDIT");
-        jdbc.update("UPDATE referral_orders SET status=?,available_at=? WHERE order_id=?",net>0?"AVAILABLE":"REVERSED",due,id);
+        long resaleNet=number(r,"resale_cents")-number(r,"resale_reversed_cents");
+        if (resaleNet>0) entry("SUBSCRIPTION_RESALE:"+id,number(r,"resale_agent_id"),number(r,"customer_id"),
+                resaleNet,"AGENT_RESALE","订阅差价 · "+order.get("order_no"));
+        jdbc.update("UPDATE referral_orders SET status=?,available_at=? WHERE order_id=?",net>0 || resaleNet>0?"AVAILABLE":"REVERSED",due,id);
     }
     public Map<String,Object> summary(long userId) {
         Map<String,Object> result=new LinkedHashMap<>(settings());
@@ -495,8 +516,8 @@ public class ReferralService {
     @Transactional(isolation=org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
     public void refund(User admin,long orderId,Refund request) {
         String reference=required(request.reference(),160);
-        Map<String,Object> initial=first("SELECT inviter_id FROM referral_orders WHERE order_id=?",orderId);
-        if(initial!=null && initial.get("inviter_id")!=null) lockUser(number(initial,"inviter_id"));
+        Map<String,Object> initial=first("SELECT inviter_id,resale_agent_id FROM referral_orders WHERE order_id=?",orderId);
+        if(initial!=null) lockOrderBeneficiaries(initial);
         Map<String,Object> order=first("SELECT * FROM service_orders WHERE id=? FOR UPDATE",orderId);
         if(order==null || !Set.of("PAID","FULFILLED").contains(order.get("status"))) throw conflict("只能登记已付款订单的退款");
         Map<String,Object> previous=first("SELECT * FROM referral_refunds WHERE reference=?",reference);
@@ -529,12 +550,24 @@ public class ReferralService {
                     : sale==0?0:BigDecimal.valueOf(number(r,"commission_cents")).multiply(BigDecimal.valueOf(merchandiseTotal))
                     .divide(BigDecimal.valueOf(sale),0,RoundingMode.DOWN).longValueExact();
             long delta=reversed-number(r,"reversed_cents");
-            jdbc.update("UPDATE referral_orders SET refunded_cents=?,reversed_cents=? WHERE order_id=?",total,reversed,orderId);
+            long resale = number(r,"resale_cents");
+            long resaleReversed = total==paid ? resale : sale==0 ? 0 : BigDecimal.valueOf(resale)
+                    .multiply(BigDecimal.valueOf(merchandiseTotal)).divide(BigDecimal.valueOf(sale),0,RoundingMode.DOWN).longValueExact();
+            long resaleDelta = resaleReversed-number(r,"resale_reversed_cents");
+            jdbc.update("UPDATE referral_orders SET refunded_cents=?,reversed_cents=?,resale_reversed_cents=? WHERE order_id=?",
+                    total,reversed,resaleReversed,orderId);
+            if(resaleDelta>0 && "AVAILABLE".equals(r.get("status"))) {
+                long refundId=jdbc.queryForObject("SELECT id FROM referral_refunds WHERE reference=?",Long.class,reference);
+                entry("SUBSCRIPTION_RESALE_REFUND:"+refundId,number(r,"resale_agent_id"),number(r,"customer_id"),
+                        -resaleDelta,"AGENT_RESALE_REVERSAL","订阅差价退款冲回 · "+order.get("order_no"));
+            }
+            if("AVAILABLE".equals(r.get("status")) && reversed==number(r,"commission_cents") && resaleReversed==resale) {
+                jdbc.update("UPDATE referral_orders SET status='REVERSED' WHERE order_id=?",orderId);
+            }
             if(delta>0 && Set.of("AVAILABLE","REVERSED").contains(r.get("status"))) {
                 long inviter=number(r,"inviter_id");
                 entry("REFERRAL_REFUND:"+jdbc.queryForObject("SELECT id FROM referral_refunds WHERE reference=?",Long.class,reference),
                         inviter,number(r,"customer_id"),-delta,agentOrder?"AGENT_COMMISSION_REVERSAL":"REFERRAL_REVERSAL");
-                if(reversed==number(r,"commission_cents")) jdbc.update("UPDATE referral_orders SET status='REVERSED' WHERE order_id=?",orderId);
                 if(!agentOrder && rawBalance(inviter)<0) {
                     for(Map<String,Object> w:jdbc.queryForList("SELECT * FROM referral_withdrawals WHERE user_id=? AND status IN ('PENDING','APPROVED') ORDER BY id FOR UPDATE",inviter)) {
                         release(w,"CANCELLED","关联订单退款，提现已取消，请核对余额后重新申请");

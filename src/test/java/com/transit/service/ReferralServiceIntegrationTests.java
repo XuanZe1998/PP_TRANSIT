@@ -27,6 +27,7 @@ class ReferralServiceIntegrationTests {
     @Autowired ReferralService referrals;
     @Autowired ServiceCouponAdminService coupons;
     @Autowired AgentDistributionService agents;
+    @Autowired AgentSubscriptionPricingService agentPricing;
     @Autowired ServiceOrderService orders;
     @Autowired OtherServiceCatalogService catalog;
     @Autowired ServiceCommerceService commerce;
@@ -76,12 +77,60 @@ class ReferralServiceIntegrationTests {
     }
 
     private ServiceOrder createOrder(User buyer, OtherService product, String method, String coupon) {
+        return createOrder(buyer, product, method, coupon, null, null);
+    }
+
+    private ServiceOrder createOrder(User buyer, OtherService product, String method, String coupon,
+                                     String agentCode, Long expectedAmount) {
         var request=new ServiceOrderCreateRequest();
         request.setServiceId(product.getId());request.setQuantity(1);request.setContactEmail(buyer.getEmail());
         request.setBillingName("Buyer");request.setBillingAddressLine1("Main street");request.setBillingDistrict("District");
         request.setBillingCity("City");request.setBillingProvince("Province");request.setBillingPostalCode("100000");
         request.setBillingCountry("China");request.setPaymentMethod(method);request.setCouponCode(coupon);
+        request.setAgentCode(agentCode);request.setExpectedAmountCents(expectedAmount);
         return orders.createOrder(buyer,request).getOrder();
+    }
+
+    @Test
+    void agentLinkUsesRetailSnapshotAndCreditsOnlyTheResaleAgentWithRefundSource() {
+        User agent=user(), buyer=user(), otherAgent=user();
+        enable(agent);
+        String code=invite(agent);
+        var profile=agents.apply(agent.getId(),0);
+        agents.reviewAgent(agent.getId(),((Number)profile.get("id")).longValue(),"ACTIVE","BASIC");
+        String otherCode=invite(otherAgent);
+        var otherProfile=agents.apply(otherAgent.getId(),0);
+        agents.reviewAgent(agent.getId(),((Number)otherProfile.get("id")).longValue(),"ACTIVE","BASIC");
+        assertThat(referrals.bindInvite(buyer.getId(),otherCode,"REGISTER")).isTrue();
+        OtherService product=product(agent);
+        agentPricing.setBase(agent,agent.getId(),product.getId(),new AgentSubscriptionPricingService.PriceChange(2500L,0));
+        agentPricing.setRetail(agent.getId(),product.getId(),new AgentSubscriptionPricingService.PriceChange(2800L,1));
+
+        assertThat(orders.quote(buyer,product.getId(),1,null).getListUnitPriceCents()).isEqualTo(3000L);
+        assertThat(orders.quote(agent,product.getId(),1,null,code).getListUnitPriceCents()).isEqualTo(2500L);
+        assertThat(orders.quote(buyer,product.getId(),1,null,code).getListUnitPriceCents()).isEqualTo(2800L);
+        var publicPage=catalog.listPage(true,1,10,product.getName());
+        agentPricing.applyCatalogPrices(publicPage.getItems(),null,code);
+        assertThat(publicPage.getItems().get(0).getPriceCents()).isEqualTo(2800L);
+        assertThat(agentPricing.prices(agent.getId(),false,1,10,product.getName()).getTotal()).isEqualTo(1L);
+
+        jdbc.update("UPDATE users SET balance=1000000 WHERE id=?",buyer.getId());
+        ServiceOrder order=createOrder(buyer,product,"balance",null,code,2900L);
+        agentPricing.setBase(agent,agent.getId(),product.getId(),new AgentSubscriptionPricingService.PriceChange(2600L,2));
+        assertThat(orders.startPayment(buyer,order.getId(),"127.0.0.1").getOrder().getStatus()).isEqualTo("FULFILLED");
+        mature(order);
+        referrals.settleDue();
+        assertThat(agents.summary(agent.getId()).get("availableCommission")).isEqualTo(30000L);
+        assertThat(agents.summary(otherAgent.getId()).get("availableCommission")).isEqualTo(50000L);
+        assertThat(agentPricing.resaleLedger(agent.getId(),1,10).getItems().get(0))
+                .containsEntry("entry_type","AGENT_RESALE").containsEntry("note","订阅差价 · "+order.getOrderNo());
+        assertThat(agentPricing.resaleLedger(otherAgent.getId(),1,10).getTotal()).isZero();
+
+        referrals.refund(agent,order.getId(),new ReferralService.Refund(1400,1400L,"REF-"+UUID.randomUUID(),now()));
+        assertThat(agents.summary(agent.getId()).get("availableCommission")).isEqualTo(15000L);
+        referrals.refund(agent,order.getId(),new ReferralService.Refund(1500,1400L,"REF-"+UUID.randomUUID(),now()));
+        assertThat(agents.summary(agent.getId()).get("availableCommission")).isEqualTo(0L);
+        assertThat(agentPricing.resaleLedger(agent.getId(),1,10).getTotal()).isEqualTo(3L);
     }
     private void mature(ServiceOrder order) {
         jdbc.update("UPDATE service_orders SET status='FULFILLED',fulfillment_status='COMPLETED',fulfilled_at=? WHERE id=?",now().minusDays(8),order.getId());

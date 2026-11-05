@@ -33,6 +33,10 @@ public class ServiceOrderQuoteResponse {
     private MoneyAmount couponDiscountMoney;
     private MoneyAmount serviceFeeMoney;
     private MoneyAmount amountMoney;
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    private Long resaleAgentId;
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    private Long resaleBaseCents;
 
     public record InputField(String key, String label, boolean required, int maxLength) {}
 }

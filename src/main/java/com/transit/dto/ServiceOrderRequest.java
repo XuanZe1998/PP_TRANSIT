@@ -9,6 +9,8 @@ public class ServiceOrderRequest {
     private Long serviceId;
     private Integer quantity;
     private String couponCode;
+    private String agentCode;
+    private Long expectedAmountCents;
     private Map<String, String> customFields;
     private String contactEmail;
     private String contactNote;

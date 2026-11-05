@@ -49,20 +49,22 @@ public class ServiceCommerceService {
     private final ObjectMapper objectMapper;
     private final ChannelSecretService secretService;
     private final DujiaoNextProcurementService dujiaoNextProcurementService;
+    private final AgentSubscriptionPricingService agentPricing;
 
     @Value("${service-orders.reservation-minutes:15}")
     private long reservationMinutes;
 
     public ServiceOrderQuoteResponse quote(Long serviceId, Integer requestedQuantity, String couponCode,
-                                           Long userId) {
+                                           Long userId, String agentCode) {
         OtherService service = catalogService.requirePurchasableService(serviceId);
         int quantity = requestedQuantity == null ? 1 : requestedQuantity;
         int maximum = service.getMaxPurchaseQuantity() == null ? 1 : service.getMaxPurchaseQuantity();
         if (quantity < 1 || quantity > maximum) {
             throw badRequest("quantity must be between 1 and " + maximum);
         }
-        long listUnit = nonNegative(service.getPriceCents(), "service.priceCents");
-        long effectiveUnit = tierPrice(service.getWholesaleTiersJson(), quantity, listUnit);
+        var agentPrice = agentPricing.price(service, userId, agentPricing.agentForCode(agentCode));
+        long listUnit = agentPrice == null ? nonNegative(service.getPriceCents(), "service.priceCents") : agentPrice.unitCents();
+        long effectiveUnit = agentPrice == null ? tierPrice(service.getWholesaleTiersJson(), quantity, listUnit) : listUnit;
         long listSubtotal = multiply(listUnit, quantity);
         long merchandiseSubtotal = multiply(effectiveUnit, quantity);
         long wholesaleDiscount = listSubtotal - merchandiseSubtotal;
@@ -94,6 +96,8 @@ public class ServiceCommerceService {
                 .currency(service.getCurrency()).availableStock(stock).available(available)
                 .purchasePrompt(service.getPurchasePrompt()).inputFields(inputFields(service.getInputSchemaJson()))
                 .couponId(coupon == null ? null : coupon.getId()).couponCode(coupon == null ? null : coupon.getCode())
+                .resaleAgentId(agentPrice == null ? null : agentPrice.agentId())
+                .resaleBaseCents(agentPrice == null || agentPrice.agentId() == null ? null : agentPrice.baseCents())
                 .listUnitPriceMoney(MoneyAmount.cents(listUnit, service.getCurrency()))
                 .effectiveUnitPriceMoney(MoneyAmount.cents(effectiveUnit, service.getCurrency()))
                 .merchandiseSubtotalMoney(MoneyAmount.cents(merchandiseSubtotal, service.getCurrency()))

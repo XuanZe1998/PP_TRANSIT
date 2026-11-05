@@ -7,4 +7,5 @@ public class ServiceOrderQuoteRequest {
     private Long serviceId;
     private Integer quantity;
     private String couponCode;
+    private String agentCode;
 }
