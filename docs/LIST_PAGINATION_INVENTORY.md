@@ -111,7 +111,7 @@
 | 页面 / 接口 | 列表 | 分页方式 |
 | --- | --- | --- |
 | `OtherServices.vue` / `GET /public/other-services` | 公开服务目录 | `ListPagination`，`listPage=true` |
-| `OtherServices.vue` / `GET /service-orders` | 用户服务订单 | `PagedTable` + `ListPagination`，服务端状态筛选 |
+| `OtherServices.vue` / `GET /service-orders` | 用户服务订单 | `PagedTable` + `ListPagination`，服务端状态筛选；历史待履约订单不触发整表轮询，支付仅轮询目标订单，完成后刷新当前页 |
 | `UserConsole.vue` / `GET /platform/user/recharge-orders` | 用户充值订单 | `PagedTable` + `SelectablePagination` |
 | `AdminOtherServices.vue` / `GET /admin/api/other-services` | 管理服务目录 | `PagedTable` + `ListPagination` |
 | `AdminServiceOrders.vue` / `GET /service-orders/admin/orders` | 管理服务订单 | `PagedTable` + `ListPagination`，服务端按账号邮箱精确筛选，COUNT 与数据查询使用相同条件。批量操作选择当前页，服务端每次最多接收 100 笔。 |

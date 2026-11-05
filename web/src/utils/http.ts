@@ -49,6 +49,16 @@ export function getHttpRequestId(error: unknown) {
   return typeof value === 'string' ? value.trim() : ''
 }
 
+export async function getHttpDownloadErrorMessage(error: unknown, fallback?: string) {
+  if (axios.isAxiosError(error) && error.response?.data instanceof Blob) {
+    try {
+      const payload = JSON.parse(await error.response.data.text())
+      return getHttpErrorMessage({ ...error, isAxiosError: true, response: { ...error.response, data: payload } }, fallback)
+    } catch { /* Non-JSON gateway errors retain the normal HTTP status message. */ }
+  }
+  return getHttpErrorMessage(error, fallback)
+}
+
 export function getHttpErrorNotice(error: unknown, fallback = '请求失败，请稍后重试') {
   const message = getHttpErrorMessage(error, fallback)
   const requestId = getHttpRequestId(error)

@@ -5,10 +5,18 @@ import http, {
   createIdempotencyKey,
   getHttpErrorMessage,
   getHttpErrorNotice,
+  getHttpDownloadErrorMessage,
   resolveApiResourceUrl
 } from '../src/utils/http'
 
 describe('HTTP client production defaults', () => {
+  it('reads JSON download errors from a blob and falls back safely for HTML gateway errors', async () => {
+    const error = (data: Blob) => ({ isAxiosError: true, response: { status: 503, data } })
+    expect(await getHttpDownloadErrorMessage(error(new Blob([JSON.stringify({ message: 'Billing configuration is incomplete' })]))))
+      .toBe('Billing configuration is incomplete')
+    expect(await getHttpDownloadErrorMessage(error(new Blob(['<html>Bad gateway</html>']))))
+      .toBe('服务暂时不可用，请稍后重试')
+  })
   it('uses the administrator token for nested service-order administration endpoints', () => {
     expect(authScope('/api/service-orders/admin/orders')).toBe('admin')
     expect(authScope('/api/service-orders/admin/coupons')).toBe('admin')

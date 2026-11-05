@@ -178,3 +178,43 @@ test('verified payment return opens delivery and waits for delayed keys', async 
   delivered = true
   await expect(detail).toContainText('RETURN-KEY-ONLY', { timeout: 10000 })
 })
+
+test('historical paid orders do not continuously reload the paginated order list', async ({ page }) => {
+  await prepareCheckout(page, { ready: true, disclosureId: 'current-disclosure' })
+  const requests: URLSearchParams[] = []
+  await page.route('**/service-orders?**', route => {
+    const params = new URL(route.request().url()).searchParams
+    requests.push(params)
+    return route.fulfill({ json: { total: 11, page: Number(params.get('page')), size: 10, items: [{
+      id: 41, orderNo: 'HISTORICAL-PAID', productName: '历史服务', status: 'PAID',
+      fulfillmentStatus: 'RESERVED', fulfillmentMode: 'MANUAL', amountCents: 100, currency: 'CNY'
+    }] } })
+  })
+  await page.goto('/services')
+  await expect(page.getByText('HISTORICAL-PAID', { exact: true })).toBeVisible()
+  await page.waitForTimeout(6500)
+  expect(requests).toHaveLength(1)
+  expect(requests[0].get('listPage')).toBe('true')
+  expect(requests[0].get('size')).toBe('10')
+  await expect(page.getByRole('dialog', { name: '卡密与订单详情', exact: true })).not.toBeVisible()
+  await page.getByRole('button', { name: '刷新订单', exact: true }).click()
+  await expect.poll(() => requests.length).toBe(2)
+})
+
+test('invoice downloads a PDF and displays the server reason if generation fails', async ({ page }) => {
+  const { dialog } = await prepareCheckout(page, { ready: true, disclosureId: 'current-disclosure' })
+  await dialog.getByRole('button', { name: '取消', exact: true }).click()
+  await page.route('**/service-orders/41/invoice', route => route.fulfill({
+    contentType: 'application/pdf', body: '%PDF-1.4\n%%EOF'
+  }))
+  const downloadPromise = page.waitForEvent('download')
+  await page.getByRole('button', { name: '下载账单', exact: true }).click()
+  const download = await downloadPromise
+  expect(download.suggestedFilename()).toBe('invoice-41.pdf')
+  expect(await download.failure()).toBeNull()
+  await page.route('**/service-orders/41/invoice', route => route.fulfill({
+    status: 503, json: { message: 'Billing configuration is incomplete' }
+  }))
+  await page.getByRole('button', { name: '下载账单', exact: true }).click()
+  await expect(page.getByText('Billing configuration is incomplete', { exact: true })).toBeVisible()
+})

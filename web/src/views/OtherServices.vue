@@ -279,7 +279,7 @@ import { formatCurrencyCents } from '@/utils/money'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
-import http, { createIdempotencyKey, getHttpErrorMessage, resolveApiResourceUrl } from '@/utils/http'
+import http, { createIdempotencyKey, getHttpDownloadErrorMessage, getHttpErrorMessage, resolveApiResourceUrl } from '@/utils/http'
 import { getToken } from '@/utils/auth'
 
 type OtherService = {
@@ -562,10 +562,10 @@ function stopFulfillmentPolling() {
   fulfillmentTargetOrderId = null
 }
 
-function startFulfillmentPolling(targetOrderId?: number) {
+function startFulfillmentPolling(targetOrderId: number) {
   if (disposed) return
-  if (targetOrderId && targetOrderId !== fulfillmentTargetOrderId) stopFulfillmentPolling()
-  if (targetOrderId) fulfillmentTargetOrderId = targetOrderId
+  if (targetOrderId !== fulfillmentTargetOrderId) stopFulfillmentPolling()
+  fulfillmentTargetOrderId = targetOrderId
   if (fulfillmentTimer !== undefined) return
   fulfillmentPollAttempts = 0
   fulfillmentTimer = window.setInterval(async () => {
@@ -598,9 +598,6 @@ function startFulfillmentPolling(targetOrderId?: number) {
           await loadOrders()
           return
         }
-      } else {
-        await loadOrders()
-        if (!orders.value.some(awaitingFulfillment)) stopFulfillmentPolling()
       }
       if (fulfillmentPollAttempts >= 300) {
         stopFulfillmentPolling()
@@ -809,10 +806,12 @@ async function downloadDocument(id: number, type: 'invoice' | 'receipt') {
     const link = document.createElement('a')
     link.href = url
     link.download = `${type}-${id}.pdf`
+    document.body.appendChild(link)
     link.click()
-    URL.revokeObjectURL(url)
+    link.remove()
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
   } catch (error: unknown) {
-    ElMessage.error(getHttpErrorMessage(error, type === 'invoice' ? '账单下载失败' : '收据下载失败'))
+    ElMessage.error(await getHttpDownloadErrorMessage(error, type === 'invoice' ? '账单下载失败' : '收据下载失败'))
   }
 }
 
@@ -828,7 +827,6 @@ onMounted(async () => {
     if (authenticated) {
       await loadOrders()
       await resumePendingPayment()
-      if (orders.value.some(awaitingFulfillment)) startFulfillmentPolling()
     }
   } catch {
     ElMessage.error('AI订阅加载失败，请稍后重试')

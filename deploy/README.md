@@ -38,6 +38,30 @@ The local machine must have the production deploy key at `~/.ssh/api-transit-dep
 
 Application secrets, SSH passwords, and database contents are intentionally outside this workflow.
 
+## Billing PDF configuration
+
+Invoice and receipt downloads require `payment.documents` in the production
+private configuration (or the corresponding `PAYMENT_MERCHANT_*` environment
+variables). Publishing the application does not copy local merchant settings.
+Configure the verified merchant `legal-name`, `address-line-1`, `address-line-2`,
+`country`, and `contact-email`, plus `time-zone` and `font-path`. Preserve the
+other production settings and keep a restricted backup before changing them.
+
+For simplified Chinese invoices on Ubuntu 24.04, install
+`fonts-arphic-gbsn00lp` and set `font-path` to the installed `gbsn00lp.ttf`
+(locate it with `dpkg -L fonts-arphic-gbsn00lp`). The configured font must
+support the entire mixed Chinese/Latin line, including spaces, digits and
+punctuation. `DroidSansFallbackFull.ttf` lacks some Latin punctuation and is
+not suitable for this renderer. Verify both invoice and receipt generation
+with mixed-language customer/product data, then activate the private
+configuration through the normal service restart/release.
+
+On 2026-11-05, production was missing both the merchant configuration and a
+suitable Chinese font. The active local Linknux document settings were copied
+to the private production configuration, a font was installed, and both PDF
+types were checked with synthetic Chinese data. Merchant values and generated
+documents are not stored in this repository.
+
 ## Subscription referral rollout
 
 Migration V39 creates the subscription referral tables with the campaign disabled,
