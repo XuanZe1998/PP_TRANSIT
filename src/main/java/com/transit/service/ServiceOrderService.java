@@ -71,6 +71,7 @@ public class ServiceOrderService {
     private final MoneyService moneyService;
     private final UserMapper userMapper;
     private final ReferralService referrals;
+    private final PaymentBusinessSettlementService paymentSettlement;
 
     @Autowired
     public ServiceOrderService(ServiceOrderMapper orderMapper,
@@ -78,7 +79,8 @@ public class ServiceOrderService {
                             PaymentIntentService paymentIntentService,
                             AccountVerificationPolicy verificationPolicy,
                             MoneyService moneyService,
-                            UserMapper userMapper, ReferralService referrals) {
+                            UserMapper userMapper, ReferralService referrals,
+                            PaymentBusinessSettlementService paymentSettlement) {
         this.orderMapper = orderMapper;
         this.serviceCommerceService = serviceCommerceService;
         this.paymentIntentService = paymentIntentService;
@@ -86,12 +88,13 @@ public class ServiceOrderService {
         this.moneyService = moneyService;
         this.userMapper = userMapper;
         this.referrals = referrals;
+        this.paymentSettlement = paymentSettlement;
     }
 
     ServiceOrderService(ServiceOrderMapper orderMapper,
                      ServiceCommerceService serviceCommerceService) {
         this(orderMapper, serviceCommerceService, null,
-                new AccountVerificationPolicy("EMAIL_AND_PHONE"), new MoneyService(new BigDecimal("6.76693506")), null, null);
+                new AccountVerificationPolicy("EMAIL_AND_PHONE"), new MoneyService(new BigDecimal("6.76693506")), null, null, null);
     }
 
     // Focused unit tests that do not exercise an external payment provider use this constructor.
@@ -137,8 +140,7 @@ public class ServiceOrderService {
         if (orderMapper.lockBuyer(user.getId()) == null) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Authenticated user is required");
         }
-        ServiceOrderQuoteResponse serviceQuote = requireCommerce().quote(
-                request.getServiceId(), request.getQuantity(), request.getCouponCode());
+        ServiceOrderQuoteResponse serviceQuote = quote(user, request.getServiceId(), request.getQuantity(), request.getCouponCode());
         long unitPriceCents = serviceQuote.getListUnitPriceCents();
         long effectiveUnitPriceCents = serviceQuote.getEffectiveUnitPriceCents();
         int quantity = serviceQuote.getQuantity();
@@ -161,7 +163,7 @@ public class ServiceOrderService {
                 .and(expiry -> expiry.isNull(ServiceOrder::getReservationExpiresAt)
                         .or().gt(ServiceOrder::getReservationExpiresAt, now)));
         long paymentAmountCents = paymentQuote.money().amount();
-        if (hasUnpaidSubscription) {
+        if (hasUnpaidSubscription && !"balance".equals(paymentMethod)) {
             paymentAmountCents = Math.addExact(paymentAmountCents, 1);
         }
         String orderNo = generateOrderNo();
@@ -211,7 +213,7 @@ public class ServiceOrderService {
         requireCommerce().reserve(order, request.getCustomFields());
         if (referrals != null) referrals.snapshot(order);
 
-        com.transit.model.PaymentIntent paymentIntent = paymentIntentService == null ? null
+        com.transit.model.PaymentIntent paymentIntent = paymentIntentService == null || "balance".equals(paymentMethod) ? null
                 : paymentIntentService.ensureServiceIntent(order);
 
         return ServiceOrderResponse.builder()
@@ -232,6 +234,7 @@ public class ServiceOrderService {
         String country=requiredText(request.getBillingCountry(),"billingCountry",120);
         String postal=normalizePostalCode(request.getBillingPostalCode(),country);
         String paymentMethod=normalizePaymentMethod(request.getPaymentMethod());
+        if ("balance".equals(paymentMethod)) throw badRequest("该商品暂不支持余额支付");
         long unit=BigDecimal.valueOf(totalCents).divide(BigDecimal.valueOf(quantity),0,RoundingMode.HALF_UP).longValueExact();
         PaymentQuote paymentQuote=paymentQuote(totalCents,"CNY"); LocalDateTime now=nowUtc(); String orderNo=generateOrderNo();
         ServiceOrder order=ServiceOrder.builder().orderNo(orderNo).userId(user.getId()).productName(requiredText(productName,"productName",160))
@@ -250,8 +253,17 @@ public class ServiceOrderService {
         return ServiceOrderResponse.builder().order(enrichOrderMoney(order)).paymentIntent(intent).message("Order created from fresh supplier quote").build();
     }
 
+    public ServiceOrderQuoteResponse quote(User user, Long serviceId, Integer quantity, String couponCode) {
+        return requireCommerce().quote(serviceId, quantity, couponCode, user.getId());
+    }
+
     public ServiceOrderResponse startPayment(User user, Long id, String clientIp) {
         ServiceOrder order = getUserOrder(user, id);
+        if ("balance".equals(order.getPaymentMethod())) {
+            return ServiceOrderResponse.builder()
+                    .order(enrichOrderMoney(paymentSettlement.payServiceOrderFromBalance(order)))
+                    .message("余额支付成功").build();
+        }
         com.transit.model.PaymentIntent intent = paymentIntentService.getByBusiness(
                 PaymentBusinessSettlementService.SERVICE_ORDER, order.getId());
         PaymentIntentService.StartResponse started = paymentIntentService.start(user, intent.getId(), clientIp, "pc");
@@ -265,6 +277,9 @@ public class ServiceOrderService {
 
     public ServiceOrderResponse queryPayment(User user, Long id) {
         ServiceOrder owned = getUserOrder(user, id);
+        if ("balance".equals(owned.getPaymentMethod())) {
+            return ServiceOrderResponse.builder().order(owned).message("支付状态已刷新").build();
+        }
         com.transit.model.PaymentIntent intent = paymentIntentService.getByBusiness(
                 PaymentBusinessSettlementService.SERVICE_ORDER, owned.getId());
         intent = paymentIntentService.query(user, intent.getId());
@@ -448,6 +463,9 @@ public class ServiceOrderService {
             if (FULFILLED.equals(current) && order.getFulfillmentReference() != null
                     && !order.getFulfillmentReference().equals(fulfillmentEvidence)) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "Fulfillment evidence is immutable after verification");
+            }
+            if (!FULFILLED.equals(current) && serviceCommerceService != null) {
+                serviceCommerceService.consumeCouponReservation(order);
             }
             order.setFulfillmentReference(fulfillmentEvidence);
             order.setFulfillmentStatus("COMPLETED");
@@ -691,14 +709,18 @@ public class ServiceOrderService {
 
     private String normalizePaymentMethod(String value) {
         String normalized = requiredText(value, "paymentMethod", 20).toLowerCase(Locale.ROOT);
-        if (!PAYMENT_METHODS.contains(normalized)) {
-            throw badRequest("paymentMethod must be alipay or wxpay");
+        if (!PAYMENT_METHODS.contains(normalized) && !"balance".equals(normalized)) {
+            throw badRequest("paymentMethod must be alipay, wxpay or balance");
         }
         return normalized;
     }
 
     private String paymentMethodLabel(String value) {
-        return "wxpay".equals(normalizePaymentMethod(value)) ? "WeChat Pay" : "Alipay";
+        return switch (normalizePaymentMethod(value)) {
+            case "balance" -> "Account balance";
+            case "wxpay" -> "WeChat Pay";
+            default -> "Alipay";
+        };
     }
 
     private String requiredSnapshotText(String value, String field) {

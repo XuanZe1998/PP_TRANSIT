@@ -28,6 +28,7 @@ import reactor.core.publisher.Mono;
 
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequiredArgsConstructor
@@ -72,12 +73,45 @@ public class ServiceOrderController {
     @PostMapping("/service-orders/quote")
     public Mono<ServiceOrderQuoteResponse> quote(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
                                                  @RequestBody ServiceOrderQuoteRequest request) {
-        currentUserService.requireUser(authHeader);
+        User user = currentUserService.requireUser(authHeader);
         if (request == null || request.getServiceId() == null) {
             throw new org.springframework.web.server.ResponseStatusException(
                     org.springframework.http.HttpStatus.BAD_REQUEST, "serviceId is required");
         }
-        return Mono.fromCallable(() -> serviceCommerceService.quote(request.getServiceId(), request.getQuantity(), request.getCouponCode()));
+        return Mono.fromCallable(() -> serviceOrderService.quote(user, request.getServiceId(), request.getQuantity(), request.getCouponCode()));
+    }
+
+    @GetMapping("/service-orders/user-coupons")
+    public PageResponse<Map<String, Object>> userCoupons(
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+            @RequestParam(defaultValue = "1") int page, @RequestParam(defaultValue = "10") int size) {
+        return couponAdminService.personalPage(currentUserService.requireUser(authHeader).getId(), null, page, size);
+    }
+
+    @GetMapping("/service-orders/admin/user-coupons")
+    public PageResponse<Map<String, Object>> adminUserCoupons(
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader, @RequestParam(required = false) String query,
+            @RequestParam(defaultValue = "1") int page, @RequestParam(defaultValue = "10") int size) {
+        currentUserService.requireAdmin(authHeader);
+        return couponAdminService.personalPage(null, query, page, size);
+    }
+
+    public record PersonalCouponGrant(String account, long discountCents) {}
+
+    @PostMapping("/service-orders/admin/user-coupons")
+    public ServiceCoupon grantCoupon(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+                                     @RequestBody PersonalCouponGrant request) {
+        User admin = currentUserService.requireAdmin(authHeader);
+        ServiceCoupon coupon = couponAdminService.grantPersonal(request.account(), request.discountCents());
+        adminAuditService.record(admin, "GRANT_USER_COUPON", "SERVICE_COUPON", coupon.getId(), null, request, null);
+        return coupon;
+    }
+
+    @DeleteMapping("/service-orders/admin/user-coupons/{id}")
+    public void revokeCoupon(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader, @PathVariable long id) {
+        User admin = currentUserService.requireAdmin(authHeader);
+        couponAdminService.revokePersonal(id);
+        adminAuditService.record(admin, "REVOKE_USER_COUPON", "SERVICE_COUPON", id, null, null, null);
     }
 
     @PostMapping("/service-orders/{id}/payment")

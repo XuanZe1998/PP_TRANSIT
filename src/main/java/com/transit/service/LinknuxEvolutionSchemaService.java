@@ -25,6 +25,18 @@ public class LinknuxEvolutionSchemaService {
     ApplicationRunner linknuxEvolutionSchemaRunner() {
         return args -> {
             createDistributionTables();
+            jdbc.update("""
+                    UPDATE agent_profiles SET status='INVITER'
+                    WHERE status='PENDING' AND approved_at IS NULL AND invite_code LIKE 'RF%'
+                      AND NOT EXISTS (SELECT 1 FROM system_settings WHERE setting_key='agent.inviter_profiles_migrated')
+                    """);
+            if (jdbc.queryForObject("SELECT COUNT(*) FROM system_settings WHERE setting_key='agent.inviter_profiles_migrated'", Integer.class) == 0) {
+                jdbc.update("""
+                        INSERT INTO system_settings(setting_key,setting_value,description,updated_at)
+                        VALUES('agent.inviter_profiles_migrated','true','Separate invite-only profiles from agent applications',CURRENT_TIMESTAMP)
+                        ON DUPLICATE KEY UPDATE setting_value=setting_value
+                        """);
+            }
             createProviderAccountTables();
             createOperationsTables();
             extendProviderCredentials();

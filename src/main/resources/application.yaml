@@ -155,7 +155,7 @@ features:
     agent:
       enabled: ${LINKNUX_AGENT_ENABLED:false}
       freeze-days: ${LINKNUX_AGENT_FREEZE_DAYS:7}
-      min-withdrawal-cny: ${LINKNUX_AGENT_MIN_WITHDRAWAL_CNY:100}
+      min-withdrawal-cny: ${LINKNUX_AGENT_MIN_WITHDRAWAL_CNY:0.01}
     provider-accounts:
       enabled: ${LINKNUX_PROVIDER_ACCOUNTS_ENABLED:false}
     provider-oauth:

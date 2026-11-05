@@ -16,7 +16,7 @@ class AgentDistributionServiceIntegrationTests {
     @Autowired JdbcTemplate jdbc;
 
     @Test
-    void settlesGrossProfitWithImmediateRebateFrozenCommissionAndIdempotency() {
+    void settlesOnePercentWithoutCustomerRebateAndIsIdempotent() {
         long agentId = user("agent");
         long customerId = user("customer");
         String invite = "LX" + UUID.randomUUID().toString().replace("-", "").substring(0, 10);
@@ -29,15 +29,19 @@ class AgentDistributionServiceIntegrationTests {
         agents.settleApiUsage(event, customerId, 10_000, 5_000);
         agents.settleApiUsage(event, customerId, 10_000, 5_000);
 
-        assertThat(jdbc.queryForObject("SELECT balance FROM users WHERE id=?", Long.class, customerId)).isEqualTo(200L);
-        assertThat(jdbc.queryForObject("SELECT customer_rebate_amount FROM agent_commission_events WHERE business_event_id=?", Long.class, event)).isEqualTo(200L);
-        assertThat(jdbc.queryForObject("SELECT agent_commission_amount FROM agent_commission_events WHERE business_event_id=?", Long.class, event)).isEqualTo(50L);
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM agent_commission_ledger WHERE business_event_id=?", Long.class, event)).isEqualTo(2L);
+        assertThat(jdbc.queryForObject("SELECT balance FROM users WHERE id=?", Long.class, customerId)).isZero();
+        assertThat(jdbc.queryForObject("SELECT customer_rebate_amount FROM agent_commission_events WHERE business_event_id=?", Long.class, event)).isZero();
+        assertThat(jdbc.queryForObject("SELECT agent_commission_amount FROM agent_commission_events WHERE business_event_id=?", Long.class, event)).isEqualTo(100L);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM agent_commission_ledger WHERE business_event_id=?", Long.class, event)).isEqualTo(1L);
+        agents.settleApiUsage(event + "-partial", customerId, 49, 0);
+        agents.settleApiUsage(event + "-partial", customerId, 49, 0);
+        agents.settleApiUsage(event + "-rest", customerId, 51, 0);
+        assertThat(jdbc.queryForObject("SELECT agent_commission_amount FROM agent_commission_events WHERE business_event_id=?", Long.class, event + "-rest")).isEqualTo(1L);
         assertThat(jdbc.queryForObject("SELECT status FROM agent_commission_ledger WHERE business_event_id=? AND entry_type='AGENT_COMMISSION'", String.class, event)).isEqualTo("FROZEN");
     }
 
     @Test
-    void rebateAndCommissionTransferKeepPersonalTreasurySynchronized() {
+    void commissionTransferKeepsPersonalTreasurySynchronized() {
         long agentId = user("agent-wallet");
         long customerId = user("customer-wallet");
         long agentWalletId = personalWallet(agentId);
@@ -50,15 +54,15 @@ class AgentDistributionServiceIntegrationTests {
         String event = "req_" + UUID.randomUUID();
 
         agents.settleApiUsage(event, customerId, 10_000, 5_000);
-        assertThat(balance(customerId)).isEqualTo(200L);
-        assertThat(walletBalance(customerWalletId)).isEqualTo(200L);
+        assertThat(balance(customerId)).isZero();
+        assertThat(walletBalance(customerWalletId)).isZero();
 
         jdbc.update("UPDATE agent_commission_ledger SET status='AVAILABLE' WHERE business_event_id=? AND entry_type='AGENT_COMMISSION'", event);
         String transfer = "transfer_" + UUID.randomUUID();
-        agents.transferToBalance(agentId, 50, transfer);
-        agents.transferToBalance(agentId, 50, transfer);
-        assertThat(balance(agentId)).isEqualTo(50L);
-        assertThat(walletBalance(agentWalletId)).isEqualTo(50L);
+        agents.transferToBalance(agentId, 100, transfer);
+        agents.transferToBalance(agentId, 100, transfer);
+        assertThat(balance(agentId)).isEqualTo(100L);
+        assertThat(walletBalance(agentWalletId)).isEqualTo(100L);
     }
 
     private long personalWallet(long userId) {

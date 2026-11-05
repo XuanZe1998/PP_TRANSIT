@@ -9,7 +9,6 @@ import com.transit.dto.PageResponse;
 import com.transit.dto.MoneyAmount;
 import com.transit.mapper.OtherServiceMapper;
 import com.transit.mapper.ServiceOrderMapper;
-import com.transit.mapper.ServiceCouponMapper;
 import com.transit.mapper.ServiceInventoryItemMapper;
 import com.transit.model.OtherService;
 import com.transit.model.ServiceOrder;
@@ -45,7 +44,7 @@ public class ServiceCommerceService {
     private final OtherServiceMapper otherServiceMapper;
     private final ServiceOrderMapper orderMapper;
     private final ServiceInventoryItemMapper inventoryMapper;
-    private final ServiceCouponMapper couponMapper;
+    private final MoneyService moneyService;
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
     private final ChannelSecretService secretService;
@@ -54,7 +53,8 @@ public class ServiceCommerceService {
     @Value("${service-orders.reservation-minutes:15}")
     private long reservationMinutes;
 
-    public ServiceOrderQuoteResponse quote(Long serviceId, Integer requestedQuantity, String couponCode) {
+    public ServiceOrderQuoteResponse quote(Long serviceId, Integer requestedQuantity, String couponCode,
+                                           Long userId) {
         OtherService service = catalogService.requirePurchasableService(serviceId);
         int quantity = requestedQuantity == null ? 1 : requestedQuantity;
         int maximum = service.getMaxPurchaseQuantity() == null ? 1 : service.getMaxPurchaseQuantity();
@@ -66,9 +66,21 @@ public class ServiceCommerceService {
         long listSubtotal = multiply(listUnit, quantity);
         long merchandiseSubtotal = multiply(effectiveUnit, quantity);
         long wholesaleDiscount = listSubtotal - merchandiseSubtotal;
-        ServiceCoupon coupon = resolveCoupon(serviceId, couponCode, false);
-        long couponDiscount = coupon == null ? 0 : Math.min(merchandiseSubtotal, nonNegative(coupon.getDiscountCents(), "coupon.discountCents"));
         long serviceFee = nonNegative(service.getServiceFeeCents(), "service.serviceFeeCents");
+        ServiceCoupon coupon = resolveCoupon(serviceId, couponCode, userId);
+        long couponDiscount = coupon == null ? 0 : Math.min(merchandiseSubtotal, nonNegative(coupon.getDiscountCents(), "coupon.discountCents"));
+        if (coupon != null && coupon.getOwnerUserId() != null) {
+            long faceValue = coupon.getDiscountCents();
+            if ("USD".equals(service.getCurrency())) {
+                faceValue = java.math.BigDecimal.valueOf(faceValue)
+                        .divide(moneyService.usdCnyRate(), 0, java.math.RoundingMode.DOWN).longValueExact();
+            } else if (!"CNY".equals(service.getCurrency())) {
+                throw badRequest("该商品币种暂不支持个人优惠券");
+            }
+            couponDiscount = Math.min(faceValue, merchandiseSubtotal);
+            if (serviceFee == 0 && couponDiscount == merchandiseSubtotal) couponDiscount--;
+            if (couponDiscount <= 0) throw badRequest("当前订单金额过低，无法使用该优惠券");
+        }
         long amount = add(merchandiseSubtotal - couponDiscount, serviceFee);
         if (amount <= 0) throw new ResponseStatusException(HttpStatus.CONFLICT, "The final payment amount must be positive");
         Integer stock = availableStock(service);
@@ -113,8 +125,10 @@ public class ServiceCommerceService {
             if (updated != 1) throw conflict("Insufficient manual-processing stock");
         }
         if (order.getCouponId() != null) {
-            int updated = jdbcTemplate.update("UPDATE service_coupons SET remaining_uses=remaining_uses-1, reserved_uses=reserved_uses+1, updated_at=? WHERE id=? AND enabled=TRUE AND remaining_uses>0",
-                    now(), order.getCouponId());
+            int updated = jdbcTemplate.update("""
+                    UPDATE service_coupons SET remaining_uses=remaining_uses-1,reserved_uses=reserved_uses+1,updated_at=?
+                    WHERE id=? AND enabled=TRUE AND remaining_uses>0 AND (owner_user_id IS NULL OR owner_user_id=?)
+                    """, now(), order.getCouponId(), order.getUserId());
             if (updated != 1) throw conflict("Coupon is no longer available");
             order.setCouponReservationActive(true);
         }
@@ -131,11 +145,11 @@ public class ServiceCommerceService {
             return latest == null ? order : revealDelivery(latest);
         }
         order.setFulfillmentStatus("SETTLING");
+        consumeCouponReservation(order);
         OtherService service = otherServiceMapper.selectById(order.getServiceId());
         String supplierType = order.getSupplierType() == null && service != null ? service.getSupplierType() : order.getSupplierType();
         if (OtherServiceCatalogService.DUJIAO_NEXT.equals(supplierType == null
                 ? OtherServiceCatalogService.LOCAL_INVENTORY : supplierType.trim().toUpperCase(Locale.ROOT))) {
-            consumeCouponReservation(order);
             order.setReservationExpiresAt(null);
             return dujiaoNextProcurementService.enqueue(order, service);
         }
@@ -160,7 +174,6 @@ public class ServiceCommerceService {
                     order.setFulfillmentStatus("REVIEW_REQUIRED");
                     order.setFulfillmentNote("付款已确认，但并发分配时库存已售罄，需要管理员补充交付。");
                     order.setUpdatedAt(now());
-                    consumeCouponReservation(order);
                     orderMapper.updateById(order);
                     return order;
                 }
@@ -183,7 +196,6 @@ public class ServiceCommerceService {
                 order.setFulfillmentNote("Payment verified; awaiting manual processing.");
             }
         }
-        consumeCouponReservation(order);
         order.setReservationExpiresAt(null);
         order.setFulfillmentStatus(order.getFulfillmentStatus() == null ? "FAILED" : order.getFulfillmentStatus());
         order.setUpdatedAt(now());
@@ -199,6 +211,7 @@ public class ServiceCommerceService {
             throw conflict("Only a paid manual-processing order can be completed");
         }
         String content = requiredText(deliveryContent, "deliveryContent", 20000);
+        consumeCouponReservation(order);
         order.setDeliveryContentEncrypted(secretService.encrypt(writeJson(List.of(content))));
         order.setDeliveryItems(List.of(content));
         order.setFulfillmentStatus("COMPLETED");
@@ -236,7 +249,13 @@ public class ServiceCommerceService {
         List<ServiceOrder> expired = orderMapper.selectList(new LambdaQueryWrapper<ServiceOrder>()
                 .in(ServiceOrder::getStatus, "PENDING", "CONFIRMED")
                 .lt(ServiceOrder::getReservationExpiresAt, now()));
-        for (ServiceOrder order : expired) release(order, true);
+        for (ServiceOrder order : expired) {
+            int claimed = jdbcTemplate.update("""
+                    UPDATE service_orders SET status='EXPIRED'
+                    WHERE id=? AND status IN ('PENDING','CONFIRMED') AND reservation_expires_at<=?
+                    """, order.getId(), now());
+            if (claimed == 1) release(order, true);
+        }
     }
 
     @Transactional
@@ -455,18 +474,45 @@ public class ServiceCommerceService {
         return "****" + normalized.substring(normalized.length() - 4);
     }
 
-    private void consumeCouponReservation(ServiceOrder order) {
-        if (order.getCouponId() != null && Boolean.TRUE.equals(order.getCouponReservationActive())) {
+    void consumeCouponReservation(ServiceOrder order) {
+        if (order.getCouponId() == null) return;
+        Long owner = jdbcTemplate.queryForObject("SELECT owner_user_id FROM service_coupons WHERE id=?", Long.class, order.getCouponId());
+        boolean reserved = Boolean.TRUE.equals(order.getCouponReservationActive());
+        if (owner != null) {
+            int updated = jdbcTemplate.update("""
+                    UPDATE service_coupons
+                    SET redeemed_order_id=?,remaining_uses=0,reserved_uses=0
+                    WHERE id=? AND owner_user_id=? AND redeemed_order_id IS NULL AND enabled=TRUE
+                      AND ((?=TRUE AND reserved_uses=1) OR (?=FALSE AND remaining_uses=1))
+                    """, order.getId(), order.getCouponId(), order.getUserId(), reserved, reserved);
+            if (updated == 0 && !order.getId().equals(jdbcTemplate.queryForObject(
+                    "SELECT redeemed_order_id FROM service_coupons WHERE id=?", Long.class, order.getCouponId()))) {
+                throw conflict("优惠券已被撤销或用于另一笔订单，需人工核对付款");
+            }
+        } else if (reserved) {
             jdbcTemplate.update("UPDATE service_coupons SET reserved_uses=CASE WHEN reserved_uses>0 THEN reserved_uses-1 ELSE 0 END WHERE id=?", order.getCouponId());
-            order.setCouponReservationActive(false);
         }
+        order.setCouponReservationActive(false);
     }
 
-    private ServiceCoupon resolveCoupon(Long serviceId, String code, boolean lock) {
+    private ServiceCoupon resolveCoupon(Long serviceId, String code, Long userId) {
         if (code == null || code.isBlank()) return null;
         String normalized = code.trim().toUpperCase(Locale.ROOT);
-        List<ServiceCoupon> found = jdbcTemplate.query("SELECT c.* FROM service_coupons c JOIN service_coupon_services cs ON cs.coupon_id=c.id WHERE c.code=? AND cs.service_id=? AND c.enabled=TRUE AND c.remaining_uses>0" + (lock ? " FOR UPDATE" : ""),
-                (rs, row) -> { ServiceCoupon c = new ServiceCoupon(); c.setId(rs.getLong("id")); c.setCode(rs.getString("code")); c.setDiscountCents(rs.getLong("discount_cents")); c.setRemainingUses(rs.getInt("remaining_uses")); c.setReservedUses(rs.getInt("reserved_uses")); c.setEnabled(rs.getBoolean("enabled")); return c; }, normalized, serviceId);
+        List<ServiceCoupon> found = jdbcTemplate.query("""
+                SELECT c.id,c.code,c.discount_cents,c.owner_user_id
+                FROM service_coupons c
+                WHERE c.code=? AND c.enabled=TRUE AND c.remaining_uses>0
+                  AND (c.owner_user_id=? OR (c.owner_user_id IS NULL AND EXISTS (
+                    SELECT 1 FROM service_coupon_services cs WHERE cs.coupon_id=c.id AND cs.service_id=?
+                  )))
+                """, (rs, row) -> {
+            ServiceCoupon coupon = new ServiceCoupon();
+            coupon.setId(rs.getLong("id"));
+            coupon.setCode(rs.getString("code"));
+            coupon.setDiscountCents(rs.getLong("discount_cents"));
+            coupon.setOwnerUserId(rs.getObject("owner_user_id", Long.class));
+            return coupon;
+        }, normalized, userId, serviceId);
         if (found.isEmpty()) throw badRequest("Coupon is invalid, disabled, exhausted, or not applicable to this service");
         return found.get(0);
     }

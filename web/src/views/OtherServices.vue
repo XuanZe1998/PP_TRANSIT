@@ -134,7 +134,7 @@
             <el-input-number v-model="orderForm.quantity" :min="1" :max="selectedService?.maxPurchaseQuantity || 1" @change="refreshQuote" />
           </el-form-item>
           <el-form-item label="优惠码（可选）">
-            <el-input v-model="orderForm.couponCode" maxlength="80" clearable @change="refreshQuote" />
+            <el-input v-model="orderForm.couponCode" maxlength="80" clearable placeholder="每笔订单限填一张券码" @change="refreshQuote" />
           </el-form-item>
           <el-form-item v-for="field in quote?.inputFields || []" :key="field.key" :label="field.label" :required="field.required">
             <el-input v-model="orderForm.customFields[field.key]" :maxlength="field.maxLength" show-word-limit />
@@ -179,6 +179,7 @@
             <el-radio-group v-model="orderForm.paymentMethod">
               <el-radio value="alipay">支付宝</el-radio>
               <el-radio value="wxpay">微信支付</el-radio>
+              <el-radio value="balance">余额扣款</el-radio>
             </el-radio-group>
           </el-form-item>
         </div>
@@ -203,9 +204,8 @@
           <el-descriptions-item label="订单号">{{ checkoutOrder.orderNo }}</el-descriptions-item>
           <el-descriptions-item label="服务">{{ checkoutOrder.productName }}</el-descriptions-item>
           <el-descriptions-item label="订单金额">{{ formatMoney(checkoutOrder.amountCents, checkoutOrder.currency) }}</el-descriptions-item>
-          <el-descriptions-item v-if="checkoutOrder.referralCommissionCents != null" label="邀请人预计返佣">{{ formatMoney(checkoutOrder.referralCommissionCents, 'CNY') }}</el-descriptions-item>
           <el-descriptions-item label="支付金额">{{ formatMoney(checkoutOrder.paymentAmountCents ?? checkoutOrder.amountCents, checkoutOrder.paymentCurrency || checkoutOrder.currency) }}</el-descriptions-item>
-          <el-descriptions-item label="付款方式">{{ checkoutOrder.paymentMethod === 'wxpay' ? '微信支付' : '支付宝' }}</el-descriptions-item>
+          <el-descriptions-item label="付款方式">{{ paymentMethodLabels[checkoutOrder.paymentMethod || 'alipay'] }}</el-descriptions-item>
         </el-descriptions>
         <CheckoutDisclosure v-model="checkoutAccepted" v-model:disclosure-id="paymentDisclosureId" />
       </template>
@@ -355,6 +355,7 @@ const startingPayment = ref(false)
 const paymentDialogVisible = ref(false)
 const paymentAction = ref<PaymentAction | null>(null)
 const paymentMethod = ref('alipay')
+const paymentMethodLabels: Record<string, string> = { alipay: '支付宝', wxpay: '微信支付', balance: '余额扣款' }
 const loading = ref(true)
 const ordersLoading = ref(false)
 const buyingServiceId = ref<number | null>(null)

@@ -93,7 +93,7 @@ const routes: RouteRecordRaw[] = [
       adminChild('audit-logs', 'audit', '调用审计'),
       adminChild('finance', 'finance', '钱包财务'),
       { path: 'agents', component: AdminAgents, meta: { title: '代理、号池与运维', role: 'admin' } },
-      { path: 'referrals', component: () => import('@/views/ReferralConsole.vue'), props: { admin: true }, meta: { title: '邀请返佣', role: 'admin' } },
+      { path: 'referrals', component: () => import('@/views/ReferralConsole.vue'), props: { admin: true }, meta: { title: '邀请与佣金', role: 'admin' } },
       { path: 'model-probe', component: AdminModelProbe, meta: { title: '模型鉴别', role: 'admin' } },
       { path: 'other-services', component: AdminOtherServices, meta: { title: 'AI订阅与订单', role: 'admin' } },
       { path: 'contact-methods', component: AdminContactMethods, meta: { title: '联系方式', role: 'admin' } },

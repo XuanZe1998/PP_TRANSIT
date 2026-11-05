@@ -82,8 +82,6 @@ public class TransitService {
     @Autowired(required = false)
     private ProviderModelCatalogService providerModelCatalogService;
     @Autowired(required = false)
-    private AgentDistributionService agentDistributionService;
-    @Autowired(required = false)
     private AiApiBankPricingService aiApiBankPricingService;
 
     @Value("${billing.amount-scale:10000}")
@@ -298,8 +296,7 @@ public class TransitService {
         }
 
         Channel firstChannel = routes.get(0).channel();
-        boolean requireReliableCost = agentDistributionService != null && agentDistributionService.requiresReliableCost(caller.getId());
-        return attemptRoute(routes, 0, request, publicModel, traceId, requireReliableCost)
+        return attemptRoute(routes, 0, request, publicModel, traceId, false)
                 // WebClient emits on a Netty event-loop. All JDBC settlement and
                 // audit work must run on a worker that permits blocking I/O.
                 .publishOn(Schedulers.boundedElastic())
@@ -322,12 +319,7 @@ public class TransitService {
                     resp.setBilling(billingDetails(routeMapping, prompt, cacheRead, cacheWrite, customerPriceRatio,
                             billing, traceId));
                     String settlementRemark = "API usage " + publicModel + " (" + traceId + ")";
-                    if (requireReliableCost) {
-                        settlementService.settle(reservation, total, billing.settlementAmount(),
-                                money().usdToCnyAmount(billing.totalCostAmount(), exchangeRate), settlementRemark);
-                    } else {
-                        settlementService.settle(reservation, total, billing.settlementAmount(), settlementRemark);
-                    }
+                    settlementService.settle(reservation, total, billing.settlementAmount(), settlementRemark);
                     updateQuotaAndLog(callerToken, routeChannel, tokenKey, publicModel, prompt,
                             completion, cacheRead, cacheWrite, total, estimatedUsage ? "SUCCESS_ESTIMATED" : "SUCCESS",
                             traceId, startedAt, null, billing);

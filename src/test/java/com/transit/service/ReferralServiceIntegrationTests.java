@@ -20,10 +20,12 @@ import java.util.UUID;
 import java.util.concurrent.*;
 import static org.assertj.core.api.Assertions.*;
 
-@SpringBootTest(properties={"payment.local-test-mode=true","referral.scan-initial-ms=3600000"})
+@SpringBootTest(properties={"payment.local-test-mode=true","payment.local-checkout-bypass=true","server.address=127.0.0.1",
+        "referral.scan-initial-ms=3600000","features.linknux.agent.enabled=true"})
 @Transactional
 class ReferralServiceIntegrationTests {
     @Autowired ReferralService referrals;
+    @Autowired ServiceCouponAdminService coupons;
     @Autowired AgentDistributionService agents;
     @Autowired ServiceOrderService orders;
     @Autowired OtherServiceCatalogService catalog;
@@ -59,12 +61,26 @@ class ReferralServiceIntegrationTests {
         referrals.applyRule(admin,service.getId(),(String)preview.get("token"));
         return service;
     }
-    private ServiceOrder order(User buyer,OtherService product) {
+    private ServiceOrder historicalOrder(User buyer, OtherService product) {
+        ServiceOrder order = createOrder(buyer, product, "alipay", null);
+        // Seed snapshots produced by the previous invitation program to exercise legacy payouts.
+        jdbc.update("""
+                UPDATE referral_orders SET mode='FIXED', commission_cents=fixed_cents,
+                  status=CASE WHEN fixed_cents>0 AND EXISTS (
+                      SELECT 1 FROM referral_members m WHERE m.user_id=referral_orders.inviter_id AND m.status='ACTIVE'
+                  ) THEN 'AWAITING_PAYMENT' ELSE 'INELIGIBLE' END
+                WHERE order_id=?
+                """, order.getId());
+        order.setReferralCommissionCents(referrals.orderCommission(order.getId()));
+        return order;
+    }
+
+    private ServiceOrder createOrder(User buyer, OtherService product, String method, String coupon) {
         var request=new ServiceOrderCreateRequest();
         request.setServiceId(product.getId());request.setQuantity(1);request.setContactEmail(buyer.getEmail());
         request.setBillingName("Buyer");request.setBillingAddressLine1("Main street");request.setBillingDistrict("District");
         request.setBillingCity("City");request.setBillingProvince("Province");request.setBillingPostalCode("100000");
-        request.setBillingCountry("China");request.setPaymentMethod("alipay");
+        request.setBillingCountry("China");request.setPaymentMethod(method);request.setCouponCode(coupon);
         return orders.createOrder(buyer,request).getOrder();
     }
     private void mature(ServiceOrder order) {
@@ -81,6 +97,46 @@ class ReferralServiceIntegrationTests {
     }
 
     @Test
+    void awardsOnePersonalCouponAndPaysOnlyApprovedAgentForLaterOrders() {
+        User inviter=user(), buyer=user();
+        long version=((Number)referrals.settings().get("version")).longValue();
+        referrals.saveSettings(inviter,new ReferralService.Settings(true,7,2000,"审核后打款",version,500L));
+        assertThat(referrals.bindInvite(buyer.getId(),invite(inviter),"REGISTER")).isTrue();
+        OtherService product=product(inviter);
+        ServiceOrder first=createOrder(buyer,product,"alipay",null);
+        assertThat(first.getReferralCommissionCents()).isNull();
+        assertThat(orders.startPayment(buyer,first.getId(),"127.0.0.1").getOrder().getStatus()).isEqualTo("FULFILLED");
+        referrals.awardFirstPurchaseCoupons();
+        referrals.awardFirstPurchaseCoupons();
+        var page=coupons.personalPage(inviter.getId(),null,1,10);
+        assertThat(page.getTotal()).isEqualTo(1);
+        String code=(String)page.getItems().get(0).get("code");
+        assertThatThrownBy(() -> orders.quote(buyer,product.getId(),1,code)).isInstanceOf(ResponseStatusException.class);
+        assertThat(orders.quote(inviter,product.getId(),1,code).getCouponDiscountCents()).isEqualTo(500L);
+
+        var agent=agents.apply(inviter.getId(),200);
+        agents.reviewAgent(inviter.getId(),((Number)agent.get("id")).longValue(),"ACTIVE","BASIC");
+        jdbc.update("UPDATE users SET balance=1000000 WHERE id=?",buyer.getId());
+        ServiceOrder next=createOrder(buyer,product,"balance",null);
+        assertThat(next.getReferralCommissionCents()).isEqualTo(500L);
+        assertThat(orders.startPayment(buyer,next.getId(),"127.0.0.1").getOrder().getStatus()).isEqualTo("FULFILLED");
+        orders.startPayment(buyer,next.getId(),"127.0.0.1");
+        assertThat(jdbc.queryForObject("SELECT balance FROM users WHERE id=?",Long.class,buyer.getId())).isEqualTo(690000L);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM payment_intents WHERE business_type='SERVICE_ORDER' AND business_id=?",Long.class,next.getId())).isZero();
+        mature(next);
+        assertThat(agents.summary(inviter.getId()).get("availableCommission")).isEqualTo(50000L);
+        assertThat(agents.requestWithdrawal(inviter.getId(),50000L,"MANUAL",null)).containsEntry("status","PENDING");
+        assertThat(agents.summary(inviter.getId()).get("availableCommission")).isEqualTo(0L);
+        assertThat(coupons.personalPage(inviter.getId(),null,1,10).getTotal()).isEqualTo(1);
+
+        jdbc.update("UPDATE users SET balance=1000000 WHERE id=?",inviter.getId());
+        ServiceOrder discounted=createOrder(inviter,product,"balance",code);
+        orders.startPayment(inviter,discounted.getId(),"127.0.0.1");
+        assertThat(jdbc.queryForObject("SELECT balance FROM users WHERE id=?",Long.class,inviter.getId())).isEqualTo(740000L);
+        assertThatThrownBy(() -> orders.quote(inviter,product.getId(),1,code)).isInstanceOf(ResponseStatusException.class);
+    }
+
+    @Test
     void normalCheckoutSnapshotsCommissionExcludingFeesAndPreservesInviteAndRules() {
         User inviter=user(),buyer=user(),other=user(); enable(inviter);
         String code=invite(inviter);
@@ -89,7 +145,7 @@ class ReferralServiceIntegrationTests {
         assertThat(referrals.bindInvite(inviter.getId(),code,"REGISTER")).isFalse();
         assertThat(referrals.bindInvite(other.getId(),"invalid","REGISTER")).isFalse();
         OtherService product=product(inviter);
-        ServiceOrder first=order(buyer,product),second=order(buyer,product);
+        ServiceOrder first=historicalOrder(buyer,product),second=historicalOrder(buyer,product);
         assertThat(second.getPaymentAmountCents()).isEqualTo(3101);
         assertThat(second.getReferralCommissionCents()).isEqualTo(500);
         assertThat(jdbc.queryForObject("SELECT sale_cents FROM referral_orders WHERE order_id=?",Long.class,second.getId())).isEqualTo(3000);
@@ -120,14 +176,14 @@ class ReferralServiceIntegrationTests {
         User admin=user(); OtherService product=product(admin);
         var rule=new ReferralService.Rule(true,"FIXED",500,0,13000);
         var zero=referrals.preview(admin,product.getId(),new ReferralService.RulePreview(1,rule,13000,1));
-        assertThat(zero).containsEntry("commissionCents",0L).containsEntry("grossCents",0L)
+        assertThat(zero).containsEntry("commissionCents",500L).containsEntry("grossCents",0L)
                 .containsEntry("merchandiseCents",13000L).containsEntry("totalCostCents",13000L)
                 .containsEntry("configuredCommissionCents",500L).containsEntry("profitCapCents",0L);
         var loss=referrals.preview(admin,product.getId(),new ReferralService.RulePreview(1,rule,12000,1));
-        assertThat(loss).containsEntry("grossCents",-1000L).containsEntry("commissionCents",0L);
+        assertThat(loss).containsEntry("grossCents",-1000L).containsEntry("commissionCents",500L);
         var multiple=referrals.preview(admin,product.getId(),new ReferralService.RulePreview(1,rule,27999,2));
         assertThat(multiple).containsEntry("totalCostCents",26000L).containsEntry("configuredCommissionCents",1000L)
-                .containsEntry("profitCapCents",999L).containsEntry("commissionCents",999L);
+                .containsEntry("profitCapCents",999L).containsEntry("commissionCents",1000L);
         var disabled=referrals.preview(admin,product.getId(),new ReferralService.RulePreview(1,
                 new ReferralService.Rule(false,"FIXED",500,0,13000),14000,1));
         assertThat(disabled).containsEntry("commissionCents",0L).containsEntry("enabled",false);
@@ -138,7 +194,7 @@ class ReferralServiceIntegrationTests {
         User inviter=user(),buyer=user(); enable(inviter);
         referrals.bindInvite(buyer.getId(),invite(inviter),"REGISTER");
         OtherService product=product(inviter);
-        ServiceOrder oldOrder=order(buyer,product);
+        ServiceOrder oldOrder=historicalOrder(buyer,product);
         var change=referrals.preview(inviter,product.getId(),new ReferralService.RulePreview(1,
                 new ReferralService.Rule(true,"FIXED",700,0,1000,"  专属邀请奖励\n以订单为准  "),3000,1));
         assertThat(referrals.publicOffer(product.getId())).containsEntry("display_text","");
@@ -146,7 +202,7 @@ class ReferralServiceIntegrationTests {
         assertThat(referrals.publicOffer(product.getId())).containsEntry("display_text","专属邀请奖励\n以订单为准")
                 .doesNotContainKeys("cost_cents");
         assertThat(jdbc.queryForObject("SELECT commission_cents FROM referral_orders WHERE order_id=?",Long.class,oldOrder.getId())).isEqualTo(500);
-        assertThat(order(buyer,product).getReferralCommissionCents()).isEqualTo(700);
+        assertThat(historicalOrder(buyer,product).getReferralCommissionCents()).isEqualTo(700);
         assertThatThrownBy(()->referrals.preview(inviter,product.getId(),new ReferralService.RulePreview(1,
                 new ReferralService.Rule(true,"FIXED",700,0,1000,"stale"),3000,1))).isInstanceOf(ResponseStatusException.class);
         assertThatThrownBy(()->referrals.preview(inviter,product.getId(),new ReferralService.RulePreview(2,
@@ -165,7 +221,7 @@ class ReferralServiceIntegrationTests {
         referrals.bindInvite(buyer.getId(),invite(inviter),"REGISTER");
         OtherService product=product(inviter);
         ServiceOrder first=null;
-        for(int i=0;i<4;i++) { ServiceOrder order=order(buyer,product);mature(order);if(first==null)first=order; }
+        for(int i=0;i<4;i++) { ServiceOrder order=historicalOrder(buyer,product);mature(order);if(first==null)first=order; }
         assertThat(balance(inviter)).isEqualTo(2000);
         long id=withdraw(inviter);
         assertThat(balance(inviter)).isZero();
@@ -188,7 +244,7 @@ class ReferralServiceIntegrationTests {
     void refundBeforeMaturityReducesCreditAndRefundDuringReviewReleasesHold() {
         User inviter=user(),buyer=user();enable(inviter);
         referrals.bindInvite(buyer.getId(),invite(inviter),"REGISTER");
-        OtherService product=product(inviter);ServiceOrder first=order(buyer,product);
+        OtherService product=product(inviter);ServiceOrder first=historicalOrder(buyer,product);
         jdbc.update("UPDATE service_orders SET status='FULFILLED',fulfilled_at=? WHERE id=?",now(),first.getId());
         referrals.settleDue();
         assertThat(balance(inviter)).isZero();
@@ -200,7 +256,7 @@ class ReferralServiceIntegrationTests {
         assertThat(jdbc.queryForObject("SELECT available_at FROM referral_orders WHERE order_id=?",Object.class,first.getId())).isEqualTo(due);
         mature(first);
         assertThat(balance(inviter)).isEqualTo(250);
-        for(int i=0;i<3;i++) mature(order(buyer,product));
+        for(int i=0;i<3;i++) mature(historicalOrder(buyer,product));
         assertThat(balance(inviter)).isEqualTo(1750);
         assertThatThrownBy(()->withdraw(inviter)).isInstanceOf(ResponseStatusException.class);
     }
@@ -208,7 +264,7 @@ class ReferralServiceIntegrationTests {
     @Test
     void feeOnlyRefundDoesNotReverseCommissionAndMerchandiseRefundsAreCumulative() {
         User inviter=user(),buyer=user();enable(inviter);referrals.bindInvite(buyer.getId(),invite(inviter),"REGISTER");
-        ServiceOrder order=order(buyer,product(inviter));mature(order);
+        ServiceOrder order=historicalOrder(buyer,product(inviter));mature(order);
         referrals.refund(inviter,order.getId(),new ReferralService.Refund(100,0L,"FEE-"+UUID.randomUUID(),now()));
         assertThat(balance(inviter)).isEqualTo(500);
         var partial=new ReferralService.Refund(1000,1000L,"PART-"+UUID.randomUUID(),now());
@@ -222,8 +278,8 @@ class ReferralServiceIntegrationTests {
     @Test
     void payingWithdrawalRemainsHeldDuringRefundUntilConfirmedNotTransferred() {
         User inviter=user(),buyer=user();enable(inviter);referrals.bindInvite(buyer.getId(),invite(inviter),"REGISTER");
-        OtherService product=product(inviter);ServiceOrder first=order(buyer,product);mature(first);
-        for(int i=0;i<3;i++) mature(order(buyer,product));
+        OtherService product=product(inviter);ServiceOrder first=historicalOrder(buyer,product);mature(first);
+        for(int i=0;i<3;i++) mature(historicalOrder(buyer,product));
         long id=withdraw(inviter);
         referrals.review(inviter,new ReferralService.Review(List.of(id),"APPROVED",null));referrals.claim(inviter,id);
         referrals.refund(inviter,first.getId(),new ReferralService.Refund(3100,3000L,"IN-FLIGHT-"+UUID.randomUUID(),now()));
@@ -242,7 +298,7 @@ class ReferralServiceIntegrationTests {
         jdbc.update("UPDATE referral_rules SET version=2 WHERE service_id=?",product.getId());
         assertThatThrownBy(()->referrals.applyRule(inviter,product.getId(),(String)preview.get("token"))).isInstanceOf(ResponseStatusException.class);
         referrals.memberStatus(inviter,inviter.getId(),"SUSPENDED");
-        ServiceOrder order=order(buyer,product);
+        ServiceOrder order=historicalOrder(buyer,product);
         assertThat(order.getReferralCommissionCents()).isNull();
     }
 
@@ -250,8 +306,8 @@ class ReferralServiceIntegrationTests {
     void pendingWithdrawalIsReleasedAfterRefundAndCancellationIsIdempotent() {
         User inviter=user(),buyer=user();enable(inviter);referrals.bindInvite(buyer.getId(),invite(inviter),"REGISTER");
         OtherService product=product(inviter);
-        ServiceOrder first=order(buyer,product);mature(first);
-        for(int i=0;i<3;i++) mature(order(buyer,product));
+        ServiceOrder first=historicalOrder(buyer,product);mature(first);
+        for(int i=0;i<3;i++) mature(historicalOrder(buyer,product));
         long id=withdraw(inviter);
         referrals.cancel(inviter.getId(),id);referrals.cancel(inviter.getId(),id);
         assertThat(balance(inviter)).isEqualTo(2000);
@@ -268,7 +324,7 @@ class ReferralServiceIntegrationTests {
         User inviter=transactions.execute(tx -> {
             User a=user(),b=user();enable(a);referrals.bindInvite(b.getId(),invite(a),"REGISTER");
             OtherService product=product(a);
-            for(int i=0;i<4;i++) mature(order(b,product));
+            for(int i=0;i<4;i++) mature(historicalOrder(b,product));
             referrals.saveAccount(a.getId(),new ReferralService.Account("WECHAT","concurrency-"+a.getId(),"Recipient"));
             return a;
         });
@@ -299,13 +355,13 @@ class ReferralServiceIntegrationTests {
                 .mapToObj(i->"SCAN-"+i+"-"+UUID.randomUUID()).collect(java.util.stream.Collectors.joining(" ")));
         ServiceOrder last=null;
         for(int i=0;i<102;i++) {
-            last=order(buyer,product);
+            last=historicalOrder(buyer,product);
             jdbc.update("UPDATE service_orders SET status='FULFILLED',fulfilled_at=? WHERE id=?",now(),last.getId());
         }
         mature(last);
         assertThat(balance(inviter)).isEqualTo(500);
         jdbc.update("UPDATE other_services SET currency='USD' WHERE id=?",product.getId());
-        ServiceOrder usd=order(buyer,product);
+        ServiceOrder usd=historicalOrder(buyer,product);
         long expected=BigDecimal.valueOf(usd.getAmountCents()-usd.getServiceFeeCents()).multiply(usd.getExchangeRate())
                 .setScale(0,java.math.RoundingMode.DOWN).longValueExact();
         assertThat(jdbc.queryForObject("SELECT sale_cents FROM referral_orders WHERE order_id=?",Long.class,usd.getId())).isEqualTo(expected);

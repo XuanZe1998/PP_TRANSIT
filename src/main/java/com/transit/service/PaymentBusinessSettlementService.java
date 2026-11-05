@@ -36,6 +36,37 @@ public class PaymentBusinessSettlementService {
     private final PlatformTransactionManager transactionManager;
 
     @Transactional
+    public ServiceOrder payServiceOrderFromBalance(ServiceOrder order) {
+        String current = normalize(order.getStatus());
+        if (List.of("PAID", "FULFILLED").contains(current)) return order;
+        if (!List.of("PENDING", "CONFIRMED").contains(current)) {
+            throw conflict("订单当前无法支付");
+        }
+        LocalDateTime paidAt = now();
+        order.setStatus("PAID");
+        order.setPaymentProvider("BALANCE");
+        order.setPaymentReference("BALANCE-" + order.getOrderNo());
+        order.setPaidAt(paidAt);
+        order.setUpdatedAt(paidAt);
+        int updated = orderMapper.update(order, new LambdaUpdateWrapper<ServiceOrder>()
+                .eq(ServiceOrder::getId, order.getId())
+                .eq(ServiceOrder::getPaymentMethod, "balance")
+                .eq(ServiceOrder::getStatus, current)
+                .and(expiry -> expiry.isNull(ServiceOrder::getReservationExpiresAt)
+                        .or().gt(ServiceOrder::getReservationExpiresAt, paidAt)));
+        if (updated != 1) throw conflict("订单已过期或状态已变化，请刷新后查看");
+
+        long amount = Math.multiplyExact(order.getPaymentAmountCents(), 100L);
+        long balance = walletBalanceService.debit(order.getUserId(), amount, "余额不足").balance();
+        jdbcTemplate.update("""
+                INSERT INTO wallet_transactions
+                (user_id,type,amount,balance_after,channel,remark,reference_type,reference_id,created_at)
+                VALUES (?,'CONSUME',?,?,'balance',?,'SERVICE_ORDER',?,?)
+                """, order.getUserId(), -amount, balance, "订阅订单 " + order.getOrderNo(), order.getId(), paidAt);
+        return serviceCommerceService.settlePaid(order);
+    }
+
+    @Transactional
     public void settle(PaymentIntent intent) {
         switch (intent.getBusinessType()) {
             case SERVICE_ORDER -> settleServiceOrder(intent);
@@ -75,11 +106,11 @@ public class PaymentBusinessSettlementService {
                 orderMapper.updateById(order);
             }
         } catch (RuntimeException fulfillmentFailure) {
-            order.setStatus("PAID");
-            order.setFulfillmentStatus("REVIEW_REQUIRED");
-            order.setFulfillmentNote("Payment verified, but automatic fulfillment needs administrator review.");
-            order.setUpdatedAt(now());
-            orderMapper.updateById(order);
+            orderMapper.update(null, new LambdaUpdateWrapper<ServiceOrder>()
+                    .eq(ServiceOrder::getId, order.getId())
+                    .set(ServiceOrder::getFulfillmentStatus, "REVIEW_REQUIRED")
+                    .set(ServiceOrder::getFulfillmentNote, "Payment verified, but automatic fulfillment needs administrator review.")
+                    .set(ServiceOrder::getUpdatedAt, now()));
             log.warn("Paid service order {} requires fulfillment review: {}",
                     order.getId(), fulfillmentFailure.getMessage());
         }

@@ -55,8 +55,6 @@ public class UniversalModelService {
     private final ObjectMapper objectMapper;
     private final SensitiveWordService sensitiveWords;
     @Autowired(required = false)
-    private AgentDistributionService agentDistribution;
-    @Autowired(required = false)
     private ModelPriceTierService modelPriceTierService;
     @Autowired(required = false)
     private AiApiBankPricingService aiApiBankPricingService;
@@ -75,7 +73,7 @@ public class UniversalModelService {
         String traceId = "req_" + UUID.randomUUID().toString().replace("-", "").substring(0, 16);
         sensitiveWords.scanJson(traceId, auth.token().getOrganizationId(), auth.user().getId(),
                 auth.token().getId(), auth.model(), request);
-        Route route = route(auth.model(), protocol, sessionKey(request), reliableCostRequired(auth.user().getId()));
+        Route route = route(auth.model(), protocol, sessionKey(request), false);
         ObjectNode payload = (ObjectNode) request.deepCopy();
         payload.put("model", route.mapping().getChannelModelName());
         int estimatedInput = estimateInput(payload);
@@ -96,8 +94,7 @@ public class UniversalModelService {
                     Usage usage = usage(response, estimatedInput);
                     PricingQuote actualQuote = quote(route.mapping(), payload, usage.input(), usage.output(), usage.cacheRead(), usage.cacheWrite());
                     long actualAmount = actualQuote.saleAmount();
-                    settleUsage(reservation, Math.max(1, usage.input() + usage.output()), actualAmount,
-                            actualQuote.costAmount(), "API usage " + auth.model() + " (" + traceId + ")", auth.user().getId());
+                    settlement.settle(reservation, Math.max(1, usage.input() + usage.output()), actualAmount, "API usage " + auth.model() + " (" + traceId + ")");
                     writeLog(auth, route, usage, actualQuote, traceId, started, "SUCCESS", null);
                     idempotency.complete(claim, 200, response, "MODEL_RESPONSE", traceId);
                     credentials.recordSuccess(route.credentialId(), System.currentTimeMillis() - started);
@@ -129,7 +126,7 @@ public class UniversalModelService {
         String traceId = "req_" + UUID.randomUUID().toString().replace("-", "").substring(0, 16);
         sensitiveWords.scanJson(traceId, auth.token().getOrganizationId(), auth.user().getId(),
                 auth.token().getId(), auth.model(), request);
-        Route route = route(auth.model(), "responses", sessionKey(request), reliableCostRequired(auth.user().getId()));
+        Route route = route(auth.model(), "responses", sessionKey(request), false);
         ObjectNode payload = (ObjectNode) request.deepCopy();
         payload.put("model", route.mapping().getChannelModelName());
         payload.put("stream", true);
@@ -156,9 +153,9 @@ public class UniversalModelService {
                         PricingQuote actualQuote = quote(route.mapping(), payload,
                                 actual.input(), actual.output(), actual.cacheRead(), actual.cacheWrite());
                         try {
-                            settleUsage(reservation, Math.max(1, actual.input() + actual.output()),
-                                    actualQuote.saleAmount(), actualQuote.costAmount(), "Responses streaming API usage " + auth.model()
-                                            + " (" + traceId + ")", auth.user().getId());
+                            settlement.settle(reservation, Math.max(1, actual.input() + actual.output()),
+                                    actualQuote.saleAmount(), "Responses streaming API usage " + auth.model()
+                                            + " (" + traceId + ")");
                             writeLog(auth, route, actual, actualQuote, traceId, started,
                                     "SUCCESS", "response.incomplete".equals(type)
                                             ? "Upstream response completed with incomplete status" : null);
@@ -218,7 +215,7 @@ public class UniversalModelService {
         IdempotencyService.Claim claim = idempotency.claim("API_KEY", auth.token().getId(),
                 "model.invoke:" + protocol, idempotencyKey, authBody, false);
         if (claim.replay()) return Mono.just(claim.response());
-        Route route = route(model, protocol, sessionKey(authBody), reliableCostRequired(auth.user().getId()));
+        Route route = route(model, protocol, sessionKey(authBody), false);
         int estimatedInput = Math.max(1, (file == null ? 0 : file.length) / 3);
         ObjectNode billingPayload = authBody.deepCopy();
         fields.forEach(billingPayload::put);
@@ -239,8 +236,7 @@ public class UniversalModelService {
                     Usage usage = usage(response, estimatedInput);
                     PricingQuote actualQuote = quote(route.mapping(), billingPayload, usage.input(), usage.output(), usage.cacheRead(), usage.cacheWrite());
                     long actual = actualQuote.saleAmount();
-                    settleUsage(reservation, Math.max(1, usage.input() + usage.output()), actual,
-                            actualQuote.costAmount(), protocol + " " + model + " (" + traceId + ")", auth.user().getId());
+                    settlement.settle(reservation, Math.max(1, usage.input() + usage.output()), actual, protocol + " " + model + " (" + traceId + ")");
                     writeLog(auth, route, usage, actualQuote, traceId, started, "SUCCESS", null);
                     idempotency.complete(claim, 200, response, "MODEL_RESPONSE", traceId);
                     credentials.recordSuccess(route.credentialId(), System.currentTimeMillis() - started);
@@ -273,7 +269,7 @@ public class UniversalModelService {
         String traceId = "req_" + UUID.randomUUID().toString().replace("-", "").substring(0, 16);
         sensitiveWords.scanJson(traceId, auth.token().getOrganizationId(), auth.user().getId(),
                 auth.token().getId(), auth.model(), request);
-        Route route = route(auth.model(), "chat-completions", sessionKey(request), reliableCostRequired(auth.user().getId()));
+        Route route = route(auth.model(), "chat-completions", sessionKey(request), false);
         ObjectNode payload = (ObjectNode) request.deepCopy();
         payload.put("model", route.mapping().getChannelModelName());
         payload.put("stream", true);
@@ -310,8 +306,7 @@ public class UniversalModelService {
                             ? quote(route.mapping(), payload, actual.input(), actual.output(), actual.cacheRead(), actual.cacheWrite())
                             : reservedQuote;
                     long charge = finalQuote.saleAmount();
-                    settleUsage(reservation, Math.max(1, actual.input() + actual.output()), charge,
-                            finalQuote.costAmount(), "Streaming API usage " + auth.model() + " (" + traceId + ")", auth.user().getId());
+                    settlement.settle(reservation, Math.max(1, actual.input() + actual.output()), charge, "Streaming API usage " + auth.model() + " (" + traceId + ")");
                     writeLog(auth, route, actual, finalQuote, traceId, started,
                             complete ? "SUCCESS" : "UNKNOWN", complete ? null : "Streaming request ended before a final usage event");
                     if (complete) credentials.recordSuccess(route.credentialId(), System.currentTimeMillis() - started);
@@ -326,7 +321,7 @@ public class UniversalModelService {
         AuthContext auth = authorize(authorization, clientIp, request);
         String traceId = "req_" + UUID.randomUUID().toString().replace("-", "").substring(0, 16);
         sensitiveWords.scanJson(traceId, auth.token().getOrganizationId(), auth.user().getId(), auth.token().getId(), auth.model(), request);
-        Route route = route(auth.model(), protocol, sessionKey(request), reliableCostRequired(auth.user().getId()));
+        Route route = route(auth.model(), protocol, sessionKey(request), false);
         ObjectNode payload = (ObjectNode) request.deepCopy(); payload.put("model", route.mapping().getChannelModelName());
         int input = estimateInput(payload), output = estimatedOutput(payload, protocol);
         PricingQuote quote = quote(route.mapping(), payload, input, output, 0, 0);
@@ -336,7 +331,7 @@ public class UniversalModelService {
         return haoee.streamEvents(route.channel(), route.mapping().getChannelModelName(), path, payload)
                 .doOnComplete(() -> {
                     if (completed.compareAndSet(false, true)) {
-                        settleUsage(reservation, Math.max(1, input + output), quote.saleAmount(), quote.costAmount(), "Streaming " + protocol + " " + auth.model(), auth.user().getId());
+                        settlement.settle(reservation, Math.max(1, input + output), quote.saleAmount(), "Streaming " + protocol + " " + auth.model());
                         writeLog(auth, route, new Usage(input, output, 0, 0), quote, traceId, started, "SUCCESS", null);
                         credentials.recordSuccess(route.credentialId(), System.currentTimeMillis() - started);
                     }
@@ -665,16 +660,6 @@ public class UniversalModelService {
         if (!previous.isBlank()) return previous.substring(0, Math.min(256, previous.length()));
         String session = request.path("session_id").asText("").trim();
         return session.isBlank() ? null : session.substring(0, Math.min(256, session.length()));
-    }
-
-    private boolean reliableCostRequired(Long userId) {
-        return agentDistribution != null && agentDistribution.requiresReliableCost(userId);
-    }
-
-    private void settleUsage(GatewaySettlementService.Reservation reservation, int tokens, long saleAmount,
-                             long costAmount, String remark, Long userId) {
-        if (reliableCostRequired(userId)) settlement.settle(reservation, tokens, saleAmount, costAmount, remark);
-        else settlement.settle(reservation, tokens, saleAmount, remark);
     }
 
     private String safe(Throwable error) {

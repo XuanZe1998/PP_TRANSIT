@@ -30,7 +30,11 @@ public class ReferralService {
     private final ObjectMapper json;
     private final TransactionTemplate transactions;
     private final AdminAuditService audit;
+    private final ServiceCouponAdminService coupons;
     @Value("${billing.amount-scale:10000}") private long amountScale;
+    @Value("${features.linknux.agent.enabled:false}") private boolean agentsEnabled;
+    @Value("${features.linknux.agent.freeze-days:7}") private int agentFreezeDays;
+    private static final String AGENT_FIXED = "AGENT_FIXED";
 
     public record Rule(boolean enabled, String mode, long fixedCents, int rateBps, long costCents, String displayText) {
         public Rule { displayText=displayText==null?"":displayText.trim(); }
@@ -44,7 +48,12 @@ public class ReferralService {
     public record Review(List<Long> ids, String action, String note) {}
     public record Payment(long amountCents, String reference, LocalDateTime paidAt) {}
     public record Refund(long amountCents, Long merchandiseCents, String reference, LocalDateTime refundedAt) {}
-    public record Settings(boolean enabled, int freezeDays, long minimumCents, String serviceNotice, long version) {}
+    public record Settings(boolean enabled, int freezeDays, long minimumCents, String serviceNotice, long version,
+                           Long firstPurchaseCouponCents) {
+        public Settings(boolean enabled, int freezeDays, long minimumCents, String serviceNotice, long version) {
+            this(enabled, freezeDays, minimumCents, serviceNotice, version, null);
+        }
+    }
 
     private LocalDateTime now() { return LocalDateTime.now(ZoneOffset.UTC); }
     private ResponseStatusException invalid(String message) { return new ResponseStatusException(HttpStatus.BAD_REQUEST, message); }
@@ -71,9 +80,10 @@ public class ReferralService {
     }
     public Map<String,Object> settings() { return jdbc.queryForMap("SELECT * FROM referral_settings WHERE id=1"); }
     public Map<String,Object> publicOffer(Long serviceId) {
+        if (!agentsEnabled) return Map.of();
         Map<String,Object> result=first("""
-                SELECT r.mode,r.fixed_cents,r.rate_bps,r.display_text FROM referral_rules r
-                JOIN referral_settings s ON s.id=1 WHERE r.service_id=? AND r.enabled=TRUE AND s.enabled=TRUE
+                SELECT mode,fixed_cents,rate_bps,display_text FROM referral_rules
+                WHERE service_id=? AND enabled=TRUE AND mode='FIXED' AND fixed_cents>0
                 """,serviceId);
         return result==null?Map.of():result;
     }
@@ -86,10 +96,17 @@ public class ReferralService {
     public Map<String,Object> saveSettings(User admin, Settings value) {
         if (value.freezeDays()<0 || value.freezeDays()>365 || value.minimumCents()<1 || value.minimumCents()>100000000)
             throw invalid("冻结天数或提现门槛无效");
-        if (value.enabled() && !secrets.isConfigured()) throw conflict("请先配置收款信息加密密钥");
+        long couponCents = value.firstPurchaseCouponCents() == null
+                ? number(settings(), "first_purchase_coupon_cents") : value.firstPurchaseCouponCents();
+        if (couponCents < 0 || couponCents > 100_000_000) throw invalid("首购券面额无效");
         String notice=required(value.serviceNotice(),500);
-        if (jdbc.update("UPDATE referral_settings SET enabled=?,freeze_days=?,minimum_cents=?,service_notice=?,version=version+1 WHERE id=1 AND version=?",
-                value.enabled(),value.freezeDays(),value.minimumCents(),notice,value.version())!=1) throw conflict("配置已更新，请刷新");
+        if (jdbc.update("""
+                UPDATE referral_settings SET enabled=?,freeze_days=?,minimum_cents=?,service_notice=?,
+                    coupon_started_at=CASE WHEN ?=TRUE AND ?>0 THEN COALESCE(coupon_started_at,?) ELSE NULL END,
+                    first_purchase_coupon_cents=?,version=version+1
+                WHERE id=1 AND version=?
+                """, value.enabled(),value.freezeDays(),value.minimumCents(),notice,value.enabled(),couponCents,now(),couponCents,value.version())!=1)
+            throw conflict("配置已更新，请刷新");
         audit.record(admin,"REFERRAL_SETTINGS","REFERRAL",1,null,value,null);
         return settings();
     }
@@ -100,7 +117,7 @@ public class ReferralService {
         verified(userId);
         if (!flag(settings(),"enabled")) throw conflict("邀请活动尚未开启");
         if (first("SELECT user_id FROM agent_profiles WHERE user_id=?",userId)==null) {
-            jdbc.update("INSERT INTO agent_profiles(user_id,tier_code,invite_code,status,requested_rebate_bps) VALUES (?,'BASIC',?,'PENDING',0)",
+            jdbc.update("INSERT INTO agent_profiles(user_id,tier_code,invite_code,status,requested_rebate_bps) VALUES (?,'BASIC',?,'INVITER',0)",
                     userId,"RF"+UUID.randomUUID().toString().replace("-","").substring(0,20));
         }
         if (first("SELECT user_id FROM referral_members WHERE user_id=?",userId)==null)
@@ -147,7 +164,6 @@ public class ReferralService {
         if (rule==null || rule.mode()==null || !Set.of("FIXED","PERCENT").contains(rule.mode()) || rule.fixedCents()<0 || rule.fixedCents()>100000000
                 || rule.rateBps()<0 || rule.rateBps()>10000 || rule.costCents()<0 || rule.costCents()>100000000)
             throw invalid("返佣规则无效");
-        if (rule.enabled() && rule.costCents()<=0) throw invalid("开启返佣前必须填写可靠的人民币单份成本");
         if (rule.displayText().length()>500) throw invalid("返佣展示文案最多500字");
     }
     private Rule rule(Map<String,Object> row) {
@@ -167,7 +183,10 @@ public class ReferralService {
                 token,admin.getId(),serviceId,request.version(),encode(request.rule()),now().plusMinutes(15));
         long cost=Math.multiplyExact(request.rule().costCents(),request.quantity());
         long gross=request.merchandiseCents()-cost;
-        return Map.of("token",token,"commissionCents",request.rule().enabled()?calculate(request.merchandiseCents(),cost,request.quantity(),request.rule()):0L,
+        long commission = !request.rule().enabled() ? 0 : "FIXED".equals(request.rule().mode())
+                ? configuredCommission(request.merchandiseCents(),request.quantity(),request.rule())
+                : calculate(request.merchandiseCents(),cost,request.quantity(),request.rule());
+        return Map.of("token",token,"commissionCents",commission,
                 "grossCents",gross,"version",request.version(),"merchandiseCents",request.merchandiseCents(),
                 "totalCostCents",cost,"configuredCommissionCents",configuredCommission(request.merchandiseCents(),request.quantity(),request.rule()),
                 "profitCapCents",Math.max(0,gross)/2,"enabled",request.rule().enabled());
@@ -193,29 +212,26 @@ public class ReferralService {
 
     /** The order transaction snapshots ineligible orders too, excluding them from legacy settlement. */
     public void snapshot(ServiceOrder order) {
-        Map<String,Object> config=settings();
         Map<String,Object> binding=first("SELECT agent_user_id FROM agent_customer_bindings WHERE customer_user_id=?",order.getUserId());
         Long inviter=binding==null?null:number(binding,"agent_user_id");
         Map<String,Object> r=first("SELECT * FROM referral_rules WHERE service_id=?",order.getServiceId());
-        boolean eligible=flag(config,"enabled") && inviter!=null && !inviter.equals(order.getUserId()) && r!=null && flag(r,"enabled");
-        if (eligible) {
-            Map<String,Object> member=first("SELECT status FROM referral_members WHERE user_id=?",inviter);
-            Map<String,Object> user=first("SELECT id FROM users WHERE id=? AND status='ACTIVE' AND email_verified_at IS NOT NULL",inviter);
-            boolean activeMember=member==null
-                    ? first("SELECT user_id FROM agent_profiles WHERE user_id=? AND status='ACTIVE'",inviter)!=null
-                    : "ACTIVE".equals(member.get("status"));
-            eligible=user!=null && activeMember;
-        }
+        boolean eligible=agentsEnabled && inviter!=null && !inviter.equals(order.getUserId())
+                && r!=null && flag(r,"enabled") && "FIXED".equals(r.get("mode"))
+                && first("""
+                    SELECT p.user_id FROM agent_profiles p JOIN agent_tiers t ON t.tier_code=p.tier_code AND t.enabled=TRUE
+                    JOIN users u ON u.id=p.user_id AND u.status='ACTIVE'
+                    WHERE p.user_id=? AND p.status='ACTIVE'
+                    """, inviter)!=null;
         long sale=BigDecimal.valueOf(Math.max(0,order.getAmountCents()-order.getServiceFeeCents()))
                 .multiply(order.getExchangeRate()).setScale(0,RoundingMode.DOWN).longValueExact();
         Rule rule=r==null?new Rule(false,"FIXED",0,0,0):rule(r);
         long cost=Math.multiplyExact(rule.costCents(),order.getQuantity());
-        long amount=eligible?calculate(sale,cost,order.getQuantity(),rule):0;
+        long amount=eligible?configuredCommission(sale,order.getQuantity(),rule):0;
         jdbc.update("""
                 INSERT INTO referral_orders(order_id,inviter_id,customer_id,rule_version,mode,fixed_cents,rate_bps,sale_cents,cost_cents,commission_cents,freeze_days,status)
                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
-                """,order.getId(),inviter,order.getUserId(),r==null?0:number(r,"version"),rule.mode(),rule.fixedCents(),rule.rateBps(),sale,cost,amount,
-                number(config,"freeze_days"),eligible && amount>0?"AWAITING_PAYMENT":"INELIGIBLE");
+                """,order.getId(),inviter,order.getUserId(),r==null?0:number(r,"version"),AGENT_FIXED,rule.fixedCents(),0,sale,cost,amount,
+                Math.max(0, agentFreezeDays),eligible && amount>0?"AWAITING_PAYMENT":"INELIGIBLE");
         order.setReferralCommissionCents(eligible?amount:null);
     }
 
@@ -243,6 +259,7 @@ public class ReferralService {
     }
     @Scheduled(fixedDelayString="${referral.scan-ms:60000}",initialDelayString="${referral.scan-initial-ms:60000}")
     public void settleDue() {
+        awardFirstPurchaseCoupons();
         // Read fresh ledger entries after waiting for the user lock on MySQL.
         TransactionTemplate settlementTransaction=new TransactionTemplate(Objects.requireNonNull(transactions.getTransactionManager()));
         settlementTransaction.setIsolationLevel(org.springframework.transaction.TransactionDefinition.ISOLATION_READ_COMMITTED);
@@ -261,6 +278,50 @@ public class ReferralService {
                 cursor=id;
             }
         } while(batch.size()==100);
+    }
+
+    void awardFirstPurchaseCoupons() {
+        Map<String,Object> config = settings();
+        long cents = number(config,"first_purchase_coupon_cents");
+        if (!flag(config,"enabled") || cents == 0) return;
+        long cursor = 0;
+        List<Map<String,Object>> batch;
+        do {
+            batch = jdbc.queryForList("""
+                    SELECT o.id,o.user_id,b.agent_user_id
+                    FROM service_orders o
+                    JOIN agent_customer_bindings b ON b.customer_user_id=o.user_id
+                    JOIN users u ON u.id=b.agent_user_id AND u.status='ACTIVE' AND u.email_verified_at IS NOT NULL
+                    JOIN agent_profiles p ON p.user_id=b.agent_user_id
+                    LEFT JOIN referral_members m ON m.user_id=b.agent_user_id
+                    WHERE o.id>? AND o.service_id IS NOT NULL AND o.status='FULFILLED'
+                      AND o.fulfillment_status='COMPLETED' AND o.paid_at>=?
+                      AND b.agent_user_id<>o.user_id
+                      AND (m.status='ACTIVE' OR (m.status IS NULL AND p.status='ACTIVE'))
+                      AND COALESCE((SELECT SUM(f.amount_cents) FROM referral_refunds f WHERE f.order_id=o.id),0)
+                          <o.payment_amount_cents
+                      AND NOT EXISTS (SELECT 1 FROM service_coupons c WHERE c.rewarded_customer_id=o.user_id)
+                      AND NOT EXISTS (
+                          SELECT 1 FROM service_orders earlier
+                          WHERE earlier.user_id=o.user_id AND earlier.service_id IS NOT NULL
+                            AND earlier.status IN ('PAID','FULFILLED')
+                            AND (earlier.paid_at<o.paid_at OR (earlier.paid_at=o.paid_at AND earlier.id<o.id))
+                            AND COALESCE((SELECT SUM(f.amount_cents) FROM referral_refunds f WHERE f.order_id=earlier.id),0)
+                                <COALESCE(earlier.payment_amount_cents,earlier.amount_cents)
+                      )
+                    ORDER BY o.id LIMIT 100
+                    """, cursor, config.get("coupon_started_at"));
+            for (Map<String,Object> row : batch) {
+                cursor = number(row,"id");
+                try {
+                    coupons.grantPersonal(number(row,"agent_user_id"), cents, number(row,"user_id"));
+                } catch (org.springframework.dao.DuplicateKeyException concurrentAward) {
+                    // The unique customer key prevents duplicate rewards across workers and retries.
+                } catch (RuntimeException failure) {
+                    log.warn("First purchase coupon failed for order {}; retrying on next scan", cursor);
+                }
+            }
+        } while (batch.size() == 100);
     }
     void settleOne(long id) {
         Map<String,Object> initial=first("SELECT inviter_id FROM referral_orders WHERE order_id=?",id);
@@ -283,7 +344,8 @@ public class ReferralService {
             jdbc.update("UPDATE referral_orders SET status='FROZEN',available_at=? WHERE order_id=?",due,id); return;
         }
         long net=number(r,"commission_cents")-number(r,"reversed_cents");
-        entry("REFERRAL_ORDER:"+id,inviter,number(r,"customer_id"),net,"REFERRAL_CREDIT");
+        if (net>0) entry("REFERRAL_ORDER:"+id,inviter,number(r,"customer_id"),net,
+                AGENT_FIXED.equals(r.get("mode"))?"AGENT_COMMISSION":"REFERRAL_CREDIT");
         jdbc.update("UPDATE referral_orders SET status=?,available_at=? WHERE order_id=?",net>0?"AVAILABLE":"REVERSED",due,id);
     }
     public Map<String,Object> summary(long userId) {
@@ -292,8 +354,8 @@ public class ReferralService {
         result.put("profile",p==null?Map.of():p);
         result.put("verified",first("SELECT id FROM users WHERE id=? AND email_verified_at IS NOT NULL",userId)!=null);
         result.put("invited",sum("SELECT COUNT(*) FROM agent_customer_bindings WHERE agent_user_id=?",userId));
-        result.put("earnedCents",sum("SELECT COALESCE(SUM(r.commission_cents-r.reversed_cents),0) FROM referral_orders r JOIN service_orders o ON o.id=r.order_id WHERE r.inviter_id=? AND o.status IN ('PAID','FULFILLED')",userId));
-        result.put("pendingCents",sum("SELECT COALESCE(SUM(r.commission_cents-r.reversed_cents),0) FROM referral_orders r JOIN service_orders o ON o.id=r.order_id WHERE r.inviter_id=? AND r.status IN ('AWAITING_PAYMENT','AWAITING_DELIVERY','FROZEN') AND o.status IN ('PAID','FULFILLED')",userId));
+        result.put("earnedCents",sum("SELECT COALESCE(SUM(r.commission_cents-r.reversed_cents),0) FROM referral_orders r JOIN service_orders o ON o.id=r.order_id WHERE r.inviter_id=? AND r.mode<>'AGENT_FIXED' AND o.status IN ('PAID','FULFILLED')",userId));
+        result.put("pendingCents",sum("SELECT COALESCE(SUM(r.commission_cents-r.reversed_cents),0) FROM referral_orders r JOIN service_orders o ON o.id=r.order_id WHERE r.inviter_id=? AND r.mode<>'AGENT_FIXED' AND r.status IN ('AWAITING_PAYMENT','AWAITING_DELIVERY','FROZEN') AND o.status IN ('PAID','FULFILLED')",userId));
         long balance=rawBalance(userId);
         result.put("availableCents",Math.max(0,balance));
         result.put("debtCents",Math.max(0,-balance));
@@ -462,16 +524,18 @@ public class ReferralService {
         if(initial!=null) {
             Map<String,Object> r=jdbc.queryForMap("SELECT * FROM referral_orders WHERE order_id=? FOR UPDATE",orderId);
             // Only the explicitly refunded merchandise participates in reversal, never fees or payment adjustments.
-            long reversed=sale==0?0:BigDecimal.valueOf(number(r,"commission_cents")).multiply(BigDecimal.valueOf(merchandiseTotal))
+            boolean agentOrder=AGENT_FIXED.equals(r.get("mode"));
+            long reversed=total==paid ? number(r,"commission_cents")
+                    : sale==0?0:BigDecimal.valueOf(number(r,"commission_cents")).multiply(BigDecimal.valueOf(merchandiseTotal))
                     .divide(BigDecimal.valueOf(sale),0,RoundingMode.DOWN).longValueExact();
             long delta=reversed-number(r,"reversed_cents");
             jdbc.update("UPDATE referral_orders SET refunded_cents=?,reversed_cents=? WHERE order_id=?",total,reversed,orderId);
             if(delta>0 && Set.of("AVAILABLE","REVERSED").contains(r.get("status"))) {
                 long inviter=number(r,"inviter_id");
                 entry("REFERRAL_REFUND:"+jdbc.queryForObject("SELECT id FROM referral_refunds WHERE reference=?",Long.class,reference),
-                        inviter,number(r,"customer_id"),-delta,"REFERRAL_REVERSAL");
+                        inviter,number(r,"customer_id"),-delta,agentOrder?"AGENT_COMMISSION_REVERSAL":"REFERRAL_REVERSAL");
                 if(reversed==number(r,"commission_cents")) jdbc.update("UPDATE referral_orders SET status='REVERSED' WHERE order_id=?",orderId);
-                if(rawBalance(inviter)<0) {
+                if(!agentOrder && rawBalance(inviter)<0) {
                     for(Map<String,Object> w:jdbc.queryForList("SELECT * FROM referral_withdrawals WHERE user_id=? AND status IN ('PENDING','APPROVED') ORDER BY id FOR UPDATE",inviter)) {
                         release(w,"CANCELLED","关联订单退款，提现已取消，请核对余额后重新申请");
                         if(rawBalance(inviter)>=0) break;
@@ -528,7 +592,7 @@ public class ReferralService {
                 table="referral_orders r JOIN service_orders o ON o.id=r.order_id JOIN users u ON u.id=r.inviter_id";
                 where+=" AND r.status<>'INELIGIBLE'";
                 sort="r.order_id DESC";
-                if(owner!=null) {where+=" AND r.inviter_id=?";args.add(owner);}
+                if(owner!=null) {where+=" AND r.inviter_id=? AND r.mode<>'AGENT_FIXED'";args.add(owner);}
                 if(status!=null && !status.isBlank()) {where+=" AND r.status=?";args.add(status);}
                 if(query!=null && !query.isBlank()) {where+=" AND (u.email LIKE ? OR o.order_no LIKE ? OR o.product_name LIKE ?)";for(int i=0;i<3;i++) args.add("%"+query.trim()+"%");}
                 if(from!=null && !from.isBlank()) {where+=" AND r.created_at>=?";args.add(parseDate(from));}

@@ -18,6 +18,8 @@ public class ServiceCoupon {
     @TableField("remaining_uses") private Integer remainingUses;
     @TableField("reserved_uses") private Integer reservedUses;
     private Boolean enabled;
+    private Long ownerUserId;
+    private Long rewardedCustomerId;
     @TableField("created_at") private LocalDateTime createdAt;
     @TableField("updated_at") private LocalDateTime updatedAt;
     @TableField(exist = false) private List<Long> serviceIds;

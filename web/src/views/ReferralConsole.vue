@@ -1,7 +1,7 @@
 <template>
   <section class="referral-console">
     <header class="referral-heading">
-      <div><h1>{{ admin ? '邀请返佣管理' : '邀请有礼' }}</h1><p>邀请好友购买订阅，每笔有效购买均可获得返佣。</p></div>
+      <div><h1>{{ admin ? '邀请与佣金管理' : '邀请有礼' }}</h1><p>好友通过邀请链接注册，首次有效购买并完成交付后，邀请人获得一张订阅优惠券。</p></div>
       <el-space><el-button v-if="!admin" @click="router.push('/console')">返回控制台</el-button><el-button :loading="loading" @click="refresh">刷新</el-button></el-space>
     </header>
     <el-alert v-if="error" :title="error" type="error" :closable="false" />
@@ -9,18 +9,18 @@
       <article v-for="metric in metrics" :key="metric.key"><span>{{ metric.label }}</span><strong>{{ metric.key === 'invited' ? summary[metric.key] || 0 : money(summary[metric.key]) }}</strong></article>
     </div>
     <template v-if="!admin">
-      <el-alert v-if="!summary.enabled" title="邀请活动尚未开启，已有佣金和提现记录仍可查询。" type="info" :closable="false" />
+      <el-alert v-if="!summary.enabled" title="邀请活动尚未开启，已有优惠券仍可使用。" type="info" :closable="false" />
       <el-alert v-if="summary.debtCents" :title="'退款待抵扣金额 ' + money(summary.debtCents) + '，后续佣金将优先抵扣。'" type="warning" :closable="false" />
       <el-card shadow="never">
         <h2>专属邀请链接</h2>
         <el-button v-if="!summary.verified" @click="router.push('/console/profile')">前往验证邮箱</el-button>
         <el-button v-else-if="!summary.profile?.invite_code" :disabled="!summary.enabled" :loading="busy" @click="enroll">生成邀请链接</el-button>
         <el-space v-else wrap><el-input :model-value="inviteLink" readonly class="invite-input" /><el-button :disabled="summary.profile.status !== 'ACTIVE'" @click="copyInvite">复制链接</el-button><el-tag>{{ label(summary.profile.status) }}</el-tag></el-space>
-        <p>仅通过链接新注册的好友建立邀请关系。佣金以订单确认的规则为准，最多为商品毛利的 50%，服务费及支付加价不计佣。</p>
-        <p>交付完成后冻结 {{ summary.freeze_days ?? 7 }} 天，满 {{ money(summary.minimum_cents ?? 2000) }} 可申请提现。</p>
+        <p>仅通过链接新注册的好友建立邀请关系。每位好友只触发一次首购奖励。</p>
+        <p v-if="summary.first_purchase_coupon_cents">当前首购券面额 {{ money(summary.first_purchase_coupon_cents) }}。</p>
       </el-card>
-      <el-card shadow="never">
-        <h2>申请提现</h2><p>{{ summary.service_notice }}</p>
+      <el-card v-if="summary.earnedCents || summary.debtCents || summary.withdrawingCents" shadow="never">
+        <h2>历史邀请佣金提现</h2><p>{{ summary.service_notice }}</p>
         <p v-if="savedAccount.masked_account">已保存 {{ label(savedAccount.channel) }} {{ savedAccount.masked_account }}</p>
         <el-form label-position="top" class="referral-form">
           <el-form-item label="收款方式"><el-select v-model="account.channel"><el-option label="支付宝" value="ALIPAY"/><el-option label="微信" value="WECHAT"/></el-select></el-form-item>
@@ -36,30 +36,47 @@
       <el-tab-pane v-if="admin" label="活动设置" name="settings">
         <el-form label-position="top" class="referral-form">
           <el-form-item label="开启邀请活动"><el-switch v-model="settings.enabled"/></el-form-item>
-          <el-form-item label="交付后冻结天数"><el-input-number v-model="settings.freezeDays" :min="0" :max="365"/></el-form-item>
+          <el-form-item label="首购券面额（元，填 0 停止发券）"><el-input-number v-model="couponYuan" :min="0" :max="1000000" :precision="2"/></el-form-item>
           <el-form-item label="最低提现金额（元）"><el-input-number v-model="minimumYuan" :min="0.01" :precision="2"/></el-form-item>
           <el-form-item label="处理时效说明"><el-input v-model="settings.serviceNotice" maxlength="500" type="textarea"/></el-form-item>
         </el-form><el-button type="primary" :loading="busy" @click="saveSettings">保存设置</el-button>
       </el-tab-pane>
-      <el-tab-pane label="参与商品" name="products"/>
+      <el-tab-pane :label="admin ? '个人优惠券' : '我的优惠券'" name="coupons"/>
+      <el-tab-pane v-if="admin" label="订阅代理佣金" name="products"/>
       <el-tab-pane label="邀请记录" name="invitations"/>
       <el-tab-pane label="返佣明细" name="commissions"/>
       <el-tab-pane label="提现记录" name="withdrawals"/>
       <el-tab-pane v-if="admin" label="退款记录" name="refunds"/>
     </el-tabs>
     <template v-if="tab !== 'settings'">
-      <el-form inline @submit.prevent="search">
-        <el-form-item><el-input v-model="query" clearable :placeholder="tab === 'refunds' ? '完整订单号' : '搜索邮箱、商品或订单号'" @clear="search"/></el-form-item>
+      <el-form v-if="admin || tab !== 'coupons'" inline @submit.prevent="search">
+        <el-form-item><el-input v-model="query" clearable :placeholder="tab === 'coupons' ? '完整邮箱、用户名或券码' : tab === 'refunds' ? '完整订单号' : '搜索邮箱、商品或订单号'" @clear="search"/></el-form-item>
         <el-form-item v-if="tab === 'commissions' || tab === 'withdrawals'"><el-select v-model="status" clearable placeholder="全部状态" style="width:160px"><el-option v-for="code in statusOptions" :key="code" :label="label(code)" :value="code"/></el-select></el-form-item>
         <el-form-item v-if="tab === 'commissions'"><el-date-picker v-model="dates" type="daterange" value-format="YYYY-MM-DD" start-placeholder="开始日期" end-placeholder="结束日期"/></el-form-item>
         <el-button native-type="submit">查询</el-button>
       </el-form>
       <el-space v-if="admin && tab === 'withdrawals'" wrap><span>本页已选 {{ selected.length }} 笔</span><el-button :disabled="!selected.length || busy" @click="review('APPROVED')">批量批准</el-button><el-button :disabled="!selected.length || busy" @click="review('REJECTED')">批量驳回</el-button></el-space>
+      <el-form v-if="admin && tab === 'coupons'" inline @submit.prevent="grantCoupon">
+        <el-form-item label="发券给"><el-input v-model="grantAccount" placeholder="用户邮箱或用户名" /></el-form-item>
+        <el-form-item label="面额（元）"><el-input-number v-model="grantYuan" :min="0.01" :max="1000000" :precision="2" /></el-form-item>
+        <el-button type="primary" native-type="submit" :loading="busy" :disabled="!grantAccount.trim()">分发优惠券</el-button>
+      </el-form>
       <PagedTable :key="tab" ref="table" v-loading="loading" :data="rows" list-id="referral-records" pagination="external" @selection-change="selected = $event">
         <el-table-column v-if="admin && tab === 'withdrawals'" type="selection" width="45" :selectable="(row: Row) => ['PENDING','APPROVED'].includes(row.status)"/>
+        <template v-if="tab === 'coupons'">
+          <el-table-column v-if="admin" prop="username" label="用户" min-width="140"/>
+          <el-table-column prop="code" label="券码" min-width="250"/>
+          <el-table-column label="面额"><template #default="{row}">{{ money(row.discount_cents) }}</template></el-table-column>
+          <el-table-column label="来源"><template #default="{row}">{{ row.source === 'INVITE' ? '首购邀请' : '管理员发放' }}</template></el-table-column>
+          <el-table-column label="状态"><template #default="{row}">{{ !row.enabled ? '已撤销' : row.remaining_uses ? '可用' : row.reserved_uses ? '待支付' : '已使用' }}</template></el-table-column>
+          <el-table-column label="操作"><template #default="{row}">
+            <el-button v-if="admin && row.enabled && row.remaining_uses" link type="danger" :disabled="busy" @click="revokeCoupon(row.id)">撤销</el-button>
+            <el-button v-if="!admin && row.enabled && row.remaining_uses" link @click="copyCoupon(row.code)">复制券码</el-button>
+          </template></el-table-column>
+        </template>
         <template v-if="tab === 'products'">
           <el-table-column prop="name" label="商品" min-width="180"/>
-          <el-table-column label="返佣规则" min-width="190"><template #default="{row}">{{ row.enabled ? offer(row) : '未参与活动' }}</template></el-table-column>
+          <el-table-column label="返佣规则" min-width="190"><template #default="{row}">{{ row.enabled && row.mode === 'FIXED' && row.fixed_cents > 0 ? offer(row) : '未启用固定佣金' }}</template></el-table-column>
           <el-table-column v-if="admin" label="单份成本"><template #default="{row}">{{ money(row.cost_cents) }}</template></el-table-column>
           <el-table-column v-if="admin" label="操作"><template #default="{row}"><el-button link @click="editRule(row)">配置规则</el-button></template></el-table-column>
         </template>
@@ -114,23 +131,22 @@
     <el-dialog v-model="ruleDialog" title="商品返佣规则" width="min(620px, 95vw)">
       <el-form label-position="top" @input="preview = null">
         <el-form-item label="参与活动"><el-switch v-model="rule.enabled" @change="preview = null"/></el-form-item>
-        <el-form-item label="返佣方式"><el-select v-model="rule.mode" @change="preview = null"><el-option label="每份固定金额" value="FIXED"/><el-option label="商品实付百分比" value="PERCENT"/></el-select></el-form-item>
+        <el-form-item label="返佣方式"><el-select v-model="rule.mode" @change="preview = null"><el-option label="每份固定金额" value="FIXED"/></el-select></el-form-item>
         <el-form-item v-if="rule.mode === 'FIXED'" label="每份返佣（元）"><el-input-number v-model="fixedYuan" :min="0" :precision="2"/></el-form-item>
         <el-form-item v-else label="返佣比例（%）"><el-input-number v-model="ratePercent" :min="0" :max="100" :precision="2"/></el-form-item>
-        <el-form-item label="可靠的人民币单份成本（元）"><el-input-number v-model="costYuan" :min="0" :precision="2"/><p class="form-hint">填写每份商品的实际采购成本，不是对外售价。售价与成本相同时，毛利和返佣均为零。</p></el-form-item>
+        <el-form-item label="可靠的人民币单份成本（元）"><el-input-number v-model="costYuan" :min="0" :precision="2"/><p class="form-hint">成本用于记录计算依据。</p></el-form-item>
         <el-form-item label="AI订阅卡片返佣文案"><el-input v-model="rule.displayText" type="textarea" :rows="3" maxlength="500" show-word-limit placeholder="留空使用默认返佣说明"/><p class="form-hint">只修改当前服务的展示文案，不改变实际返佣计算。保存后卡片立即更新，已创建订单的返佣金额不变。</p></el-form-item>
         <el-form-item label="模拟购买数量"><el-input-number v-model="previewQuantity" :min="1" :max="10000" :precision="0"/></el-form-item>
         <el-form-item label="模拟优惠后商品总实付（人民币元）"><el-input-number v-model="previewSale" :min="0" :precision="2"/></el-form-item>
         <p class="form-hint">此处填写本次购买全部份数优惠后的商品总额，不含服务费和支付加价。外币商品请填写折算后的人民币金额。</p>
       </el-form>
-      <p>最终佣金不超过商品毛利的 50%，向下取整到分。修改规则后只影响后续新订单。</p>
+      <p>固定佣金按购买份数计算。修改规则后只影响后续新订单。</p>
       <div v-if="preview" ref="previewResult">
         <el-descriptions :column="1" border class="rule-breakdown">
           <el-descriptions-item label="商品总实付">{{ money(preview.merchandiseCents) }}</el-descriptions-item>
           <el-descriptions-item label="总成本（单份成本 × 数量）">{{ money(preview.totalCostCents) }}</el-descriptions-item>
           <el-descriptions-item label="商品毛利（实付 − 成本）">{{ money(preview.grossCents) }}</el-descriptions-item>
           <el-descriptions-item label="按配置计算的返佣">{{ money(preview.configuredCommissionCents) }}</el-descriptions-item>
-          <el-descriptions-item label="毛利的50%上限（向下取整到分）">{{ money(preview.profitCapCents) }}</el-descriptions-item>
         </el-descriptions>
         <el-alert :title="'本次模拟返佣 ' + money(preview.commissionCents) + '，毛利 ' + money(preview.grossCents)" :type="preview.commissionCents > 0 ? 'success' : 'warning'" :closable="false" :description="previewExplanation"/>
       </div>
@@ -162,7 +178,9 @@ const router = useRouter()
 const summary = ref<Row>({}), savedAccount = ref<Row>({})
 const settings = reactive({ enabled: false, freezeDays: 7, serviceNotice: '', version: 0 })
 const minimumYuan = ref(20)
-const tab = ref('products'), page = ref(1), size = ref(10), total = ref(0)
+const couponYuan = ref(0), grantAccount = ref(''), grantYuan = ref(1)
+const couponPath = admin ? '/api/service-orders/admin/user-coupons' : '/api/service-orders/user-coupons'
+const tab = ref('coupons'), page = ref(1), size = ref(10), total = ref(0)
 const query = ref(''), status = ref(''), dates = ref<string[]>([])
 const rows = ref<Row[]>([]), selected = ref<Row[]>([])
 const table = ref<InstanceType<typeof PagedTable>>()
@@ -202,6 +220,7 @@ async function loadSummary() {
     summary.value = data.overview
     Object.assign(settings, { enabled: data.settings.enabled, freezeDays: data.settings.freeze_days, serviceNotice: data.settings.service_notice, version: data.settings.version })
     minimumYuan.value = data.settings.minimum_cents / 100
+    couponYuan.value = data.settings.first_purchase_coupon_cents / 100
   } else {
     summary.value = data
     savedAccount.value = (await http.get(base + '/account')).data
@@ -214,7 +233,7 @@ async function loadRows() {
   if (tab.value === 'settings') return
   loading.value = true
   try {
-    const { data } = await http.get(base + '/lists/' + tab.value, { params: { listPage: true, page: page.value, size: size.value, query: query.value, status: status.value, from: dates.value?.[0], to: dates.value?.[1] } })
+    const { data } = await http.get(tab.value === 'coupons' ? couponPath : base + '/lists/' + tab.value, { params: { listPage: true, page: page.value, size: size.value, query: query.value, status: status.value, from: dates.value?.[0], to: dates.value?.[1] } })
     if (version !== generation) return
     rows.value = data.items
     total.value = data.total
@@ -248,7 +267,22 @@ function withdraw() {
   })
 }
 function cancel(row: Row) { return run(async () => { await confirm('取消后金额将退回可提现余额', '取消提现'); await http.post(base + '/withdrawals/' + row.id + '/cancel'); await refresh() }) }
-function saveSettings() { return run(async () => { await http.put(base + '/settings', { ...settings, minimumCents: Math.round(minimumYuan.value * 100) }); await refresh(); ElMessage.success('设置已保存') }) }
+function grantCoupon() { return run(async () => {
+  await http.post(couponPath, { account: grantAccount.value.trim(), discountCents: Math.round(grantYuan.value * 100) })
+  grantAccount.value = ''
+  ElMessage.success('优惠券已分发')
+  await loadRows()
+}) }
+function revokeCoupon(id: number) { return run(async () => {
+  await http.delete(couponPath + '/' + id)
+  ElMessage.success('优惠券已撤销')
+  await loadRows()
+}) }
+async function copyCoupon(code: string) {
+  try { await navigator.clipboard.writeText(code); ElMessage.success('券码已复制') }
+  catch { ElMessage.info('请手动复制券码') }
+}
+function saveSettings() { return run(async () => { await http.put(base + '/settings', { ...settings, minimumCents: Math.round(minimumYuan.value * 100), firstPurchaseCouponCents: Math.round(couponYuan.value * 100) }); await refresh(); ElMessage.success('设置已保存') }) }
 function toggleMember(row: Row) { return run(async () => { await confirm(row.inviter_email, '确认修改推广资格'); await http.put(base + '/members/' + row.agent_user_id, { status: row.status === 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE' }); await loadRows() }) }
 function review(action: string) {
   const ids = selected.value.map(row => row.id)
@@ -272,14 +306,12 @@ watch([() => rule.enabled, () => rule.mode, () => rule.displayText, fixedYuan, r
 const previewExplanation = computed(() => {
   if (!preview.value) return ''
   if (!preview.value.enabled) return '当前商品未参与活动，实际返佣为零。'
-  if (preview.value.grossCents <= 0) return '商品实付未超过总成本，没有可分配毛利，因此返佣为零。请核对成本与模拟实付金额。'
-  if (preview.value.configuredCommissionCents > preview.value.profitCapCents) return '配置金额超过毛利的50%上限，本次按上限计算。'
-  return '配置金额未超过毛利上限，本次按配置计算。'
+  return '按每份固定金额乘以购买份数计算。'
 })
 function editRule(row: Row) {
   ruleRevision++
   ruleRow.value = row
-  Object.assign(rule, { enabled: !!row.enabled, mode: row.mode || 'FIXED', displayText: row.display_text || '' })
+  Object.assign(rule, { enabled: !!row.enabled, mode: 'FIXED', displayText: row.display_text || '' })
   fixedYuan.value = (row.fixed_cents ?? 500) / 100; ratePercent.value = (row.rate_bps ?? 500) / 100; costYuan.value = (row.cost_cents || 0) / 100
   previewSale.value = row.currency === 'CNY' ? (row.price_cents || 0) / 100 : undefined
   previewQuantity.value = 1; preview.value = null; ruleDialog.value = true

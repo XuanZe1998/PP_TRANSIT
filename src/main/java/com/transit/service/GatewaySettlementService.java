@@ -146,8 +146,8 @@ public class GatewaySettlementService {
                     """, reservation.userId(), -safeAmount, balanceAfter,
                     remark, LocalDateTime.now());
         }
-        if (actualCostAmount != null && agentDistributionService != null) {
-            agentDistributionService.settleApiUsage(reservation.id(), reservation.userId(), safeAmount, actualCostAmount);
+        if (agentDistributionService != null && safeAmount > 0) {
+            agentDistributionService.settleApiUsage(reservation.id(), reservation.userId(), safeAmount, actualCostAmount == null ? 0 : actualCostAmount);
         }
     }
 

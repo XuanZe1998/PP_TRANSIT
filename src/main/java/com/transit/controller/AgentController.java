@@ -1,5 +1,6 @@
 package com.transit.controller;
 
+import com.transit.dto.PageResponse;
 import com.transit.model.User;
 import com.transit.service.AgentDistributionService;
 import com.transit.service.CurrentUserService;
@@ -17,8 +18,15 @@ public class AgentController {
     private final AgentDistributionService agents;
 
     @GetMapping("/user/agent")
-    public Map<String, Object> summary(@RequestHeader(HttpHeaders.AUTHORIZATION) String auth) {
-        return agents.summary(currentUsers.requireUser(auth).getId());
+    public Map<String, Object> summary(@RequestHeader(HttpHeaders.AUTHORIZATION) String auth,
+                                       @RequestParam(defaultValue = "true") boolean includeLegacyWithdrawals) {
+        return agents.summary(currentUsers.requireUser(auth).getId(), includeLegacyWithdrawals);
+    }
+
+    @GetMapping("/user/agent/withdrawals")
+    public PageResponse<Map<String, Object>> userWithdrawals(@RequestHeader(HttpHeaders.AUTHORIZATION) String auth,
+            @RequestParam(defaultValue = "1") int page, @RequestParam(defaultValue = "10") int size) {
+        return agents.userWithdrawalsPage(currentUsers.requireUser(auth).getId(), page, size);
     }
 
     @PostMapping("/user/agent/apply")
@@ -41,8 +49,11 @@ public class AgentController {
     }
 
     @GetMapping("/admin/api/agents")
-    public List<Map<String, Object>> adminList(@RequestHeader(HttpHeaders.AUTHORIZATION) String auth) {
-        currentUsers.requireAdmin(auth); return agents.adminAgents();
+    public Object adminList(@RequestHeader(HttpHeaders.AUTHORIZATION) String auth,
+            @RequestParam(defaultValue = "false") boolean listPage,
+            @RequestParam(defaultValue = "1") int page, @RequestParam(defaultValue = "10") int size) {
+        currentUsers.requireAdmin(auth);
+        return listPage ? agents.adminAgentsPage(page, size) : agents.adminAgents();
     }
 
     @GetMapping("/admin/api/agents/service-costs")
@@ -51,8 +62,11 @@ public class AgentController {
     }
 
     @GetMapping("/admin/api/agents/withdrawals")
-    public List<Map<String, Object>> withdrawals(@RequestHeader(HttpHeaders.AUTHORIZATION) String auth) {
-        currentUsers.requireAdmin(auth); return agents.adminWithdrawals();
+    public Object withdrawals(@RequestHeader(HttpHeaders.AUTHORIZATION) String auth,
+            @RequestParam(defaultValue = "false") boolean listPage,
+            @RequestParam(defaultValue = "1") int page, @RequestParam(defaultValue = "10") int size) {
+        currentUsers.requireAdmin(auth);
+        return listPage ? agents.adminWithdrawalsPage(page, size) : agents.adminWithdrawals();
     }
 
     @PutMapping("/admin/api/agents/service-costs/{id}")

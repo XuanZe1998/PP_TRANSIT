@@ -211,6 +211,7 @@ public class SchemaRepairService {
                        o.payment_url, o.paid_at, o.created_at, o.updated_at
                   FROM service_orders o
                  WHERE o.order_no IS NOT NULL AND o.user_id IS NOT NULL
+                   AND COALESCE(o.payment_method, 'alipay') <> 'balance'
                    AND NOT EXISTS (
                        SELECT 1 FROM payment_intents p
                         WHERE p.business_type = 'SERVICE_ORDER' AND p.business_id = o.id
@@ -1463,6 +1464,9 @@ public class SchemaRepairService {
         ensureColumn("service_orders", "coupon_code", "ALTER TABLE service_orders ADD COLUMN coupon_code VARCHAR(80) NULL");
         ensureColumn("service_orders", "coupon_discount_cents", "ALTER TABLE service_orders ADD COLUMN coupon_discount_cents BIGINT NOT NULL DEFAULT 0");
         ensureColumn("service_orders", "coupon_reservation_active", "ALTER TABLE service_orders ADD COLUMN coupon_reservation_active BOOLEAN NOT NULL DEFAULT FALSE");
+        ensureColumn("service_coupons", "owner_user_id", "ALTER TABLE service_coupons ADD COLUMN owner_user_id BIGINT NULL");
+        ensureColumn("service_coupons", "rewarded_customer_id", "ALTER TABLE service_coupons ADD COLUMN rewarded_customer_id BIGINT NULL");
+        ensureColumn("service_coupons", "redeemed_order_id", "ALTER TABLE service_coupons ADD COLUMN redeemed_order_id BIGINT NULL");
         ensureColumn("service_orders", "refund_resources_released", "ALTER TABLE service_orders ADD COLUMN refund_resources_released BOOLEAN NOT NULL DEFAULT FALSE");
         ensureColumn("service_orders", "supplier_quote_json", "ALTER TABLE service_orders ADD COLUMN supplier_quote_json TEXT NULL");
         ensureColumn("service_orders", "supplier_type", "ALTER TABLE service_orders ADD COLUMN supplier_type VARCHAR(32) NOT NULL DEFAULT 'LOCAL_INVENTORY'");
@@ -1587,6 +1591,10 @@ public class SchemaRepairService {
                 "CREATE INDEX idx_service_orders_provider_trade_no ON service_orders(provider_trade_no)");
         ensureIndex("service_orders", "idx_service_orders_reservation_expiry",
                 "CREATE INDEX idx_service_orders_reservation_expiry ON service_orders(status, reservation_expires_at)");
+        ensureIndex("service_orders", "idx_service_orders_status_paid",
+                "CREATE INDEX idx_service_orders_status_paid ON service_orders(status,paid_at,id)");
+        ensureIndex("service_orders", "idx_service_orders_user_paid",
+                "CREATE INDEX idx_service_orders_user_paid ON service_orders(user_id,paid_at,id)");
         ensureIndex("service_orders", "idx_service_orders_procurement",
                 "CREATE INDEX idx_service_orders_procurement ON service_orders(supplier_type, fulfillment_status, next_procurement_at)");
         ensureIndex("service_inventory_items", "uq_service_inventory_fingerprint",
@@ -1597,6 +1605,10 @@ public class SchemaRepairService {
                 "CREATE UNIQUE INDEX uq_service_inventory_order_item ON service_inventory_items(reserved_order_id, id)");
         ensureIndex("service_coupons", "uq_service_coupon_code",
                 "CREATE UNIQUE INDEX uq_service_coupon_code ON service_coupons(code)");
+        ensureIndex("service_coupons", "uq_service_coupon_rewarded_customer",
+                "CREATE UNIQUE INDEX uq_service_coupon_rewarded_customer ON service_coupons(rewarded_customer_id)");
+        ensureIndex("service_coupons", "idx_service_coupon_owner",
+                "CREATE INDEX idx_service_coupon_owner ON service_coupons(owner_user_id,id)");
         ensureIndex("payment_intents", "uq_payment_intent_order_no",
                 "CREATE UNIQUE INDEX uq_payment_intent_order_no ON payment_intents(order_no)");
         ensureIndex("payment_intents", "uq_payment_intent_business",
