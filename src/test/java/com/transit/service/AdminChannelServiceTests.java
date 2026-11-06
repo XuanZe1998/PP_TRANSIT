@@ -38,13 +38,34 @@ class AdminChannelServiceTests {
     @Mock private OpenAiImageHealthProbe imageHealthProbe;
 
     private AdminChannelService service;
+    private ChannelProbeService probes;
 
     @BeforeEach
     void setUp() {
+        probes = new ChannelProbeService(channelMapper, modelMappingMapper, jdbcTemplate,
+                channelUrlPolicy, providerGatewayFactory, channelSecretService, priceTierService, imageHealthProbe);
         service = new AdminChannelService(channelMapper, modelMappingMapper, jdbcTemplate,
-                channelUrlPolicy, providerGatewayFactory, channelSecretService, priceTierService, events, imageHealthProbe);
+                channelUrlPolicy, channelSecretService, priceTierService, events, probes);
         org.mockito.Mockito.lenient().when(channelSecretService.isConfigured()).thenReturn(true);
         org.mockito.Mockito.lenient().when(channelSecretService.encrypt("provider-key")).thenReturn("encrypted-provider-key");
+    }
+
+    @Test
+    void probeFailureDoesNotExposeProviderExceptionSecretsInResponseOrLogs() {
+        Channel channel = channel("chat-model");
+        channel.setId(45L);
+        when(channelMapper.selectById(45L)).thenReturn(channel);
+        var gateway = org.mockito.Mockito.mock(com.transit.provider.ProviderGateway.class);
+        when(providerGatewayFactory.resolve(channel.getType())).thenReturn(gateway);
+        when(gateway.chatCompletions(any(), any(), any(), any()))
+                .thenReturn(reactor.core.publisher.Mono.error(new IllegalStateException("secret-provider-key")));
+
+        var result = service.testModel(45L, java.util.Map.of("providerModelName", "chat-model"));
+
+        assertThat(result).containsEntry("status", "FAILED");
+        assertThat(result.toString()).doesNotContain("secret-provider-key");
+        org.mockito.Mockito.mockingDetails(jdbcTemplate).getInvocations().forEach(invocation ->
+                assertThat(java.util.Arrays.deepToString(invocation.getArguments())).doesNotContain("secret-provider-key"));
     }
 
     @Test
@@ -55,7 +76,7 @@ class AdminChannelServiceTests {
         when(modelMappingMapper.selectList(any())).thenReturn(List.of(
                 ModelMapping.builder().channelModelName("image-model").protocols("images").build(),
                 ModelMapping.builder().channelModelName("chat-model").protocols("chat-completions").build()));
-        AdminChannelService spy = org.mockito.Mockito.spy(service);
+        ChannelProbeService spy = org.mockito.Mockito.spy(probes);
         org.mockito.Mockito.doReturn(java.util.Map.of("healthStatus", "HEALTHY", "latencyMs", 1))
                 .when(spy).testModel(org.mockito.ArgumentMatchers.eq(42L), any());
         spy.test(42L);
@@ -75,7 +96,7 @@ class AdminChannelServiceTests {
                 .protocols("chat-completions").pricingStatus("VERIFIED").build();
         when(channelMapper.selectById(43L)).thenReturn(channel);
         when(modelMappingMapper.selectList(any())).thenReturn(List.of(dynamic, stable, backup));
-        AdminChannelService spy = org.mockito.Mockito.spy(service);
+        ChannelProbeService spy = org.mockito.Mockito.spy(probes);
         org.mockito.Mockito.doReturn(java.util.Map.of("status", "UPSTREAM_ERROR", "healthStatus", "DEGRADED", "latencyMs", 1))
                 .when(spy).testModel(43L, java.util.Map.of("providerModelName", "stable-model", "prompt", "你是什么模型", "timeoutSeconds", 60));
         org.mockito.Mockito.doReturn(java.util.Map.of("status", "SUCCESS", "healthStatus", "HEALTHY", "latencyMs", 2))
@@ -115,7 +136,7 @@ class AdminChannelServiceTests {
         when(modelMappingMapper.selectList(any())).thenReturn(List.of(
                 imageMapping(1L, "gpt-image-2"), imageMapping(2L, "gpt-image-2-1K"),
                 imageMapping(3L, "gpt-image-2-2K"), imageMapping(4L, "gpt-image-2-4K")));
-        AdminChannelService spy = org.mockito.Mockito.spy(service);
+        ChannelProbeService spy = org.mockito.Mockito.spy(probes);
         org.mockito.Mockito.doReturn(java.util.Map.of("status", "SUCCESS", "healthStatus", "HEALTHY", "latencyMs", 2))
                 .when(spy).testModel(45L, java.util.Map.of("providerModelName", "gpt-image-2-1K",
                         "prompt", "你是什么模型", "timeoutSeconds", 120));

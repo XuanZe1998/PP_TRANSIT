@@ -154,3 +154,6 @@
 2026-11-05：邀请有礼与后台个人优惠券列表沿用 ReferralConsole 的 PagedTable 和 ListPagination。个人券、代理资料和提现记录通过数据库 COUNT + LIMIT/OFFSET 分页，每页默认 10，可选 10/20/50/100。后台代理与提现接口以 listPage=true 启用兼容分页。用户个人券和提现按登录用户隔离，后台个人券支持按完整用户名、邮箱或券码查询。
 
 2026-11-05：后台代理底价与代理售价共用 AgentSubscriptionPrices 的 PagedTable 和 ListPagination。代理订阅差价明细使用独立分页表，按登录代理隔离。上述接口按相同授权和筛选条件执行 COUNT + LIMIT/OFFSET，默认 10 条，可选 10/20/50/100。公开和登录后的订阅目录均按原商品分页，仅在当前页应用对应代理价。
+
+
+2026-11-06：网关管理查询状态迁入 `features/model-gateway/useGatewayData.ts`，`ModelGateway.vue` 的分组、模型、运行记录仍使用原 `PagedTable` + `ListPagination` 及稳定 list-id；默认10，可选10/20/50/100，全部由原服务端校验最多200条。筛选、排序和分页继续由现有网关接口完成，真实 total 不从当前页长度推导。批量处理结果仍使用 `PagedTable`。站点/分组远程选项沿用每批100条服务端搜索与加载更多；只有请求成功才推进页码。请求版本防止旧筛选响应覆盖当前列表；汇总失败不影响已返回列表的分页总数。

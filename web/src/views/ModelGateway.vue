@@ -52,27 +52,30 @@
 <script setup lang="ts">
 import PagedTable from '@/components/PagedTable.vue'
 import AdminPageToolbar from '@/components/AdminPageToolbar.vue'
-import {ref,reactive,onMounted,onBeforeUnmount} from 'vue'
+import { ref, onMounted } from 'vue'
+import { useGatewayData } from '@/features/model-gateway/useGatewayData'
+import { useGatewayJobs } from '@/features/model-gateway/useGatewayJobs'
+import { useGatewaySettings } from '@/features/model-gateway/useGatewaySettings'
 import {useRoute,useRouter} from 'vue-router'
 import {ElMessage,ElMessageBox} from 'element-plus'
 import http,{getHttpErrorMessage} from '../utils/http'
-import {useListPage} from '../utils/listPage'
 import ListPagination from '../components/ListPagination.vue'
 import NewApiConnect from '../components/NewApiConnect.vue'
 import GatewayPricingEditor from '../components/GatewayPricingEditor.vue'
 import GatewayModelEditor from '../components/GatewayModelEditor.vue'
 const route=useRoute(),router=useRouter()
 const tab=ref(['models','catalog'].includes(String(route.query.tab))?'models':['health','records'].includes(String(route.query.tab))?'records':'channels')
-const rows=ref<any[]>([]),siteOptions=ref<any[]>([]),groupOptions=ref<any[]>([]),siteId=ref<number>(),groupId=ref<number>(),query=ref(''),modelState=ref(''),selected=ref<any[]>([])
 const modelEditor=ref<InstanceType<typeof GatewayModelEditor>>()
-const summary=ref<Record<string,number>>({})
+const { rows, siteOptions, groupOptions, siteId, groupId, query, modelState, selected, summary,
+  recordKind, loading, error, paging, siteTotal, groupTotal, siteQuery, groupQuery,
+  searchSites, searchGroups, load, reloadAll, filterChanged, siteChanged } = useGatewayData(tab)
 const metrics=[{key:'models',label:'模型总数',state:''},{key:'published',label:'已发布',state:'published'},{key:'pending_price',label:'待定价',state:'pending-price'},{key:'pending_publish',label:'待发布',state:'pending-publish'}]
 function showMetric(state:string){tab.value='models';modelState.value=state;tabChanged()}
-const recordKind=ref('jobs')
-const loading=ref(false),working=ref(false),error=ref(''),detail=ref<any>(null),pricingEditor=ref<InstanceType<typeof GatewayPricingEditor>>()
-const paging=useListPage('gateway-'+tab.value),settingsOpen=ref(false),settingsKind=ref('site'),settingsId=ref(0),settingsError=ref('')
-const settings=reactive({name:'',enabled:false,syncEnabled:true,apiKey:'',publicName:'',publicCode:'',badgeText:'',badgeColor:'#2563eb',inheritDisplay:true})
-const accountAuth=reactive({email:'',password:'',totpCode:'',emailPreview:'',authenticated:false,status:'ANONYMOUS',lastError:''})
+const working=ref(false),detail=ref<any>(null),pricingEditor=ref<InstanceType<typeof GatewayPricingEditor>>()
+
+const { trackJob, startPolling } = useGatewayJobs(rows, loading, load, reloadAll)
+const { settingsOpen, settingsKind, settingsId, settingsError, settings, accountAuth, editSite, editGroup, saveSettings, accountStatusMessage, clearSettingsSecrets, authorizeAiApiBank, clearAiApiBankAuthorization } = useGatewaySettings(siteId, siteOptions, working, reloadAll, trackJob)
+onMounted(async () => { await reloadAll(); startPolling() })
 const batchResults=ref<any[]>([]),batchOpen=ref(false)
 const deletingGroupId=ref(undefined as number | undefined)
 async function cancelPublication(id:number){try{await http.delete(`/api/admin/api/gateway/models/${id}/publication`);await load()}catch(e){ElMessage.error(getHttpErrorMessage(e,'取消失败'))}}
@@ -80,34 +83,13 @@ const statusNames:Record<string,string>={ERROR:'失败',FAILED:'失败',SUCCESS:
 function phaseLabel(value:string){return ({GROUPS:'同步上游分组',MODELS:'读取模型目录',PRICING:'读取采购价格',APPLY:'应用目录与价格',CATALOG:'读取上游目录',TEST:'连通性测试'} as Record<string,string>)[value]||'历史阶段未记录'}
 function statusLabel(value:string){return statusNames[value]||value||'未执行'}
 function statusType(value:string,enabled:boolean):'danger'|'warning'|'success'|'info'{return ['ERROR','FAILED','GROUP_REMOVED','DISABLED_MISSING'].includes(value)?'danger':['PARTIAL','MISSING_CONFIRMATION','MISSING','CREDENTIAL_MISSING'].includes(value)?'warning':value==='SUCCESS'?'success':'info'}
-const siteTotal=ref(0),groupTotal=ref(0),siteQuery=ref(''),groupQuery=ref('')
-let sitePage=1,groupPage=1,siteGeneration=0,groupGeneration=0
-async function searchSites(query:string,more=false){const generation=++siteGeneration;siteQuery.value=query;sitePage=more?sitePage+1:1;const {data}=await http.get('/api/admin/api/gateway/sites',{params:{query,page:sitePage,size:100}});if(generation!==siteGeneration)return;siteOptions.value=more?[...siteOptions.value,...data.items]:data.items;siteTotal.value=data.total}
-async function searchGroups(query:string,more=false){const generation=++groupGeneration;groupQuery.value=query;groupPage=more?groupPage+1:1;const {data}=await http.get('/api/admin/api/gateway/groups',{params:{query,siteId:siteId.value,page:groupPage,size:100}});if(generation!==groupGeneration)return;groupOptions.value=more?[...groupOptions.value,...data.items]:data.items;groupTotal.value=data.total}
-async function options(){await Promise.all([searchSites(''),searchGroups('')])}
-async function load(){loading.value=true;error.value='';try{const path=tab.value==='channels'?'groups':tab.value==='records'?recordKind.value:'models';const{data}=await http.get('/api/admin/api/gateway/'+path,{params:{siteId:siteId.value,groupId:groupId.value,query:query.value,state:modelState.value,page:paging.page,size:paging.size,all:paging.all}});rows.value=data.items;summary.value=(await http.get('/api/admin/api/gateway/summary',{params:{siteId:siteId.value,groupId:groupId.value}})).data;paging.total=data.total;paging.page=data.page;selected.value=[]}catch(e){if(paging.all){paging.all=false;await load()}else error.value=getHttpErrorMessage(e,'读取失败')}finally{loading.value=false}}
-async function reloadAll(){await options();await load()}
-function filterChanged(){paging.page=1;load()}
-async function siteChanged(){groupId.value=undefined;await options();filterChanged()}
 function tabChanged(){router.replace({query:{...route.query,tab:tab.value}});filterChanged()}
-const pendingGroupJobs=ref<string[]>([])
-async function checkGroupJobs(){for(const id of [...pendingGroupJobs.value]){try{const {data}=await http.get(`/api/admin/api/gateway/jobs/${id}`);if(!['QUEUED','RUNNING'].includes(data.status)){pendingGroupJobs.value=pendingGroupJobs.value.filter(x=>x!==id);if(data.status==='SUCCESS')ElMessage.success(data.message);else if(data.status==='PARTIAL')ElMessage.warning(data.message);else ElMessage.error(data.message||'分组同步失败');await reloadAll()}}catch{pendingGroupJobs.value=pendingGroupJobs.value.filter(x=>x!==id)}}}
-async function syncGroups(id?:number){if(!id)return;working.value=true;try{const {data}=await http.post(`/api/admin/api/gateway/sites/${id}/sync-groups`);pendingGroupJobs.value.push(data.jobId);ElMessage.success('上游分组同步已提交，可在运行记录查看结果');await reloadAll()}catch(e){ElMessage.error(getHttpErrorMessage(e,'分组同步失败'))}finally{working.value=false}}
-async function synchronize(id?:number){working.value=true;try{const {data}=await http.post('/api/admin/api/gateway/sync',{siteId:siteId.value,groupId:typeof id==='number'?id:groupId.value});pendingGroupJobs.value.push(...data.jobs.filter((j:any)=>j.siteId&&j.jobId).map((j:any)=>j.jobId));const failures=data.jobs.filter((j:any)=>j.error);if(failures.length)ElMessage.error(failures.map((j:any)=>`分组 ${j.groupId}：${j.error}`).join('；'));else ElMessage.success('同步任务已提交，可在运行记录查看进度');await load()}catch(e){ElMessage.error(getHttpErrorMessage(e,'提交失败'))}finally{working.value=false}}
+async function syncGroups(id?:number){if(!id)return;working.value=true;try{const {data}=await http.post(`/api/admin/api/gateway/sites/${id}/sync-groups`);trackJob(data.jobId);ElMessage.success('上游分组同步已提交，可在运行记录查看结果');await reloadAll()}catch(e){ElMessage.error(getHttpErrorMessage(e,'分组同步失败'))}finally{working.value=false}}
+async function synchronize(id?:number){working.value=true;try{const {data}=await http.post('/api/admin/api/gateway/sync',{siteId:siteId.value,groupId:typeof id==='number'?id:groupId.value});data.jobs.filter((j:any)=>j.jobId).forEach((j:any)=>trackJob(j.jobId));const failures=data.jobs.filter((j:any)=>j.error);if(failures.length)ElMessage.error(failures.map((j:any)=>`分组 ${j.groupId}：${j.error}`).join('；'));else ElMessage.success('同步任务已提交，可在运行记录查看进度');await load()}catch(e){ElMessage.error(getHttpErrorMessage(e,'提交失败'))}finally{working.value=false}}
 function healthLabel(value:string){return ({CREDENTIAL_MISSING:'待配置 Key',VERIFYING:'待核验',HEALTHY:'健康',UNTESTED:'待测试',DEGRADED:'测试异常',DISABLED:'认证失败'} as Record<string,string>)[value]||value||'待测试'}
 async function test(row:any){working.value=true;try{const {data}=await http.post(`/api/admin/api/gateway/groups/${row.id}/test`,{},{timeout:180000});if(data.status==='SUCCESS')ElMessage.success(`测试成功：${data.model||''}`);else ElMessage.error(`测试失败：${data.error||healthLabel(data.healthStatus)}`)}catch(e){ElMessage.error(getHttpErrorMessage(e,'测试失败'))}finally{await load();working.value=false}}
 function editPublicName(row:any){editSite(row)}
-function editSite(row?:any){const s=row?{id:row.site_id,name:row.site_name,public_name:row.site_public_name||row.public_name,public_code:row.site_public_code||row.public_code,badge_text:row.site_badge_text||row.badge_text,badge_color:row.site_badge_color||row.badge_color}:siteOptions.value.find(x=>x.id===siteId.value);if(!s)return;settingsId.value=s.id;settingsKind.value='site';Object.assign(settings,{name:s.name,publicName:s.public_name||'',publicCode:s.public_code||'',badgeText:s.badge_text||'',badgeColor:s.badge_color||'#2563eb',apiKey:''});const auth=siteOptions.value.find(x=>x.id===s.id)||{};Object.assign(accountAuth,{email:'',password:'',totpCode:'',emailPreview:auth.account_email_preview||'',authenticated:!!auth.account_authenticated,status:auth.account_auth_status||'ANONYMOUS',lastError:auth.account_auth_error||''});settingsError.value='';settingsOpen.value=true}
-function editGroup(row:any){settingsId.value=row.id;settingsKind.value='group';Object.assign(settings,{name:row.name,enabled:!!row.enabled,syncEnabled:!!row.sync_enabled,apiKey:'',publicName:'',publicCode:'',badgeText:'',badgeColor:'#2563eb',inheritDisplay:true});settingsError.value='';settingsOpen.value=true}
-async function saveSettings(){working.value=true;settingsError.value='';try{await http.put(`/api/admin/api/gateway/${settingsKind.value==='site'?'sites':'groups'}/${settingsId.value}`,settings);settings.apiKey='';settingsOpen.value=false;await reloadAll()}catch(e){settingsError.value=getHttpErrorMessage(e,'保存失败')}finally{working.value=false}}
-function accountStatusMessage(){if(accountAuth.status==='READY')return `账号目录已授权${accountAuth.emailPreview?'：'+accountAuth.emailPreview:''}`;if(accountAuth.status==='TWO_FACTOR_REQUIRED')return '请输入 AiAPIBank 两步验证码完成授权';if(accountAuth.status==='ERROR')return accountAuth.lastError||'账号授权已失效，请重新登录';return '当前使用匿名模型广场目录'}
-function clearSettingsSecrets(){settings.apiKey='';accountAuth.password='';accountAuth.totpCode=''}
-async function authorizeAiApiBank(){working.value=true;settingsError.value='';try{const payload=accountAuth.status==='TWO_FACTOR_REQUIRED'?{totpCode:accountAuth.totpCode}:{email:accountAuth.email,password:accountAuth.password};const{data}=await http.post(`/api/admin/api/gateway/sites/${settingsId.value}/aiapibank/authorize`,payload,{timeout:60000});accountAuth.password='';accountAuth.totpCode='';accountAuth.emailPreview=data.accountEmailPreview||accountAuth.emailPreview;accountAuth.authenticated=!!data.authenticated;accountAuth.status=data.status;if(data.requiresTwoFactor){ElMessage.warning('请输入两步验证码完成授权')}else{if(data.jobId)pendingGroupJobs.value.push(data.jobId);ElMessage.success('账号授权成功，专用分组同步已提交');await reloadAll()}}catch(e){settingsError.value=getHttpErrorMessage(e,'AiAPIBank 登录授权失败')}finally{accountAuth.password='';working.value=false}}
-async function clearAiApiBankAuthorization(){working.value=true;settingsError.value='';try{await http.delete(`/api/admin/api/gateway/sites/${settingsId.value}/aiapibank/authorization`);Object.assign(accountAuth,{email:'',password:'',totpCode:'',emailPreview:'',authenticated:false,status:'ANONYMOUS',lastError:''});ElMessage.success('账号授权已移除，后续使用匿名目录');await reloadAll()}catch(e){settingsError.value=getHttpErrorMessage(e,'移除账号授权失败')}finally{working.value=false}}
 async function publish(){working.value=true;try{batchResults.value=(await http.post('/api/admin/api/gateway/models/'+(modelState.value==='pending-import'?'import':'publish'),modelState.value==='pending-import'?selected.value.map(x=>({channelId:x.channel_id,model:x.upstream_model_name})):{ids:selected.value.map(x=>x.id)})).data;batchOpen.value=true;await load()}catch(e){ElMessage.error(getHttpErrorMessage(e,'发布失败'))}finally{working.value=false}}
-let timer:ReturnType<typeof setInterval>|undefined
-onMounted(async()=>{await reloadAll();timer=setInterval(()=>{if(pendingGroupJobs.value.length)checkGroupJobs();if(!loading.value&&rows.value.some(r=>['QUEUED','RUNNING'].includes(r.status||r.sync_status)))load()},3000)})
-onBeforeUnmount(()=>{if(timer)clearInterval(timer)})
 async function deleteGroup(row:any){
  if(working.value || deletingGroupId.value!==undefined || row.enabled)return
  deletingGroupId.value=row.id
