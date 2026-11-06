@@ -35,7 +35,7 @@ describe('console partial-loading resilience', () => {
 
 describe('console layout contracts', () => {
   it('uses a draggable 90-day token timeline and three persistent playground columns', () => {
-    const userConsole = source('src/views/UserConsole.vue')
+    const userConsole = source('src/views/UserConsole.vue') + source('src/features/playground/PlaygroundPanel.vue')
     const timeline = source('src/components/UsageTimelineChart.vue')
     const css = source('src/style.css')
     expect(userConsole).toContain(':days="90"')
@@ -55,7 +55,7 @@ describe('console layout contracts', () => {
   })
 
   it('keeps the user console stable when browser developer tools narrow the viewport', () => {
-    const userConsole = source('src/views/UserConsole.vue')
+    const userConsole = source('src/views/UserConsole.vue') + source('src/features/playground/PlaygroundPanel.vue')
     const css = source('src/style.css')
     expect(userConsole).toContain('console-status-note')
     expect(userConsole).toContain('HomeFilled')

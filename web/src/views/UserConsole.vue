@@ -207,160 +207,7 @@
 
         <UserKeysPanel v-else-if="current.key === 'keys'" :state="keysFeature" />
 
-        <section v-else-if="current.key === 'playground'" class="playground-layout">
-          <section class="console-panel playground-request-panel">
-            <div class="panel-head">
-              <div>
-                <h2>在线调试</h2>
-                <p>选择 Key 和模型，快速验证调用效果。</p>
-              </div>
-            </div>
-            <el-form label-position="top">
-              <el-form-item label="API Key">
-                <el-select
-                  v-model="playground.tokenId"
-                  placeholder="选择当前账户的 API Key"
-                  style="width: 100%"
-                  @change="syncPlaygroundModel()"
-                >
-                  <el-option
-                    v-for="token in dashboard.tokens"
-                    :key="token.id"
-                    :label="`${token.name || `Key #${token.id}`} (${keyPreview(token)})`"
-                    :value="token.id"
-                    :disabled="!token.enabled"
-                  />
-                </el-select>
-              </el-form-item>
-              <el-form-item label="模型">
-                <el-select v-model="playground.model" filterable placeholder="选择后台已发布的可调用模型" style="width: 100%">
-                  <el-option
-                    v-for="model in playgroundModels"
-                    :key="model.publicName"
-                    :label="model.providerGroup?.channel === 'AiAPIBank' ? `${model.upstreamModelName || model.publicName} · ${String(model.providerGroup.name || '')} · AiAPIBank` : `${model.publicName} · ${model.sourceName || '平台智能路由'}`"
-                    :value="model.publicName"
-                  />
-                  <template #empty>
-                    <div class="playground-model-empty">当前 API Key 没有可调用模型</div>
-                  </template>
-                </el-select>
-                <div v-if="selectedModelDetail" class="playground-model-detail">
-                  <div class="playground-model-summary"><span>{{ selectedModelDetail.sourceName || '平台智能路由' }}</span><span>{{ selectedModelDetail.routeCount }} 条可用路由</span></div>
-                  <ModelSalePricing :model="selectedModelDetail" compact />
-                </div>
-              </el-form-item>
-              <el-alert
-                v-if="dashboard.modelCatalog.length === 0"
-                title="管理员尚未发布可调用模型，或所有模型渠道当前不可用。"
-                type="warning"
-                :closable="false"
-                show-icon
-              />
-              <el-form-item label="Prompt">
-                <el-input
-                  v-model="playground.prompt"
-                  type="textarea"
-                  :rows="6"
-                  maxlength="20000"
-                  show-word-limit
-                  placeholder="输入需要发送给模型的内容"
-                />
-              </el-form-item>
-              <el-button type="primary" class="full-button" :loading="playgroundLoading" @click="sendPlaygroundRequest">
-                发送请求
-              </el-button>
-            </el-form>
-          </section>
-          <section class="console-panel response-panel">
-            <div class="playground-result-head">
-              <h2>模型回答</h2>
-            </div>
-            <el-alert
-              v-if="playgroundError"
-              class="playground-result-error"
-              type="error"
-              :title="playgroundError"
-              :closable="false"
-              show-icon
-            />
-            <el-empty
-              v-else-if="!playgroundResponse"
-              description="发送请求后在这里查看模型回答"
-            />
-            <div v-else class="playground-answer-scroll">
-              <pre>{{ playgroundResponse }}</pre>
-            </div>
-            <el-collapse
-              v-if="playgroundRawResponse"
-              v-model="playgroundRawSections"
-              class="playground-raw-collapse"
-            >
-              <el-collapse-item title="查看原始响应 JSON" name="raw">
-                <div class="playground-raw-scroll">
-                  <pre>{{ playgroundRawResponse }}</pre>
-                </div>
-              </el-collapse-item>
-            </el-collapse>
-          </section>
-
-          <section class="console-panel playground-billing-panel">
-            <div class="playground-result-head">
-              <div>
-                <h2>本次用量与费用</h2>
-                <p>Token、单价与扣费均由服务端计算。</p>
-              </div>
-              <el-tag v-if="playgroundUsage?.estimated" type="warning">Token 为服务端估算</el-tag>
-              <el-tag v-else-if="playgroundUsage" type="success">服务端已结算</el-tag>
-            </div>
-            <el-empty v-if="!playgroundUsage" description="请求完成后显示 Token、单价与费用" :image-size="76" />
-            <section v-else class="playground-usage-summary">
-              <div class="playground-usage-grid">
-                <article>
-                  <span>输入 Token</span>
-                  <strong>{{ number(playgroundUsage.promptTokens) }}</strong>
-                </article>
-                <article>
-                  <span>输出 Token</span>
-                  <strong>{{ number(playgroundUsage.completionTokens) }}</strong>
-                </article>
-                <article>
-                  <span>缓存读取 Token</span>
-                  <strong>{{ number(playgroundUsage.cacheReadTokens) }}</strong>
-                </article>
-                <article>
-                  <span>缓存写入 Token</span>
-                  <strong>{{ number(playgroundUsage.cacheWriteTokens) }}</strong>
-                </article>
-                <article>
-                  <span>缓存合计 Token</span>
-                  <strong>{{ number(playgroundUsage.cachedTokens) }}</strong>
-                </article>
-                <article class="total-cost">
-                  <span>本次实际费用</span>
-                  <strong>{{ formatUsd(playgroundUsage.totalAmount) }}</strong>
-                </article>
-              </div>
-              <div class="playground-rate-grid">
-                <div><span>计价挡位</span><b>{{ playgroundUsage.priceTier || '默认挡位' }}</b></div>
-                <div><span>售价组 / 单位</span><b>{{ playgroundUsage.saleGroupName || '本站售价' }} · {{ playgroundUsage.priceUnit || 'M' }}</b></div>
-                <div><span>价格后缀</span><b>{{ playgroundUsage.priceSuffix || 'USD / 1M Token' }}</b></div>
-                <div><span>输入/未命中单价</span><b>{{ formatPerMillionUsd(playgroundUsage.inputPricePerMillion, playgroundUsage.priceUnit, playgroundUsage.priceSuffix) }}</b></div>
-                <div><span>输出单价</span><b>{{ formatPerMillionUsd(playgroundUsage.outputPricePerMillion, playgroundUsage.priceUnit, playgroundUsage.priceSuffix) }}</b></div>
-                <div><span>缓存命中单价</span><b>{{ formatPerMillionUsd(playgroundUsage.cacheReadPricePerMillion, playgroundUsage.priceUnit, playgroundUsage.priceSuffix) }}</b></div>
-                <div><span>缓存写入单价</span><b>{{ formatPerMillionUsd(playgroundUsage.cacheWritePricePerMillion, playgroundUsage.priceUnit, playgroundUsage.priceSuffix) }}</b></div>
-              </div>
-              <div class="playground-cost-breakdown">
-                <span>输入费用 {{ formatUsd(playgroundUsage.inputAmount) }}</span>
-                <span>输出费用 {{ formatUsd(playgroundUsage.outputAmount) }}</span>
-                <span>缓存命中费用 {{ formatUsd(playgroundUsage.cacheReadAmount) }}</span>
-                <span>缓存写入费用 {{ formatUsd(playgroundUsage.cacheWriteAmount) }}</span>
-              </div>
-              <p class="playground-billing-note">
-                Token、单价和扣费均由服务端根据管理员模型配置计算并落账，浏览器不参与计费。
-              </p>
-            </section>
-          </section>
-        </section>
+        <PlaygroundPanel v-else-if="current.key === 'playground'" :state="playgroundFeature" :dashboard="dashboard" />
 
         <ProfileCenter v-else-if="current.key === 'profile'" />
         <DeveloperDocs v-else-if="current.key === 'docs'" />
@@ -396,6 +243,8 @@
 </template>
 
 <script setup lang="ts">
+import PlaygroundPanel from '@/features/playground/PlaygroundPanel.vue';
+import { usePlayground } from '@/features/playground/usePlayground';
 import UserKeysPanel from '@/features/user-console/UserKeysPanel.vue';
 import UserKeyDialogs from '@/features/user-console/UserKeyDialogs.vue';
 import UserUsagePanel from '@/features/user-console/UserUsagePanel.vue';
@@ -410,7 +259,7 @@ import PagedList from "@/components/PagedList.vue";
 import PagedTable from '@/components/PagedTable.vue';
 import PaymentActionDialog from '@/components/PaymentActionDialog.vue';
 
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { Close, Compass, DataLine, Document, HomeFilled, Key, MagicStick, Menu, Monitor, Promotion, ShoppingCart, SwitchButton, Tickets, Wallet, User } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
@@ -418,53 +267,18 @@ import { clearAuth, getUser } from '@/utils/auth';
 import http, { getHttpErrorMessage } from '@/utils/http';
 import { formatPerMillionUsd, formatUsd, type AmountUnits } from '@/utils/money';
 
-import ModelSalePricing from '@/components/ModelSalePricing.vue';
 import DeveloperDocs from '@/components/DeveloperDocs.vue';
 import ProfileCenter from '@/components/ProfileCenter.vue';
 import AccountMenu from '@/components/AccountMenu.vue';
 import UsageTimelineChart from '@/components/UsageTimelineChart.vue';
 import ModelProbePanel from '@/components/ModelProbePanel.vue';
-import { modelsAllowedForToken, normalizeModelCatalog, type CallableModel } from '@/utils/modelCatalog';
+import { normalizeModelCatalog, type CallableModel } from '@/utils/modelCatalog';
 
 const router = useRouter()
 const route = useRoute()
 const mobileMenuOpen = ref(false)
 const currentUser = computed(() => getUser())
 const dashboard = ref<any>({ stats: {}, tokens: [], recentLogs: [], models: [], modelCatalog: [] as CallableModel[] })
-const playgroundLoading = ref(false)
-const playgroundResponse = ref('')
-const playgroundRawResponse = ref('')
-const playgroundError = ref('')
-const playgroundRawSections = ref<string[]>([])
-type PlaygroundUsage = {
-  promptTokens: number
-  completionTokens: number
-  cachedTokens: number
-  cacheReadTokens: number
-  cacheWriteTokens: number
-  estimated: boolean
-  priceTier: string
-  saleGroupName: string
-  priceUnit: string
-  priceSuffix: string
-  inputPricePerMillion: number | string
-  outputPricePerMillion: number | string
-  cachedPricePerMillion: number | string
-  cacheReadPricePerMillion: number | string
-  cacheWritePricePerMillion: number | string
-  inputAmount: AmountUnits
-  outputAmount: AmountUnits
-  cachedAmount: AmountUnits
-  cacheReadAmount: AmountUnits
-  cacheWriteAmount: AmountUnits
-  totalAmount: AmountUnits
-}
-const playgroundUsage = ref<PlaygroundUsage | null>(null)
-const playground = ref({
-  tokenId: undefined as number | undefined,
-  model: '',
-  prompt: ''
-})
 const navItems = [
   { key: 'overview', label: '总览', path: '/console', icon: DataLine, title: '业务总览', eyebrow: '用户中心', subtitle: '查看账户额度、调用趋势、快捷入口和最近活动。', action: '刷新', actionPath: '/console' },
   { key: 'keys', label: 'API Key', path: '/console/keys', icon: Key, title: 'API Key 管理', eyebrow: '凭证管理', subtitle: '创建和管理不同环境的调用凭证。', action: '新建 Key', actionPath: '/console/keys' },
@@ -488,14 +302,8 @@ const primaryAccessKey = computed(() => {
   const tokens = dashboard.value.tokens || []
   return tokens.find((token: any) => token.enabled) || tokens[0] || null
 })
-const selectedPlaygroundToken = computed(() => (dashboard.value.tokens || [])
-  .find((token: any) => Number(token.id) === Number(playground.value.tokenId)) || null)
-const playgroundModels = computed<CallableModel[]>(() => modelsAllowedForToken(
-  dashboard.value.modelCatalog || [],
-  selectedPlaygroundToken.value,
-))
-const selectedModelDetail = computed<CallableModel | null>(() => playgroundModels.value
-  .find(model => model.publicName === playground.value.model) || null)
+const playgroundFeature = usePlayground(dashboard, current, loadDashboard)
+const { sendPlaygroundRequest, syncSelection } = playgroundFeature
 const walletFeature = useUserWallet(dashboard, current, loadDashboard)
 const { loadWallet, openRechargePanel, paymentDialogVisible, paymentAction, rechargeForm } = walletFeature
 const usageFeature = useUserUsage(current)
@@ -535,8 +343,14 @@ const logout = () => {
   router.push('/')
 }
 
+let dashboardGeneration = 0
+let disposed = false
+onBeforeUnmount(() => { disposed = true; dashboardGeneration++ })
 async function loadDashboard() {
+  if (disposed) return
+  const version = ++dashboardGeneration
   const res = await http.get('/api/user/dashboard')
+  if (disposed || version !== dashboardGeneration) return
   const modelCatalog = normalizeModelCatalog(res.data?.modelCatalog, res.data?.models)
   dashboard.value = {
     stats: res.data?.stats || {},
@@ -545,139 +359,7 @@ async function loadDashboard() {
     models: modelCatalog.map(model => model.publicName),
     modelCatalog
   }
-  const selectedTokenStillEnabled = dashboard.value.tokens.some((token: any) =>
-    Number(token.id) === Number(playground.value.tokenId) && token.enabled)
-  if (!selectedTokenStillEnabled) {
-    playground.value.tokenId = dashboard.value.tokens.find((token: any) => token.enabled)?.id
-  }
-  const requestedModel = route.query.model?.toString().trim()
-  if (requestedModel && dashboard.value.models.includes(requestedModel)) {
-    const matchingToken = dashboard.value.tokens.find((token: any) =>
-      token.enabled && modelsAllowedForToken(modelCatalog, token)
-        .some(model => model.publicName === requestedModel))
-    if (matchingToken) playground.value.tokenId = matchingToken.id
-  }
-  syncPlaygroundModel(requestedModel || playground.value.model)
-}
-
-function syncPlaygroundModel(preferredModel = playground.value.model) {
-  const available = playgroundModels.value
-  if (preferredModel && available.some(model => model.publicName === preferredModel)) {
-    playground.value.model = preferredModel
-    return
-  }
-  playground.value.model = available[0]?.publicName || ''
-}
-
-async function sendPlaygroundRequest() {
-  if (!playground.value.tokenId) {
-    ElMessage.warning('请先选择当前账户的 API Key')
-    return
-  }
-  if (!playground.value.model) {
-    ElMessage.warning('请先选择模型')
-    return
-  }
-  if (!playground.value.prompt.trim()) {
-    ElMessage.warning('请输入 Prompt')
-    return
-  }
-  playgroundLoading.value = true
-  playgroundResponse.value = ''
-  playgroundRawResponse.value = ''
-  playgroundError.value = ''
-  playgroundRawSections.value = []
-  playgroundUsage.value = null
-  try {
-    const response = await http.post('/api/user/playground', playground.value, { timeout: 120_000 })
-    playgroundResponse.value = extractPlaygroundResult(response.data)
-    playgroundRawResponse.value = formatPlaygroundRawResponse(response.data)
-    playgroundUsage.value = extractPlaygroundUsage(response.data)
-    if (!playgroundResponse.value) {
-      playgroundError.value = '服务端没有返回可展示的模型回答'
-    }
-    await loadDashboard()
-  } catch (error: any) {
-    const payload = error?.response?.data
-    playgroundError.value = getHttpErrorMessage(error, '模型调用失败')
-    playgroundRawResponse.value = JSON.stringify(payload || { error: '请求失败' }, null, 2)
-    playgroundUsage.value = null
-  } finally {
-    playgroundLoading.value = false
-  }
-}
-
-function extractPlaygroundResult(data: any) {
-  const choice = data?.choices?.[0]
-  const message = choice?.message
-  const candidates = [
-    message?.content,
-    message?.reasoning_content,
-    message?.reasoning,
-    choice?.text,
-    data?.output_text
-  ]
-  for (const candidate of candidates) {
-    const text = extractTextContent(candidate)
-    if (text) return text
-  }
-  return ''
-}
-
-function extractTextContent(content: any): string {
-  if (typeof content === 'string') return content.trim()
-  if (!Array.isArray(content)) return ''
-  return content
-    .map(part => typeof part === 'string' ? part : part?.text)
-    .filter((part): part is string => typeof part === 'string' && Boolean(part.trim()))
-    .join('\n')
-    .trim()
-}
-
-function formatPlaygroundRawResponse(data: any) {
-  if (!data || typeof data !== 'object') return JSON.stringify(data ?? null, null, 2)
-  const responseOnly = { ...data }
-  delete responseOnly.usage
-  delete responseOnly.billing
-  return JSON.stringify(responseOnly, null, 2)
-}
-
-function extractPlaygroundUsage(data: any): PlaygroundUsage | null {
-  const usage = data?.usage
-  const billing = data?.billing
-  if (!usage || !billing) return null
-  const promptTokens = Math.max(0, Number(usage.prompt_tokens || 0))
-  const completionTokens = Math.max(0, Number(usage.completion_tokens || 0))
-  const cachedFromDetails = Number(usage.prompt_tokens_details?.cached_tokens || 0)
-    + Number(usage.cache_read_input_tokens || 0)
-    + Number(usage.cache_creation_input_tokens || 0)
-  const cacheReadTokens = Math.max(0,
-    Number(billing.cache_read_tokens ?? usage.prompt_tokens_details?.cached_tokens ?? usage.cache_read_input_tokens ?? 0))
-  const cacheWriteTokens = Math.max(0,
-    Number(billing.cache_write_tokens ?? usage.cache_creation_input_tokens ?? 0))
-  return {
-    promptTokens,
-    completionTokens,
-    cachedTokens: Math.max(0, Number(billing.cached_tokens ?? cachedFromDetails)),
-    cacheReadTokens,
-    cacheWriteTokens,
-    estimated: Boolean(usage.estimated),
-    priceTier: String(billing.price_tier || '默认挡位'),
-    saleGroupName: String(billing.sale_group_name || '本站售价'),
-    priceUnit: String(billing.price_unit || 'M'),
-    priceSuffix: String(billing.price_suffix || 'USD / 1M Token'),
-    inputPricePerMillion: billing.input_price_per_million ?? 0,
-    outputPricePerMillion: billing.output_price_per_million ?? 0,
-    cachedPricePerMillion: billing.cached_price_per_million ?? 0,
-    cacheReadPricePerMillion: billing.cache_read_price_per_million ?? billing.cached_price_per_million ?? 0,
-    cacheWritePricePerMillion: billing.cache_write_price_per_million ?? 0,
-    inputAmount: billing.input_amount ?? 0,
-    outputAmount: billing.output_amount ?? 0,
-    cachedAmount: billing.cached_amount ?? 0,
-    cacheReadAmount: billing.cache_read_amount ?? 0,
-    cacheWriteAmount: billing.cache_write_amount ?? 0,
-    totalAmount: billing.total_amount ?? 0
-  }
+  syncSelection(route.query.model?.toString())
 }
 
 onMounted(() => {

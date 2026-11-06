@@ -51,7 +51,7 @@ describe('model marketplace helpers', () => {
     const market = source('src/views/ModelMarket.vue')
     const pricing = source('src/components/ModelSalePricing.vue')
     const comparison = source('src/components/ModelPriceComparisonDialog.vue')
-    const consoleView = source('src/views/UserConsole.vue')
+    const consoleView = source('src/features/playground/PlaygroundPanel.vue')
 
     expect(market).toContain("title: '渠道 / 路由'")
     expect(market).toContain("title: '模型发布方'")
