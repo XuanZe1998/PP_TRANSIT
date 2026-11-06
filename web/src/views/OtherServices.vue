@@ -280,6 +280,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import http, { createIdempotencyKey, getHttpDownloadErrorMessage, getHttpErrorMessage, resolveApiResourceUrl } from '@/utils/http'
+import { createPollingTask } from '@/utils/polling'
+import { downloadFile } from '@/utils/download'
 import { getToken } from '@/utils/auth'
 
 type OtherService = {
@@ -385,11 +387,7 @@ const orderDetail = ref<ServiceOrder | null>(null)
 const orderDetailRedemptionPath = ref('')
 const redemptionCountdown = ref(0)
 let redemptionTimer: number | undefined
-let fulfillmentTimer: number | undefined
-let disposed = false
-let fulfillmentPolling = false
-let fulfillmentPollAttempts = 0
-let fulfillmentTargetOrderId: number | null = null
+
 const authenticated = Boolean(getToken())
 const orderForm = reactive({
   quantity: 1,
@@ -496,9 +494,7 @@ function clearPendingPayment() {
   window.sessionStorage.removeItem(pendingPaymentStorageKey)
 }
 
-const wait = (milliseconds: number) => new Promise(resolve => window.setTimeout(resolve, milliseconds))
-
-async function finishPaidFlow(order: ServiceOrder, _pending: PendingServicePayment, message?: string) {
+async function finishPaidFlow(order: ServiceOrder, message?: string) {
   clearPendingPayment()
   paymentDialogVisible.value = false
   ElMessage.success(message || '支付成功')
@@ -516,7 +512,7 @@ async function resumePendingPayment() {
   try {
     const { data: order } = await http.get<ServiceOrder>(`/api/service-orders/${pending.orderId}`)
     if (['PAID', 'FULFILLED'].includes(order.status)) {
-      await finishPaidFlow(order, pending)
+      await finishPaidFlow(order)
     } else if (canPay(order)) {
       rememberPendingPayment(order)
       startFulfillmentPolling(order.id)
@@ -554,62 +550,31 @@ async function loadOrders() {
   }
 }
 
-function stopFulfillmentPolling() {
-  if (fulfillmentTimer !== undefined) window.clearInterval(fulfillmentTimer)
-  fulfillmentTimer = undefined
-  fulfillmentPolling = false
-  fulfillmentPollAttempts = 0
-  fulfillmentTargetOrderId = null
-}
-
-function startFulfillmentPolling(targetOrderId: number) {
-  if (disposed) return
-  if (targetOrderId !== fulfillmentTargetOrderId) stopFulfillmentPolling()
-  fulfillmentTargetOrderId = targetOrderId
-  if (fulfillmentTimer !== undefined) return
-  fulfillmentPollAttempts = 0
-  fulfillmentTimer = window.setInterval(async () => {
-    if (fulfillmentPolling) return
-    fulfillmentPolling = true
-    const targetId = fulfillmentTargetOrderId
-    try {
-      fulfillmentPollAttempts += 1
-      if (targetId !== null) {
-        const { data: target } = await http.get<ServiceOrder>(`/api/service-orders/${targetId}`)
-        if (disposed || targetId !== fulfillmentTargetOrderId) return
-        if (['PAID', 'FULFILLED'].includes(target.status)) {
-          paymentDialogVisible.value = false
-          clearPendingPayment()
-          if (orderDetail.value?.id !== target.id || !detailDialogVisible.value) {
-            orderDetail.value = target
-            detailDialogVisible.value = true
-          } else orderDetail.value = target
-          if (!awaitingFulfillment(target)) {
-            stopFulfillmentPolling()
-            await showOrderDetail(target)
-            await loadOrders()
-            return
-          }
-        } else if (!canPay(target)) {
-          stopFulfillmentPolling()
-          clearPendingPayment()
-          paymentDialogVisible.value = false
-          await showOrderDetail(target)
-          await loadOrders()
-          return
-        }
-      }
-      if (fulfillmentPollAttempts >= 300) {
-        stopFulfillmentPolling()
-        ElMessage.info('支付或发货结果仍在同步，请稍后刷新订单')
-      }
-    } catch {
-      if (fulfillmentPollAttempts >= 300) stopFulfillmentPolling()
-    } finally {
-      fulfillmentPolling = false
+const fulfillmentPoll = createPollingTask<number>({
+  interval: 2000,
+  maxAttempts: 300,
+  onExhausted: () => ElMessage.info('支付或发货结果仍在同步，请稍后刷新订单'),
+  async run(targetId, context) {
+    const { data: target } = await http.get<ServiceOrder>(`/api/service-orders/${targetId}`)
+    if (!context.isCurrent()) return
+    if (['PAID', 'FULFILLED'].includes(target.status)) {
+      paymentDialogVisible.value = false
+      clearPendingPayment()
+      orderDetail.value = target
+      detailDialogVisible.value = true
+      if (awaitingFulfillment(target)) return
+    } else if (canPay(target)) return
+    else {
+      clearPendingPayment()
+      paymentDialogVisible.value = false
     }
-  }, 2000)
-}
+    context.stop()
+    await showOrderDetail(target)
+    await loadOrders()
+  }
+})
+
+function startFulfillmentPolling(orderId: number) { fulfillmentPoll.start(orderId) }
 
 async function openOrderDialog(service: OtherService) {
   if (!authenticated) {
@@ -693,7 +658,7 @@ async function submitOrder() {
     const createdOrder = response.data?.order as ServiceOrder | undefined
     if (createdOrder && canPay(createdOrder)) startPayment(createdOrder)
     else if (createdOrder && ['PAID', 'FULFILLED'].includes(createdOrder.status)) {
-      await finishPaidFlow(createdOrder, { orderId: createdOrder.id, serviceId: createdOrder.serviceId, createdAt: Date.now() })
+      await finishPaidFlow(createdOrder)
     }
     await loadOrders()
   } catch (error: unknown) {
@@ -775,11 +740,7 @@ async function confirmPayment() {
     checkoutDialogVisible.value = false
     await loadOrders()
     if (['PAID', 'FULFILLED'].includes(response.data?.order?.status)) {
-      await finishPaidFlow(response.data.order, {
-        orderId: order.id,
-        serviceId: order.serviceId,
-        createdAt: Date.now()
-      }, response.data?.message)
+      await finishPaidFlow(response.data.order, response.data?.message)
       return
     }
     const action = paymentActionOf(response.data)
@@ -801,15 +762,7 @@ async function confirmPayment() {
 
 async function downloadDocument(id: number, type: 'invoice' | 'receipt') {
   try {
-    const response = await http.get(`/api/service-orders/${id}/${type}`, { responseType: 'blob' })
-    const url = URL.createObjectURL(response.data)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `${type}-${id}.pdf`
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
-    window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+    await downloadFile(`/api/service-orders/${id}/${type}`, `${type}-${id}.pdf`)
   } catch (error: unknown) {
     ElMessage.error(await getHttpDownloadErrorMessage(error, type === 'invoice' ? '账单下载失败' : '收据下载失败'))
   }
@@ -836,9 +789,8 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
-  disposed = true
   cancelRedemptionCountdown()
-  stopFulfillmentPolling()
+  fulfillmentPoll.dispose()
 })
 </script>
 

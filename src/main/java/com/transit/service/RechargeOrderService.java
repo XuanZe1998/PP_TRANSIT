@@ -9,7 +9,6 @@ import com.transit.model.PaymentIntent;
 import com.transit.model.User;
 import com.transit.model.WalletRechargeOrder;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -21,7 +20,6 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -41,13 +39,7 @@ public class RechargeOrderService {
     private final AccountVerificationPolicy verificationPolicy;
     private final MoneyService moneyService;
 
-    @Value("${payment.documents.merchant.legal-name:}") private String merchantName;
-    @Value("${payment.documents.merchant.address-line-1:}") private String merchantAddress1;
-    @Value("${payment.documents.merchant.address-line-2:}") private String merchantAddress2;
-    @Value("${payment.documents.merchant.country:}") private String merchantCountry;
-    @Value("${payment.documents.merchant.contact-email:}") private String merchantEmail;
-    @Value("${payment.documents.time-zone:Asia/Shanghai}") private String receiptTimeZone;
-    @Value("${payment.documents.font-path:}") private String receiptFontPath;
+    private final BillingDocumentSettings documents;
 
     @Transactional
     public WalletRechargeOrder create(User user, RechargeOrderRequest request) {
@@ -180,8 +172,9 @@ public class RechargeOrderService {
     }
 
     private byte[] document(WalletRechargeOrder order, boolean receipt) {
+        BillingDocumentSettings.MerchantInfo merchant = documents.merchant();
         LocalDateTime date=receipt&&order.getPaidAt()!=null?order.getPaidAt():order.getCreatedAt();
-        String formatted=date.atZone(ZoneOffset.UTC).withZoneSameInstant(ZoneId.of(receiptTimeZone))
+        String formatted=date.atZone(ZoneOffset.UTC).withZoneSameInstant(merchant.timeZone())
                 .format(DateTimeFormatter.ofPattern("MMMM d, uuuu",Locale.ENGLISH));
         PaymentIntent intent=order.getPaymentIntent();
         String amount=intent!=null&&intent.getSourceAmount()!=null&&intent.getSourceScale()!=null
@@ -189,13 +182,13 @@ public class RechargeOrderService {
                 : BigDecimal.valueOf(order.getPaymentAmountUnits()).divide(BigDecimal.valueOf(WALLET_SCALE),2,RoundingMode.HALF_UP).toPlainString()+" CNY";
         String description="Wallet recharge: "+order.getPlanName();
         BillingPdfRenderer.DocumentData data=new BillingPdfRenderer.DocumentData(order.getInvoiceNumber(),order.getReceiptNumber(),formatted,
-                merchantName,merchantAddress1,merchantAddress2,merchantCountry,merchantEmail,
+                merchant.name(),merchant.addressLine1(),merchant.addressLine2(),merchant.country(),merchant.contactEmail(),
                 order.getBillingName(),order.getBillingAddressLine1(),order.getBillingDistrict(),order.getBillingCity(),order.getBillingProvince(),
                 order.getBillingPostalCode(),order.getBillingCountry(),order.getContactEmail(),description,amount,
                 "alipay".equals(order.getPaymentMethod())?"Alipay":"WeChat Pay",
                 order.getBonusCreditUnits()>0?"Bonus wallet credit (not charged)":"",
                 order.getBonusCreditUnits()>0?moneyUnits(order.getBonusCreditUnits())+" CNY":"");
-        BillingPdfRenderer renderer=new BillingPdfRenderer(receiptFontPath);
+        BillingPdfRenderer renderer=documents.renderer();
         return receipt?renderer.renderReceipt(data):renderer.renderInvoice(data);
     }
 

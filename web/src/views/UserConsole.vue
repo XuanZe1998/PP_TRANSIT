@@ -781,6 +781,9 @@
 </template>
 
 <script setup lang="ts">
+import { createPollingTask } from '@/utils/polling'
+import { downloadFile } from '@/utils/download'
+import { getHttpDownloadErrorMessage } from '@/utils/http'
 import PagedList from "@/components/PagedList.vue"
 import SelectablePagination from '@/components/SelectablePagination.vue'
 import PagedTable from '@/components/PagedTable.vue'
@@ -926,7 +929,7 @@ const rechargeOrderTotal = ref(0)
 const paymentDialogVisible = ref(false)
 const paymentAction = ref<PaymentAction | null>(null)
 const rechargeForm = ref({ needInvoice: false, billingName: '', contactEmail: '', billingAddressLine1: '', billingDistrict: '', billingCity: '', billingProvince: '', billingPostalCode: '', billingCountry: 'China', paymentMethod: 'alipay' })
-let paymentPollTimer: number | null = null
+
 const wallet = ref({
   balance: 0 as AmountUnits,
   monthSpend: 0 as AmountUnits,
@@ -1443,34 +1446,24 @@ async function submitRecharge() {
   }
 }
 
-function pollPayment(intentId: number) {
-  if (paymentPollTimer !== null) window.clearInterval(paymentPollTimer)
-  let attempts = 0
-  paymentPollTimer = window.setInterval(async () => {
-    if (++attempts > 100) {
-      if (paymentPollTimer !== null) window.clearInterval(paymentPollTimer)
-      paymentPollTimer = null
-      return
-    }
-    try {
-      const response = await http.get(`/api/payment-intents/${intentId}`)
-      if (response.data?.status === 'PAID') {
-        if (paymentPollTimer !== null) window.clearInterval(paymentPollTimer)
-        paymentPollTimer = null
-        ElMessage.success('支付已确认，充值额度已到账')
-        await Promise.all([loadWallet(), loadDashboard()])
-      }
-    } catch { /* callback may not be visible to the query endpoint yet */ }
-  }, 3000)
-}
+const paymentPoll = createPollingTask<number>({
+  interval: 3000,
+  maxAttempts: 100,
+  async run(intentId, context) {
+    const response = await http.get(`/api/payment-intents/${intentId}`)
+    if (!context.isCurrent() || response.data?.status !== 'PAID') return
+    context.stop()
+    ElMessage.success('支付已确认，充值额度已到账')
+    await Promise.all([loadWallet(), loadDashboard()])
+  }
+})
+
+function pollPayment(intentId: number) { paymentPoll.start(intentId) }
 
 async function downloadRecharge(id: number, type: 'invoice' | 'receipt') {
   try {
-    const response = await http.get(`/api/platform/user/recharge-orders/${id}/${type}`, { responseType: 'blob' })
-    const url = URL.createObjectURL(response.data)
-    const anchor = document.createElement('a'); anchor.href = url; anchor.download = `${type}-${id}.pdf`; anchor.click()
-    URL.revokeObjectURL(url)
-  } catch (error: unknown) { ElMessage.error(getHttpErrorMessage(error, '文件下载失败')) }
+    await downloadFile(`/api/platform/user/recharge-orders/${id}/${type}`, `${type}-${id}.pdf`)
+  } catch (error: unknown) { ElMessage.error(await getHttpDownloadErrorMessage(error, '文件下载失败')) }
 }
 
 async function redeemWalletCode() {
@@ -1504,7 +1497,7 @@ watch(() => route.path, () => {
   loadOverviewUsage()
   loadWallet()
 })
-onBeforeUnmount(() => { if (paymentPollTimer !== null) window.clearInterval(paymentPollTimer) })
+onBeforeUnmount(() => paymentPoll.dispose())
 
 const stats = computed(() => dashboard.value.stats || {})
 const balance = computed<AmountUnits>(() => amountValue(stats.value.balance))

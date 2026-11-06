@@ -23,13 +23,10 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.net.URI;
 import java.security.SecureRandom;
-import java.time.DateTimeException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -64,6 +61,7 @@ public class ServiceOrderService {
     private static final Set<String> PAYMENT_METHODS = Set.of("alipay", "wxpay");
     private static final SecureRandom RECEIPT_NUMBER_RANDOM = new SecureRandom();
 
+    private final BillingDocumentSettings documents;
     private final ServiceOrderMapper orderMapper;
     private final ServiceCommerceService serviceCommerceService;
     private final PaymentIntentService paymentIntentService;
@@ -80,7 +78,8 @@ public class ServiceOrderService {
                             AccountVerificationPolicy verificationPolicy,
                             MoneyService moneyService,
                             UserMapper userMapper, ReferralService referrals,
-                            PaymentBusinessSettlementService paymentSettlement) {
+                            PaymentBusinessSettlementService paymentSettlement, BillingDocumentSettings documents) {
+        this.documents = documents;
         this.orderMapper = orderMapper;
         this.serviceCommerceService = serviceCommerceService;
         this.paymentIntentService = paymentIntentService;
@@ -94,34 +93,13 @@ public class ServiceOrderService {
     ServiceOrderService(ServiceOrderMapper orderMapper,
                      ServiceCommerceService serviceCommerceService) {
         this(orderMapper, serviceCommerceService, null,
-                new AccountVerificationPolicy("EMAIL_AND_PHONE"), new MoneyService(new BigDecimal("6.76693506")), null, null, null);
+                new AccountVerificationPolicy("EMAIL_AND_PHONE"), new MoneyService(new BigDecimal("6.76693506")), null, null, null, new BillingDocumentSettings());
     }
 
     // Focused unit tests that do not exercise an external payment provider use this constructor.
     ServiceOrderService(ServiceOrderMapper orderMapper) {
         this(orderMapper, null);
     }
-
-    @Value("${payment.documents.merchant.legal-name:}")
-    private String merchantLegalName;
-
-    @Value("${payment.documents.merchant.address-line-1:}")
-    private String merchantAddressLine1;
-
-    @Value("${payment.documents.merchant.address-line-2:}")
-    private String merchantAddressLine2;
-
-    @Value("${payment.documents.merchant.country:}")
-    private String merchantCountry;
-
-    @Value("${payment.documents.merchant.contact-email:}")
-    private String merchantContactEmail;
-
-    @Value("${payment.documents.time-zone:Asia/Shanghai}")
-    private String receiptTimeZone;
-
-    @Value("${payment.documents.font-path:}")
-    private String receiptFontPath;
 
     @Value("${payment.usd-cny-rate:6.76693506}")
     private BigDecimal usdCnyPaymentRate = new BigDecimal("6.76693506");
@@ -530,8 +508,8 @@ public class ServiceOrderService {
     public byte[] buildReceiptDownload(User user, Long id) {
         ServiceOrder order = getUserOrder(user, id);
         validateReceiptEligibility(order);
-        MerchantInfo merchant = requireMerchantInfo();
-        byte[] receipt = new BillingPdfRenderer(receiptFontPath)
+        BillingDocumentSettings.MerchantInfo merchant = documents.merchant();
+        byte[] receipt = documents.renderer()
                 .renderReceipt(documentData(order, merchant));
         order.setDownloadedAt(nowUtc());
         order.setUpdatedAt(nowUtc());
@@ -542,8 +520,8 @@ public class ServiceOrderService {
     public byte[] buildInvoiceDownload(User user, Long id) {
         ServiceOrder order = getUserOrder(user, id);
         validateDocumentSnapshot(order);
-        MerchantInfo merchant = requireMerchantInfo();
-        byte[] invoice = new BillingPdfRenderer(receiptFontPath)
+        BillingDocumentSettings.MerchantInfo merchant = documents.merchant();
+        byte[] invoice = documents.renderer()
                 .renderInvoice(documentData(order, merchant));
         order.setDownloadedAt(nowUtc());
         order.setUpdatedAt(nowUtc());
@@ -603,40 +581,7 @@ public class ServiceOrderService {
         normalizePaymentMethod(order.getPaymentMethod());
     }
 
-    private MerchantInfo requireMerchantInfo() {
-        List<String> missing = new ArrayList<>();
-        if (isBlank(merchantLegalName)) missing.add("payment.documents.merchant.legal-name");
-        if (isBlank(merchantAddressLine1)) missing.add("payment.documents.merchant.address-line-1");
-        if (isBlank(merchantAddressLine2)) missing.add("payment.documents.merchant.address-line-2");
-        if (isBlank(merchantCountry)) missing.add("payment.documents.merchant.country");
-        if (isBlank(merchantContactEmail)) missing.add("payment.documents.merchant.contact-email");
-        if (!missing.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
-                    "Receipt merchant configuration is incomplete: " + String.join(", ", missing));
-        }
-        String contactEmail = merchantContactEmail.trim().toLowerCase(Locale.ROOT);
-        if (!EMAIL_PATTERN.matcher(contactEmail).matches()) {
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
-                    "Receipt merchant configuration has an invalid payment.documents.merchant.contact-email");
-        }
-        ZoneId zone;
-        try {
-            zone = ZoneId.of(receiptTimeZone == null || receiptTimeZone.isBlank() ? "UTC" : receiptTimeZone.trim());
-        } catch (DateTimeException exception) {
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
-                    "Receipt configuration has an invalid payment.documents.time-zone");
-        }
-        return new MerchantInfo(
-                merchantLegalName.trim(),
-                merchantAddressLine1.trim(),
-                merchantAddressLine2.trim(),
-                merchantCountry.trim(),
-                contactEmail,
-                zone
-        );
-    }
-
-    private BillingPdfRenderer.DocumentData documentData(ServiceOrder order, MerchantInfo merchant) {
+    private BillingPdfRenderer.DocumentData documentData(ServiceOrder order, BillingDocumentSettings.MerchantInfo merchant) {
         String documentDate = LocalDate.now(merchant.timeZone())
                 .format(DateTimeFormatter.ofPattern("MMMM d, yyyy", Locale.US));
         String amount = formatMoney(order.getAmountCents(), normalizeCurrency(order.getCurrency()));
@@ -956,11 +901,4 @@ public class ServiceOrderService {
         return currency + " " + String.format(Locale.US, "%.2f", cents / 100.0);
     }
 
-    private record MerchantInfo(String name,
-                                String addressLine1,
-                                String addressLine2,
-                                String country,
-                                String contactEmail,
-                                ZoneId timeZone) {
-    }
 }
