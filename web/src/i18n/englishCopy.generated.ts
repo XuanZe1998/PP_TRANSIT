@@ -2228,7 +2228,7 @@ export const generatedEnglishCopy: Readonly<Record<string, string>> = {
   "请以运营主体公示信息为准": "Please refer to the information disclosed by the operating entity.",
   "请阅读并接受当前用户协议和隐私政策": "Please read and accept the current User Agreement and Privacy Policy",
   "请阅读并接受用户协议和隐私政策": "Please read and accept the User Agreement and Privacy Policy",
-  "请在下方“公开信息填写区”逐项填写；仍需核对：{{ legalStatus?.missing_fields?.map((key: string) => `legal.${key}`).join('、') || '字段已填，仍需核对真实经营信息、实际处理方及人工法律审核' }}。 完成真实信息、双语正文与法律审核并更新协议版本后，在下方“政策审核与发布”中显式批准。该开关对应 legal.publication_approved，不会自动开启收款。": "Complete and review each field in the public information editor below. After verifying the actual information, reviewing the bilingual policies, and updating agreement versions, explicitly approve under Policy review and publication. This controls legal.publication_approved and does not automatically enable payments.",
+  "请在下方“公开信息填写区”逐项填写；仍需核对：{{ missingLegalFields }}。 完成真实信息、双语正文与法律审核并更新协议版本后，在下方“政策审核与发布”中显式批准。该开关对应 legal.publication_approved，不会自动开启收款。": "Complete each field in the public information editor below. Still to verify: {{ missingLegalFields }}. After verifying the actual information, reviewing the bilingual policies, and updating agreement versions, explicitly approve under Policy review and publication. This controls legal.publication_approved and does not automatically enable payments.",
   "请在移动设备上唤起{{ paymentMethodLabel }}完成付款。": "Please invoke {{ paymentMethodLabel }} on your mobile device to complete the payment.",
   "请至少选择一个授权模型": "Please select at least one authorization model",
   "区 / 县": "District/County",

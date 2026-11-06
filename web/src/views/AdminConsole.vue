@@ -70,159 +70,9 @@
       </section>
     </template>
 
-    <template v-else-if="module === 'finance'">
-      <div v-if="financeErrors.summary" class="module-error-state">
-        <span>{{ financeErrors.summary }}</span>
-        <el-button link type="primary" @click="loadFinanceSection('summary')">重试财务汇总</el-button>
-      </div>
-      <section class="admin-grid">
-        <article class="panel wide-panel">
-          <div class="panel-head">
-            <h3>钱包流水</h3>
-            <el-button type="primary" :icon="Plus" @click="openCreate">生成兑换码</el-button>
-          </div>
-          <div v-if="financeErrors.transactions" class="module-error-state">
-            <span>{{ financeErrors.transactions }}</span>
-            <el-button link type="primary" @click="loadFinanceSection('transactions')">重试</el-button>
-          </div>
-          <PagedTable :data="rows" v-loading="loading" list-id="AdminConsole-2" :pagination="module==='finance'?'external':'local'">
-            <el-table-column prop="username" label="用户" min-width="120" />
-            <el-table-column prop="type" label="类型" width="120" />
-            <el-table-column label="金额(CNY)" width="150">
-              <template #default="{ row }">{{ money(row.amount) }}</template>
-            </el-table-column>
-            <el-table-column label="余额(CNY)" width="150">
-              <template #default="{ row }">{{ money(row.balance_after) }}</template>
-            </el-table-column>
-            <el-table-column prop="channel" label="渠道" width="120" />
-            <el-table-column prop="remark" label="备注" min-width="180" />
-            <el-table-column prop="created_at" label="时间" min-width="180" />
-          </PagedTable>
-          <SelectablePagination
-            v-model:current-page="financePage"
-            v-model:page-size="financePageSize"
-            class="admin-pagination"
-            layout="total, sizes, prev, pager, next, jumper"
-            :page-sizes="[10, 20, 50, 100]"
-            :total="financeTotal"
-            @current-change="loadFinanceTransactions"
-            @size-change="handleFinancePageSizeChange"
-           list-id="AdminConsole-1"/>
-        </article>
-        <article class="panel">
-          <div class="panel-head">
-            <h3>兑换码</h3>
-          </div>
-          <div v-if="financeErrors.codes" class="module-error-state">
-            <span>{{ financeErrors.codes }}</span>
-            <el-button link type="primary" @click="loadFinanceSection('codes')">重试</el-button>
-          </div>
-          <PagedTable :data="secondaryRows" size="small" list-id="AdminConsole-3">
-            <el-table-column prop="code" label="兑换码" min-width="150" />
-            <el-table-column label="额度(CNY)" width="140">
-              <template #default="{ row }">{{ money(row.amount) }}</template>
-            </el-table-column>
-            <el-table-column prop="used_count" label="已用" width="90" />
-            <el-table-column prop="max_uses" label="上限" width="90" />
-          </PagedTable>
-        </article>
-        <article class="panel wide-panel">
-          <div class="panel-head">
-            <div><h3>充值套餐</h3><small>金额和赠送比例将作为订单快照保存</small></div>
-            <el-button type="primary" @click="openRechargePlan()">新增套餐</el-button>
-          </div>
-          <div v-if="financeErrors.plans" class="module-error-state">
-            <span>{{ financeErrors.plans }}</span>
-            <el-button link type="primary" @click="loadFinanceSection('plans')">重试</el-button>
-          </div>
-          <PagedTable :data="rechargePlans" size="small" list-id="AdminConsole-4">
-            <el-table-column prop="name" label="套餐" min-width="150" />
-            <el-table-column label="售价(CNY)" width="150"><template #default="{ row }">{{ money(row.amount) }}</template></el-table-column>
-            <el-table-column prop="bonus_percent" label="赠送比例" width="120"><template #default="{ row }">{{ row.bonus_percent }}%</template></el-table-column>
-            <el-table-column prop="sort_order" label="排序" width="90" />
-            <el-table-column label="启用" width="90"><template #default="{ row }"><el-tag :type="row.enabled ? 'success' : 'info'">{{ row.enabled ? '是' : '否' }}</el-tag></template></el-table-column>
-            <el-table-column label="操作" width="140"><template #default="{ row }">
-              <el-button link type="primary" @click="openRechargePlan(row)">编辑</el-button>
-              <el-button link type="danger" @click="removeRechargePlan(row)">删除</el-button>
-            </template></el-table-column>
-          </PagedTable>
-        </article>
-      </section>
-      <el-dialog v-model="rechargePlanVisible" :title="rechargePlanForm.id ? '编辑充值套餐' : '新增充值套餐'" width="480px">
-        <el-form label-position="top">
-          <el-form-item label="套餐名称"><el-input v-model="rechargePlanForm.name" maxlength="120" /></el-form-item>
-          <el-form-item label="售价（内部单位，10,000 = ¥1）"><el-input-number v-model="rechargePlanForm.amount" :min="1" :step="10000" style="width:100%" /></el-form-item>
-          <el-form-item label="赠送比例 %"><el-input-number v-model="rechargePlanForm.bonusPercent" :min="0" :max="1000" :precision="3" :step="0.001" style="width:100%" /><div class="field-hint">支持 0 或 0.001%–1000.000%，订单会保存当前比例快照。</div></el-form-item>
-          <el-form-item label="排序"><el-input-number v-model="rechargePlanForm.sortOrder" :min="0" style="width:100%" /></el-form-item>
-          <el-form-item label="启用"><el-switch v-model="rechargePlanForm.enabled" /></el-form-item>
-        </el-form>
-        <template #footer><el-button @click="rechargePlanVisible=false">取消</el-button><el-button type="primary" :loading="rechargePlanSaving" @click="saveRechargePlan">保存</el-button></template>
-      </el-dialog>
-    </template>
+    <AdminFinancePanel v-else-if="module === 'finance'" :state="financeFeature" :loading="loading" @create="openCreate" />
 
-    <template v-else-if="module === 'settings'">
-      <el-alert :type="legalStatus?.publication_ready ? 'success' : 'warning'" :closable="false" :title="legalStatus?.publication_ready ? '出海公开信息已配置并标记为审核通过' : '公开信息尚未配置完成：线上支付处于保护状态'">
-        <template #default>
-          请在下方“公开信息填写区”逐项填写；仍需核对：{{ legalStatus?.missing_fields?.map((key: string) => `legal.${key}`).join('、') || '字段已填，仍需核对真实经营信息、实际处理方及人工法律审核' }}。
-          完成真实信息、双语正文与法律审核并更新协议版本后，在下方“政策审核与发布”中显式批准。该开关对应 legal.publication_approved，不会自动开启收款。
-        </template>
-      </el-alert>
-      <article class="panel legal-publication-control" style="margin: 16px 0">
-        <div class="panel-head"><h3>政策审核与发布</h3><code>legal.publication_approved</code></div>
-        <p>仅在真实经营信息、中英文政策及法律审核完成后批准。开启会将 legal.publication_approved 设置为 true；关闭设为 false。此操作不会开启下方的收款总开关。</p>
-        <el-switch :model-value="legalStatus?.legalReviewRequired === false" :loading="legalApprovalSaving"
-                   :disabled="!legalApprovalStatusLoaded || (legalStatus?.legalReviewRequired !== false && Boolean(legalStatus?.missing_fields?.length))"
-                   active-text="已审核批准" inactive-text="未审核批准" @change="setLegalPublicationApproved(Boolean($event))" />
-        <el-tag style="margin-left: 12px" :type="legalStatus?.publication_ready ? 'success' : 'warning'">{{ legalStatus?.publication_ready ? '正式政策就绪' : '政策未就绪' }}</el-tag>
-        <p v-if="legalStatus?.missing_fields?.length" class="field-hint">必填字段尚未齐全，请先展开“公开信息填写区”补齐，再决定是否批准。</p>
-      </article>
-      <LegalSettingsEditor :settings="rows" :missing-fields="legalStatus?.missing_fields || []" @saved="handleLegalFieldSaved" />
-      <article class="panel" style="margin: 16px 0">
-        <div class="panel-head"><h3>线上收款总开关</h3></div>
-        <p>由此开关单独控制是否允许发起付款，公开资料审核状态单独维护。关闭后不再生成新的支付链接，已经发出的链接及支付回调仍可能完成，请核对待处理订单。</p>
-        <el-switch :model-value="legalStatus?.payments_enabled === true" :loading="paymentSwitchSaving" :disabled="!legalApprovalStatusLoaded" active-text="允许发起付款" inactive-text="禁止发起付款" @change="setPaymentsEnabled(Boolean($event))" />
-        <el-tag style="margin-left: 12px" :type="legalStatus?.checkout_ready ? 'success' : 'warning'">{{ legalStatus?.checkout_ready ? '结账开放' : '结账关闭' }}</el-tag>
-      </article>
-      <section class="admin-grid">
-        <article class="panel">
-          <div class="panel-head">
-            <h3>系统配置</h3>
-            <el-button type="primary" :icon="Plus" @click="openCreate">保存配置</el-button>
-          </div>
-          <p class="field-hint">表格内容仅显示单行摘要，超出部分隐藏；点击“编辑”查看或修改完整内容。</p>
-          <PagedTable class="settings-table" table-layout="fixed" :data="filteredRows" v-loading="loading" list-id="AdminConsole-5">
-            <el-table-column prop="setting_key" label="键" min-width="180"><template #default="{ row }"><span class="settings-cell-text">{{ row.setting_key }}</span></template></el-table-column>
-            <el-table-column prop="setting_value" label="值" min-width="220"><template #default="{ row }"><span class="settings-cell-text">{{ row.setting_value }}</span></template></el-table-column>
-            <el-table-column prop="description" label="说明" min-width="200"><template #default="{ row }"><span class="settings-cell-text">{{ row.description }}</span></template></el-table-column>
-            <el-table-column label="操作" width="100">
-              <template #default="{ row }">
-                <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
-              </template>
-            </el-table-column>
-          </PagedTable>
-        </article>
-        <article class="panel">
-          <div class="panel-head">
-            <h3>成本报表</h3>
-            <el-tag>实时聚合</el-tag>
-          </div>
-          <div class="report-summary">
-            <div><span>模型收入</span><strong>{{ report.revenue == null ? '—' : formatUsd(report.revenue) }}</strong></div>
-            <div><span>模型成本</span><strong>{{ report.cost == null ? '—' : formatUsd(report.cost) }}</strong></div>
-            <div><span>毛利率</span><strong>{{ percent(report.grossMargin) }}</strong></div>
-            <div><span>P95 延迟</span><strong>{{ report.p95LatencyMs || 0 }} ms</strong></div>
-          </div>
-          <PagedTable :data="report.models || []" size="small" list-id="AdminConsole-6">
-            <el-table-column prop="model" label="模型" min-width="160" />
-            <el-table-column prop="requests" label="请求" width="100" />
-            <el-table-column prop="tokens" label="Token" width="120" />
-            <el-table-column label="模型收入(USD)" width="150">
-              <template #default="{ row }">{{ formatUsd(row.revenue) }}</template>
-            </el-table-column>
-          </PagedTable>
-        </article>
-      </section>
-    </template>
+    <AdminSettingsPanel v-else-if="module === 'settings'" :state="settingsFeature" :loading="loading" @create="openCreate" @edit="openEdit" />
 
     <template v-else>
       <section class="panel">
@@ -692,24 +542,7 @@
       <template #footer><el-button @click="credentialVisible=false">取消</el-button><el-button type="primary" :loading="credentialSaving" @click="saveCredential">保存凭证</el-button></template>
     </el-dialog>
 
-    <el-dialog v-model="adjustVisible" title="用户手工调账" width="420px">
-      <el-form label-position="top">
-        <el-form-item label="用户">
-          <el-input :model-value="adjustTarget?.username" disabled />
-        </el-form-item>
-        <el-form-item label="调整金额（10,000 amount units = ¥1.00 CNY）">
-          <el-input-number v-model="adjustForm.amount" :step="10000" :min="-1000000000000" :max="1000000000000" />
-          <div class="field-hint">当前调整折合：{{ money(adjustForm.amount) }}</div>
-        </el-form-item>
-        <el-form-item label="原因" required>
-          <el-input v-model="adjustForm.reason" type="textarea" minlength="3" maxlength="500" show-word-limit placeholder="请输入 3–500 个字符的调账原因" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="adjustVisible = false">取消</el-button>
-        <el-button type="primary" :loading="adjustSaving" @click="saveAdjust">确认调账</el-button>
-      </template>
-    </el-dialog>
+    <AdminUserAdjustment :state="usersFeature" />
 
     <el-dialog v-model="testVisible" title="模型测试 Python 代码" width="900px">
       <el-form label-position="top">
@@ -860,40 +693,28 @@
 </template>
 
 <script setup lang="ts">
-import SelectablePagination from '@/components/SelectablePagination.vue'
-import PagedTable from '@/components/PagedTable.vue'
-import LegalSettingsEditor from '@/components/LegalSettingsEditor.vue'
-import AdminPageToolbar from '@/components/AdminPageToolbar.vue'
-import { computed, defineAsyncComponent, onMounted, reactive, ref, watch } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Refresh, Search } from '@element-plus/icons-vue'
-import { useRoute, useRouter } from 'vue-router'
-import http, { getHttpErrorMessage, getHttpErrorNotice } from '@/utils/http'
-import { formatCny, formatPerMillionUsd, formatUsd } from '@/utils/money'
-import { DEFAULT_PAGE_SIZE } from '@/utils/listPage'
+import { createAdminConfigs, type ModuleKey } from '@/features/admin-console/modules';
+import AdminFinancePanel from '@/features/admin-console/AdminFinancePanel.vue';
+import AdminSettingsPanel from '@/features/admin-console/AdminSettingsPanel.vue';
+import AdminUserAdjustment from '@/features/admin-console/AdminUserAdjustment.vue';
+import { useAdminFinance } from '@/features/admin-console/useAdminFinance';
+import { useAdminSettings } from '@/features/admin-console/useAdminSettings';
+import { useAdminUsers } from '@/features/admin-console/useAdminUsers';
+
+import SelectablePagination from '@/components/SelectablePagination.vue';
+import PagedTable from '@/components/PagedTable.vue';
+
+import AdminPageToolbar from '@/components/AdminPageToolbar.vue';
+import { computed, defineAsyncComponent, onMounted, reactive, ref, watch } from 'vue';
+import { ElMessage, ElMessageBox } from 'element-plus';
+import { Plus, Refresh, Search } from '@element-plus/icons-vue';
+import { useRoute, useRouter } from 'vue-router';
+import http, { getHttpErrorMessage, getHttpErrorNotice } from '@/utils/http';
+import { formatPerMillionUsd, formatUsd } from '@/utils/money';
+import { money, percent } from '@/features/admin-console/format';
+import { DEFAULT_PAGE_SIZE } from '@/utils/listPage';
 const AdminUsageCharts = defineAsyncComponent(() => import('@/components/AdminUsageCharts.vue'))
 const NewApiConnect = defineAsyncComponent(() => import('@/components/NewApiConnect.vue'))
-
-type ModuleKey = 'dashboard' | 'users' | 'channels' | 'models' | 'tokens' | 'audit' | 'finance' | 'security' | 'settings'
-type Column = {
-  prop: string
-  label: string
-  width?: number
-  minWidth?: number
-  kind?: 'status' | 'bool' | 'callable' | 'money' | 'modelMoney' | 'rate' | 'profit' | 'percent'
-    | 'tierRange' | 'tierOfficial' | 'tierCost' | 'tierSale' | 'tierProfit'
-}
-type Field = { prop: string; label: string; type?: 'text' | 'password' | 'textarea' | 'number' | 'switch' | 'select'; min?: number; step?: number; options?: Array<{ label: string; value: any }> }
-type Config = {
-  title: string
-  description: string
-  endpoint?: string
-  createLabel?: string
-  columns: Column[]
-  fields: Field[]
-  editable?: boolean
-  deletable?: boolean
-}
 
 const props = defineProps<{ module: ModuleKey }>()
 const route=useRoute()
@@ -906,61 +727,6 @@ const loading = ref(false)
 const saving = ref(false)
 const query = ref('')
 const rows = ref<any[]>([])
-const legalStatus = ref<any>(null)
-const paymentSwitchSaving = ref(false)
-const legalApprovalSaving = ref(false)
-const legalApprovalStatusLoaded = computed(() => typeof legalStatus.value?.legalReviewRequired === 'boolean' && Array.isArray(legalStatus.value?.missing_fields))
-async function setLegalPublicationApproved(approved: boolean) {
-  if (legalApprovalSaving.value || !legalApprovalStatusLoaded.value) return
-  if (approved && legalStatus.value.missing_fields.length > 0) {
-    ElMessage.warning('请先补齐公开信息必填字段')
-    return
-  }
-  legalApprovalSaving.value = true
-  try {
-    await ElMessageBox.confirm(
-      approved ? '确认已核实真实经营信息、服务商、处理地区、保留期限及退款能力，并完成中英文政策与法律审核？批准后将设置 legal.publication_approved=true，但不会开启收款。' : '确认撤销政策审核批准？将设置 legal.publication_approved=false，新付款会继续受保护；已发出的支付链接及回调仍可能完成。',
-      approved ? '批准政策发布' : '撤销政策批准', { type: 'warning', confirmButtonText: '确认', cancelButtonText: '取消' }
-    )
-    const key = 'legal.publication_approved', value = String(approved), description = '运营方显式确认公开信息与政策已审核；与收款开关独立'
-    await http.put('/api/admin/api/settings', { key, value, description })
-    await handleLegalFieldSaved(key, value, description)
-    ElMessage.success(approved ? '政策审核批准已保存，收款开关未改变' : '政策审核批准已撤销，收款开关未改变')
-  } catch (error: unknown) {
-    if (error !== 'cancel' && error !== 'close') ElMessage.error(getHttpErrorNotice(error, '保存政策审核开关失败'))
-  } finally { legalApprovalSaving.value = false }
-}
-async function handleLegalFieldSaved(key: string, value: string, description: string) {
-  const row = rows.value.find(item => item.setting_key === key)
-  if (row) { row.setting_value = value; row.description = description }
-  else rows.value.push({ setting_key: key, setting_value: value, description })
-  try { legalStatus.value = (await http.get('/api/public/legal')).data }
-  catch (error: unknown) { ElMessage.warning(getHttpErrorNotice(error, '已保存，但状态刷新失败，请手动刷新')) }
-}
-async function setPaymentsEnabled(enabled: boolean) {
-  try {
-    await ElMessageBox.confirm(
-      enabled ? '确认允许发起新的线上付款？请先核对经营主体、地区、支付渠道及公开条款。此操作不能替代合规审核。' : '确认关闭新付款？已经发出的支付链接和回调仍可能完成。',
-      enabled ? '开启收款总开关' : '关闭收款总开关', { type: 'warning', confirmButtonText: '确认', cancelButtonText: '取消' }
-    )
-    paymentSwitchSaving.value = true
-    await http.put('/api/admin/api/settings', { key: 'commerce.payments_enabled', value: String(enabled), description: '运营方显式控制新付款发起；默认关闭' })
-    legalStatus.value = (await http.get('/api/public/legal')).data
-    ElMessage.success(enabled ? '已开启人工收款开关（仍受公开信息门禁约束）' : '已关闭新付款')
-  } catch (error: any) {
-    if (error !== 'cancel' && error !== 'close') ElMessage.error(getHttpErrorNotice(error, '保存支付开关失败'))
-  } finally { paymentSwitchSaving.value = false }
-}
-const secondaryRows = ref<any[]>([])
-const rechargePlans = ref<any[]>([])
-type FinanceSection = 'summary' | 'transactions' | 'codes' | 'plans'
-const financeErrors = reactive<Record<FinanceSection, string>>({ summary: '', transactions: '', codes: '', plans: '' })
-const financePage = ref(1)
-const financePageSize = ref(DEFAULT_PAGE_SIZE)
-const financeTotal = ref(0)
-const rechargePlanVisible = ref(false)
-const rechargePlanSaving = ref(false)
-const rechargePlanForm = reactive({ id: null as number | null, name: '', amount: 500000, bonusPercent: 0, sortOrder: 100, enabled: true })
 const adminToday = new Date()
 const adminMonthAgo = new Date(adminToday); adminMonthAgo.setDate(adminToday.getDate() - 29)
 const dashboardPeriod = ref<'today' | '7' | '30' | 'custom'>('30')
@@ -986,14 +752,9 @@ const auditTotal = ref(0)
 const testRows = ref<any[]>([])
 const channelLedgerSections = ref<string[]>([])
 const dashboard = ref<Record<string, any>>({})
-const report = ref<Record<string, any>>({})
 const drawerVisible = ref(false)
 const editingId = ref<number | null>(null)
 const form = reactive<Record<string, any>>({})
-const adjustVisible = ref(false)
-const adjustSaving = ref(false)
-const adjustTarget = ref<any | null>(null)
-const adjustForm = reactive({ amount: 0, reason: '' })
 const testVisible = ref(false)
 const testRunning = ref(false)
 const testTarget = ref<any | null>(null)
@@ -1114,201 +875,12 @@ const auditFilterReady = computed(() => Boolean(adminUsageFilters.audienceType)
   && (adminUsageFilters.audienceType !== 'COMPANY' || Boolean(adminUsageFilters.organizationId)))
 const dirtyPricingCount = computed(() => channelModelPricing.value.filter(item => isPricingDirty(item.channelModelName)).length)
 
-const configs: Record<ModuleKey, Config> = {
-  dashboard: {
-    title: '运营总览',
-    description: '平台请求、收入、成本、渠道健康和风险队列的实时快照。',
-    endpoint: '/admin/api/dashboard',
-    columns: [],
-    fields: []
-  },
-  users: {
-    title: '用户与分组',
-    description: '管理用户状态、个人/企业组织、组织钱包、计费分组和手工调账。',
-    endpoint: '/admin/api/users',
-    columns: [
-      { prop: 'username', label: '用户', minWidth: 150 },
-      { prop: 'email', label: '邮箱', minWidth: 180 },
-      { prop: 'account_type', label: '账户类型', width: 110 },
-      { prop: 'organization_name', label: '默认组织', minWidth: 180 },
-      { prop: 'organization_type', label: '组织类型', width: 110 },
-      { prop: 'organization_role', label: '组织角色', width: 110 },
-      { prop: 'organization_count', label: '组织数', width: 90 },
-      { prop: 'wallet_balance', label: '组织钱包', width: 130, kind: 'money' },
-      { prop: 'wallet_held_balance', label: '预占金额', width: 120, kind: 'money' },
-      { prop: 'last_login_ip', label: '最近登录 IP', minWidth: 150 },
-      { prop: 'last_login_ip_at', label: '登录时间', minWidth: 170 },
-      { prop: 'login_ip_count', label: '历史 IP', width: 90 },
-      { prop: 'role', label: '角色', width: 100 },
-      { prop: 'status', label: '状态', width: 110, kind: 'status' },
-      { prop: 'group_name', label: '分组', minWidth: 130 },
-      { prop: 'balance', label: '余额', width: 120, kind: 'money' },
-      { prop: 'invoice_enabled', label: '账单 / 发票', width: 110, kind: 'bool' },
-      { prop: 'token_count', label: 'Key', width: 90 },
-      { prop: 'request_count', label: '请求', width: 100 }
-    ],
-    fields: [
-      { prop: 'role', label: '角色', type: 'select', options: [{ label: 'USER', value: 'USER' }, { label: 'ADMIN', value: 'ADMIN' }] },
-      { prop: 'status', label: '状态', type: 'select', options: [{ label: 'ACTIVE', value: 'ACTIVE' }, { label: 'SUSPENDED', value: 'SUSPENDED' }] },
-      { prop: 'groupId', label: '分组 ID', type: 'number' },
-      { prop: 'invoiceEnabled', label: '开放账单 / 发票申请', type: 'switch' }
-    ],
-    editable: true
-  },
-  channels: {
-    title: '渠道治理',
-    description: '维护供应商接入、密钥、权重、限流、健康状态和冷却策略。',
-    endpoint: '/admin/api/channels',
-    createLabel: '新建渠道',
-    columns: [
-      { prop: 'name', label: '渠道', minWidth: 170 },
-      { prop: 'type', label: '类型', width: 130 },
-      { prop: 'baseUrl', label: 'Base URL', minWidth: 220 },
-      { prop: 'groupName', label: '分组', width: 120 },
-      { prop: 'weight', label: '权重', width: 90 },
-      { prop: 'rpmLimit', label: 'RPM', width: 90 },
-      { prop: 'tpmLimit', label: 'TPM', width: 100 },
-      { prop: 'consecutiveFailures', label: '连续失败', width: 100 },
-      { prop: 'averageLatencyMs', label: '平均延迟', width: 110 },
-      { prop: 'healthStatus', label: '健康', width: 120, kind: 'status' },
-      { prop: 'enabled', label: '状态', width: 100, kind: 'bool' }
-    ],
-    fields: [
-      { prop: 'name', label: '渠道名称' },
-      { prop: 'type', label: '协议类型', type: 'select', options: ['openai', 'haoee', 'deepseek', 'anthropic', 'gemini', 'xai', 'openrouter', 'qwen', 'kimi', 'glm', 'mistral', 'meta', 'nvidia'].map(value => ({ label: value, value })) },
-      { prop: 'baseUrl', label: 'Base URL' },
-      { prop: 'apiKey', label: 'API Key', type: 'password' },
-      { prop: 'models', label: '模型清单', type: 'textarea' },
-      { prop: 'groupName', label: '渠道分组' },
-      { prop: 'weight', label: '权重', type: 'number', min: 1 },
-      { prop: 'rpmLimit', label: 'RPM 限制', type: 'number' },
-      { prop: 'tpmLimit', label: 'TPM 限制', type: 'number' },
-      { prop: 'autoDisable', label: '连续失败自动熔断', type: 'switch' },
-      { prop: 'failureThreshold', label: '熔断失败阈值', type: 'number', min: 1 },
-      { prop: 'cooldownSeconds', label: '熔断冷却秒数', type: 'number', min: 5 },
-      { prop: 'enabled', label: '启用', type: 'switch' }
-    ],
-    editable: true,
-    deletable: true
-  },
-  models: {
-    title: '模型与定价',
-    description: '由渠道治理中的模型清单与逐模型定价自动生成。这里仅展示路由、售价、上游成本和毛利。',
-    endpoint: '/admin/api/models',
-    columns: [
-      { prop: 'publicModelName', label: '公开模型', minWidth: 180 },
-      { prop: 'channelModelName', label: '渠道模型', minWidth: 180 },
-      { prop: 'channel.name', label: '渠道', minWidth: 150 },
-      { prop: 'priority', label: '优先级', width: 90 },
-      { prop: 'priceRatio', label: '倍率', width: 90 },
-      { prop: 'priceTiers', label: '上下文挡位', minWidth: 220, kind: 'tierRange' },
-      { prop: 'officialPrices', label: '官网 输入/输出/读/写', minWidth: 310, kind: 'tierOfficial' },
-      { prop: 'costPrices', label: '成本 输入/输出/读/写', minWidth: 310, kind: 'tierCost' },
-      { prop: 'salePrices', label: '售价 输入/输出/读/写', minWidth: 310, kind: 'tierSale' },
-      { prop: 'tierProfit', label: '毛利 输入/输出/读/写', minWidth: 310, kind: 'tierProfit' },
-      { prop: 'billingEnabled', label: '计费', width: 90, kind: 'bool' },
-      { prop: 'trafficPercent', label: '灰度', width: 90 },
-      { prop: 'callable', label: '前台调用', width: 110, kind: 'callable' },
-      { prop: 'availabilityMessage', label: '可用性说明', minWidth: 190 },
-      { prop: 'enabled', label: '状态', width: 100, kind: 'bool' }
-    ],
-    fields: []
-  },
-  tokens: {
-    title: 'Token 与权限',
-    description: '管理平台 Key、用户归属、额度、过期时间、模型范围和 IP 白名单。',
-    endpoint: '/admin/api/tokens',
-    createLabel: '生成 Token',
-    columns: [
-      { prop: 'name', label: '名称', minWidth: 150 },
-      { prop: 'keyPreview', label: 'Key（脱敏）', minWidth: 220 },
-      { prop: 'userId', label: '用户ID', width: 100 },
-      { prop: 'usedQuota', label: '已用', width: 110 },
-      { prop: 'totalQuota', label: '总额度', width: 110 },
-      { prop: 'allowedModels', label: '模型范围', minWidth: 160 },
-      { prop: 'ipWhitelist', label: 'IP 白名单', minWidth: 160 },
-      { prop: 'enabled', label: '状态', width: 100, kind: 'bool' }
-    ],
-    fields: [
-      { prop: 'name', label: '名称' },
-      { prop: 'userId', label: '用户 ID', type: 'number' },
-      { prop: 'totalQuota', label: '总额度', type: 'number', step: 10000 },
-      { prop: 'allowedModels', label: '允许模型，逗号分隔' },
-      { prop: 'ipWhitelist', label: 'IP 白名单，逗号分隔' },
-      { prop: 'description', label: '说明', type: 'textarea' },
-      { prop: 'enabled', label: '启用', type: 'switch' }
-    ],
-    editable: true,
-    deletable: true
-  },
-  audit: {
-    title: '调用审计',
-    description: '排查请求链路、失败原因、成本、售价、延迟和管理员写操作。',
-    endpoint: '/admin/api/audit/request-logs',
-    columns: [
-      { prop: 'trace_id', label: 'Trace ID', minWidth: 140 },
-      { prop: 'created_at', label: '请求时间', minWidth: 170 },
-      { prop: 'username', label: '用户', minWidth: 120 },
-      { prop: 'model', label: '模型', minWidth: 160 },
-      { prop: 'channel_name', label: '渠道', minWidth: 140 },
-      { prop: 'total_tokens', label: 'Token', width: 110 },
-      { prop: 'sale_amount', label: '模型售价(USD)', width: 140, kind: 'modelMoney' },
-      { prop: 'cost_amount', label: '成本(USD)', width: 125, kind: 'modelMoney' },
-      { prop: 'gross_profit', label: '毛利(USD)', width: 125, kind: 'modelMoney' },
-      { prop: 'request_margin', label: '毛利率', width: 100, kind: 'percent' },
-      { prop: 'latency_ms', label: '延迟', width: 100 },
-      { prop: 'status', label: '状态', width: 110, kind: 'status' },
-      { prop: 'error_message', label: '错误', minWidth: 220 }
-    ],
-    fields: []
-  },
-  finance: {
-    title: '钱包财务',
-    description: '查看充值、消费、调账流水，并生成可控兑换码。',
-    endpoint: '/admin/api/finance/transactions',
-    createLabel: '生成兑换码',
-    columns: [],
-    fields: [
-      { prop: 'code', label: '兑换码，不填自动生成' },
-      { prop: 'amount', label: '额度', type: 'number', step: 10000 },
-      { prop: 'maxUses', label: '最大使用次数', type: 'number', min: 1 }
-    ]
-  },
-  security: {
-    title: '安全策略',
-    description: '配置全局、分组、用户和 Token 级限流、拦截、告警策略。',
-    endpoint: '/admin/api/security/policies',
-    createLabel: '新增策略',
-    columns: [
-      { prop: 'name', label: '策略', minWidth: 160 },
-      { prop: 'scope', label: '范围', minWidth: 140 },
-      { prop: 'action', label: '动作', width: 130 },
-      { prop: 'threshold_value', label: '阈值', minWidth: 160 },
-      { prop: 'enabled', label: '状态', width: 100, kind: 'bool' }
-    ],
-    fields: [
-      { prop: 'name', label: '策略名称' },
-      { prop: 'scope', label: '范围' },
-      { prop: 'action', label: '动作', type: 'select', options: ['RATE_LIMIT', 'BLOCK', 'WARN', 'REVIEW'].map(value => ({ label: value, value })) },
-      { prop: 'threshold', label: '阈值' },
-      { prop: 'enabled', label: '启用', type: 'switch' }
-    ],
-    editable: true
-  },
-  settings: {
-    title: '系统配置与报表',
-    description: '维护站点配置、注册策略、公告，并查看模型和渠道维度报表。',
-    endpoint: '/admin/api/settings',
-    createLabel: '新增配置',
-    columns: [],
-    fields: [
-      { prop: 'key', label: '配置键' },
-      { prop: 'value', label: '配置值', type: 'textarea' },
-      { prop: 'description', label: '说明' }
-    ],
-    editable: true
-  }
-}
+const configs = createAdminConfigs()
+const financeFeature = useAdminFinance(query, load)
+const { financePage, loadFinance, loadFinanceTransactions } = financeFeature
+const settingsFeature = useAdminSettings(query)
+const usersFeature = useAdminUsers(load)
+const { openAdjust, upgradeEnterprise } = usersFeature
 
 const config = computed(() => configs[module.value])
 const activeFields = computed(() => config.value.fields)
@@ -1367,7 +939,7 @@ const metrics = computed<Array<{ label: string; value: string; badge: string; to
     ]
   }
   if (module.value === 'finance') {
-    const m = dashboard.value.finance || {}
+    const m = financeFeature.summary.value
     return [
       { label: '用户余额', value: money(m.userBalance), badge: '全站余额', tone: 'blue' },
       { label: '充值金额', value: money(m.rechargeAmount), badge: '充值与兑换，不含调账', tone: 'green' },
@@ -1410,42 +982,6 @@ watch([() => testForm.prompt, () => testForm.timeoutSeconds], () => {
 
 onMounted(() => { hydrateAuditRoute(); void load() })
 
-async function loadFinanceSection(section: FinanceSection) {
-  financeErrors[section] = ''
-  const endpoints: Record<FinanceSection, string> = {
-    summary: '/api/admin/api/finance/summary',
-    transactions: '/api/admin/api/finance/transactions/page',
-    codes: '/api/admin/api/finance/redeem-codes',
-    plans: '/api/admin/api/finance/recharge-plans'
-  }
-  const labels: Record<FinanceSection, string> = {
-    summary: '财务汇总', transactions: '钱包流水', codes: '兑换码', plans: '充值套餐'
-  }
-  try {
-    const response = await http.get(endpoints[section], section === 'transactions' ? {
-      params: { page: financePage.value, size: financePageSize.value, query: query.value.trim() || undefined }
-    } : undefined)
-    if (section === 'summary') dashboard.value.finance = response.data || {}
-    else if (section === 'transactions') {
-      rows.value = response.data?.items || []
-      financeTotal.value = Number(response.data?.total || 0)
-    }
-    else if (section === 'codes') secondaryRows.value = response.data || []
-    else rechargePlans.value = response.data || []
-  } catch (error: unknown) {
-    financeErrors[section] = getHttpErrorNotice(error, `${labels[section]}加载失败`)
-  }
-}
-
-function loadFinanceTransactions() {
-  return loadFinanceSection('transactions')
-}
-
-function handleFinancePageSizeChange() {
-  financePage.value = 1
-  void loadFinanceTransactions()
-}
-
 function handleToolbarSearch() {
   if (module.value === 'audit') return loadAuditLogs()
   if (module.value === 'finance') {
@@ -1484,16 +1020,10 @@ async function saveModelMarketDisplay() {
   }
 }
 
-async function loadFinance() {
-  await Promise.all((['summary', 'transactions', 'codes', 'plans'] as FinanceSection[])
-    .map(section => loadFinanceSection(section)))
-}
-
 async function load() {
   loading.value = true
   try {
     rows.value = []
-    secondaryRows.value = []
     testRows.value = []
     if (module.value === 'dashboard') {
       const [dashboardResult] = await Promise.allSettled([
@@ -1506,15 +1036,7 @@ async function load() {
     } else if (module.value === 'finance') {
       await loadFinance()
     } else if (module.value === 'settings') {
-      legalStatus.value = null
-      const [settings, reports, legal] = await Promise.all([
-        http.get('/api/admin/api/settings'),
-        http.get('/api/admin/api/reports'),
-        http.get('/api/public/legal')
-      ])
-      rows.value = settings.data
-      report.value = reports.data
-      legalStatus.value = legal.data
+      await settingsFeature.loadSettings()
     } else if (module.value === 'models') {
       const [modelRes, channelRes] = await Promise.all([
         http.get('/api/admin/api/models'),
@@ -1810,39 +1332,6 @@ const adminUsagePieStyle = computed(() => {
   return { background: `conic-gradient(${stops.length ? stops.join(',') : '#e9eeeb 0 100%'})` }
 })
 function compact(value: number) { return Intl.NumberFormat('zh-CN', { notation: 'compact', maximumFractionDigits: 1 }).format(value || 0) }
-
-function openRechargePlan(row?: any) {
-  Object.assign(rechargePlanForm, row ? {
-    id: row.id, name: row.name, amount: Number(row.amount), bonusPercent: Number(row.bonus_percent),
-    sortOrder: Number(row.sort_order), enabled: Boolean(row.enabled)
-  } : { id: null, name: '', amount: 500000, bonusPercent: 0, sortOrder: 100, enabled: true })
-  rechargePlanVisible.value = true
-}
-
-async function saveRechargePlan() {
-  if (!rechargePlanForm.name.trim()) return ElMessage.warning('请输入套餐名称')
-  rechargePlanSaving.value = true
-  try {
-    const payload = { ...rechargePlanForm, id: undefined }
-    if (rechargePlanForm.id) await http.put(`/api/admin/api/finance/recharge-plans/${rechargePlanForm.id}`, payload)
-    else await http.post('/api/admin/api/finance/recharge-plans', payload)
-    rechargePlanVisible.value = false
-    ElMessage.success('充值套餐已保存')
-    await load()
-  } catch (error: unknown) { ElMessage.error(getHttpErrorMessage(error, '充值套餐保存失败')) }
-  finally { rechargePlanSaving.value = false }
-}
-
-async function removeRechargePlan(row: any) {
-  try {
-    await ElMessageBox.confirm(`确认删除充值套餐“${row.name}”？历史订单不会受影响。`, '删除套餐', { type: 'warning' })
-    await http.delete(`/api/admin/api/finance/recharge-plans/${row.id}`)
-    ElMessage.success('充值套餐已删除')
-    await load()
-  } catch (error: any) {
-    if (error !== 'cancel' && error !== 'close') ElMessage.error(getHttpErrorMessage(error, '充值套餐删除失败'))
-  }
-}
 
 function openCreate() {
   editingId.value = null
@@ -2751,57 +2240,6 @@ except Exception as exc:
 `
 }
 
-function openAdjust(row: any) {
-  adjustTarget.value = row
-  adjustForm.amount = 0
-  adjustForm.reason = ''
-  adjustVisible.value = true
-}
-
-async function upgradeEnterprise(row:any){
-  try{
-    const result=await ElMessageBox.prompt('请输入企业名称','升级为企业用户',{inputValue:`${row.username} 的企业`,inputPattern:/^.{1,160}$/,inputErrorMessage:'企业名称需为 1–160 个字符',type:'warning'})
-    await http.post(`/api/admin/api/users/${row.id}/upgrade-enterprise`,{companyName:result.value.trim(),contactName:row.username})
-    ElMessage.success('用户已升级为企业用户');await load()
-  }catch(error:any){if(error==='cancel'||error==='close')return;ElMessage.error(getHttpErrorMessage(error,'升级企业用户失败'))}
-}
-
-async function saveAdjust() {
-  if (!adjustTarget.value) return
-  if (!Number.isFinite(adjustForm.amount) || adjustForm.amount === 0) {
-    ElMessage.warning('调整金额不能为 0')
-    return
-  }
-  const reason = adjustForm.reason.trim()
-  if (reason.length < 3 || reason.length > 500) {
-    ElMessage.warning('调账原因必须为 3–500 个字符')
-    return
-  }
-  try {
-    await ElMessageBox.confirm(
-      `确认将用户 ${adjustTarget.value.username} 的余额调整 ${adjustForm.amount > 0 ? '+' : ''}${adjustForm.amount.toLocaleString()} amount units（${money(adjustForm.amount)}）？`,
-      '高风险财务操作',
-      { type: 'warning', confirmButtonText: '确认调账' }
-    )
-  } catch {
-    return
-  }
-  adjustSaving.value = true
-  try {
-    await http.post(`/api/admin/api/users/${adjustTarget.value.id}/adjust-balance`, {
-      amount: adjustForm.amount,
-      reason
-    })
-    ElMessage.success('调账成功，已写入财务流水')
-    adjustVisible.value = false
-    await load()
-  } catch (error: unknown) {
-    ElMessage.error(getHttpErrorMessage(error, '调账失败'))
-  } finally {
-    adjustSaving.value = false
-  }
-}
-
 function display(value: any) {
   if (value === null || value === undefined || value === '') return '-'
   if (typeof value === 'object') return value.name || JSON.stringify(value)
@@ -2816,16 +2254,8 @@ function number(value: any) {
   return Number(value || 0).toLocaleString()
 }
 
-function money(value: any) {
-  return formatCny(typeof value === 'string' || typeof value === 'number' || typeof value === 'bigint' ? value : 0)
-}
-
 function rateMoney(value: any) {
   return formatPerMillionUsd(typeof value === 'string' || typeof value === 'number' || typeof value === 'bigint' ? value : 0)
-}
-
-function percent(value: any) {
-  return `${Number(value || 0).toFixed(1)}%`
 }
 
 function statusType(value: string) {
@@ -2860,31 +2290,6 @@ function healthType(value: string) {
   margin-bottom: 0;
 }
 .admin-metrics .metric-card.clickable{cursor:pointer;transition:transform .16s ease,box-shadow .16s ease}.admin-metrics .metric-card.clickable:hover,.admin-metrics .metric-card.clickable:focus{transform:translateY(-2px);box-shadow:0 14px 30px rgba(37,99,235,.14);outline:2px solid #93c5fd;outline-offset:2px}
-
-.panel {
-  min-width: 0;
-  overflow: hidden;
-  padding: 18px;
-  border: 1px solid var(--lnx-line);
-  border-radius: 8px;
-  background: #fff;
-  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.05);
-}
-
-.panel :deep(.el-table) {
-  width: 100%;
-}
-
-.settings-table { width: 100%; max-width: 100%; min-width: 0; }
-.settings-table :deep(td.el-table__cell),
-.settings-table :deep(.cell) { overflow: hidden; }
-.settings-table :deep(.cell), .settings-cell-text {
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-.settings-cell-text { display: block; max-width: 100%; overflow: hidden; }
-.legal-publication-control .panel-head { flex-wrap: wrap; }
-.legal-publication-control code { overflow-wrap: anywhere; }
 
 .dashboard-usage-panel,
 .admin-usage-analytics {
@@ -2953,30 +2358,6 @@ function healthType(value: string) {
   min-width: 2600px;
 }
 
-.admin-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(360px, 0.62fr);
-  gap: 18px;
-}
-
-.wide-panel {
-  min-width: 0;
-}
-
-.panel-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 14px;
-}
-
-.panel-head h3 {
-  margin: 0;
-  color: var(--lnx-text);
-  font-size: 18px;
-}
-
 .risk-list {
   display: grid;
   gap: 10px;
@@ -3012,44 +2393,6 @@ function healthType(value: string) {
 
 .tabs-panel {
   padding-top: 8px;
-}
-
-.report-summary {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-  margin-bottom: 16px;
-}
-
-.report-summary div {
-  min-height: 76px;
-  padding: 12px;
-  border-radius: 8px;
-  background: var(--lnx-surface-soft);
-}
-
-.report-summary span {
-  display: block;
-  color: var(--lnx-text-muted);
-  font-size: 12px;
-}
-
-.report-summary strong {
-  display: block;
-  margin-top: 10px;
-  color: var(--lnx-text);
-  font-size: 22px;
-}
-
-.drawer-alert,
-.field-hint {
-  margin-bottom: 16px;
-}
-
-.field-hint {
-  width: 100%;
-  color: var(--lnx-text-muted);
-  font-size: 12px;
 }
 
 .discovery-summary {
@@ -3395,10 +2738,6 @@ function healthType(value: string) {
     min-width: 0;
   }
 
-  .admin-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
   .discovery-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -3413,11 +2752,6 @@ function healthType(value: string) {
 }
 
 @media (max-width: 680px) {
-  .discovery-summary,
-  .report-summary,
-  .issued-secret {
-    grid-template-columns: minmax(0, 1fr);
-  }
 
   .channel-pricing-head,
   .channel-model-pricing-title,
@@ -3458,3 +2792,5 @@ function healthType(value: string) {
   }
 }
 </style>
+
+<style scoped src="../features/admin-console/panels.css"></style>

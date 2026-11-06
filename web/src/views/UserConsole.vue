@@ -205,27 +205,7 @@
           </section>
         </section>
 
-        <section v-else-if="current.key === 'keys'" class="console-panel">
-          <div class="panel-head">
-            <div>
-              <h2>Key 列表</h2>
-              <p>按环境拆分 Key，控制额度、模型范围和启停状态。</p>
-            </div>
-            <el-button type="primary" @click="openCreateKey">新建 Key</el-button>
-          </div>
-          <PagedTable :data="keys" border list-id="UserConsole-1">
-            <el-table-column prop="name" label="名称" min-width="140" />
-            <el-table-column prop="key" label="Key" min-width="220" />
-            <el-table-column prop="quota" label="额度" min-width="140" />
-            <el-table-column prop="models" label="模型范围" min-width="170" />
-            <el-table-column prop="lastUsed" label="最近调用" min-width="140" />
-            <el-table-column prop="status" label="状态" min-width="100">
-              <template #default="{ row }">
-                <el-tag :type="row.status === '启用' ? 'success' : 'info'">{{ row.status }}</el-tag>
-              </template>
-            </el-table-column>
-          </PagedTable>
-        </section>
+        <UserKeysPanel v-else-if="current.key === 'keys'" :state="keysFeature" />
 
         <section v-else-if="current.key === 'playground'" class="playground-layout">
           <section class="console-panel playground-request-panel">
@@ -385,312 +365,13 @@
         <ProfileCenter v-else-if="current.key === 'profile'" />
         <DeveloperDocs v-else-if="current.key === 'docs'" />
 
-        <section v-else-if="current.key === 'logs'" class="console-panel" v-loading="billingLoading">
-          <div class="panel-head">
-            <div>
-              <h2>模型账单明细</h2>
-              <p>按模型、Key 和日期聚合输入、输出、缓存命中 token 及扣费。</p>
-            </div>
-            <el-button @click="loadBilling">刷新</el-button>
-          </div>
-          <div class="usage-filter-row">
-            <el-date-picker v-model="usageRange" type="daterange" value-format="YYYY-MM-DD" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" @change="applyBillingFilters" />
-            <el-select v-model="usageModel" clearable placeholder="全部模型" @change="applyBillingFilters">
-              <el-option v-for="model in dashboard.models || []" :key="model" :label="model" :value="model" />
-            </el-select>
-          </div>
-          <div v-if="billingDataError" class="module-error-state">
-            <span>{{ billingDataError }}</span>
-            <el-button link type="primary" @click="loadBilling">重新加载账单</el-button>
-          </div>
-          <div v-if="usageAnalyticsError" class="module-error-state">
-            <span>{{ usageAnalyticsError }}</span>
-            <el-button link type="primary" @click="loadUsageAnalytics">重新加载图表</el-button>
-          </div>
-          <div v-if="!usageAnalyticsError" class="usage-visual-grid" v-loading="usageAnalyticsLoading">
-            <article class="usage-visual-card usage-bars-card">
-              <header><strong>单日 Token 消耗</strong><span>堆叠显示输入未命中、缓存命中/写入和输出</span></header>
-              <div class="usage-stacked-chart">
-                <div v-for="day in usageDays" :key="day.date" class="usage-day-column">
-                  <div class="usage-day-bar" :title="`${day.date} · ${number(day.total)} Token`" :style="{ height: `${day.height}%` }">
-                    <i v-for="part in day.parts" :key="part.name" :class="part.className" :style="{ flexGrow: part.value || 0 }"></i>
-                  </div>
-                  <small>{{ day.date.slice(5) }}</small>
-                </div>
-              </div>
-            </article>
-            <article class="usage-visual-card usage-pie-card">
-              <header><strong>Token 构成</strong><span>当前筛选范围</span></header>
-              <div class="usage-pie-wrap"><div class="usage-pie" :style="usagePieStyle"><b>{{ compactNumber(usageTotalTokens) }}</b><small>Token</small></div>
-                <ul><li v-for="slice in usageComposition" :key="slice.name"><i :style="{ background: slice.color }"></i><span>{{ slice.name }}</span><b>{{ number(slice.value) }}</b></li></ul>
-              </div>
-              <footer>模型消费总额 <strong>{{ formatUsd(usageMetric(usageAnalytics.totals, 'total_amount')) }}</strong></footer>
-            </article>
-          </div>
-          <div class="usage-table-scroll" tabindex="0" aria-label="账单汇总横向滚动区域">
-          <PagedTable :data="billingSummary" border scrollbar-always-on style="min-width: 1260px" list-id="UserConsole-2">
-            <el-table-column prop="model" label="模型" min-width="180" />
-            <el-table-column prop="request_count" label="请求" width="90" />
-            <el-table-column prop="prompt_tokens" label="输入 Token" width="130" />
-            <el-table-column prop="completion_tokens" label="输出 Token" width="130" />
-            <el-table-column prop="cached_tokens" label="缓存 Token" width="130" />
-            <el-table-column label="输入费用(USD)" width="150">
-              <template #default="{ row }">{{ formatUsd(row.input_amount) }}</template>
-            </el-table-column>
-            <el-table-column label="输出费用(USD)" width="150">
-              <template #default="{ row }">{{ formatUsd(row.output_amount) }}</template>
-            </el-table-column>
-            <el-table-column label="缓存费用(USD)" width="150">
-              <template #default="{ row }">{{ formatUsd(row.cached_amount) }}</template>
-            </el-table-column>
-            <el-table-column label="总费用(USD)" width="150">
-              <template #default="{ row }">{{ formatUsd(row.total_amount) }}</template>
-            </el-table-column>
-          </PagedTable>
-          </div>
-
-          <div class="usage-table-scroll billing-detail-table" tabindex="0" aria-label="用量明细横向滚动区域">
-          <PagedTable :data="billingRows" border scrollbar-always-on style="min-width: 1390px" list-id="UserConsole-3" pagination="external">
-            <el-table-column prop="created_at" label="时间" min-width="170" />
-            <el-table-column prop="trace_id" label="Trace ID" min-width="150" />
-            <el-table-column prop="token_name" label="Key" min-width="140" />
-            <el-table-column prop="model" label="模型" min-width="160" />
-            <el-table-column prop="prompt_tokens" label="输入" width="90" />
-            <el-table-column prop="completion_tokens" label="输出" width="90" />
-            <el-table-column prop="cached_tokens" label="缓存" width="90" />
-            <el-table-column label="模型费用(USD)" width="140">
-              <template #default="{ row }">{{ formatUsd(row.total_amount) }}</template>
-            </el-table-column>
-            <el-table-column prop="status" label="状态" width="110" />
-            <el-table-column prop="error_message" label="错误" min-width="220" />
-          </PagedTable>
-          </div>
-          <SelectablePagination
-            v-model:current-page="billingPage"
-            v-model:page-size="billingPageSize"
-            class="billing-pagination"
-            layout="total, sizes, prev, pager, next, jumper"
-            :page-sizes="[10, 20, 50, 100]"
-            :total="billingTotal"
-            @current-change="loadBilling"
-            @size-change="handleBillingPageSizeChange"
-           list-id="UserConsole-1"/>
-        </section>
+        <UserUsagePanel v-else-if="current.key === 'logs'" :state="usageFeature" :models="dashboard.models || []" />
 
         <section v-else-if="current.key === 'model-probe'" class="console-panel">
           <ModelProbePanel endpoint="/user/model-probe" />
         </section>
 
-        <section v-else-if="current.key === 'wallet'" class="wallet-layout" v-loading="walletLoading">
-          <div class="console-metrics wallet-metrics">
-            <article class="console-stat polished">
-              <span>可用余额</span>
-              <strong>{{ formatCny(wallet.balance) }}</strong>
-              <span class="console-status-note is-green">CNY · 10,000 units = ¥1</span>
-            </article>
-            <article class="console-stat polished">
-              <span>本月消耗</span>
-              <strong>{{ formatCny(wallet.monthSpend) }}</strong>
-              <span class="console-status-note is-orange">按真实账单汇总</span>
-            </article>
-            <article class="console-stat polished">
-              <span>赠送额度</span>
-              <strong>{{ formatCny(wallet.giftBalance) }}</strong>
-              <span class="console-status-note is-blue">CNY 等值额度</span>
-            </article>
-            <article class="console-stat polished">
-              <span>可开票金额</span>
-              <strong>{{ formatCny(wallet.invoiceableAmount) }}</strong>
-              <span class="console-status-note is-purple">以服务端账本为准</span>
-            </article>
-          </div>
-
-          <section class="console-panel redeem-panel">
-            <div class="panel-head">
-              <div>
-                <h2>兑换码充值</h2>
-                <p>平台暂不开放未经验证的直接加款；可使用管理员签发的兑换码入账。</p>
-              </div>
-            </div>
-            <div class="redeem-row">
-              <el-input
-                id="redeem-code"
-                v-model="redeemCode"
-                maxlength="128"
-                clearable
-                autocomplete="off"
-                placeholder="输入兑换码"
-                @keyup.enter="redeemWalletCode"
-              />
-              <el-button type="primary" :loading="redeeming" @click="redeemWalletCode">立即兑换</el-button>
-            </div>
-          </section>
-
-          <section class="console-panel wallet-plans">
-            <div class="panel-head">
-              <div>
-                <h2>额度方案</h2>
-                <p>以下金额均按 CNY 展示；支付购买尚未开放时不会创建虚假充值。</p>
-              </div>
-            </div>
-            <div class="wallet-plan-grid">
-              <PagedList :data="wallet.plans" list-id="UserConsole.vue-2" v-slot="{items:pagedItems}"><article v-for="plan in pagedItems" :key="plan.id">
-                <strong>{{ plan.name }}</strong>
-                <span>{{ formatMoneyDto(plan.paymentMoney) }}</span>
-                <small>赠送 {{ Number(plan.bonus || 0).toFixed(2) }}% · 到账 {{ formatMoneyDto(plan.totalCreditMoney) }}</small>
-                <el-button type="primary" :loading="rechargeSubmitting" @click="openRecharge(plan)">购买</el-button>
-              </article></PagedList>
-              <article>
-                <strong>自定义充值</strong>
-                <span>任意金额</span>
-                <small>充值金额必须大于 ¥0.00，不参与套餐赠送</small>
-                <el-button type="primary" :loading="rechargeSubmitting" @click="openCustomRecharge">自定义金额</el-button>
-              </article>
-            </div>
-          </section>
-
-          <section class="console-panel wallet-transactions">
-            <div class="panel-head"><div><h2>充值订单</h2><p>金额由服务端套餐快照确定，付款后可下载账单和收据。</p></div></div>
-            <PagedTable :data="rechargeOrders" border empty-text="暂无充值订单" list-id="UserConsole-4" pagination="external">
-              <el-table-column prop="orderNo" label="订单号" min-width="220" />
-              <el-table-column prop="planName" label="套餐" min-width="130" />
-              <el-table-column label="实付" width="130"><template #default="{ row }">{{ formatMoneyDto(row.paymentMoney) }}</template></el-table-column>
-              <el-table-column label="到账" width="130"><template #default="{ row }">{{ formatMoneyDto(row.totalCreditMoney) }}</template></el-table-column>
-              <el-table-column prop="status" label="状态" width="120" />
-              <el-table-column label="操作" min-width="210"><template #default="{ row }">
-                <el-button v-if="row.invoiceRequested" link type="primary" @click="downloadRecharge(row.id, 'invoice')">账单</el-button>
-                <el-button v-if="['PAID','REFUNDED'].includes(row.status)" link type="success" @click="downloadRecharge(row.id, 'receipt')">收据</el-button>
-              </template></el-table-column>
-            </PagedTable>
-            <SelectablePagination
-              v-model:current-page="rechargeOrderPage"
-              v-model:page-size="rechargeOrderPageSize"
-              layout="total, sizes, prev, pager, next, jumper"
-              :page-sizes="[10, 20, 50, 100]"
-              :total="rechargeOrderTotal"
-              list-id="UserConsole-recharge-orders"
-              @current-change="loadWallet"
-              @size-change="handleRechargeOrderPageSizeChange"
-            />
-          </section>
-
-          <section class="console-panel wallet-transactions">
-            <div class="panel-head">
-              <div>
-                <h2>余额流水</h2>
-                <p>金额与余额均按 10,000 amount units = ¥1.00 CNY 换算。</p>
-              </div>
-              <el-button :loading="walletLoading" @click="loadWallet">刷新</el-button>
-            </div>
-            <PagedTable :data="wallet.transactions" border empty-text="暂无余额流水" list-id="UserConsole-5" pagination="external">
-              <el-table-column prop="created_at" label="时间" min-width="180" />
-              <el-table-column prop="type" label="类型" width="130" />
-              <el-table-column label="变动金额" width="150">
-                <template #default="{ row }">{{ formatSignedCny(row.amount) }}</template>
-              </el-table-column>
-              <el-table-column label="变动后余额" width="150">
-                <template #default="{ row }">{{ formatCny(row.balance_after) }}</template>
-              </el-table-column>
-              <el-table-column prop="channel" label="渠道" width="130" />
-              <el-table-column prop="remark" label="备注" min-width="220" />
-            </PagedTable>
-            <SelectablePagination
-              v-model:current-page="walletTransactionPage"
-              v-model:page-size="walletTransactionPageSize"
-              class="billing-pagination"
-              layout="total, sizes, prev, pager, next, jumper"
-              :page-sizes="[10, 20, 50, 100]"
-              :total="walletTransactionTotal"
-              @current-change="loadWallet"
-              @size-change="handleWalletTransactionPageSizeChange"
-             list-id="UserConsole-2"/>
-          </section>
-
-          <el-dialog
-            v-model="rechargeVisible"
-            class="recharge-dialog"
-            modal-class="recharge-overlay"
-            title="充值方案"
-            width="620px"
-            destroy-on-close
-            :close-on-click-modal="!rechargeSubmitting"
-            :close-on-press-escape="!rechargeSubmitting"
-            :show-close="!rechargeSubmitting"
-          >
-            <div class="recharge-choices">
-              <PagedList v-if="wallet.plans.length" :data="wallet.plans" list-id="UserConsole.vue-3" v-slot="{ items }">
-                <button
-                  v-for="plan in items"
-                  :key="plan.id"
-                  type="button"
-                  class="recharge-choice"
-                  :aria-pressed="selectedRechargePlan?.id === plan.id"
-                  :disabled="rechargeSubmitting"
-                  @click="selectRechargePlan(plan)"
-                >
-                  <span><strong>{{ plan.name }}</strong><small>赠送 {{ Number(plan.bonus || 0).toFixed(2) }}%</small></span>
-                  <b>{{ formatMoneyDto(plan.paymentMoney) }}</b>
-                </button>
-              </PagedList>
-              <button
-                type="button"
-                class="recharge-choice recharge-choice-custom"
-                :aria-pressed="customRecharge"
-                :disabled="rechargeSubmitting"
-                @click="selectCustomRecharge"
-              >
-                <strong>自定义充值</strong>
-                <small>无赠送</small>
-              </button>
-            </div>
-            <el-form class="recharge-form" label-position="top" :disabled="rechargeSubmitting" @submit.prevent>
-              <dl v-if="selectedRechargePlan" class="recharge-totals">
-                <div><dt>实付</dt><dd>{{ formatMoneyDto(selectedRechargePlan.paymentMoney) }}</dd></div>
-                <div><dt>到账</dt><dd>{{ formatMoneyDto(selectedRechargePlan.totalCreditMoney) }}</dd></div>
-              </dl>
-              <el-form-item v-if="customRecharge" required>
-                <template #label><span>充值金额</span> ({{ displayCurrency }})</template>
-                <el-input-number v-model="customRechargeAmount" :min="0.01" :precision="2" :controls="false" class="recharge-amount" />
-                <div class="form-hint">金额必须大于 0，最多保留两位小数。</div>
-              </el-form-item>
-              <el-form-item label="支付方式">
-                <el-radio-group v-model="rechargeForm.paymentMethod" class="recharge-methods">
-                  <el-radio border value="alipay">支付宝</el-radio>
-                  <el-radio border value="wxpay">微信支付</el-radio>
-                </el-radio-group>
-              </el-form-item>
-              <el-form-item v-if="wallet.invoiceEnabled" label="需要开具账单 / 发票"><el-switch v-model="rechargeForm.needInvoice" /></el-form-item>
-              <template v-if="wallet.invoiceEnabled && rechargeForm.needInvoice">
-                <el-form-item label="姓名或公司名称"><el-input v-model="rechargeForm.billingName" /></el-form-item>
-                <el-form-item label="接收邮箱"><el-input v-model="rechargeForm.contactEmail" /></el-form-item>
-                <el-form-item label="详细地址"><el-input v-model="rechargeForm.billingAddressLine1" placeholder="省/市以下的街道、门牌、小区等" /></el-form-item>
-                <el-row :gutter="12"><el-col :span="12"><el-form-item label="区/县"><el-input v-model="rechargeForm.billingDistrict" /></el-form-item></el-col><el-col :span="12"><el-form-item label="城市"><el-input v-model="rechargeForm.billingCity" /></el-form-item></el-col></el-row>
-                <el-row :gutter="12"><el-col :span="12"><el-form-item label="省份"><el-input v-model="rechargeForm.billingProvince" /></el-form-item></el-col><el-col :span="12"><el-form-item label="邮编"><el-input v-model="rechargeForm.billingPostalCode" /></el-form-item></el-col></el-row>
-                <el-form-item label="国家/地区"><el-input v-model="rechargeForm.billingCountry" /></el-form-item>
-              </template>
-              <div class="recharge-disclosure">
-                <p>模型调用按实际用量另行扣费；税费、汇率和最终金额请以支付订单为准。</p>
-                <p class="recharge-policy-links">
-                  <router-link to="/refund" target="_blank">退款与取消</router-link>
-                  <router-link to="/terms" target="_blank">服务条款</router-link>
-                  <router-link to="/ai-data" target="_blank">AI 数据处理</router-link>
-                </p>
-              </div>
-            </el-form>
-            <template #footer>
-              <div class="recharge-consent">
-                <el-alert v-if="rechargeLegalLoading" type="info" :closable="false" title="正在加载交易条件…" />
-                <el-alert v-else-if="rechargeLegal?.checkout_ready === false" type="warning" :closable="false" title="在线收款开关已关闭，请联系平台客服。" />
-                <el-alert v-else-if="!rechargeCheckoutReady" type="warning" :closable="false" title="交易条件暂不可用，请稍后重试。" />
-                <el-checkbox v-model="checkoutAcknowledged" :disabled="!rechargeCheckoutReady || rechargeSubmitting">我已阅读本次交易条件、退款与取消政策</el-checkbox>
-              </div>
-              <div class="recharge-actions">
-                <el-button :disabled="rechargeSubmitting" @click="rechargeVisible = false">取消</el-button>
-                <el-button type="primary" :disabled="!canSubmitRecharge" :loading="rechargeSubmitting" @click="submitRecharge">立即支付</el-button>
-              </div>
-            </template>
-          </el-dialog>
-        </section>
+        <UserWalletPanel v-else-if="current.key === 'wallet'" :state="walletFeature" />
 
         <section v-else class="console-panel">
           <div class="panel-head">
@@ -708,131 +389,48 @@
         </section>
       </main>
 
-      <el-dialog v-model="createKeyVisible" title="新建 API Key" width="480px" destroy-on-close>
-        <el-form label-position="top" @submit.prevent="createKey">
-          <el-form-item label="名称" required>
-            <el-input
-              v-model="createKeyForm.name"
-              maxlength="80"
-              show-word-limit
-              placeholder="例如：生产环境"
-            />
-          </el-form-item>
-          <el-form-item label="Token 调用额度">
-            <el-input-number
-              v-model="createKeyForm.totalQuota"
-              :min="0"
-              :max="1000000000"
-              :step="10000"
-              controls-position="right"
-              style="width: 100%"
-            />
-            <div class="form-hint">单位为 Token；填写 0 表示不单独限制此 Key 的 Token 额度。账户余额仍会按模型定价扣减。</div>
-          </el-form-item>
-          <el-form-item label="授权全部模型">
-            <el-switch v-model="createKeyForm.allowAllModels" />
-          </el-form-item>
-          <el-form-item v-if="!createKeyForm.allowAllModels" label="授权模型" required>
-            <el-cascader
-              v-model="createKeyForm.allowedModelIds"
-              :options="modelGrantOptions"
-              :props="{ multiple: true, emitPath: false }"
-              collapse-tags
-              collapse-tags-tooltip
-              filterable
-              clearable
-              placeholder="按来源 / 功能 / 厂家选择模型"
-              style="width: 100%"
-            />
-            <div class="form-hint">仅所选模型会出现在此 Key 的 /v1/models 中。</div>
-          </el-form-item>
-        </el-form>
-        <template #footer>
-          <el-button @click="createKeyVisible = false">取消</el-button>
-          <el-button type="primary" :loading="createKeySubmitting" @click="createKey">创建</el-button>
-        </template>
-      </el-dialog>
-
-      <el-dialog
-        v-model="createdKeyVisible"
-        title="API Key 创建成功（仅显示一次）"
-        width="560px"
-        :close-on-click-modal="false"
-        :close-on-press-escape="false"
-        @closed="clearCreatedKey"
-      >
-        <el-alert
-          title="关闭后将无法再次查看完整 Key，请立即复制并保存在密码管理器中。"
-          type="warning"
-          :closable="false"
-          show-icon
-        />
-        <div class="created-key-secret">
-          <code>{{ createdKeySecret }}</code>
-          <el-button type="primary" @click="copyText(createdKeySecret, 'API Key 已复制')">复制 Key</el-button>
-        </div>
-        <template #footer>
-          <el-button type="primary" @click="createdKeyVisible = false">我已安全保存</el-button>
-        </template>
-      </el-dialog>
+      <UserKeyDialogs :state="keysFeature" />
       <PaymentActionDialog v-model="paymentDialogVisible" :action="paymentAction" :payment-method="rechargeForm.paymentMethod" />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { createPollingTask } from '@/utils/polling'
-import { downloadFile } from '@/utils/download'
-import { getHttpDownloadErrorMessage } from '@/utils/http'
-import PagedList from "@/components/PagedList.vue"
-import SelectablePagination from '@/components/SelectablePagination.vue'
-import PagedTable from '@/components/PagedTable.vue'
-import PaymentActionDialog, { type PaymentAction } from '@/components/PaymentActionDialog.vue'
-import { paymentActionOf } from '@/utils/payment'
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { Close, Compass, DataLine, Document, HomeFilled, Key, MagicStick, Menu, Monitor, Promotion, ShoppingCart, SwitchButton, Tickets, Wallet, User } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
-import { clearAuth, getUser } from '@/utils/auth'
-import http, { createIdempotencyKey, getHttpErrorMessage, getHttpErrorNotice } from '@/utils/http'
-import { formatCny, formatMoneyDto as formatLocalizedMoneyDto, formatPerMillionUsd, formatSignedCny, formatUsd, type AmountUnits } from '@/utils/money'
-import { displayCurrency } from '@/i18n/locale'
-import { DEFAULT_PAGE_SIZE } from '@/utils/listPage'
-import ModelSalePricing from '@/components/ModelSalePricing.vue'
-import DeveloperDocs from '@/components/DeveloperDocs.vue'
-import ProfileCenter from '@/components/ProfileCenter.vue'
-import AccountMenu from '@/components/AccountMenu.vue'
-import UsageTimelineChart from '@/components/UsageTimelineChart.vue'
-import ModelProbePanel from '@/components/ModelProbePanel.vue'
-import {
-  modelScopeLabel,
-  modelsAllowedForToken,
-  normalizeModelCatalog,
-  type CallableModel,
-} from '@/utils/modelCatalog'
+import UserKeysPanel from '@/features/user-console/UserKeysPanel.vue';
+import UserKeyDialogs from '@/features/user-console/UserKeyDialogs.vue';
+import UserUsagePanel from '@/features/user-console/UserUsagePanel.vue';
+import UserWalletPanel from '@/features/user-console/UserWalletPanel.vue';
+import { useUserKeys } from '@/features/user-console/useUserKeys';
+import { useUserUsage } from '@/features/user-console/useUserUsage';
+import { useUserWallet } from '@/features/user-console/useUserWallet';
+import { amountValue, money, number, compactNumber, keyPreview, formatDateTime, copyText } from '@/features/user-console/format';
+
+import PagedList from "@/components/PagedList.vue";
+
+import PagedTable from '@/components/PagedTable.vue';
+import PaymentActionDialog from '@/components/PaymentActionDialog.vue';
+
+import { computed, onMounted, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
+import { Close, Compass, DataLine, Document, HomeFilled, Key, MagicStick, Menu, Monitor, Promotion, ShoppingCart, SwitchButton, Tickets, Wallet, User } from '@element-plus/icons-vue';
+import { ElMessage } from 'element-plus';
+import { clearAuth, getUser } from '@/utils/auth';
+import http, { getHttpErrorMessage } from '@/utils/http';
+import { formatPerMillionUsd, formatUsd, type AmountUnits } from '@/utils/money';
+
+import ModelSalePricing from '@/components/ModelSalePricing.vue';
+import DeveloperDocs from '@/components/DeveloperDocs.vue';
+import ProfileCenter from '@/components/ProfileCenter.vue';
+import AccountMenu from '@/components/AccountMenu.vue';
+import UsageTimelineChart from '@/components/UsageTimelineChart.vue';
+import ModelProbePanel from '@/components/ModelProbePanel.vue';
+import { modelsAllowedForToken, normalizeModelCatalog, type CallableModel } from '@/utils/modelCatalog';
 
 const router = useRouter()
 const route = useRoute()
 const mobileMenuOpen = ref(false)
 const currentUser = computed(() => getUser())
 const dashboard = ref<any>({ stats: {}, tokens: [], recentLogs: [], models: [], modelCatalog: [] as CallableModel[] })
-const billingRows = ref<any[]>([])
-const billingSummary = ref<any[]>([])
-const billingPage = ref(1)
-const billingPageSize = ref(DEFAULT_PAGE_SIZE)
-const billingTotal = ref(0)
-const usageAnalytics = ref<any>({ daily: [], totals: {}, tokenComposition: [] })
-const billingLoading = ref(false)
-const billingDataError = ref('')
-const usageAnalyticsLoading = ref(false)
-const usageAnalyticsError = ref('')
-const overviewUsageAnalytics = ref<any>({ daily: [] })
-const overviewUsageError = ref('')
-const today = new Date()
-const monthAgo = new Date(today); monthAgo.setDate(today.getDate() - 29)
-const ninetyDaysAgo = new Date(today); ninetyDaysAgo.setDate(today.getDate() - 89)
-const usageRange = ref<[string, string]>([monthAgo.toISOString().slice(0, 10), today.toISOString().slice(0, 10)])
-const usageModel = ref('')
 const playgroundLoading = ref(false)
 const playgroundResponse = ref('')
 const playgroundRawResponse = ref('')
@@ -867,79 +465,6 @@ const playground = ref({
   model: '',
   prompt: ''
 })
-const createKeyVisible = ref(false)
-const createKeySubmitting = ref(false)
-const createdKeyVisible = ref(false)
-const createdKeySecret = ref('')
-const createKeyForm = ref({
-  name: '',
-  totalQuota: 0,
-  allowAllModels: true,
-  allowedModelIds: [] as string[]
-})
-const modelGrantOptions = computed(() => {
-  const sources = new Map<string, any>()
-  for (const model of dashboard.value.modelCatalog || []) {
-    const sourceKey = model.source || 'other'
-    if (!sources.has(sourceKey)) sources.set(sourceKey, {
-      value: sourceKey, label: model.sourceName || sourceKey, children: new Map<string, any>()
-    })
-    const source = sources.get(sourceKey)
-    const capability = model.capability || 'text'
-    if (!source.children.has(capability)) source.children.set(capability, {
-      value: `${sourceKey}:${capability}`, label: capability, children: new Map<string, any>()
-    })
-    const capabilityNode = source.children.get(capability)
-    const vendor = model.vendor || 'unknown'
-    if (!capabilityNode.children.has(vendor)) capabilityNode.children.set(vendor, {
-      value: `${sourceKey}:${capability}:${vendor}`, label: vendor, children: []
-    })
-    capabilityNode.children.get(vendor).children.push({ value: model.publicName, label: model.publicName })
-  }
-  return [...sources.values()].map(source => ({ ...source, children: [...source.children.values()].map((capability: any) => ({
-    ...capability, children: [...capability.children.values()]
-  })) }))
-})
-const walletLoading = ref(false)
-const walletTransactionPage = ref(1)
-const walletTransactionPageSize = ref(DEFAULT_PAGE_SIZE)
-const walletTransactionTotal = ref(0)
-const redeeming = ref(false)
-const redeemCode = ref('')
-type MoneyDto = { amount: number | string; currency: string; scale: number }
-type RechargePlan = { id: number | string; name: string; amount: AmountUnits; bonus?: number; paymentMoney?: MoneyDto; totalCreditMoney?: MoneyDto }
-const rechargeVisible = ref(false)
-const rechargeSubmitting = ref(false)
-const rechargeLegal = ref<Record<string, any> | null>(null)
-const rechargeLegalLoading = ref(false)
-const checkoutAcknowledged = ref(false)
-const selectedRechargePlan = ref<RechargePlan | null>(null)
-const customRecharge = ref(false)
-const customRechargeAmount = ref<number | undefined>(1)
-const rechargeCheckoutReady = computed(() => rechargeLegal.value?.checkout_ready === true
-  && Boolean(rechargeLegal.value.checkout_disclosure_id))
-const canSubmitRecharge = computed(() => rechargeCheckoutReady.value && checkoutAcknowledged.value
-  && (customRecharge.value
-    ? Number.isFinite(customRechargeAmount.value) && (customRechargeAmount.value ?? 0) >= 0.01
-    : Boolean(selectedRechargePlan.value)))
-const rechargeOrders = ref<Array<Record<string, any>>>([])
-const rechargeOrderPage = ref(1)
-const rechargeOrderPageSize = ref(DEFAULT_PAGE_SIZE)
-const rechargeOrderTotal = ref(0)
-const paymentDialogVisible = ref(false)
-const paymentAction = ref<PaymentAction | null>(null)
-const rechargeForm = ref({ needInvoice: false, billingName: '', contactEmail: '', billingAddressLine1: '', billingDistrict: '', billingCity: '', billingProvince: '', billingPostalCode: '', billingCountry: 'China', paymentMethod: 'alipay' })
-
-const wallet = ref({
-  balance: 0 as AmountUnits,
-  monthSpend: 0 as AmountUnits,
-  giftBalance: 0 as AmountUnits,
-  invoiceableAmount: 0 as AmountUnits,
-  invoiceEnabled: false,
-  transactions: [] as Array<Record<string, any>>,
-  plans: [] as RechargePlan[]
-})
-
 const navItems = [
   { key: 'overview', label: '总览', path: '/console', icon: DataLine, title: '业务总览', eyebrow: '用户中心', subtitle: '查看账户额度、调用趋势、快捷入口和最近活动。', action: '刷新', actionPath: '/console' },
   { key: 'keys', label: 'API Key', path: '/console/keys', icon: Key, title: 'API Key 管理', eyebrow: '凭证管理', subtitle: '创建和管理不同环境的调用凭证。', action: '新建 Key', actionPath: '/console/keys' },
@@ -971,6 +496,13 @@ const playgroundModels = computed<CallableModel[]>(() => modelsAllowedForToken(
 ))
 const selectedModelDetail = computed<CallableModel | null>(() => playgroundModels.value
   .find(model => model.publicName === playground.value.model) || null)
+const walletFeature = useUserWallet(dashboard, current, loadDashboard)
+const { loadWallet, openRechargePanel, paymentDialogVisible, paymentAction, rechargeForm } = walletFeature
+const usageFeature = useUserUsage(current)
+const { loadBilling, loadOverviewUsage, overviewUsageAnalytics, overviewUsageError } = usageFeature
+const keysFeature = useUserKeys(dashboard, loadDashboard)
+const { openCreateKey } = keysFeature
+
 const primaryAction = computed(() => {
   if (current.value.key === 'overview') return { label: '在线调试', path: '/console/playground', icon: Monitor }
   if (current.value.key === 'wallet') return { label: '兑换码充值', path: '/console/wallet', icon: Wallet }
@@ -980,22 +512,6 @@ const primaryAction = computed(() => {
 const go = (path: string) => {
   mobileMenuOpen.value = false
   return router.push(path)
-}
-const copyText = async (value: string, message = '已复制') => {
-  if (!value) return
-  try {
-    await navigator.clipboard.writeText(value)
-  } catch {
-    const textarea = document.createElement('textarea')
-    textarea.value = value
-    textarea.style.position = 'fixed'
-    textarea.style.opacity = '0'
-    document.body.appendChild(textarea)
-    textarea.select()
-    document.execCommand('copy')
-    document.body.removeChild(textarea)
-  }
-  ElMessage.success(message)
 }
 const handlePrimaryAction = () => {
   if (current.value.key === 'keys') {
@@ -1013,52 +529,6 @@ const handlePrimaryAction = () => {
   go(primaryAction.value.path)
 }
 
-const openCreateKey = () => {
-  clearCreatedKey()
-  createKeyForm.value = { name: '', totalQuota: 0, allowAllModels: true, allowedModelIds: [] }
-  createKeyVisible.value = true
-}
-
-const createKey = async () => {
-  const name = createKeyForm.value.name.trim()
-  if (!name) {
-    ElMessage.warning('请输入 Key 名称')
-    return
-  }
-  if (!createKeyForm.value.allowAllModels && createKeyForm.value.allowedModelIds.length === 0) {
-    ElMessage.warning('请至少选择一个授权模型')
-    return
-  }
-  createKeySubmitting.value = true
-  try {
-    const response = await http.post('/api/user/tokens', {
-      name,
-      totalQuota: createKeyForm.value.totalQuota,
-      allowAllModels: createKeyForm.value.allowAllModels,
-      allowedModelIds: createKeyForm.value.allowedModelIds
-    })
-    createKeyVisible.value = false
-    const secret = typeof response.data?.secret === 'string' ? response.data.secret : ''
-    if (secret) {
-      createdKeySecret.value = secret
-      createdKeyVisible.value = true
-      ElMessage.success('API Key 已创建，请立即复制保存')
-    } else {
-      ElMessage.warning('API Key 已创建，但服务端未返回一次性密钥；请立即轮换该 Key')
-    }
-    void loadDashboard().catch(error => {
-      ElMessage.warning(getHttpErrorMessage(error, 'Key 已创建，但列表刷新失败'))
-    })
-  } catch (error: unknown) {
-    ElMessage.error(getHttpErrorMessage(error, 'API Key 创建失败'))
-  } finally {
-    createKeySubmitting.value = false
-  }
-}
-
-const clearCreatedKey = () => {
-  createdKeySecret.value = ''
-}
 const isActive = (path: string) => route.path === path
 const logout = () => {
   clearAuth()
@@ -1210,281 +680,6 @@ function extractPlaygroundUsage(data: any): PlaygroundUsage | null {
   }
 }
 
-async function loadBilling() {
-  if (current.value.key !== 'logs') return
-  billingLoading.value = true
-  billingDataError.value = ''
-  usageAnalyticsError.value = ''
-  const [summaryResult, logsResult, analyticsResult] = await Promise.allSettled([
-    http.get('/api/user/billing/summary', { params: { model: usageModel.value || undefined, startDate: usageRange.value?.[0], endDate: usageRange.value?.[1] } }),
-    http.get('/api/user/billing/logs/page', { params: { page: billingPage.value, size: billingPageSize.value, model: usageModel.value || undefined, startDate: usageRange.value?.[0], endDate: usageRange.value?.[1] } }),
-    http.get('/api/user/usage/analytics', { params: { from: usageRange.value?.[0], to: usageRange.value?.[1], model: usageModel.value || undefined } })
-  ])
-  const dataErrors: string[] = []
-  if (summaryResult.status === 'fulfilled') billingSummary.value = summaryResult.value.data || []
-  else dataErrors.push('账单汇总：' + getHttpErrorNotice(summaryResult.reason, '加载失败'))
-  if (logsResult.status === 'fulfilled') {
-    billingRows.value = logsResult.value.data?.items || []
-    billingTotal.value = Number(logsResult.value.data?.total || 0)
-  }
-  else dataErrors.push('用量明细：' + getHttpErrorNotice(logsResult.reason, '加载失败'))
-  billingDataError.value = dataErrors.join('；')
-  if (analyticsResult.status === 'fulfilled') {
-    usageAnalytics.value = analyticsResult.value.data || { daily: [], totals: {}, tokenComposition: [] }
-  } else {
-    usageAnalyticsError.value = getHttpErrorNotice(analyticsResult.reason, '用量图表加载失败')
-  }
-  billingLoading.value = false
-}
-
-function applyBillingFilters() {
-  billingPage.value = 1
-  void loadBilling()
-}
-
-function handleBillingPageSizeChange() {
-  billingPage.value = 1
-  void loadBilling()
-}
-
-async function loadUsageAnalytics() {
-  if (current.value.key !== 'logs') return
-  usageAnalyticsLoading.value = true
-  usageAnalyticsError.value = ''
-  try {
-    const response = await http.get('/api/user/usage/analytics', {
-      params: { from: usageRange.value?.[0], to: usageRange.value?.[1], model: usageModel.value || undefined }
-    })
-    usageAnalytics.value = response.data || { daily: [], totals: {}, tokenComposition: [] }
-  } catch (error: unknown) {
-    usageAnalyticsError.value = getHttpErrorNotice(error, '用量图表加载失败')
-  } finally {
-    usageAnalyticsLoading.value = false
-  }
-}
-
-async function loadOverviewUsage() {
-  if (current.value.key !== 'overview') return
-  overviewUsageError.value = ''
-  try {
-    const response = await http.get('/api/user/usage/analytics', {
-      params: { from: ninetyDaysAgo.toISOString().slice(0, 10), to: today.toISOString().slice(0, 10) }
-    })
-    overviewUsageAnalytics.value = response.data || { daily: [] }
-  } catch (error: unknown) {
-    overviewUsageError.value = getHttpErrorNotice(error, '近 90 天用量加载失败')
-  }
-}
-
-function usageMetric(row: any, key: string) {
-  if (!row) return 0
-  return Number(row[key] ?? row[key.toUpperCase()] ?? 0)
-}
-
-const usageDays = computed(() => {
-  const rows = Array.isArray(usageAnalytics.value.daily) ? usageAnalytics.value.daily : []
-  const max = Math.max(1, ...rows.map((row: any) => usageMetric(row, 'total_tokens')))
-  return rows.map((row: any) => {
-    const total = usageMetric(row, 'total_tokens')
-    return {
-      date: String(row.usage_day ?? row.USAGE_DAY ?? ''), total,
-      height: Math.max(total ? 8 : 0, total / max * 100),
-      parts: [
-        { name: '输入未命中', className: 'miss', value: usageMetric(row, 'cache_miss_tokens') },
-        { name: '缓存命中', className: 'hit', value: usageMetric(row, 'cache_read_tokens') },
-        { name: '缓存写入', className: 'write', value: usageMetric(row, 'cache_write_tokens') },
-        { name: '输出', className: 'output', value: usageMetric(row, 'completion_tokens') }
-      ]
-    }
-  })
-})
-const usageComposition = computed(() => {
-  const colors = ['#78ad30', '#35a7a0', '#e6a23c', '#6b7fd7']
-  return (usageAnalytics.value.tokenComposition || []).map((slice: any, index: number) => ({
-    name: slice.name, value: Number(slice.value || 0), color: colors[index % colors.length]
-  }))
-})
-const usageTotalTokens = computed(() => usageComposition.value.reduce((sum: number, slice: any) => sum + slice.value, 0))
-const usagePieStyle = computed(() => {
-  const total = Math.max(1, usageTotalTokens.value)
-  let cursor = 0
-  const stops = usageComposition.value.map((slice: any) => {
-    const start = cursor; cursor += slice.value / total * 100
-    return `${slice.color} ${start}% ${cursor}%`
-  })
-  return { background: `conic-gradient(${stops.length ? stops.join(',') : '#e9eeeb 0 100%'})` }
-})
-
-async function loadWallet() {
-  if (current.value.key !== 'wallet') return
-  walletLoading.value = true
-  try {
-    const [response, ordersResponse] = await Promise.all([
-      http.get('/api/platform/user/wallet', { params: { page: walletTransactionPage.value, pageSize: walletTransactionPageSize.value } }),
-      http.get('/api/platform/user/recharge-orders', { params: { listPage: true, page: rechargeOrderPage.value, size: rechargeOrderPageSize.value } })
-    ])
-    wallet.value = {
-      balance: amountValue(response.data?.balance),
-      monthSpend: amountValue(response.data?.monthSpend),
-      giftBalance: amountValue(response.data?.giftBalance),
-      invoiceableAmount: amountValue(response.data?.invoiceableAmount),
-      invoiceEnabled: Boolean(response.data?.invoiceEnabled),
-      transactions: Array.isArray(response.data?.transactions) ? response.data.transactions : [],
-      plans: Array.isArray(response.data?.plans) ? response.data.plans : []
-    }
-    if (!wallet.value.invoiceEnabled) rechargeForm.value.needInvoice = false
-    walletTransactionTotal.value = Number(response.data?.transactionTotal || 0)
-    rechargeOrders.value = Array.isArray(ordersResponse.data?.items) ? ordersResponse.data.items : []
-    rechargeOrderTotal.value = Number(ordersResponse.data?.total || 0)
-  } catch (error: unknown) {
-    ElMessage.error(getHttpErrorMessage(error, '钱包数据加载失败'))
-  } finally {
-    walletLoading.value = false
-  }
-}
-
-function formatMoneyDto(money?: MoneyDto | null) {
-  if (!money || !Number(money.scale)) return '—'
-  return formatLocalizedMoneyDto(money)
-}
-
-async function loadCheckoutDisclosure() {
-  checkoutAcknowledged.value = false
-  rechargeLegalLoading.value = true
-  rechargeLegal.value = null
-  try {
-    rechargeLegal.value = (await http.get('/api/public/legal')).data
-  } catch {
-    rechargeLegal.value = null
-  } finally {
-    rechargeLegalLoading.value = false
-  }
-}
-
-function openRecharge(plan: RechargePlan) {
-  void loadCheckoutDisclosure()
-  customRecharge.value = false
-  selectedRechargePlan.value = plan
-  rechargeForm.value.contactEmail = String(dashboard.value?.profile?.email || dashboard.value?.user?.email || '')
-  rechargeVisible.value = true
-}
-
-async function handleWalletTransactionPageSizeChange() {
-  walletTransactionPage.value = 1
-  await loadWallet()
-}
-
-async function handleRechargeOrderPageSizeChange() {
-  rechargeOrderPage.value = 1
-  await loadWallet()
-}
-
-function openCustomRecharge() {
-  void loadCheckoutDisclosure()
-  selectCustomRecharge()
-  rechargeForm.value.contactEmail = String(dashboard.value?.profile?.email || dashboard.value?.user?.email || '')
-  rechargeVisible.value = true
-}
-
-function selectRechargePlan(plan: RechargePlan) {
-  customRecharge.value = false
-  selectedRechargePlan.value = plan
-}
-
-function selectCustomRecharge() {
-  customRecharge.value = true
-  selectedRechargePlan.value = null
-}
-
-async function openRechargePanel() {
-  await loadCheckoutDisclosure()
-  if (route.path !== '/console/wallet') await router.push('/console/wallet')
-  if (!wallet.value.plans.length) await loadWallet()
-  selectedRechargePlan.value = wallet.value.plans[0] || null
-  customRecharge.value = !selectedRechargePlan.value
-  rechargeVisible.value = true
-}
-
-async function submitRecharge() {
-  if (!canSubmitRecharge.value || rechargeSubmitting.value) return
-  if (rechargeForm.value.needInvoice && Object.entries(rechargeForm.value)
-    .some(([key, value]) => !['paymentMethod', 'needInvoice'].includes(key) && !String(value).trim())) {
-    ElMessage.warning('请完整填写账单信息')
-    return
-  }
-  const rechargeTarget = customRecharge.value
-    ? { customAmount: customRechargeAmount.value, currency: displayCurrency.value }
-    : { planId: selectedRechargePlan.value!.id }
-  const disclosureId = rechargeLegal.value?.checkout_disclosure_id
-  rechargeSubmitting.value = true
-  try {
-    const currentLegal = await http.get('/api/public/legal').then(response => response.data).catch(() => null)
-    if (!currentLegal?.checkout_ready || currentLegal.checkout_disclosure_id !== disclosureId) {
-      checkoutAcknowledged.value = false
-      rechargeLegal.value = currentLegal
-      ElMessage.warning('公开条款已更新或暂不可用，请重新阅读后确认')
-      return
-    }
-    const created = await http.post('/api/platform/user/recharge-orders',
-      { ...rechargeTarget, ...rechargeForm.value, needInvoice: wallet.value.invoiceEnabled && rechargeForm.value.needInvoice },
-      { headers: { 'Idempotency-Key': createIdempotencyKey('wallet-recharge-order') } })
-    const intentId = created.data?.paymentIntent?.id
-    if (!intentId) throw new Error('支付意图创建失败')
-    const started = await http.post(`/api/payment-intents/${intentId}/start`, {},
-      { headers: { 'Idempotency-Key': createIdempotencyKey(`payment-start-${intentId}`), 'X-Checkout-Disclosure': disclosureId } })
-    rechargeVisible.value = false
-    paymentAction.value = paymentActionOf(started.data)
-    paymentDialogVisible.value = Boolean(paymentAction.value)
-    const status = started.data?.intent?.status
-    ElMessage.success(status === 'PAID' ? '充值已到账' : '充值订单已创建，请完成付款')
-    await Promise.all([loadWallet(), loadDashboard()])
-    if (status !== 'PAID') pollPayment(intentId)
-  } catch (error: unknown) {
-    ElMessage.error(getHttpErrorMessage(error, error instanceof Error ? error.message : '充值订单创建失败'))
-  } finally {
-    rechargeSubmitting.value = false
-  }
-}
-
-const paymentPoll = createPollingTask<number>({
-  interval: 3000,
-  maxAttempts: 100,
-  async run(intentId, context) {
-    const response = await http.get(`/api/payment-intents/${intentId}`)
-    if (!context.isCurrent() || response.data?.status !== 'PAID') return
-    context.stop()
-    ElMessage.success('支付已确认，充值额度已到账')
-    await Promise.all([loadWallet(), loadDashboard()])
-  }
-})
-
-function pollPayment(intentId: number) { paymentPoll.start(intentId) }
-
-async function downloadRecharge(id: number, type: 'invoice' | 'receipt') {
-  try {
-    await downloadFile(`/api/platform/user/recharge-orders/${id}/${type}`, `${type}-${id}.pdf`)
-  } catch (error: unknown) { ElMessage.error(await getHttpDownloadErrorMessage(error, '文件下载失败')) }
-}
-
-async function redeemWalletCode() {
-  const code = redeemCode.value.trim()
-  if (!code) {
-    ElMessage.warning('请输入兑换码')
-    return
-  }
-  redeeming.value = true
-  try {
-    const response = await http.post('/api/platform/user/wallet/redeem', { code })
-    redeemCode.value = ''
-    ElMessage.success(`兑换成功，到账 ${formatCny(response.data?.amount || 0)}`)
-    await Promise.all([loadWallet(), loadDashboard()])
-  } catch (error: unknown) {
-    ElMessage.error(getHttpErrorMessage(error, '兑换失败，请检查兑换码'))
-  } finally {
-    redeeming.value = false
-  }
-}
-
 onMounted(() => {
   loadDashboard().catch(error => ElMessage.error(getHttpErrorMessage(error, '控制台数据加载失败')))
   loadBilling()
@@ -1497,7 +692,6 @@ watch(() => route.path, () => {
   loadOverviewUsage()
   loadWallet()
 })
-onBeforeUnmount(() => paymentPoll.dispose())
 
 const stats = computed(() => dashboard.value.stats || {})
 const balance = computed<AmountUnits>(() => amountValue(stats.value.balance))
@@ -1507,32 +701,6 @@ const tokenCount = computed(() => Number(stats.value.tokenCount ?? dashboard.val
 const todayRequestCount = computed(() => Number(stats.value.todayRequestCount || 0))
 const totalTokensUsed = computed(() => Number(stats.value.totalTokensUsed || 0))
 const requestCount = computed(() => Number(stats.value.requestCount || 0))
-
-const amountValue = (value: unknown): AmountUnits => {
-  if (typeof value === 'bigint' || typeof value === 'number' || typeof value === 'string') return value
-  return 0
-}
-const money = (value: unknown) => formatCny(amountValue(value))
-const number = (value: unknown) => Number(value || 0).toLocaleString('zh-CN')
-const compactNumber = (value: unknown) => Intl.NumberFormat('zh-CN', {
-  notation: 'compact',
-  maximumFractionDigits: 1
-}).format(Number(value || 0))
-const maskKey = (value: string) => {
-  if (!value) return ''
-  if (value.length <= 12) return `${value.slice(0, 4)}••••`
-  return `${value.slice(0, 8)}••••${value.slice(-4)}`
-}
-const keyPreview = (token: Record<string, any>) => {
-  const preview = String(token?.keyPreview || '')
-  if (preview) return preview
-  const legacyValue = String(token?.key || '')
-  return legacyValue ? maskKey(legacyValue) : 'sk-at-••••'
-}
-const formatDateTime = (value: string) => {
-  if (!value) return '从未调用'
-  return new Date(value).toLocaleString('zh-CN', { hour12: false })
-}
 
 const metrics = computed(() => [
   { label: '当前余额', value: money(balance.value), badge: '可用', tone: 'green', icon: Wallet },
@@ -1555,111 +723,9 @@ const activities = computed(() => (dashboard.value.recentLogs || []).slice(0, 6)
   tone: String(log.status || '').toUpperCase() === 'SUCCESS' ? 'green' : 'orange'
 })))
 
-const keys = computed(() => (dashboard.value.tokens || []).map((token: any) => ({
-  name: token.name || `Key #${token.id}`,
-  key: keyPreview(token),
-  quota: `${number(token.usedQuota)} / ${number(token.totalQuota)}`,
-  models: token.allowAllModels
-    ? '全部可用模型'
-    : (Array.isArray(token.allowedModelIds) && token.allowedModelIds.length
-      ? token.allowedModelIds.join(', ')
-      : modelScopeLabel(token.allowedModels)),
-  lastUsed: token.requestCount > 0 ? `${number(token.requestCount)} 次 / ${number(token.totalTokens)} tokens` : '从未调用',
-  status: token.enabled ? '启用' : '停用'
-})))
-
 const genericRows = [
   { name: 'OpenAI 兼容调用', desc: 'Base URL 指向平台网关即可复用 SDK。', status: '可用' },
   { name: '余额扣费', desc: '按模型倍率和 token 消耗自动扣减余额。', status: '启用' },
   { name: '日志审计', desc: '记录请求、模型、耗时、Token 和错误原因。', status: '运行中' }
 ]
 </script>
-
-<style scoped>
-:global(#app .recharge-dialog.el-dialog) { padding: 0; overflow: hidden; }
-:global(#app .recharge-dialog .el-dialog__header) { padding: 16px 20px; }
-:global(#app .recharge-dialog .el-dialog__body) { padding: 16px 20px; max-height: none; }
-:global(#app .recharge-dialog .el-dialog__footer) { padding: 10px 20px 14px; }
-
-.recharge-choices {
-  display: grid;
-  gap: 8px;
-}
-
-.recharge-choice {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  width: 100%;
-  min-height: 52px;
-  padding: 10px 14px;
-  border: 1px solid var(--el-border-color);
-  border-radius: 10px;
-  background: var(--el-bg-color);
-  color: var(--el-text-color-primary);
-  font: inherit;
-  text-align: start;
-  cursor: pointer;
-}
-
-.recharge-choice span {
-  display: grid;
-  gap: 3px;
-  overflow-wrap: anywhere;
-}
-
-.recharge-choice small { color: var(--el-text-color-secondary); }
-.recharge-choice b { flex-shrink: 0; }
-.recharge-choice[aria-pressed="true"] {
-  border-color: var(--el-color-primary);
-  background: var(--el-color-primary-light-9);
-  color: var(--el-color-primary);
-}
-.recharge-choice:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: 2px; }
-.recharge-choice:disabled { cursor: default; }
-.recharge-choices :deep(.list-pagination) { padding: 0; gap: 8px; }
-.recharge-form { margin-top: 16px; }
-.recharge-amount { width: 100%; }
-
-.recharge-totals {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  margin: 0 0 16px;
-  padding: 12px 14px;
-  border-radius: 10px;
-  background: var(--el-fill-color-light);
-}
-.recharge-totals dt { color: var(--el-text-color-secondary); font-size: 13px; }
-.recharge-totals dd { margin: 4px 0 0; color: var(--el-text-color-primary); font-size: 18px; font-weight: 700; overflow-wrap: anywhere; }
-.recharge-methods { width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-.recharge-methods :deep(.el-radio) { justify-content: center; margin: 0; min-width: 0; min-height: 40px; }
-
-.recharge-disclosure {
-  padding: 12px 14px;
-  border: 1px solid var(--el-border-color-light);
-  border-radius: 10px;
-  color: var(--el-text-color-secondary);
-  font-size: 13px;
-  line-height: 1.5;
-}
-.recharge-disclosure p { margin: 0 0 8px; }
-.recharge-policy-links { display: flex; flex-wrap: wrap; gap: 4px 14px; }
-.recharge-policy-links a { color: var(--el-color-primary); }
-.recharge-policy-links:last-child { margin-bottom: 0; }
-.recharge-consent { margin-bottom: 6px; text-align: start; }
-.recharge-consent :deep(.el-checkbox) { height: auto; min-height: 32px; max-width: 100%; white-space: normal; }
-.recharge-consent :deep(.el-checkbox__label) { line-height: 1.5; }
-.recharge-actions { display: flex; justify-content: flex-end; gap: 8px; }
-.recharge-actions :deep(.el-button + .el-button) { margin: 0; }
-:global(#app .recharge-dialog .recharge-actions .el-button--primary.is-disabled) {
-  opacity: .5 !important;
-  box-shadow: none !important;
-}
-@media (max-width: 520px) {
-  :global(.recharge-overlay .el-overlay-dialog) { padding-bottom: 56px; }
-  :global(#app .recharge-dialog.el-dialog) { max-height: calc(100dvh - 68px); }
-  .recharge-actions :deep(.el-button--primary) { flex: 1; }
-}
-</style>

@@ -1,0 +1,103 @@
+
+
+.panel {
+  min-width: 0;
+  overflow: hidden;
+  padding: 18px;
+  border: 1px solid var(--lnx-line);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.05);
+}
+
+.panel :deep(.el-table) {
+  width: 100%;
+}
+
+.settings-table { width: 100%; max-width: 100%; min-width: 0; }
+.settings-table :deep(td.el-table__cell),
+.settings-table :deep(.cell) { overflow: hidden; }
+.settings-table :deep(.cell), .settings-cell-text {
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.settings-cell-text { display: block; max-width: 100%; overflow: hidden; }
+.legal-publication-control .panel-head { flex-wrap: wrap; }
+.legal-publication-control code { overflow-wrap: anywhere; }
+
+.admin-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 0.62fr);
+  gap: 18px;
+}
+
+.wide-panel {
+  min-width: 0;
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.panel-head h3 {
+  margin: 0;
+  color: var(--lnx-text);
+  font-size: 18px;
+}
+
+.report-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.report-summary div {
+  min-height: 76px;
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--lnx-surface-soft);
+}
+
+.report-summary span {
+  display: block;
+  color: var(--lnx-text-muted);
+  font-size: 12px;
+}
+
+.report-summary strong {
+  display: block;
+  margin-top: 10px;
+  color: var(--lnx-text);
+  font-size: 22px;
+}
+
+.drawer-alert,
+.field-hint {
+  margin-bottom: 16px;
+}
+
+.field-hint {
+  width: 100%;
+  color: var(--lnx-text-muted);
+  font-size: 12px;
+}
+
+@media (max-width: 1200px) {
+
+  .admin-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 680px) {
+  .discovery-summary,
+  .report-summary,
+  .issued-secret {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

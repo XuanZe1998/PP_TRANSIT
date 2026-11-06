@@ -28,7 +28,7 @@ describe('MaPay checkout contracts', () => {
 
   it('offers only Alipay and WeChat and uses idempotency keys when starting payment', () => {
     const services = source('src/views/OtherServices.vue')
-    const wallet = source('src/views/UserConsole.vue')
+    const wallet = source('src/features/user-console/useUserWallet.ts') + source('src/features/user-console/UserWalletPanel.vue')
     for (const view of [services, wallet]) {
       expect(view).toContain('alipay')
       expect(view).toContain('wxpay')

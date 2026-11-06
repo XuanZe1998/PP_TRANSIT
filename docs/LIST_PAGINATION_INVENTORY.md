@@ -1,5 +1,7 @@
 # 业务列表分页清单
 
+2026-11-06：用户中心的 Key、账单日志、钱包列表迁移到 `features/user-console`；后台财务和设置列表迁移到 `features/admin-console`。保留原 list-id、接口、默认10条和10/20/50/100选项，分页及筛选行为不变。个人资料继续使用 `ProfileCenter`，未新建数据列表。
+
 2026-11-06：订阅发货与充值支付改用共享异步轮询调度器，业务列表仍由原分页接口加载；支付完成刷新当前页，历史订单不触发整表轮询。默认10条、10/20/50/100选项及服务端授权筛选契约不变。
 
 2026-11-05：保留公告在标题右侧，恢复商品图片比例、字号、卡片内边距和模块间距，仅适度减少顶部空白；业务列表及分页契约不变。
@@ -46,11 +48,12 @@
 | web/src/views/AdminAgents.vue | AdminAgents-8 | `ops.heartbeats||[]` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
 | web/src/views/AdminAgents.vue | AdminAgents-9 | `backups` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
 | web/src/views/AdminConsole.vue | AdminConsole-1 | `dashboard.channelHealth || []` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
-| web/src/views/AdminConsole.vue | AdminConsole-2 | `rows` | 页面服务端分页 |
-| web/src/views/AdminConsole.vue | AdminConsole-1 | `页面数据` | 页面服务端分页 |
-| web/src/views/AdminConsole.vue | AdminConsole-3 | `secondaryRows` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
-| web/src/views/AdminConsole.vue | AdminConsole-5 | `filteredRows` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
-| web/src/views/AdminConsole.vue | AdminConsole-6 | `report.models || []` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
+| web/src/features/admin-console/AdminFinancePanel.vue | AdminConsole-2 | `rows` | 页面服务端分页 |
+| web/src/features/admin-console/AdminFinancePanel.vue | AdminConsole-1 | `页面数据` | 页面服务端分页 |
+| web/src/features/admin-console/AdminFinancePanel.vue | AdminConsole-3 | `secondaryRows` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
+| web/src/features/admin-console/AdminFinancePanel.vue | AdminConsole-4 | `rechargePlans` | 统一组件；集合来源使用兼容分页 |
+| web/src/features/admin-console/AdminSettingsPanel.vue | AdminConsole-5 | `filteredRows` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
+| web/src/features/admin-console/AdminSettingsPanel.vue | AdminConsole-6 | `report.models || []` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
 | web/src/views/AdminConsole.vue | AdminConsole-7 | `rows` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
 | web/src/views/AdminConsole.vue | AdminConsole-8 | `sensitiveWords` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
 | web/src/views/AdminConsole.vue | AdminConsole-9 | `securityEvents` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
@@ -80,12 +83,14 @@
 | web/src/views/OrganizationConsole.vue | OrganizationConsole-3 | `usage` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
 | web/src/views/OtherServices.vue | OtherServices.vue-1 | `services` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
 | web/src/views/UserConsole.vue | UserConsole.vue-1 | `activities` | 统一组件 `PagedList`；空状态单独显示，非空记录维持默认10条分页；集合来源使用兼容分页，本地派生数据分页 |
-| web/src/views/UserConsole.vue | UserConsole-1 | `keys` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
-| web/src/views/UserConsole.vue | UserConsole-2 | `billingSummary` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
-| web/src/views/UserConsole.vue | UserConsole-3 | `billingRows` | 页面服务端分页 |
-| web/src/views/UserConsole.vue | UserConsole-1 | `页面数据` | 页面服务端分页 |
-| web/src/views/UserConsole.vue | UserConsole-5 | `wallet.transactions` | 页面服务端分页 |
-| web/src/views/UserConsole.vue | UserConsole-2 | `页面数据` | 页面服务端分页 |
+| web/src/features/user-console/UserKeysPanel.vue | UserConsole-1 | `keys` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
+| web/src/features/user-console/UserWalletPanel.vue | UserConsole.vue-2 / UserConsole.vue-3 | `wallet.plans` | 统一组件 `PagedList`；集合来源使用兼容分页 |
+| web/src/features/user-console/UserWalletPanel.vue | UserConsole-4 / UserConsole-recharge-orders | `rechargeOrders` | 页面服务端分页；表格和分页器分别保留原 ID |
+| web/src/features/user-console/UserUsagePanel.vue | UserConsole-2 | `billingSummary` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
+| web/src/features/user-console/UserUsagePanel.vue | UserConsole-3 | `billingRows` | 页面服务端分页 |
+| web/src/features/user-console/UserUsagePanel.vue | UserConsole-1 | `页面数据` | 页面服务端分页 |
+| web/src/features/user-console/UserWalletPanel.vue | UserConsole-5 | `wallet.transactions` | 页面服务端分页 |
+| web/src/features/user-console/UserWalletPanel.vue | UserConsole-2 | `页面数据` | 页面服务端分页 |
 | web/src/views/UserConsole.vue | UserConsole-6 | `genericRows` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
 | web/src/components/ModelPriceComparisonDialog.vue | model-comparison-offers | `comparison.offers` | 统一分页；按报价列翻页 |
 | web/src/components/ContactWidget.vue | contact-widget-public | `contact_methods` | 公共接口数据库 COUNT + LIMIT/OFFSET；默认10，可选10/20/50/100，全部上限200 |
@@ -114,7 +119,7 @@
 | --- | --- | --- |
 | `OtherServices.vue` / `GET /public/other-services` | 公开服务目录 | `ListPagination`，`listPage=true` |
 | `OtherServices.vue` / `GET /service-orders` | 用户服务订单 | `PagedTable` + `ListPagination`，服务端状态筛选；历史待履约订单不触发整表轮询，支付仅轮询目标订单，完成后刷新当前页 |
-| `UserConsole.vue` / `GET /platform/user/recharge-orders` | 用户充值订单 | `PagedTable` + `SelectablePagination` |
+| `UserWalletPanel.vue` / `GET /platform/user/recharge-orders` | 用户充值订单 | `PagedTable` + `SelectablePagination` |
 | `AdminOtherServices.vue` / `GET /admin/api/other-services` | 管理服务目录 | `PagedTable` + `ListPagination` |
 | `AdminServiceOrders.vue` / `GET /service-orders/admin/orders` | 管理服务订单 | `PagedTable` + `ListPagination`，服务端按账号邮箱精确筛选，COUNT 与数据查询使用相同条件。批量操作选择当前页，服务端每次最多接收 100 笔。 |
 | `AdminProductCommerce.vue` / inventory API | 加密库存 | `PagedTable` + `ListPagination` |

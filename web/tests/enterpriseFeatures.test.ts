@@ -34,11 +34,11 @@ describe('enterprise and API calling flows', () => {
   })
 
   it('keeps balance controls and exposes MaPay commerce without refund controls', () => {
-    const admin = source('src/views/AdminConsole.vue')
+    const admin = source('src/features/admin-console/useAdminUsers.ts') + source('src/features/admin-console/useAdminFinance.ts')
     expect(admin).toContain('调账原因必须为 3–500 个字符')
     expect(admin).toContain('/finance/recharge-plans')
     expect(source('src/views/OtherServices.vue')).toContain('/service-orders')
-    expect(source('src/views/UserConsole.vue')).toContain('/payment-intents')
+    expect(source('src/features/user-console/useUserWallet.ts')).toContain('/payment-intents')
     expect(source('src/views/AdminServiceOrders.vue')).not.toContain('/refund')
   })
 })

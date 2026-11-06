@@ -7,7 +7,7 @@ const source = (path: string) => readFileSync(resolve(root, path), 'utf8')
 
 describe('console partial-loading resilience', () => {
   it('keeps billing data and usage analytics independent', () => {
-    const userConsole = source('src/views/UserConsole.vue')
+    const userConsole = source('src/features/user-console/useUserUsage.ts')
     expect(userConsole).toContain('Promise.allSettled')
     expect(userConsole).toContain('billingDataError')
     expect(userConsole).toContain('usageAnalyticsError')
@@ -15,7 +15,7 @@ describe('console partial-loading resilience', () => {
   })
 
   it('loads each administrator finance section independently', () => {
-    const adminConsole = source('src/views/AdminConsole.vue')
+    const adminConsole = source('src/features/admin-console/useAdminFinance.ts') + source('src/features/admin-console/AdminFinancePanel.vue')
     expect(adminConsole).toContain("type FinanceSection = 'summary' | 'transactions' | 'codes' | 'plans'")
     expect(adminConsole).toContain('loadFinanceSection')
     expect(adminConsole).toContain('financeErrors.transactions')
@@ -47,7 +47,7 @@ describe('console layout contracts', () => {
   })
 
   it('keeps usage tables paged and horizontally draggable', () => {
-    const userConsole = source('src/views/UserConsole.vue')
+    const userConsole = source('src/features/user-console/useUserUsage.ts') + source('src/features/user-console/UserUsagePanel.vue')
     expect(userConsole).toContain('/api/user/billing/logs/page')
     expect(userConsole).toContain(':page-sizes="[10, 20, 50, 100]"')
     expect(userConsole).toContain('usage-table-scroll')
