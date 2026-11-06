@@ -1,4 +1,9 @@
+import { shallowRef } from 'vue'
+
 export type OAuthProvider = 'github' | 'google'
+
+// Keep the challenge in memory until the lazily loaded login dialog takes it.
+export const pendingOAuthIpChallenge = shallowRef<{ challengeId: string; maskedEmail: string } | null>(null)
 
 export type OAuthStateErrorCode =
   | 'INVALID_PROVIDER'

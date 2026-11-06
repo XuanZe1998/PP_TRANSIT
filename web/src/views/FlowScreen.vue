@@ -129,6 +129,7 @@ import {
   OAuthStateError,
   clearOAuthState,
   consumeOAuthState,
+  pendingOAuthIpChallenge,
   saveOAuthState,
   type OAuthProvider
 } from '@/utils/oauthState'
@@ -368,9 +369,13 @@ const finishOAuth = async (provider: OAuthProvider, code: string, state: string)
   try {
     const res = await http.get(`/api/oauth/callback/${provider}`, { params: { code, state } })
     if (res.data?.verificationRequired) {
-      window.dispatchEvent(new CustomEvent('ip-login-challenge', { detail: res.data }))
+      const navigationFailure = await router.replace({ path: '/', query: { auth: 'login' } })
+      if (navigationFailure) throw navigationFailure
+      pendingOAuthIpChallenge.value = {
+        challengeId: String(res.data.challengeId),
+        maskedEmail: String(res.data.maskedEmail || '邮箱'),
+      }
       ElMessage.warning('检测到新的登录 IP，请完成邮箱验证')
-      await router.replace({ path: '/', query: { auth: 'login' } })
       return
     }
     applyAuthResponse(res.data)

@@ -61,7 +61,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import http, { getHttpErrorMessage } from '@/utils/http'
 import { setAuth } from '@/utils/auth'
-import { clearOAuthState, saveOAuthState, type OAuthProvider } from '@/utils/oauthState'
+import { clearOAuthState, pendingOAuthIpChallenge, saveOAuthState, type OAuthProvider } from '@/utils/oauthState'
 import { captureInvite, savedInvite } from '@/utils/referralInvite'
 import { siteConfig } from '@/config/site'
 
@@ -93,13 +93,19 @@ watch(() => form.identifier, value => {
     catch { if (current === requestId) identifierStatus.value = null }
   }, 300)
 })
-function receiveIpChallenge(event: Event){const detail=(event as CustomEvent).detail||{};ipChallengeId.value=String(detail.challengeId||'');maskedEmail.value=String(detail.maskedEmail||'邮箱');mode.value='login'}
-onBeforeUnmount(() => { window.clearTimeout(timer); window.removeEventListener('ip-login-challenge',receiveIpChallenge) })
+watch(pendingOAuthIpChallenge, challenge => {
+  if (!challenge) return
+  ipChallengeId.value = challenge.challengeId
+  maskedEmail.value = challenge.maskedEmail
+  ipVerifyCode.value = ''
+  mode.value = 'login'
+  pendingOAuthIpChallenge.value = null
+}, { immediate: true })
+onBeforeUnmount(() => window.clearTimeout(timer))
 onMounted(async () => {
   const hadInvite = !!form.inviteCode || !!route.query.aff
   form.inviteCode = await captureInvite(route.query.aff)
   if (hadInvite && !form.inviteCode) ElMessage.info('邀请链接已失效，可以继续正常注册')
-  window.addEventListener('ip-login-challenge',receiveIpChallenge)
   try {
     const { data } = await http.get('/api/auth/verification/policy')
     if (data?.mode === 'EMAIL_ONLY' || data?.mode === 'EMAIL_AND_PHONE') verificationMode.value = data.mode
