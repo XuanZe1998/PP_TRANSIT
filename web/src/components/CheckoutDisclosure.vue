@@ -23,15 +23,25 @@ const en = isEnglish
 const published = ref(false)
 const loading = ref(true)
 const disclosureAvailable = ref(false)
-const canAcknowledge = computed(() => disclosureAvailable.value && (props.purpose === 'order' || published.value))
+const canAcknowledge = computed(() => !loading.value && disclosureAvailable.value && (props.purpose === 'order' || published.value))
 const localTestMode = ref(false)
-onMounted(async () => {
+const termsVersion = ref('')
+const privacyVersion = ref('')
+async function refresh() {
+  loading.value = true
+  emit('update:modelValue', false)
+  emit('update:disclosureId', '')
+  disclosureAvailable.value = false
+  termsVersion.value = ''
+  privacyVersion.value = ''
   try {
     const legal = (await http.get('/api/public/legal')).data
     published.value = legal?.checkout_ready === true
     const disclosureId = typeof legal?.checkout_disclosure_id === 'string' ? legal.checkout_disclosure_id.trim() : ''
     disclosureAvailable.value = !!disclosureId
     localTestMode.value = published.value && !!disclosureId && legal?.local_checkout_test_mode === true
+    termsVersion.value = typeof legal?.terms_version === 'string' ? legal.terms_version.trim() : ''
+    privacyVersion.value = typeof legal?.privacy_version === 'string' ? legal.privacy_version.trim() : ''
     emit('update:disclosureId', disclosureId)
     if (localTestMode.value) emit('update:modelValue', true)
   } catch {
@@ -42,6 +52,16 @@ onMounted(async () => {
     loading.value = false
   }
   if (!canAcknowledge.value && props.modelValue) emit('update:modelValue', false)
-})
+}
+
+// Called only by the explicit checkout confirmation, never by loading or checking the box.
+async function accept() {
+  if (!props.modelValue || !canAcknowledge.value) throw new Error(en.value ? 'Please review and accept the transaction terms.' : '请阅读并确认交易条款')
+  if (localTestMode.value) return
+  if (!termsVersion.value || !privacyVersion.value) throw new Error(en.value ? 'Transaction terms are unavailable. Please try again later.' : '交易条件暂不可用，请稍后重试。')
+  await http.post('/api/user/legal/accept', { termsVersion: termsVersion.value, privacyVersion: privacyVersion.value })
+}
+defineExpose({ accept, refresh })
+onMounted(refresh)
 </script>
 <style scoped>.checkout-legal{margin:14px 0;padding:14px;border:1px solid var(--lnx-color-border);border-radius:8px;line-height:1.7}.checkout-legal p{margin:0 0 8px}.checkout-legal a{color:var(--lnx-text-link)}</style>

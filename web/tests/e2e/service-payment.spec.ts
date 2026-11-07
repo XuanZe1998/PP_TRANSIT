@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 
-type CheckoutState = { ready: boolean; disclosureId: string; legalFails?: boolean; paymentFails?: boolean; localTest?: boolean }
+type CheckoutState = { ready: boolean; disclosureId: string; legalFails?: boolean; paymentFails?: boolean; agreementFails?: boolean; localTest?: boolean; termsVersion?: string; privacyVersion?: string }
 
 async function prepareCheckout(page: Page, state: CheckoutState) {
   await page.addInitScript(() => {
@@ -9,10 +9,12 @@ async function prepareCheckout(page: Page, state: CheckoutState) {
     localStorage.setItem('user_info', JSON.stringify({ username: 'checkout-test', role: 'USER' }))
     localStorage.setItem('user_last_active_at', String(Date.now()))
   })
-  const order = { id: 41, orderNo: 'CHECKOUT-TEST-41', productName: '测试服务', amountCents: 1,
-    currency: 'CNY', paymentAmountCents: 1, paymentCurrency: 'CNY', paymentMethod: 'wxpay',
+  const order = { id: 41, orderNo: 'CHECKOUT-TEST-41', productName: '测试服务', amountCents: 125000,
+    currency: 'CNY', paymentAmountCents: 125001, paymentCurrency: 'CNY', paymentMethod: 'wxpay',
     status: 'PENDING', createdAt: '2026-10-17 10:00:00' }
   const starts: Record<string, string>[] = []
+  const acceptances: unknown[] = []
+  let agreementAccepted = false
   const orderPages: URLSearchParams[] = []
   await page.route(url => url.origin === 'https://api.linknux.com' || url.pathname.startsWith('/api/'), async route => {
     const request = route.request()
@@ -21,7 +23,15 @@ async function prepareCheckout(page: Page, state: CheckoutState) {
     if (path === '/public/legal') return route.fulfill(state.legalFails
       ? { status: 503, json: { message: 'Legal disclosures unavailable' } }
       : { json: { checkout_ready: state.ready, payments_enabled: state.ready, publication_ready: false,
+        terms_version: state.termsVersion ?? 'current-terms', privacy_version: state.privacyVersion ?? 'current-privacy',
         publication_review_required: false, checkout_disclosure_id: state.disclosureId, local_checkout_test_mode: state.localTest === true } })
+    if (path === '/user/legal/accept') {
+      expect(request.method()).toBe('POST')
+      acceptances.push(request.postDataJSON())
+      if (state.agreementFails) return route.fulfill({ status: 409, json: { message: '协议版本已更新，请重新阅读并接受' } })
+      agreementAccepted = true
+      return route.fulfill({ json: { accepted: true } })
+    }
     if (path === '/service-orders/catalog') return route.fulfill({ json: { total: 0, page: 1, size: 10, items: [] } })
     if (path === '/service-orders') {
       orderPages.push(url.searchParams)
@@ -33,7 +43,7 @@ async function prepareCheckout(page: Page, state: CheckoutState) {
         order.status = 'PAID'
         return route.fulfill({ json: { order, action: null } })
       }
-      return route.fulfill(state.paymentFails
+      return route.fulfill(state.paymentFails || !agreementAccepted
         ? { status: 409, json: { message: 'Checkout disclosures changed; review and accept the current terms' } }
         : { json: { order, action: { type: 'QRCODE', url: 'weixin://test-only-checkout' } } })
     }
@@ -43,24 +53,28 @@ async function prepareCheckout(page: Page, state: CheckoutState) {
   await page.getByRole('button', { name: '去支付', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: '确认支付', exact: true })
   await expect(dialog).toBeVisible()
-  return { dialog, starts, orderPages }
+  return { dialog, starts, orderPages, acceptances }
 }
 
 test('payment requires explicit consent and sends the current disclosure plus idempotency key', async ({ page }) => {
-  const { dialog, starts, orderPages } = await prepareCheckout(page, { ready: true, disclosureId: 'current-disclosure' })
+  const { dialog, starts, orderPages, acceptances } = await prepareCheckout(page, { ready: true, disclosureId: 'current-disclosure' })
   const confirm = dialog.getByRole('button', { name: '确认支付', exact: true })
   await expect(dialog.getByText('CHECKOUT-TEST-41', { exact: true })).toBeVisible()
   await expect(dialog.getByText('微信支付', { exact: true })).toBeVisible()
+  await expect(dialog.getByText('¥1,250.00 CNY', { exact: true })).toBeVisible()
+  await expect(dialog.getByText('¥1,250.01 CNY', { exact: true })).toBeVisible()
   await expect(confirm).toBeDisabled()
   expect(starts).toHaveLength(0)
   await dialog.getByText('我已阅读交易条件和退款政策', { exact: true }).click()
   await expect(confirm).toBeEnabled()
+  expect(acceptances).toEqual([])
   await page.screenshot({ path: 'test-results/service-payment-checkout.png', fullPage: true })
   await confirm.click()
   const payment = page.getByRole('dialog', { name: '完成支付', exact: true })
   await expect(payment).toBeVisible()
   await expect(payment.getByText('请使用微信支付扫码支付', { exact: true })).toBeVisible()
   expect(starts).toHaveLength(1)
+  expect(acceptances).toEqual([{ termsVersion: 'current-terms', privacyVersion: 'current-privacy' }])
   expect(starts[0]['x-checkout-disclosure']).toBe('current-disclosure')
   expect(starts[0]['idempotency-key']).toMatch(/^service-payment-41-/)
   expect(orderPages.length).toBeGreaterThanOrEqual(2)
@@ -69,6 +83,32 @@ test('payment requires explicit consent and sends the current disclosure plus id
     expect(params.get('page')).toBe('1')
     expect(params.get('size')).toBe('10')
   }
+})
+
+test('agreement rejection blocks payment and requires renewed consent before retrying', async ({ page }) => {
+  const state = { ready: true, disclosureId: 'current-disclosure', agreementFails: true, termsVersion: 'current-terms' }
+  const { dialog, starts, acceptances } = await prepareCheckout(page, state)
+  const checkbox = dialog.getByRole('checkbox')
+  const confirm = dialog.getByRole('button', { name: '确认支付', exact: true })
+  await dialog.getByText('我已阅读交易条件和退款政策', { exact: true }).click()
+  state.termsVersion = 'updated-terms'
+  state.disclosureId = 'updated-disclosure'
+  await confirm.click()
+  await expect(page.getByText('协议版本已更新，请重新阅读并接受', { exact: true })).toBeVisible()
+  await expect(checkbox).not.toBeChecked()
+  await expect(confirm).toBeDisabled()
+  expect(starts).toHaveLength(0)
+  expect(acceptances).toHaveLength(1)
+  state.agreementFails = false
+  await dialog.getByText('我已阅读交易条件和退款政策', { exact: true }).click()
+  await confirm.click()
+  await expect(page.getByRole('dialog', { name: '完成支付', exact: true })).toBeVisible()
+  expect(starts).toHaveLength(1)
+  expect(acceptances).toEqual([
+    { termsVersion: 'current-terms', privacyVersion: 'current-privacy' },
+    { termsVersion: 'updated-terms', privacyVersion: 'current-privacy' }
+  ])
+  expect(starts[0]['x-checkout-disclosure']).toBe('updated-disclosure')
 })
 
 for (const scenario of ['closed', 'unavailable', 'missing-version'] as const) {
@@ -104,16 +144,22 @@ test('reopening checkout clears consent and fetches the new disclosure version',
   expect(starts[0]['x-checkout-disclosure']).toBe('new-disclosure')
 })
 
-test('a rejected payment stays in checkout and does not open a payment action', async ({ page }) => {
-  const { dialog, starts } = await prepareCheckout(page, { ready: true, disclosureId: 'current-disclosure', paymentFails: true })
+test('a rejected payment refreshes disclosures and requires renewed consent before retry', async ({ page }) => {
+  const state = { ready: true, disclosureId: 'current-disclosure', paymentFails: true }
+  const { dialog, starts } = await prepareCheckout(page, state)
   await dialog.getByText('我已阅读交易条件和退款政策', { exact: true }).click()
   const confirm = dialog.getByRole('button', { name: '确认支付', exact: true })
   await confirm.click()
   await expect(page.getByText('Checkout disclosures changed; review and accept the current terms', { exact: true })).toBeVisible()
   await expect(dialog).toBeVisible()
-  await expect(confirm).toBeEnabled()
+  await expect(confirm).toBeDisabled()
   await expect(page.getByRole('dialog', { name: '完成支付', exact: true })).not.toBeVisible()
   expect(starts).toHaveLength(1)
+  state.paymentFails = false
+  await dialog.getByText('我已阅读交易条件和退款政策', { exact: true }).click()
+  await confirm.click()
+  await expect(page.getByRole('dialog', { name: '完成支付', exact: true })).toBeVisible()
+  expect(starts).toHaveLength(2)
 })
 
 

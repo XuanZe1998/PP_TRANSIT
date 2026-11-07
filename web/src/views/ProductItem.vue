@@ -89,7 +89,7 @@
 
             <p class="sync-status" :class="{ error: syncError }">{{ syncMessage }}</p>
 
-            <CheckoutDisclosure v-model="checkoutAcknowledged" v-model:disclosure-id="checkoutDisclosureId" />
+            <CheckoutDisclosure ref="checkoutDisclosure" v-model="checkoutAcknowledged" v-model:disclosure-id="checkoutDisclosureId" />
             <div class="order-summary">
               <span>订单合计</span>
               <strong>{{ product.price === null ? '待询价' : formatCurrencyValue(totalPrice, 'CNY', 2, 2) }}</strong>
@@ -173,6 +173,7 @@ type PayMethod = {
 const router = useRouter()
 const checkoutAcknowledged = ref(false)
 const checkoutDisclosureId = ref('')
+const checkoutDisclosure = ref<InstanceType<typeof CheckoutDisclosure>>()
 
 const product = reactive<{
   name: string
@@ -350,6 +351,8 @@ const submitOrder = async () => {
 
   submitting.value = true
   try {
+    if (!checkoutDisclosure.value) return
+    await checkoutDisclosure.value.accept()
     const res = await http.post('/api/shopgpt/item-68/order', {
       quantity: form.quantity,
       ...checkout.value
@@ -363,6 +366,7 @@ const submitOrder = async () => {
     paymentDialogVisible.value = Boolean(paymentAction.value)
     ElMessage.success(started.data?.intent?.status === 'PAID' ? '付款成功，订单已进入人工采购' : '订单已创建，请完成付款')
   } catch (error) {
+    await checkoutDisclosure.value?.refresh()
     ElMessage.error(errorMessage(error, error instanceof Error ? error.message : '本站订单创建失败'))
   } finally {
     submitting.value = false

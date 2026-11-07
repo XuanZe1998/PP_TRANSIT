@@ -215,7 +215,7 @@
           <el-descriptions-item label="支付金额">{{ formatMoney(checkoutOrder.paymentAmountCents ?? checkoutOrder.amountCents, checkoutOrder.paymentCurrency || checkoutOrder.currency) }}</el-descriptions-item>
           <el-descriptions-item label="付款方式">{{ paymentMethodLabels[checkoutOrder.paymentMethod || 'alipay'] }}</el-descriptions-item>
         </el-descriptions>
-        <CheckoutDisclosure v-model="checkoutAccepted" v-model:disclosure-id="paymentDisclosureId" />
+        <CheckoutDisclosure ref="paymentDisclosure" v-model="checkoutAccepted" v-model:disclosure-id="paymentDisclosureId" />
       </template>
       <template #footer>
         <el-button :disabled="startingPayment" @click="checkoutDialogVisible = false">取消</el-button>
@@ -365,6 +365,7 @@ const checkoutDialogVisible = ref(false)
 const checkoutOrder = ref<ServiceOrder | null>(null)
 const checkoutAccepted = ref(false)
 const paymentDisclosureId = ref('')
+const paymentDisclosure = ref<InstanceType<typeof CheckoutDisclosure>>()
 const startingPayment = ref(false)
 const paymentDialogVisible = ref(false)
 const paymentAction = ref<PaymentAction | null>(null)
@@ -731,6 +732,8 @@ async function confirmPayment() {
   if (!order || !checkoutDialogVisible.value || !checkoutAccepted.value || !paymentDisclosureId.value || startingPayment.value) return
   startingPayment.value = true
   try {
+    if (!paymentDisclosure.value) return
+    await paymentDisclosure.value.accept()
     const response = await http.post(`/api/service-orders/${order.id}/payment`, {}, {
       headers: {
         'Idempotency-Key': createIdempotencyKey(`service-payment-${order.id}`),
@@ -754,6 +757,7 @@ async function confirmPayment() {
       ElMessage.warning('支付链接尚未生成')
     }
   } catch (error: unknown) {
+    await paymentDisclosure.value?.refresh()
     ElMessage.error(getHttpErrorMessage(error, '发起支付失败'))
   } finally {
     startingPayment.value = false
