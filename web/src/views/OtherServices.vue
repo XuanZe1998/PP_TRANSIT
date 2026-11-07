@@ -746,7 +746,7 @@ async function confirmPayment() {
       await finishPaidFlow(response.data.order, response.data?.message)
       return
     }
-    const action = paymentActionOf(response.data)
+    const action = paymentActionOf(response.data, { order })
     if (action) {
       rememberPendingPayment(response.data?.order || order)
       paymentAction.value = action

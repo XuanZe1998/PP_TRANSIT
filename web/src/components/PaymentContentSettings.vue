@@ -15,6 +15,7 @@ import { loadPaymentContent, paymentContentDefaults, type PaymentContent } from 
 const form = reactive({ ...paymentContentDefaults })
 const loading=ref(false), loaded=ref(false), saving=ref(false)
 const fields: { key: keyof PaymentContent; label: string; long?: boolean }[] = [
+  {key:'amountLabel',label:'应付金额标题'}, {key:'amountUnavailable',label:'金额缺失时的提示'},
   {key:'title',label:'支付弹窗标题'}, {key:'qrPrompt',label:'扫码说明'}, {key:'qrNotice',label:'扫码支付提示',long:true},
   {key:'schemePrompt',label:'手机唤起说明'}, {key:'openButton',label:'唤起支付按钮'},
   {key:'redirectPrompt',label:'收银台说明'}, {key:'redirectButton',label:'收银台按钮'},

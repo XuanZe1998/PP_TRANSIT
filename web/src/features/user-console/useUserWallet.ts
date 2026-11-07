@@ -172,7 +172,7 @@ export function useUserWallet(dashboard: Ref<any>, current: Ref<{ key: string }>
       const started = await http.post(`/api/payment-intents/${intentId}/start`, {},
         { headers: { 'Idempotency-Key': createIdempotencyKey(`payment-start-${intentId}`), 'X-Checkout-Disclosure': disclosureId } })
       rechargeVisible.value = false
-      paymentAction.value = paymentActionOf(started.data)
+      paymentAction.value = paymentActionOf(started.data, { paymentIntent: created.data?.paymentIntent })
       paymentDialogVisible.value = Boolean(paymentAction.value)
       const status = started.data?.intent?.status
       ElMessage.success(status === 'PAID' ? '充值已到账' : '充值订单已创建，请完成付款')

@@ -362,7 +362,7 @@ const submitOrder = async () => {
     const started = await http.post(`/api/payment-intents/${intentId}/start`, {}, {
       headers: { 'Idempotency-Key': createIdempotencyKey(`payment-start-${intentId}`), 'X-Checkout-Disclosure': checkoutDisclosureId.value }
     })
-    paymentAction.value = paymentActionOf(started.data)
+    paymentAction.value = paymentActionOf(started.data, res.data)
     paymentDialogVisible.value = Boolean(paymentAction.value)
     ElMessage.success(started.data?.intent?.status === 'PAID' ? '付款成功，订单已进入人工采购' : '订单已创建，请完成付款')
   } catch (error) {

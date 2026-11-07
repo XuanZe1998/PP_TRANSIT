@@ -20,6 +20,8 @@ public class PaymentExperienceService {
     public static final String KEY = "payment.experience";
     public Map<String,String> defaults() {
         Map<String,String> v = new LinkedHashMap<>();
+        v.put("amountLabel", "应付金额");
+        v.put("amountUnavailable", "金额待确认");
         v.put("title", "完成支付");
         v.put("qrPrompt", "请使用{method}扫码支付");
         v.put("qrNotice", "支付完成后，状态更新可能稍有延迟。请稍等片刻并刷新页面查看订单状态，请勿重复支付。");

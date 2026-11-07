@@ -20,11 +20,13 @@ test('administrator saves all payment content and checkout displays it as plain 
   await page.goto('/admin/other-services?tab=payment-content')
   await page.getByRole('textbox',{name:'扫码支付提示',exact:true}).fill('自定义提示 <b>请勿重复支付</b>')
   await page.getByRole('textbox',{name:'支付弹窗标题',exact:true}).fill('扫码付款')
+  await page.getByRole('textbox',{name:'应付金额标题',exact:true}).fill('实际应付')
   await page.getByRole('button',{name:'保存支付文案'}).click();await expect.poll(()=>saved).toBe(true)
   await page.goto('/services');await page.getByRole('button',{name:'去支付',exact:true}).click()
   const checkout=page.getByRole('dialog',{name:'确认支付',exact:true})
   await checkout.getByText('我已阅读交易条件和退款政策',{exact:true}).click();await checkout.getByRole('button',{name:'确认支付',exact:true}).click()
   const dialog=page.getByRole('dialog',{name:'扫码付款',exact:true});await expect(dialog).toBeVisible()
+  await expect(dialog.locator('.payment-amount')).toContainText('实际应付')
   await expect(dialog).toContainText('自定义提示 <b>请勿重复支付</b>');await expect(dialog.locator('b')).toHaveCount(0)
 })
 for(const type of ['service','recharge'])test(`download page opens the exact ${type} order independently of list pagination`,async({page})=>{
