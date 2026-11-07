@@ -1,5 +1,54 @@
 import { expect, test } from '@playwright/test'
 
+test('confirmed wallet recharge closes the QR dialog and refreshes the credited balance', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('linknux.locale', 'zh-CN')
+    localStorage.setItem('user_access_token', 'wallet-test-token')
+    localStorage.setItem('user_info', JSON.stringify({ username: 'wallet-test', role: 'USER' }))
+    localStorage.setItem('user_last_active_at', String(Date.now()))
+  })
+  let paid = false
+  let creditedWalletReads = 0
+  let paidOrderReads = 0
+  await page.route('**/api/**', route => {
+    const request = route.request()
+    const path = new URL(request.url()).pathname
+    if (path.endsWith('/user/wallet')) {
+      if (paid) creditedWalletReads++
+      return route.fulfill({ json: { balance: paid ? 10000 : 0, plans: [], transactionTotal: paid ? 1 : 0,
+        transactions: paid ? [{ id: 1, type: 'RECHARGE', amount: 10000, balanceAfter: 10000 }] : [] } })
+    }
+    if (path.endsWith('/public/legal')) return route.fulfill({ json: { checkout_ready: true, checkout_disclosure_id: 'wallet-test' } })
+    if (path.endsWith('/user/recharge-orders')) {
+      if (request.method() === 'POST') return route.fulfill({ json: { paymentIntent: { id: 42 } } })
+      if (paid) paidOrderReads++
+      return route.fulfill({ json: { items: [], total: 0, page: 1, size: 10 } })
+    }
+    if (path.endsWith('/payment-intents/42/start')) return route.fulfill({ json: {
+      intent: { status: 'PENDING', settlementMoney: { amount: 100, currency: 'CNY', scale: 100 } },
+      action: { type: 'QRCODE', url: 'https://example.invalid/pay' }, expiresAt: new Date(Date.now() + 600000).toISOString()
+    } })
+    if (path.endsWith('/payment-intents/42')) return route.fulfill({ json: { status: paid ? 'PAID' : 'PENDING' } })
+    return route.fulfill({ json: {} })
+  })
+  await page.goto('/console/wallet')
+  await page.getByRole('button', { name: '自定义金额', exact: true }).click()
+  const recharge = page.getByRole('dialog', { name: '充值方案' })
+  await recharge.getByRole('button', { name: /自定义充值/ }).click()
+  await recharge.getByText('我已阅读本次交易条件、退款与取消政策').click()
+  await recharge.getByRole('button', { name: '立即支付' }).click()
+  const payment = page.getByRole('dialog').filter({ has: page.locator('.qr-frame') })
+  await expect(payment).toBeVisible()
+  // A pending poll keeps checkout usable until the server confirms the callback.
+  await page.waitForResponse(response => new URL(response.url()).pathname.endsWith('/payment-intents/42'))
+  await expect(payment).toBeVisible()
+  paid = true
+  await expect(payment).toBeHidden({ timeout: 10000 })
+  await expect(page.getByText('支付已确认，充值额度已到账', { exact: true })).toBeVisible()
+  await expect.poll(() => creditedWalletReads).toBeGreaterThan(0)
+  await expect.poll(() => paidOrderReads).toBeGreaterThan(0)
+})
+
 test('wallet recharge keeps payment visible on a narrow screen and submits the chosen amount', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 667 })
   await page.addInitScript(() => {

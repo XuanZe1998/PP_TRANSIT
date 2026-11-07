@@ -192,6 +192,8 @@ export function useUserWallet(dashboard: Ref<any>, current: Ref<{ key: string }>
       const response = await http.get(`/api/payment-intents/${intentId}`)
       if (!context.isCurrent() || response.data?.status !== 'PAID') return
       context.stop()
+      paymentDialogVisible.value = false
+      paymentAction.value = null
       ElMessage.success('支付已确认，充值额度已到账')
       await Promise.all([loadWallet(), loadDashboard()])
     }
