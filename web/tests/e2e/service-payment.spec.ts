@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 
-type CheckoutState = { ready: boolean; disclosureId: string; legalFails?: boolean; paymentFails?: boolean; agreementFails?: boolean; localTest?: boolean; termsVersion?: string; privacyVersion?: string }
+type CheckoutState = { expiresAt?: string; ready: boolean; disclosureId: string; legalFails?: boolean; paymentFails?: boolean; agreementFails?: boolean; localTest?: boolean; termsVersion?: string; privacyVersion?: string }
 
 async function prepareCheckout(page: Page, state: CheckoutState) {
   await page.addInitScript(() => {
@@ -11,7 +11,7 @@ async function prepareCheckout(page: Page, state: CheckoutState) {
   })
   const order = { id: 41, orderNo: 'CHECKOUT-TEST-41', productName: '测试服务', amountCents: 125000,
     currency: 'CNY', paymentAmountCents: 125001, paymentCurrency: 'CNY', paymentMethod: 'wxpay',
-    status: 'PENDING', createdAt: '2026-10-17 10:00:00' }
+    reservationExpiresAt: state.expiresAt ?? new Date(Date.now()+900000).toISOString(), status: 'PENDING', createdAt: '2026-10-17 10:00:00' }
   const starts: Record<string, string>[] = []
   const acceptances: unknown[] = []
   let agreementAccepted = false
@@ -266,4 +266,41 @@ test('invoice downloads a PDF and displays the server reason if generation fails
   }))
   await page.getByRole('button', { name: '下载账单', exact: true }).click()
   await expect(page.getByText('Billing configuration is incomplete', { exact: true })).toBeVisible()
+})
+
+test('remembered consent opens payment directly after cancellation and reload', async ({page}) => {
+  const {dialog,starts}=await prepareCheckout(page,{ready:true,disclosureId:'same-terms'})
+  await dialog.getByText('我已阅读交易条件和退款政策',{exact:true}).click()
+  await dialog.getByRole('button',{name:'取消',exact:true}).click()
+  await page.reload()
+  await page.getByRole('button',{name:'去支付',exact:true}).click()
+  await expect(page.getByRole('dialog',{name:'完成支付',exact:true})).toBeVisible()
+  await expect(page.getByRole('dialog',{name:'确认支付',exact:true})).not.toBeVisible()
+  expect(starts).toHaveLength(1)
+})
+test('reopening an unpaid QR payment retains consent but never extends its expiration', async ({page}) => {
+  const expiresAt=new Date(Date.now()+600000).toISOString()
+  const {dialog,starts}=await prepareCheckout(page,{ready:true,disclosureId:'same-terms',expiresAt})
+  await dialog.getByText('我已阅读交易条件和退款政策',{exact:true}).click()
+  await dialog.getByRole('button',{name:'确认支付',exact:true}).click()
+  const payment=page.getByRole('dialog',{name:'完成支付',exact:true})
+  await expect(payment.locator('time')).toHaveAttribute('datetime',expiresAt)
+  await payment.locator('.el-dialog__headerbtn').click()
+  await page.getByRole('button',{name:'去支付',exact:true}).click()
+  await expect(payment).toBeVisible();await expect(payment.locator('time')).toHaveAttribute('datetime',expiresAt)
+  expect(starts).toHaveLength(2)
+})
+test('expiration shows Beijing deadline and removes the QR code when the countdown ends', async ({page}) => {
+  await page.clock.install({time:new Date('2026-11-07T12:00:00Z')})
+  const {dialog}=await prepareCheckout(page,{ready:true,disclosureId:'same-terms',expiresAt:'2026-11-07T12:02:00'})
+  await dialog.getByText('我已阅读交易条件和退款政策',{exact:true}).click()
+  await dialog.getByRole('button',{name:'确认支付',exact:true}).click()
+  const payment=page.getByRole('dialog',{name:'完成支付',exact:true})
+  await expect(payment.locator('time')).toHaveAttribute('datetime','2026-11-07T12:02:00.000Z')
+  await expect(payment.locator('time')).toContainText('20:02:00')
+  await expect(payment.locator('.payment-countdown')).toBeVisible()
+  await expect(payment.locator('.qr-frame')).toBeVisible()
+  await page.clock.fastForward(125000)
+  await expect(payment).toContainText('支付已过期，请刷新订单状态；如已付款，请勿重复支付。')
+  await expect(payment.locator('.qr-frame')).toHaveCount(0)
 })

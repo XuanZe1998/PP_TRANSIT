@@ -1,5 +1,10 @@
 import http from './http'
 export const paymentContentDefaults = {
+  expiryLabel: '支付截止时间（北京时间）',
+  remainingLabel: '剩余支付时间',
+  expiryUnavailable: '支付有效期暂不可用，请核对收银台提示。',
+  expiredNotice: '支付已过期，请刷新订单状态；如已付款，请勿重复支付。',
+
   amountLabel: '应付金额', amountUnavailable: '金额待确认',
   title: '完成支付', qrPrompt: '请使用{method}扫码支付',
   qrNotice: '支付完成后，状态更新可能稍有延迟。请稍等片刻并刷新页面查看订单状态，请勿重复支付。',

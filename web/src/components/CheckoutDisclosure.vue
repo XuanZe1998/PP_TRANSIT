@@ -9,7 +9,7 @@
       <el-alert v-else-if="!disclosureAvailable" type="warning" :closable="false" :title="en ? 'Transaction terms are unavailable. Please try again later.' : '交易条件暂不可用，请稍后重试。'" />
       <el-alert v-else-if="!published && purpose === 'order'" type="warning" :closable="false" :title="en ? 'Online payments are disabled. You can still accept the terms and create an unpaid order.' : '在线收款开关已关闭，你仍可确认条款并创建待支付订单。'" />
       <el-alert v-else-if="!published" type="warning" :closable="false" :title="en ? 'Online payments are disabled. Please contact support.' : '在线收款开关已关闭，请联系平台客服。'" />
-      <el-checkbox :model-value="modelValue" :disabled="!canAcknowledge" @update:model-value="emit('update:modelValue', Boolean($event))">{{ en ? 'I have read the transaction terms and refund policy' : '我已阅读交易条件和退款政策' }}</el-checkbox>
+      <el-checkbox :model-value="modelValue" :disabled="!canAcknowledge" @update:model-value="acknowledge">{{ en ? 'I have read the transaction terms and refund policy' : '我已阅读交易条件和退款政策' }}</el-checkbox>
     </template>
   </div>
 </template>
@@ -18,7 +18,11 @@ import { computed, onMounted, ref } from 'vue'
 import http from '@/utils/http'
 import { isEnglish } from '@/i18n/locale'
 const props = withDefaults(defineProps<{ modelValue: boolean; purpose?: 'order' | 'payment' }>(), { purpose: 'payment' })
-const emit = defineEmits<{ 'update:modelValue': [value: boolean]; 'update:disclosureId': [value: string] }>()
+const emit = defineEmits<{ 'update:modelValue': [value: boolean]; 'update:disclosureId': [value: string]; 'acknowledge': [value: boolean] }>()
+function acknowledge(value: string | number | boolean) {
+  emit('update:modelValue', Boolean(value))
+  emit('acknowledge', Boolean(value))
+}
 const en = isEnglish
 const published = ref(false)
 const loading = ref(true)

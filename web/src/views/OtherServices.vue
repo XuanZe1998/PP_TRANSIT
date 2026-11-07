@@ -215,7 +215,7 @@
           <el-descriptions-item label="支付金额">{{ formatMoney(checkoutOrder.paymentAmountCents ?? checkoutOrder.amountCents, checkoutOrder.paymentCurrency || checkoutOrder.currency) }}</el-descriptions-item>
           <el-descriptions-item label="付款方式">{{ paymentMethodLabels[checkoutOrder.paymentMethod || 'alipay'] }}</el-descriptions-item>
         </el-descriptions>
-        <CheckoutDisclosure ref="paymentDisclosure" v-model="checkoutAccepted" v-model:disclosure-id="paymentDisclosureId" />
+        <CheckoutDisclosure ref="paymentDisclosure" v-model="checkoutAccepted" v-model:disclosure-id="paymentDisclosureId" @acknowledge="rememberCheckoutSelection" />
       </template>
       <template #footer>
         <el-button :disabled="startingPayment" @click="checkoutDialogVisible = false">取消</el-button>
@@ -282,7 +282,8 @@ import type { FormInstance, FormRules } from 'element-plus'
 import http, { createIdempotencyKey, getHttpDownloadErrorMessage, getHttpErrorMessage, resolveApiResourceUrl } from '@/utils/http'
 import { createPollingTask } from '@/utils/polling'
 import { downloadFile } from '@/utils/download'
-import { getToken } from '@/utils/auth'
+import { getToken, getUser } from '@/utils/auth'
+import { rememberedConsent, rememberConsent } from '@/utils/checkoutConsent'
 
 type OtherService = {
   referralOffer?: { mode: string; fixed_cents: number; rate_bps: number; display_text?: string }
@@ -719,25 +720,52 @@ async function copyAllDelivery() {
   ElMessage.success('全部卡密已复制')
 }
 
-function startPayment(order: ServiceOrder) {
-  if (startingPayment.value || !canPay(order)) return
+const consentOwner = () => getUser('user')?.username || ''
+function rememberCheckoutSelection(accepted: boolean) {
+  if (checkoutOrder.value) rememberConsent(consentOwner(), checkoutOrder.value, accepted ? paymentDisclosureId.value : undefined)
+}
+function openPaymentConfirmation(order: ServiceOrder) {
   checkoutOrder.value = order
   checkoutAccepted.value = false
   paymentDisclosureId.value = ''
   checkoutDialogVisible.value = true
 }
-
+async function startPayment(order: ServiceOrder) {
+  if (startingPayment.value || !canPay(order)) return
+  const saved = rememberedConsent(consentOwner(), order)
+  if (saved) {
+    startingPayment.value = true
+    try {
+      const { data: legal } = await http.get('/api/public/legal')
+      if (legal?.checkout_ready === true && legal.checkout_disclosure_id === saved
+          && legal.terms_version && legal.privacy_version && !legal.local_checkout_test_mode) {
+        startingPayment.value = false
+        await executePayment(order, saved, () => http.post('/api/user/legal/accept', {
+          termsVersion: legal.terms_version, privacyVersion: legal.privacy_version
+        }))
+        return
+      }
+    } catch { /* unavailable or changed disclosures must be shown for fresh confirmation */ }
+    finally { startingPayment.value = false }
+    rememberConsent(consentOwner(), order)
+  }
+  openPaymentConfirmation(order)
+}
 async function confirmPayment() {
   const order = checkoutOrder.value
-  if (!order || !checkoutDialogVisible.value || !checkoutAccepted.value || !paymentDisclosureId.value || startingPayment.value) return
+  if (!order || !checkoutDialogVisible.value || !checkoutAccepted.value || !paymentDisclosureId.value || startingPayment.value || !paymentDisclosure.value) return
+  const disclosure = paymentDisclosure.value
+  await executePayment(order, paymentDisclosureId.value, () => disclosure.accept())
+}
+async function executePayment(order: ServiceOrder, disclosureId: string, accept: () => Promise<unknown>) {
+  if (startingPayment.value) return
   startingPayment.value = true
   try {
-    if (!paymentDisclosure.value) return
-    await paymentDisclosure.value.accept()
+    await accept()
     const response = await http.post(`/api/service-orders/${order.id}/payment`, {}, {
       headers: {
         'Idempotency-Key': createIdempotencyKey(`service-payment-${order.id}`),
-        'X-Checkout-Disclosure': paymentDisclosureId.value
+        'X-Checkout-Disclosure': disclosureId
       }
     })
     checkoutDialogVisible.value = false
@@ -757,7 +785,9 @@ async function confirmPayment() {
       ElMessage.warning('支付链接尚未生成')
     }
   } catch (error: unknown) {
-    await paymentDisclosure.value?.refresh()
+    rememberConsent(consentOwner(), order)
+    if (checkoutDialogVisible.value) await paymentDisclosure.value?.refresh()
+    else openPaymentConfirmation(order)
     ElMessage.error(getHttpErrorMessage(error, '发起支付失败'))
   } finally {
     startingPayment.value = false

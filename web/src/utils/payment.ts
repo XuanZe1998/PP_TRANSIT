@@ -12,13 +12,14 @@ export type PaymentStart = {
 
 export function paymentActionOf(value?: PaymentStart | null, fallback?: PaymentStart): PaymentAction | null {
   const action = value?.action
+  const expiresAt = paymentExpiryOf(value) ?? paymentExpiryOf(fallback)
   const amountText = paymentAmountText(value) || paymentAmountText(fallback)
-  if (action?.url && ['REDIRECT', 'QRCODE', 'URL_SCHEME'].includes(action.type)) return { ...action, amountText }
+  if (action?.url && ['REDIRECT', 'QRCODE', 'URL_SCHEME'].includes(action.type)) return { ...action, amountText, expiresAt }
   const intent = value?.intent || value?.paymentIntent
   const url = String(value?.paymentUrl || intent?.paymentUrl || '')
   const type = String(value?.payType || intent?.paymentActionType || '')
   return url && ['REDIRECT', 'QRCODE', 'URL_SCHEME'].includes(type)
-    ? { type: type as PaymentAction['type'], url, amountText }
+    ? { type: type as PaymentAction['type'], url, amountText, expiresAt }
     : null
 }
 
@@ -32,4 +33,15 @@ export function paymentAmountText(value?: PaymentStart | null): string | undefin
   const amount = BigInt(cents)
   if (amount <= 0n) return undefined
   return `${currency === 'CNY' ? '¥' : ''}${(amount / 100n).toLocaleString('en-US')}.${String(amount % 100n).padStart(2, '0')} ${currency}`
+}
+
+// Backend LocalDateTime payment snapshots are stored in UTC; do not interpret them as browser-local time.
+export function paymentExpiryOf(value?: PaymentStart | null): number | undefined {
+  const raw = value?.expiresAt ?? value?.intent?.expiresAt ?? value?.paymentIntent?.expiresAt ?? value?.order?.reservationExpiresAt
+  if (typeof raw !== 'string' || !raw.trim()) return undefined
+  const text = raw.trim().replace(' ', 'T')
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?$/.test(text)) return undefined
+  const utc = /(?:Z|[+-]\d{2}:\d{2})$/.test(text) ? text : `${text}Z`
+  const ms = Date.parse(utc)
+  return Number.isFinite(ms) ? ms : undefined
 }

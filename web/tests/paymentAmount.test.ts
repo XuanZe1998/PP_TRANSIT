@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { paymentActionOf, paymentAmountText } from '../src/utils/payment'
+import { paymentActionOf, paymentAmountText, paymentExpiryOf } from '../src/utils/payment'
 describe('checkout settlement amount', () => {
   it('uses the extra cent from the payment intent rather than the original order amount', () => {
     expect(paymentAmountText({paymentIntent:{settlementAmountCents:125001,settlementCurrency:'CNY'},order:{amountCents:125000,currency:'CNY'}})).toBe('¥1,250.01 CNY')
@@ -16,5 +16,19 @@ describe('checkout settlement amount', () => {
   })
   it('formats integer strings without losing a cent', () => {
     expect(paymentAmountText({intent:{settlementAmountCents:'9007199254740993',settlementCurrency:'CNY'}})).toBe('¥90,071,992,547,409.93 CNY')
+  })
+})
+
+describe('payment expiration snapshots', () => {
+  it('treats backend timezone-free times as UTC and respects explicit offsets', () => {
+    const expected = Date.parse('2026-11-07T12:15:00Z')
+    expect(paymentExpiryOf({paymentIntent:{expiresAt:'2026-11-07T12:15:00'}})).toBe(expected)
+    expect(paymentExpiryOf({expiresAt:'2026-11-07T20:15:00+08:00'})).toBe(expected)
+    expect(paymentExpiryOf({order:{reservationExpiresAt:'2026-11-07 12:15:00'}})).toBe(expected)
+  })
+  it('never invents a new expiry when reopening payment', () => {
+    expect(paymentActionOf({action:{type:'QRCODE',url:'test'}},{intent:{expiresAt:'2026-11-07T12:15:00Z'}})?.expiresAt).toBe(Date.parse('2026-11-07T12:15:00Z'))
+    expect(paymentExpiryOf({expiresAt:'invalid'})).toBeUndefined()
+    expect(paymentExpiryOf({})).toBeUndefined()
   })
 })

@@ -22,6 +22,10 @@ public class PaymentExperienceService {
         Map<String,String> v = new LinkedHashMap<>();
         v.put("amountLabel", "应付金额");
         v.put("amountUnavailable", "金额待确认");
+        v.put("expiryLabel", "支付截止时间（北京时间）");
+        v.put("remainingLabel", "剩余支付时间");
+        v.put("expiryUnavailable", "支付有效期暂不可用，请核对收银台提示。");
+        v.put("expiredNotice", "支付已过期，请刷新订单状态；如已付款，请勿重复支付。");
         v.put("title", "完成支付");
         v.put("qrPrompt", "请使用{method}扫码支付");
         v.put("qrNotice", "支付完成后，状态更新可能稍有延迟。请稍等片刻并刷新页面查看订单状态，请勿重复支付。");
