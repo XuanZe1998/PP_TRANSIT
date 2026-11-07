@@ -503,4 +503,14 @@ class SecurityBoundaryIntegrationTests {
     private String bearer(String token) {
         return "Bearer " + token;
     }
+    @Test
+    void paymentContentIsPublicToReadButAdministratorOnlyToChange() {
+        client.get().uri("/public/payment-content").exchange().expectStatus().isOk()
+                .expectBody().jsonPath("$.qrNotice").isNotEmpty();
+        client.put().uri("/admin/api/payment-content").bodyValue(Map.of()).exchange().expectStatus().isUnauthorized();
+        client.put().uri("/admin/api/payment-content").header(HttpHeaders.AUTHORIZATION, bearer(userToken))
+                .bodyValue(Map.of()).exchange().expectStatus().isForbidden();
+        client.put().uri("/admin/api/payment-content").header(HttpHeaders.AUTHORIZATION, bearer(adminToken))
+                .bodyValue(Map.of()).exchange().expectStatus().isBadRequest();
+    }
 }

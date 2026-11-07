@@ -63,6 +63,7 @@ public class PaymentBusinessSettlementService {
                 (user_id,type,amount,balance_after,channel,remark,reference_type,reference_id,created_at)
                 VALUES (?,'CONSUME',?,?,'balance',?,'SERVICE_ORDER',?,?)
                 """, order.getUserId(), -amount, balance, "订阅订单 " + order.getOrderNo(), order.getId(), paidAt);
+        enqueueEmail(SERVICE_ORDER, order.getId());
         return serviceCommerceService.settlePaid(order);
     }
 
@@ -95,6 +96,7 @@ public class PaymentBusinessSettlementService {
         int updated = orderMapper.update(order, new LambdaUpdateWrapper<ServiceOrder>()
                 .eq(ServiceOrder::getId, order.getId()).eq(ServiceOrder::getStatus, current));
         if (updated != 1) throw conflict("Service order changed while settling payment");
+        enqueueEmail(SERVICE_ORDER, order.getId());
         try {
             if (order.getServiceId() != null) {
                 TransactionTemplate fulfillment = new TransactionTemplate(transactionManager);
@@ -136,6 +138,13 @@ public class PaymentBusinessSettlementService {
         order.setPaidAt(now());
         order.setUpdatedAt(now());
         rechargeOrderMapper.updateById(order);
+        enqueueEmail(WALLET_RECHARGE, order.getId());
+    }
+
+    void enqueueEmail(String type, Long id) {
+        // This insert commits atomically with the payment; repeated callbacks return before reaching it.
+        jdbcTemplate.update("INSERT INTO payment_email_outbox(business_type,business_id,next_attempt_at,created_at) VALUES (?,?,?,?)",
+                type, id, now(), now());
     }
 
     private void credit(WalletRechargeOrder order, String type, long amount, String referenceType) {

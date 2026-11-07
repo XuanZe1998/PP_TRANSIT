@@ -1,0 +1,11 @@
+# Payment content, document links and email
+
+Administrators edit checkout labels, instructions, payment method labels, the HTTPS website origin and payment email subject/body under AI subscriptions and orders > Payment content and email. `{method}` is substituted in checkout instructions; `{orderNo}` is substituted in the subject. Settings are plain text and audited. The website must be the origin serving this application's billing routes.
+
+Invoices and receipts link to `/billing/service/:id` or `/billing/recharge/:id`. Login preserves this destination. Existing ownership checks protect the order JSON and PDF endpoints; an order ID is not an authorization token. This is a single-order download page, independent of list pagination.
+
+Migration V43 adds a durable payment email outbox. Verified payment, wallet-balance payment and administrative payment confirmation enqueue within the settlement transaction. Duplicate callbacks do not enqueue another message. No historical orders are backfilled. The worker uses the existing SMTP sender and account email, attaches both service-order documents, and attaches a recharge invoice only if it was requested. Simulated checkout disables sending.
+
+`payment.email.enabled` defaults to true. The worker starts after 60 seconds and scans every 15 seconds, claiming at most 10 due tasks. Document preparation failures retry up to five attempts. SMTP errors and interrupted sends are marked UNKNOWN because the provider may already have accepted the message. They are not automatically resent. An operator must verify provider delivery before explicitly scheduling such a task again; never bulk-reset UNKNOWN tasks. SENT means the SMTP transport accepted the message, not proof of inbox delivery. SMTP connection/read/write timeouts bound worker operations. Diagnostic rows store generic errors rather than credentials or message bodies.
+
+Validate with PaymentEmailWorkerTests, PaymentExperienceServiceTests, BillingDownloadLinkTests and MaPayPaymentIntegrationTests; browser coverage is in payment-content-billing.spec.ts and service-payment.spec.ts. PDF link tests also render sample invoices and receipts to target/test-artifacts/billing-links for visual review.

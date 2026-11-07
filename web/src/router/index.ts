@@ -58,6 +58,7 @@ const routes: RouteRecordRaw[] = [
   },
   { path: '/studio', component: CreativeStudio, meta: { title: 'AI 创作工作台', role: 'public' } },
   { path: '/services/:id/redeem', component: CardRedemptionRedirect, meta: { title: '卡密兑换', role: 'public' } },
+  { path: '/billing/:type/:id', component: () => import('@/views/BillingDownloads.vue'), meta: { title: '账单与收据', role: 'user' } },
   { path: '/payment/result', component: PaymentResult, meta: { title: '支付结果', role: 'user' } },
   { path: '/terms', component: LegalPage, meta: { title: '用户协议', role: 'public', legalKind: 'terms' } },
   { path: '/privacy', component: LegalPage, meta: { title: '隐私政策', role: 'public', legalKind: 'privacy' } },

@@ -188,7 +188,7 @@ public class RechargeOrderService {
                 "alipay".equals(order.getPaymentMethod())?"Alipay":"WeChat Pay",
                 order.getBonusCreditUnits()>0?"Bonus wallet credit (not charged)":"",
                 order.getBonusCreditUnits()>0?moneyUnits(order.getBonusCreditUnits())+" CNY":"");
-        BillingPdfRenderer renderer=documents.renderer();
+        BillingPdfRenderer renderer=documents.renderer("recharge", order.getId());
         return receipt?renderer.renderReceipt(data):renderer.renderInvoice(data);
     }
 

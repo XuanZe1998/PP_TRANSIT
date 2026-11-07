@@ -7,6 +7,7 @@
     </AdminPageToolbar>
 
     <el-tabs v-model="activeTab" @tab-change="syncTab">
+      <el-tab-pane label="支付文案与邮件" name="payment-content"><PaymentContentSettings v-if="activeTab === 'payment-content'" /></el-tab-pane>
       <el-tab-pane label="订阅公告" name="notice">
         <el-form v-loading="noticeLoading" label-position="top" style="max-width: 800px">
           <el-form-item label="显示公告"><el-switch v-model="notice.enabled" /></el-form-item>
@@ -244,6 +245,7 @@
 </template>
 
 <script setup lang="ts">
+import PaymentContentSettings from '@/components/PaymentContentSettings.vue'
 import PagedTable from '@/components/PagedTable.vue'
 import ListPagination from '@/components/ListPagination.vue'
 import AdminPageToolbar from '@/components/AdminPageToolbar.vue'
@@ -326,7 +328,7 @@ async function saveNotice() {
   catch (error) { ElMessage.error(getHttpErrorMessage(error, '公告保存失败')) }
   finally { noticeSaving.value = false }
 }
-const allowedTabs = ['catalog', 'orders', 'payments', 'redemption-hosts', 'notice']
+const allowedTabs = ['catalog', 'orders', 'payments', 'redemption-hosts', 'notice', 'payment-content']
 const initialTab = typeof route.query.tab === 'string' && allowedTabs.includes(route.query.tab) ? route.query.tab : 'catalog'
 const activeTab = ref(initialTab)
 const form = reactive({

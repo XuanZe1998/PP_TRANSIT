@@ -65,6 +65,7 @@ class MaPayPaymentIntegrationTests {
 
         WalletRechargeOrder paid = rechargeOrderService.get(user, created.getId());
         assertThat(paid.getStatus()).isEqualTo("PAID");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM payment_email_outbox WHERE business_type='WALLET_RECHARGE' AND business_id=?", Integer.class, created.getId())).isEqualTo(1);
         assertThat(paymentIntentMapper.selectById(intent.getId()).getStatus()).isEqualTo("PAID");
         assertThat(userMapper.selectById(user.getId()).getBalance()).isEqualTo(created.getTotalCreditUnits());
         assertThat(jdbc.queryForObject(
@@ -91,6 +92,7 @@ class MaPayPaymentIntegrationTests {
 
         ServiceOrder fulfilled = orderMapper.selectById(delivered.getId());
         assertThat(fulfilled.getStatus()).isEqualTo("FULFILLED");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM payment_email_outbox WHERE business_type='SERVICE_ORDER' AND business_id=?", Integer.class, delivered.getId())).isEqualTo(1);
         assertThat(fulfilled.getFulfillmentStatus()).isEqualTo("COMPLETED");
         assertThat(inventoryMapper.selectCount(new LambdaQueryWrapper<ServiceInventoryItem>()
                 .eq(ServiceInventoryItem::getReservedOrderId, delivered.getId())

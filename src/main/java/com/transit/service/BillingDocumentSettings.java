@@ -14,6 +14,8 @@ import java.util.regex.Pattern;
 /** Shared private configuration and validation for all billing documents. */
 @Component
 public class BillingDocumentSettings {
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private PaymentExperienceService paymentExperience;
     private static final Pattern EMAIL_PATTERN = Pattern.compile("^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$");
     @Value("${payment.documents.merchant.legal-name:}")
     private String merchantLegalName;
@@ -70,6 +72,10 @@ public class BillingDocumentSettings {
     }
 
     BillingPdfRenderer renderer() { return new BillingPdfRenderer(receiptFontPath); }
+    BillingPdfRenderer renderer(String type, long id) {
+        String url = paymentExperience == null ? "https://linknux.com/billing/" + type + "/" + id : paymentExperience.downloadUrl(type,id);
+        return new BillingPdfRenderer(receiptFontPath, url);
+    }
     private boolean blank(String value) { return value == null || value.isBlank(); }
     record MerchantInfo(String name,
                                 String addressLine1,

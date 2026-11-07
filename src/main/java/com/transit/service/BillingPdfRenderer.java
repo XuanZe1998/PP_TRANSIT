@@ -33,9 +33,15 @@ final class BillingPdfRenderer {
     );
 
     private final String configuredFontPath;
+    private final String downloadUrl;
 
     BillingPdfRenderer(String configuredFontPath) {
+        this(configuredFontPath, null);
+    }
+
+    BillingPdfRenderer(String configuredFontPath, String downloadUrl) {
         this.configuredFontPath = configuredFontPath;
+        this.downloadUrl = downloadUrl;
     }
 
     byte[] renderInvoice(DocumentData data) {
@@ -61,6 +67,19 @@ final class BillingPdfRenderer {
                     drawInvoiceBody(content, fonts, data);
                 }
                 drawFooter(content, fonts);
+                if (downloadUrl != null) {
+                    String label = java.net.URI.create(downloadUrl).getHost() + " - Download invoice and receipt";
+                    text(content, fonts.regular(), label, 30, 57, 9, LINK_BLUE);
+                    org.apache.pdfbox.pdmodel.interactive.annotation.PDAnnotationLink link = new org.apache.pdfbox.pdmodel.interactive.annotation.PDAnnotationLink();
+                    link.setRectangle(new PDRectangle(30, 54, width(fonts.regular(), label, 9), 14));
+                    var action = new org.apache.pdfbox.pdmodel.interactive.action.PDActionURI();
+                    action.setURI(downloadUrl);
+                    link.setAction(action);
+                    var border = new org.apache.pdfbox.cos.COSArray();
+                    border.add(org.apache.pdfbox.cos.COSInteger.ZERO); border.add(org.apache.pdfbox.cos.COSInteger.ZERO); border.add(org.apache.pdfbox.cos.COSInteger.ZERO);
+                    link.setBorder(border);
+                    page.getAnnotations().add(link);
+                }
             }
             document.getDocumentInformation().setTitle(receipt ? "Receipt" : "Invoice");
             document.getDocumentInformation().setAuthor(data.merchantName());
@@ -105,9 +124,9 @@ final class BillingPdfRenderer {
         text(content, fonts.bold(), "Bill to", x, 641, 10);
         fittedText(content, fontFor(fonts, data.billingName()), data.billingName(), x, 625, 9.5f, 330);
         fittedText(content, fontFor(fonts, data.billingAddressLine1()), data.billingAddressLine1(), x, 609, 9.5f, 330);
-        String districtAndCity = data.billingDistrict() + ", " + data.billingCity();
+        String districtAndCity = java.util.Objects.toString(data.billingDistrict(), "") + ", " + java.util.Objects.toString(data.billingCity(), "");
         fittedText(content, fontFor(fonts, districtAndCity), districtAndCity, x, 593, 9.5f, 330);
-        String provinceAndPostalCode = data.billingProvince() + " " + data.billingPostalCode();
+        String provinceAndPostalCode = java.util.Objects.toString(data.billingProvince(), "") + " " + java.util.Objects.toString(data.billingPostalCode(), "");
         fittedText(content, fontFor(fonts, provinceAndPostalCode), provinceAndPostalCode, x, 577, 9.5f, 330);
         fittedText(content, fontFor(fonts, data.billingCountry()), data.billingCountry(), x, 561, 9.5f, 330);
         fittedText(content, fonts.regular(), data.billingEmail(), x, 545, 9.5f, 330);

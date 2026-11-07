@@ -472,6 +472,7 @@ public class ServiceOrderService {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "Order changed concurrently; reload it before applying another status transition");
         }
+        if (PAID.equals(target) && !PAID.equals(current) && paymentSettlement != null) paymentSettlement.enqueueEmail(PaymentBusinessSettlementService.SERVICE_ORDER, id);
         if (serviceCommerceService != null && order.getServiceId() != null
                 && Set.of(FAILED, CANCELLED).contains(target)
                 && Set.of(PENDING, CONFIRMED).contains(current)) {
@@ -509,8 +510,8 @@ public class ServiceOrderService {
         ServiceOrder order = getUserOrder(user, id);
         validateReceiptEligibility(order);
         BillingDocumentSettings.MerchantInfo merchant = documents.merchant();
-        byte[] receipt = documents.renderer()
-                .renderReceipt(documentData(order, merchant));
+        byte[] receipt = documents.renderer("service", order.getId())
+                .renderReceipt(documentData(order, merchant, true));
         order.setDownloadedAt(nowUtc());
         order.setUpdatedAt(nowUtc());
         orderMapper.updateById(order);
@@ -521,12 +522,20 @@ public class ServiceOrderService {
         ServiceOrder order = getUserOrder(user, id);
         validateDocumentSnapshot(order);
         BillingDocumentSettings.MerchantInfo merchant = documents.merchant();
-        byte[] invoice = documents.renderer()
-                .renderInvoice(documentData(order, merchant));
+        byte[] invoice = documents.renderer("service", order.getId())
+                .renderInvoice(documentData(order, merchant, false));
         order.setDownloadedAt(nowUtc());
         order.setUpdatedAt(nowUtc());
         orderMapper.updateById(order);
         return invoice;
+    }
+
+    public byte[][] emailDocuments(User user, Long id) {
+        ServiceOrder order = getUserOrder(user, id);
+        validateReceiptEligibility(order);
+        var merchant = documents.merchant();
+        var renderer = documents.renderer("service", id);
+        return new byte[][] { renderer.renderInvoice(documentData(order,merchant,false)), renderer.renderReceipt(documentData(order,merchant,true)) };
     }
 
     private void validateReceiptEligibility(ServiceOrder order) {
@@ -581,10 +590,12 @@ public class ServiceOrderService {
         normalizePaymentMethod(order.getPaymentMethod());
     }
 
-    private BillingPdfRenderer.DocumentData documentData(ServiceOrder order, BillingDocumentSettings.MerchantInfo merchant) {
-        String documentDate = LocalDate.now(merchant.timeZone())
+    private BillingPdfRenderer.DocumentData documentData(ServiceOrder order, BillingDocumentSettings.MerchantInfo merchant, boolean receipt) {
+        String documentDate = (receipt ? order.getPaidAt() : order.getCreatedAt()).atZone(ZoneOffset.UTC).withZoneSameInstant(merchant.timeZone())
                 .format(DateTimeFormatter.ofPattern("MMMM d, yyyy", Locale.US));
-        String amount = formatMoney(order.getAmountCents(), normalizeCurrency(order.getCurrency()));
+        String amount = receipt && order.getPaymentAmountCents() != null
+                ? formatMoney(order.getPaymentAmountCents(), normalizeCurrency(order.getPaymentCurrency()))
+                : formatMoney(order.getAmountCents(), normalizeCurrency(order.getCurrency()));
         return new BillingPdfRenderer.DocumentData(
                 firstNonBlank(order.getInvoiceNumber(), order.getOrderNo()),
                 order.getReceiptNumber(),

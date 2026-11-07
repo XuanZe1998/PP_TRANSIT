@@ -1,34 +1,40 @@
 <template>
-  <el-dialog :model-value="modelValue" title="完成支付" width="min(440px, 94vw)" @update:model-value="emit('update:modelValue', $event)">
+  <el-dialog :model-value="modelValue" :title="copy.title" width="min(440px, 94vw)" @update:model-value="emit('update:modelValue', $event)">
     <div v-if="action" class="payment-action">
       <template v-if="action.type === 'QRCODE'">
-        <p>请使用{{ paymentMethodLabel }}扫码支付</p>
-        <el-alert title="支付完成后，状态更新可能稍有延迟。请稍等片刻并刷新页面查看订单状态，请勿重复支付。" type="info" :closable="false" show-icon />
+        <p>{{ methodText(copy.qrPrompt) }}</p>
+        <el-alert :title="copy.qrNotice" type="info" :closable="false" show-icon />
         <div class="qr-frame"><QrcodeVue :value="action.url" :size="240" level="M" /></div>
       </template>
       <template v-else-if="action.type === 'URL_SCHEME'">
-        <p>请在移动设备上唤起{{ paymentMethodLabel }}完成付款。</p>
-        <el-button type="primary" size="large" @click="openAction">打开{{ paymentMethodLabel }}</el-button>
+        <p>{{ methodText(copy.schemePrompt) }}</p>
+        <el-button type="primary" size="large" @click="openAction">{{ methodText(copy.openButton) }}</el-button>
       </template>
       <template v-else>
-        <p>将在 MaPay 收银台完成付款，付款后可返回本页查看结果。</p>
-        <el-button type="primary" size="large" @click="openAction">前往支付</el-button>
+        <p>{{ copy.redirectPrompt }}</p>
+        <el-button type="primary" size="large" @click="openAction">{{ copy.redirectButton }}</el-button>
       </template>
-      <el-alert v-if="action.type !== 'QRCODE'" title="支付状态以服务端回调为准，请勿重复创建订单。" type="info" :closable="false" show-icon />
+      <el-alert v-if="action.type !== 'QRCODE'" :title="copy.pendingNotice" type="info" :closable="false" show-icon />
     </div>
-    <el-empty v-else description="支付动作尚未生成" />
+    <el-empty v-else :description="copy.emptyText" />
   </el-dialog>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { loadPaymentContent, paymentContentDefaults } from '@/utils/paymentContent'
 import QrcodeVue from 'qrcode.vue'
 
 export type PaymentAction = { type: 'REDIRECT' | 'QRCODE' | 'URL_SCHEME'; url: string }
 
 const props = defineProps<{ modelValue: boolean; action: PaymentAction | null; paymentMethod?: string }>()
 const emit = defineEmits<{ 'update:modelValue': [boolean] }>()
-const paymentMethodLabel = computed(() => props.paymentMethod === 'wxpay' ? '微信支付' : '支付宝')
+const copy = ref({ ...paymentContentDefaults })
+watch(() => props.modelValue, async visible => {
+  if (visible) { try { copy.value = await loadPaymentContent() } catch { /* keep usable default payment instructions */ } }
+}, { immediate: true })
+const methodText = (text: string) => text.replaceAll('{method}', paymentMethodLabel.value)
+const paymentMethodLabel = computed(() => props.paymentMethod === 'wxpay' ? copy.value.wxpayLabel : copy.value.alipayLabel)
 
 function openAction() {
   if (!props.action?.url) return
