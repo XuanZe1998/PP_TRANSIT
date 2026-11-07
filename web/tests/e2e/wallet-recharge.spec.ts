@@ -1,5 +1,84 @@
 import { expect, test } from '@playwright/test'
 
+for (const outcome of ['callback', 'already-paid', 'expired'] as const) {
+  test(`existing recharge resumes its own payment and handles ${outcome}`, async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('linknux.locale', 'zh-CN')
+      localStorage.setItem('user_access_token', 'wallet-test-token')
+      localStorage.setItem('user_info', JSON.stringify({ username: 'wallet-test', role: 'USER' }))
+      localStorage.setItem('user_last_active_at', String(Date.now()))
+    })
+    let status = 'PENDING'
+    let creates = 0
+    let starts = 0
+    let receiptReads = 0
+    const expiresAt = new Date(Date.now() + 600000).toISOString()
+    const order = () => ({ id: 3, orderNo: 'RCG-EXISTING', status, paymentMethod: 'wxpay',
+      paymentIntent: { id: 29, status, expiresAt, settlementMoney: { amount: 100, scale: 100, currency: 'CNY' } } })
+    await page.route('**/api/**', route => {
+      const request = route.request()
+      const url = new URL(request.url())
+      const path = url.pathname
+      if (path.endsWith('/public/legal')) return route.fulfill({ json: { checkout_ready: true,
+        checkout_disclosure_id: 'resume-v1', terms_version: 't1', privacy_version: 'p1' } })
+      if (path.endsWith('/user/legal/accept')) return route.fulfill({ json: {} })
+      if (path.endsWith('/user/wallet')) return route.fulfill({ json: { plans: [], balance: status === 'PAID' ? 10000 : 0 } })
+      if (path.endsWith('/user/recharge-orders')) {
+        if (request.method() === 'POST') { creates++; return route.fulfill({ status: 500, json: {} }) }
+        expect(url.searchParams.get('listPage')).toBe('true')
+        expect(url.searchParams.get('size')).toBe('10')
+        return route.fulfill({ json: { items: url.searchParams.get('page') === '2' ? [order()] : [], total: 11, page: Number(url.searchParams.get('page')), size: 10 } })
+      }
+      if (path.endsWith('/recharge-orders/3')) return route.fulfill({ json: order() })
+      if (path.endsWith('/payment-intents/29/start')) {
+        starts++
+        expect(request.headers()['x-checkout-disclosure']).toBe('resume-v1')
+        expect(request.headers()['idempotency-key']).toBeTruthy()
+        if (outcome === 'expired') {
+          status = 'EXPIRED'
+          return route.fulfill({ status: 409, json: { message: 'Payment intent has expired' } })
+        }
+        if (outcome === 'already-paid') status = 'PAID'
+        return route.fulfill({ json: { intent: order().paymentIntent,
+          action: { type: 'QRCODE', url: 'weixin://existing-order' }, expiresAt } })
+      }
+      if (path.endsWith('/payment-intents/29')) return route.fulfill({ json: { status } })
+      if (path.endsWith('/recharge-orders/3/receipt')) {
+        receiptReads++
+        return route.fulfill({ contentType: 'application/pdf', body: '%PDF-1.4 receipt' })
+      }
+      return route.fulfill({ json: {} })
+    })
+    await page.goto('/console/wallet')
+    await page.locator('.console-panel').filter({ has: page.getByRole('heading', { name: '充值订单', exact: true }) })
+      .getByRole('button', { name: 'Go to next page' }).click()
+    const row = page.getByRole('row').filter({ hasText: 'RCG-EXISTING' })
+    await row.getByRole('button', { name: '去支付' }).click()
+    const confirmation = page.getByRole('dialog', { name: '继续充值支付' })
+    const pay = confirmation.getByRole('button', { name: '去支付', exact: true })
+    await expect(pay).toBeDisabled()
+    await confirmation.getByText('我已阅读交易条件和退款政策', { exact: true }).click()
+    await pay.click()
+    if (outcome === 'expired') {
+      await expect(page.getByText('Payment intent has expired', { exact: true })).toBeVisible()
+      await expect(row.getByRole('button', { name: '去支付' })).toHaveCount(0)
+      await expect(row.getByRole('button', { name: '收据' })).toHaveCount(0)
+      await expect(page.locator('.qr-frame')).toHaveCount(0)
+    } else {
+      if (outcome === 'callback') {
+        await expect(page.locator('.qr-frame')).toBeVisible()
+        status = 'PAID'
+      }
+      await expect(page.locator('.qr-frame')).toHaveCount(0, { timeout: 10000 })
+      await expect(row.getByRole('button', { name: '去支付' })).toHaveCount(0)
+      await row.getByRole('button', { name: '收据' }).click()
+      await expect.poll(() => receiptReads).toBe(1)
+    }
+    expect(creates).toBe(0)
+    expect(starts).toBe(1)
+  })
+}
+
 test('confirmed wallet recharge closes the QR dialog and refreshes the credited balance', async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem('linknux.locale', 'zh-CN')

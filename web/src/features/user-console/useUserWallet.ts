@@ -42,6 +42,11 @@ export function useUserWallet(dashboard: Ref<any>, current: Ref<{ key: string }>
   const rechargeOrderTotal = ref(0)
   const paymentDialogVisible = ref(false)
   const paymentAction = ref<PaymentAction | null>(null)
+  const resumeOrder = ref<Record<string, any> | null>(null)
+  const resumeVisible = ref(false)
+  const resumeLoading = ref(false)
+  const resumeAccepted = ref(false)
+  const resumeDisclosureId = ref('')
   const rechargeForm = ref({ needInvoice: false, billingName: '', contactEmail: '', billingAddressLine1: '', billingDistrict: '', billingCity: '', billingProvince: '', billingPostalCode: '', billingCountry: 'China', paymentMethod: 'alipay' })
 
   const wallet = ref({
@@ -201,6 +206,55 @@ export function useUserWallet(dashboard: Ref<any>, current: Ref<{ key: string }>
 
   function pollPayment(intentId: number) { paymentPoll.start(intentId) }
 
+  async function openRechargePayment(id: number) {
+    if (resumeLoading.value) return
+    resumeLoading.value = true
+    try {
+      const order = (await http.get(`/api/platform/user/recharge-orders/${id}`)).data
+      if (order?.status !== 'PENDING' || order?.paymentIntent?.status !== 'PENDING') {
+        await loadWallet()
+        ElMessage.warning('订单状态已变化，请查看充值订单')
+        return
+      }
+      resumeOrder.value = order
+      resumeAccepted.value = false
+      resumeDisclosureId.value = ''
+      resumeVisible.value = true
+    } catch (error: unknown) {
+      ElMessage.error(getHttpErrorMessage(error, '发起支付失败'))
+    } finally {
+      resumeLoading.value = false
+    }
+  }
+
+  async function resumeRechargePayment(accept: () => Promise<unknown>) {
+    const order = resumeOrder.value
+    const disclosureId = resumeDisclosureId.value
+    if (!order?.paymentIntent?.id || !resumeAccepted.value || !disclosureId || resumeLoading.value) return
+    resumeLoading.value = true
+    try {
+      await accept()
+      const started = await http.post(`/api/payment-intents/${order.paymentIntent.id}/start`, {}, {
+        headers: { 'Idempotency-Key': createIdempotencyKey(`payment-start-${order.paymentIntent.id}`), 'X-Checkout-Disclosure': disclosureId }
+      })
+      resumeVisible.value = false
+      const paid = started.data?.intent?.status === 'PAID'
+      rechargeForm.value.paymentMethod = order.paymentMethod
+      paymentAction.value = paid ? null : paymentActionOf(started.data, { paymentIntent: order.paymentIntent })
+      paymentDialogVisible.value = Boolean(paymentAction.value)
+      if (paid) ElMessage.success('充值已到账')
+      else pollPayment(order.paymentIntent.id)
+      await Promise.all([loadWallet(), loadDashboard()])
+    } catch (error: unknown) {
+      ElMessage.error(getHttpErrorMessage(error, '发起支付失败'))
+      resumeVisible.value = false
+      resumeAccepted.value = false
+      await loadWallet()
+    } finally {
+      resumeLoading.value = false
+    }
+  }
+
   async function downloadRecharge(id: number, type: 'invoice' | 'receipt') {
     try {
       await downloadFile(`/api/platform/user/recharge-orders/${id}/${type}`, `${type}-${id}.pdf`)
@@ -251,6 +305,13 @@ export function useUserWallet(dashboard: Ref<any>, current: Ref<{ key: string }>
     rechargeOrderTotal,
     paymentDialogVisible,
     paymentAction,
+    resumeOrder,
+    resumeVisible,
+    resumeLoading,
+    resumeAccepted,
+    resumeDisclosureId,
+    openRechargePayment,
+    resumeRechargePayment,
     rechargeForm,
     wallet,
     loadWallet,

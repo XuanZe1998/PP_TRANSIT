@@ -76,6 +76,7 @@
               <el-table-column label="到账" width="130"><template #default="{ row }">{{ formatMoneyDto(row.totalCreditMoney) }}</template></el-table-column>
               <el-table-column prop="status" label="状态" width="120" />
               <el-table-column label="操作" min-width="210"><template #default="{ row }">
+                <el-button v-if="row.status === 'PENDING' && row.paymentIntent?.status === 'PENDING'" link type="primary" :disabled="resumeLoading" @click="openRechargePayment(row.id)">去支付</el-button>
                 <el-button v-if="row.invoiceRequested" link type="primary" @click="downloadRecharge(row.id, 'invoice')">账单</el-button>
                 <el-button v-if="['PAID','REFUNDED'].includes(row.status)" link type="success" @click="downloadRecharge(row.id, 'receipt')">收据</el-button>
               </template></el-table-column>
@@ -123,6 +124,19 @@
               @size-change="handleWalletTransactionPageSizeChange"
              list-id="UserConsole-2"/>
           </section>
+
+          <el-dialog v-model="resumeVisible" title="继续充值支付" width="min(520px, 94vw)" destroy-on-close
+            :close-on-click-modal="!resumeLoading" :close-on-press-escape="!resumeLoading" :show-close="!resumeLoading">
+            <template v-if="resumeOrder">
+              <p>{{ resumeOrder.orderNo }}</p>
+              <p>应付金额：{{ formatMoneyDto(resumeOrder.paymentIntent?.settlementMoney) }}</p>
+              <CheckoutDisclosure ref="resumeDisclosure" v-model="resumeAccepted" v-model:disclosure-id="resumeDisclosureId" />
+            </template>
+            <template #footer>
+              <el-button :disabled="resumeLoading" @click="resumeVisible = false">取消</el-button>
+              <el-button type="primary" :disabled="!resumeAccepted || !resumeDisclosureId" :loading="resumeLoading" @click="confirmResumePayment">去支付</el-button>
+            </template>
+          </el-dialog>
 
           <el-dialog
             v-model="rechargeVisible"
@@ -213,6 +227,8 @@
 
 </template>
 <script setup lang="ts">
+import { ref } from 'vue';
+import CheckoutDisclosure from '@/components/CheckoutDisclosure.vue';
 import PagedTable from '@/components/PagedTable.vue';
 import PagedList from '@/components/PagedList.vue';
 import SelectablePagination from '@/components/SelectablePagination.vue';
@@ -238,6 +254,13 @@ const {
   rechargeCheckoutReady,
   canSubmitRecharge,
   rechargeOrders,
+  resumeOrder,
+  resumeVisible,
+  resumeLoading,
+  resumeAccepted,
+  resumeDisclosureId,
+  openRechargePayment,
+  resumeRechargePayment,
   rechargeOrderPage,
   rechargeOrderPageSize,
   rechargeOrderTotal,
@@ -255,6 +278,11 @@ const {
   downloadRecharge,
   redeemWalletCode,
 } = props.state
+const resumeDisclosure = ref<InstanceType<typeof CheckoutDisclosure>>()
+async function confirmResumePayment() {
+  const disclosure = resumeDisclosure.value
+  if (disclosure) await resumeRechargePayment(() => disclosure.accept())
+}
 </script>
 
 <style scoped>
