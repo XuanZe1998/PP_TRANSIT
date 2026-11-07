@@ -237,7 +237,8 @@
       </main>
 
       <UserKeyDialogs :state="keysFeature" />
-      <PaymentActionDialog v-model="paymentDialogVisible" :action="paymentAction" :payment-method="rechargeForm.paymentMethod" />
+      <PaymentActionDialog v-model="paymentDialogVisible" :action="paymentAction" :payment-method="rechargeForm.paymentMethod"
+        refreshable retryable :busy="walletFeature.resumeLoading.value" @refresh="refreshRechargePayment()" @expired="refreshRechargePayment()" @retry="retryActiveRecharge" />
     </div>
   </div>
 </template>
@@ -305,7 +306,7 @@ const primaryAccessKey = computed(() => {
 const playgroundFeature = usePlayground(dashboard, current, loadDashboard)
 const { sendPlaygroundRequest, syncSelection } = playgroundFeature
 const walletFeature = useUserWallet(dashboard, current, loadDashboard)
-const { loadWallet, openRechargePanel, paymentDialogVisible, paymentAction, rechargeForm } = walletFeature
+const { loadWallet, openRechargePanel, paymentDialogVisible, paymentAction, rechargeForm, refreshRechargePayment, retryActiveRecharge } = walletFeature
 const usageFeature = useUserUsage(current)
 const { loadBilling, loadOverviewUsage, overviewUsageAnalytics, overviewUsageError } = usageFeature
 const keysFeature = useUserKeys(dashboard, loadDashboard)

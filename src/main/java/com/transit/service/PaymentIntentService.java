@@ -64,6 +64,20 @@ public class PaymentIntentService {
                 expiresAt, moneyService.settlementQuote(source));
     }
 
+    PaymentIntent createRechargeRetry(PaymentIntent prior, Long orderId, String orderNo, LocalDateTime expiresAt) {
+        return insertIntent(prior.getUserId(), PaymentBusinessSettlementService.WALLET_RECHARGE, orderId,
+                orderNo, prior.getDescription(), new MoneyAmount(prior.getSourceAmount(), prior.getSourceCurrency(), prior.getSourceScale()),
+                prior.getPaymentMethod(), expiresAt, new MoneyService.SettlementQuote(
+                        MoneyAmount.cents(prior.getSettlementAmountCents(), prior.getSettlementCurrency()), prior.getExchangeRate()));
+    }
+
+    PaymentIntent lockAndQueryForRetry(User user, Long id) {
+        PaymentIntent intent = mapper.selectOne(new LambdaQueryWrapper<PaymentIntent>()
+                .eq(PaymentIntent::getId, id).last("FOR UPDATE"));
+        if (intent == null || !Objects.equals(intent.getUserId(), user.getId())) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Payment intent not found");
+        return !blank(intent.getProviderTradeNo()) && !"PAID".equals(intent.getStatus()) ? query(intent) : enrich(intent);
+    }
+
     private PaymentIntent insertIntent(Long userId, String businessType, Long businessId, String orderNo,
                                        String description, MoneyAmount source, String paymentMethod,
                                        LocalDateTime expiresAt, MoneyService.SettlementQuote quote) {
@@ -310,7 +324,7 @@ public class PaymentIntentService {
     }
 
     private StartResponse response(PaymentIntent intent) {
-        PaymentAction action = (localTestMode && "PAID".equals(intent.getStatus()))
+        PaymentAction action = "PAID".equals(intent.getStatus())
                 || blank(intent.getPaymentActionType()) || blank(intent.getPaymentUrl())
                 ? null : new PaymentAction(intent.getPaymentActionType(), intent.getPaymentUrl());
         return new StartResponse(enrich(intent), action, intent.getExpiresAt());

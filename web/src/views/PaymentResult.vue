@@ -15,6 +15,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import http, { getHttpErrorMessage } from '@/utils/http'
+import { createPollingTask } from '@/utils/polling'
 
 const route = useRoute()
 const router = useRouter()
@@ -22,7 +23,6 @@ const intent = ref<Record<string, any> | null>(null)
 const order = ref<Record<string, any> | null>(null)
 const error = ref('')
 const refreshing = ref(false)
-let timer: number | undefined
 let disposed = false
 
 const intentId = computed(() => {
@@ -52,7 +52,7 @@ async function loadLocal() {
     if (disposed) return
     order.value = serviceOrder.data
   }
-  if (['PAID', 'EXPIRED', 'CANCELLED'].includes(String(intent.value?.status))) stopPolling()
+  if (['PAID', 'CANCELLED'].includes(String(intent.value?.status))) stopPolling()
   if (intent.value?.status === 'PAID' && order.value?.id) {
     await router.replace({ path: '/services', query: { orderId: String(order.value.id) } })
   }
@@ -63,7 +63,8 @@ async function refresh() {
   error.value = ''
   try {
     if (!intentId.value) throw new Error('返回链接缺少支付意图标识')
-    await http.post(`/api/payment-intents/${intentId.value}/query`)
+    await loadLocal()
+    if (intent.value?.status !== 'PAID' && intent.value?.providerTradeNo) await http.post(`/api/payment-intents/${intentId.value}/query`)
     await loadLocal()
   } catch (cause) {
     error.value = getHttpErrorMessage(cause, cause instanceof Error ? cause.message : '查单失败')
@@ -72,19 +73,19 @@ async function refresh() {
   }
 }
 
-function stopPolling() { if (timer !== undefined) window.clearInterval(timer); timer = undefined }
+const statusPoll = createPollingTask<number>({ interval: 2500, maxAttempts: 720, async run() { await loadLocal() } })
+function stopPolling() { statusPoll.stop() }
 function startPolling() {
   if (disposed) return
-  stopPolling()
-  timer = window.setInterval(() => void loadLocal().catch(() => undefined), 2500)
+  statusPoll.start(intentId.value)
 }
 function goBack() {
   void router.push(intent.value?.businessType === 'WALLET_RECHARGE' ? '/console/wallet'
     : { path: '/services', query: order.value?.id ? { orderId: String(order.value.id) } : {} })
 }
 
-onMounted(async () => { await refresh(); if (!['PAID', 'EXPIRED', 'CANCELLED'].includes(String(intent.value?.status))) startPolling() })
-onBeforeUnmount(() => { disposed = true; stopPolling() })
+onMounted(async () => { await refresh(); if (!['PAID', 'CANCELLED'].includes(String(intent.value?.status))) startPolling() })
+onBeforeUnmount(() => { disposed = true; statusPoll.dispose() })
 </script>
 
 <style scoped>

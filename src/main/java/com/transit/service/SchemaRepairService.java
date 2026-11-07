@@ -1513,6 +1513,7 @@ public class SchemaRepairService {
         ensureColumn("payment_intents", "last_error", "ALTER TABLE payment_intents ADD COLUMN last_error VARCHAR(500) NULL");
         ensureColumn("service_orders", "currency", "ALTER TABLE service_orders ADD COLUMN currency VARCHAR(3) NOT NULL DEFAULT 'USD'");
         ensureColumn("wallet_recharge_orders", "invoice_requested", "ALTER TABLE wallet_recharge_orders ADD COLUMN invoice_requested BOOLEAN NOT NULL DEFAULT FALSE");
+        ensureColumn("wallet_recharge_orders", "retry_order_id", "ALTER TABLE wallet_recharge_orders ADD COLUMN retry_order_id BIGINT NULL");
         ensureColumn("service_orders", "payment_amount_cents", "ALTER TABLE service_orders ADD COLUMN payment_amount_cents BIGINT NULL");
         ensureColumn("service_orders", "payment_currency", "ALTER TABLE service_orders ADD COLUMN payment_currency VARCHAR(3) NULL");
         ensureColumn("service_orders", "exchange_rate", "ALTER TABLE service_orders ADD COLUMN exchange_rate DECIMAL(18,8) NULL");

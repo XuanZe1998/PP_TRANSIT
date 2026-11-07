@@ -29,6 +29,26 @@ public class RechargeOrderController {
     private final CurrentUserService currentUserService;
     private final RechargeOrderService rechargeOrderService;
     private final IdempotencyService idempotencyService;
+    private final com.transit.service.LegalDocumentService legalDocuments;
+
+    @PostMapping("/{id}/retry")
+    public Mono<Object> retry(@RequestHeader(HttpHeaders.AUTHORIZATION) String auth, @PathVariable Long id,
+                              @RequestHeader("Idempotency-Key") String key,
+                              @RequestHeader("X-Checkout-Disclosure") String disclosure) {
+        User user = currentUserService.requireUser(auth);
+        return Mono.fromCallable(() -> {
+            var original = rechargeOrderService.get(user, id);
+            legalDocuments.requireCheckoutOpen();
+            legalDocuments.recordCheckoutConsent(user.getId(), "PAYMENT_INTENT", original.getPaymentIntent().getId(), disclosure);
+            var claim = idempotencyService.claim("USER", user.getId(), "RETRY_RECHARGE:" + id, key, java.util.Map.of("id", id), true);
+            if (claim.replay()) return claim.response();
+            try {
+                var order = rechargeOrderService.retry(user, id);
+                idempotencyService.complete(claim, 200, order, "WALLET_RECHARGE", order.getId());
+                return order;
+            } catch (RuntimeException failure) { idempotencyService.fail(claim, failure); throw failure; }
+        });
+    }
 
     @PostMapping
     public Mono<Object> create(@RequestHeader(HttpHeaders.AUTHORIZATION) String auth,

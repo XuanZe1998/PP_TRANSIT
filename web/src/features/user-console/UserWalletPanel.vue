@@ -74,9 +74,10 @@
               <el-table-column prop="planName" label="套餐" min-width="130" />
               <el-table-column label="实付" width="130"><template #default="{ row }">{{ formatMoneyDto(row.paymentMoney) }}</template></el-table-column>
               <el-table-column label="到账" width="130"><template #default="{ row }">{{ formatMoneyDto(row.totalCreditMoney) }}</template></el-table-column>
-              <el-table-column prop="status" label="状态" width="120" />
+              <el-table-column label="状态" width="120"><template #default="{ row }">{{ rechargeExpired(row) ? '已过期' : row.status }}</template></el-table-column>
               <el-table-column label="操作" min-width="210"><template #default="{ row }">
-                <el-button v-if="row.status === 'PENDING' && row.paymentIntent?.status === 'PENDING'" link type="primary" :disabled="resumeLoading" @click="openRechargePayment(row.id)">去支付</el-button>
+                <el-button v-if="['PENDING','EXPIRED'].includes(row.status) && row.paymentIntent" link type="primary" :disabled="resumeLoading" @click="openRechargePayment(row.id)">{{ rechargeExpired(row) ? '重新充值' : '去支付' }}</el-button>
+                <el-button v-if="['PENDING','EXPIRED'].includes(row.status)" link :disabled="resumeLoading" @click="refreshRechargePayment(row.id)">刷新状态</el-button>
                 <el-button v-if="row.invoiceRequested" link type="primary" @click="downloadRecharge(row.id, 'invoice')">账单</el-button>
                 <el-button v-if="['PAID','REFUNDED'].includes(row.status)" link type="success" @click="downloadRecharge(row.id, 'receipt')">收据</el-button>
               </template></el-table-column>
@@ -130,11 +131,12 @@
             <template v-if="resumeOrder">
               <p>{{ resumeOrder.orderNo }}</p>
               <p>应付金额：{{ formatMoneyDto(resumeOrder.paymentIntent?.settlementMoney) }}</p>
+              <el-alert v-if="rechargeExpired(resumeOrder)" type="info" :closable="false" title="原订单已过期。确认后将按原金额和付款方式创建新充值订单；若已付款，请先刷新状态。" />
               <CheckoutDisclosure ref="resumeDisclosure" v-model="resumeAccepted" v-model:disclosure-id="resumeDisclosureId" />
             </template>
             <template #footer>
               <el-button :disabled="resumeLoading" @click="resumeVisible = false">取消</el-button>
-              <el-button type="primary" :disabled="!resumeAccepted || !resumeDisclosureId" :loading="resumeLoading" @click="confirmResumePayment">去支付</el-button>
+              <el-button type="primary" :disabled="!resumeAccepted || !resumeDisclosureId" :loading="resumeLoading" @click="confirmResumePayment">{{ resumeOrder && rechargeExpired(resumeOrder) ? '重新充值' : '去支付' }}</el-button>
             </template>
           </el-dialog>
 
@@ -254,6 +256,8 @@ const {
   rechargeCheckoutReady,
   canSubmitRecharge,
   rechargeOrders,
+  rechargeExpired,
+  refreshRechargePayment,
   resumeOrder,
   resumeVisible,
   resumeLoading,

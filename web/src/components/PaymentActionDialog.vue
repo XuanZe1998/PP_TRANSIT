@@ -10,6 +10,11 @@
         <p v-else>{{ copy.expiryUnavailable }}</p>
       </div>
       <el-alert v-if="expired" :title="copy.expiredNotice" type="warning" :closable="false" show-icon />
+      <div v-if="expired" class="payment-recovery">
+        <el-button v-if="refreshable" :loading="busy" @click="emit('refresh')">刷新状态</el-button>
+        <el-button v-if="retryable" type="primary" :disabled="busy" @click="emit('retry')">重新充值</el-button>
+        <el-button v-else @click="emit('update:modelValue', false)">返回订单</el-button>
+      </div>
       <template v-if="action.type === 'QRCODE'">
         <p v-if="!expired">{{ methodText(copy.qrPrompt) }}</p>
         <el-alert v-if="!expired" :title="copy.qrNotice" type="info" :closable="false" show-icon />
@@ -36,8 +41,8 @@ import QrcodeVue from 'qrcode.vue'
 
 export type PaymentAction = { type: 'REDIRECT' | 'QRCODE' | 'URL_SCHEME'; url: string; amountText?: string; expiresAt?: number }
 
-const props = defineProps<{ modelValue: boolean; action: PaymentAction | null; paymentMethod?: string }>()
-const emit = defineEmits<{ 'update:modelValue': [boolean] }>()
+const props = defineProps<{ modelValue: boolean; action: PaymentAction | null; paymentMethod?: string; refreshable?: boolean; retryable?: boolean; busy?: boolean }>()
+const emit = defineEmits<{ 'update:modelValue': [boolean]; refresh: []; retry: []; expired: [] }>()
 const now = ref(Date.now())
 let timer: ReturnType<typeof setInterval> | undefined
 function syncClock() {
@@ -68,6 +73,7 @@ onBeforeUnmount(() => {
 })
 const secondsLeft = computed(() => Math.max(0, Math.ceil(((props.action?.expiresAt ?? now.value) - now.value) / 1000)))
 const expired = computed(() => props.action?.expiresAt != null && now.value >= props.action.expiresAt)
+watch(expired, value => { if (value) emit('expired') })
 const remaining = computed(() => {
   const seconds = secondsLeft.value
   return `${Math.floor(seconds / 60).toString().padStart(2, '0')}:${(seconds % 60).toString().padStart(2, '0')}`

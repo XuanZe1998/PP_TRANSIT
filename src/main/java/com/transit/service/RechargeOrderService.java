@@ -157,6 +157,37 @@ public class RechargeOrderService {
         if (!Boolean.TRUE.equals(order.getInvoiceRequested())) throw conflict("This order did not request an invoice");
         return document(order, false);
     }
+
+    @Transactional
+    public WalletRechargeOrder retry(User user, Long id) {
+        WalletRechargeOrder original = get(user, id);
+        PaymentIntent intent = original.getPaymentIntent();
+        if (intent == null) throw conflict("Payment intent not found");
+        // Match callback lock order: payment intent before recharge order.
+        intent = paymentIntentService.lockAndQueryForRetry(user, intent.getId());
+        original = mapper.selectOne(new LambdaQueryWrapper<WalletRechargeOrder>()
+                .eq(WalletRechargeOrder::getId, id).last("FOR UPDATE"));
+        if ("PAID".equals(intent.getStatus()) || List.of("PAID", "REFUNDED").contains(original.getStatus())) {
+            enrich(original); original.setPaymentIntent(intent); return original;
+        }
+        if (original.getRetryOrderId() != null) return get(user, original.getRetryOrderId());
+        boolean expired = "EXPIRED".equals(intent.getStatus()) || ("PENDING".equals(intent.getStatus())
+                && intent.getExpiresAt() != null && !intent.getExpiresAt().isAfter(now()));
+        if (!List.of("PENDING", "EXPIRED").contains(original.getStatus()) || !expired) throw conflict("Only expired recharge orders can be retried");
+        verificationPolicy.requireComplete(user, "充值");
+        WalletRechargeOrder replacement = new WalletRechargeOrder();
+        org.springframework.beans.BeanUtils.copyProperties(original, replacement,
+                "id", "orderNo", "status", "retryOrderId", "invoiceNumber", "receiptNumber", "createdAt", "updatedAt", "paidAt", "refundedAt", "paymentIntent");
+        LocalDateTime createdAt = now();
+        replacement.setOrderNo("RCG-" + UUID.randomUUID().toString().replace("-", "").substring(0, 20).toUpperCase(Locale.ROOT));
+        replacement.setStatus("PENDING"); replacement.setInvoiceNumber(replacement.getOrderNo());
+        replacement.setReceiptNumber(receiptNumber()); replacement.setCreatedAt(createdAt); replacement.setUpdatedAt(createdAt);
+        mapper.insert(replacement);
+        paymentIntentService.createRechargeRetry(intent, replacement.getId(), replacement.getOrderNo(), createdAt.plusMinutes(15));
+        original.setStatus("EXPIRED"); original.setRetryOrderId(replacement.getId()); original.setUpdatedAt(createdAt);
+        mapper.updateById(original);
+        return enrich(replacement);
+    }
     public byte[] receipt(User user, Long id) {
         WalletRechargeOrder order=get(user,id);
         if(!List.of("PAID","REFUNDED").contains(order.getStatus())||order.getPaidAt()==null) throw conflict("A receipt is available only after verified payment");

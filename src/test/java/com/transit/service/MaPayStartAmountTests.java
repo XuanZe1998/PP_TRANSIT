@@ -26,6 +26,14 @@ class MaPayStartAmountTests {
     private final LegalDocumentService legal = mock(LegalDocumentService.class);
 
     @Test
+    void alreadyPaidIntentNeverExposesItsOldPaymentAction() {
+        PaymentIntent intent = pending();
+        intent.setStatus("PAID"); intent.setPaymentUrl("https://pay.example/old"); intent.setPaymentActionType("QRCODE");
+        assertThat(payments("0.01").start(user(), 9L, "127.0.0.1", "pc").action()).isNull();
+        verifyNoInteractions(settlement);
+    }
+
+    @Test
     void floatingGatewayAmountCannotReplaceTheAgreedOrderAmountOrExposeAPaymentAction() {
         PaymentIntent intent = pending();
         PaymentIntentService payments = payments("0.02");

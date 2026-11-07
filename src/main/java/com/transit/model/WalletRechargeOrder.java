@@ -24,6 +24,7 @@ public class WalletRechargeOrder {
     @TableField("bonus_credit_units") private Long bonusCreditUnits;
     @TableField("total_credit_units") private Long totalCreditUnits;
     private String status;
+    @TableField("retry_order_id") private Long retryOrderId;
     @TableField("payment_method") private String paymentMethod;
     @TableField("invoice_number") private String invoiceNumber;
     @TableField("invoice_requested") private Boolean invoiceRequested;

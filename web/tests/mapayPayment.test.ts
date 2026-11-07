@@ -40,8 +40,8 @@ describe('MaPay checkout contracts', () => {
     const result = source('src/views/PaymentResult.vue')
     expect(result).toContain("http.post(`/api/payment-intents/${intentId.value}/query`)")
     expect(result).toContain("http.get(`/api/payment-intents/${intentId.value}`)")
-    expect(result).toContain('window.setInterval(() => void loadLocal()')
-    expect(result).toContain("['PAID', 'EXPIRED', 'CANCELLED']")
+    expect(result).toContain('createPollingTask')
+    expect(result).toContain("['PAID', 'CANCELLED']")
     expect(result).toContain('REVIEW_REQUIRED')
   })
 

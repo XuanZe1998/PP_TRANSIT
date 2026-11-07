@@ -1,5 +1,118 @@
 import { expect, test } from '@playwright/test'
 
+test('expired wallet payment return still observes a delayed successful callback', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('user_access_token', 'wallet-test-token')
+    localStorage.setItem('user_info', JSON.stringify({ username: 'wallet-test', role: 'USER' }))
+    localStorage.setItem('user_last_active_at', String(Date.now()))
+    localStorage.setItem('linknux.locale', 'zh-CN')
+  })
+  let paid = false
+  await page.route('**/api/**', route => route.fulfill({ json: new URL(route.request().url()).pathname.endsWith('/payment-intents/29')
+    ? { id: 29, businessId: 3, businessType: 'WALLET_RECHARGE', status: paid ? 'PAID' : 'EXPIRED' } : {} }))
+  await page.goto('/payment/result?intentId=29')
+  await expect(page.getByText('订单已过期', { exact: true })).toBeVisible()
+  paid = true
+  await expect(page.getByText('支付成功', { exact: true })).toBeVisible({ timeout: 10000 })
+})
+
+for (const outcome of ['retry', 'late-paid', 'query-error', 'start-error', 'timeout'] as const) {
+  test(`expired recharge has a complete recovery path: ${outcome}`, async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('linknux.locale', 'zh-CN')
+      localStorage.setItem('user_access_token', 'wallet-test-token')
+      localStorage.setItem('user_info', JSON.stringify({ username: 'wallet-test', role: 'USER' }))
+      localStorage.setItem('user_last_active_at', String(Date.now()))
+    })
+    const clockBase = Date.now()
+    if (outcome === 'timeout') await page.clock.install({ time: new Date(clockBase) })
+    const oldDeadline = new Date(clockBase + (outcome === 'timeout' ? 15000 : -60000)).toISOString()
+    let retryCount = 0, starts = 0
+    let oldPaid = false, newPaid = false
+    const old = () => ({ id: 3, orderNo: 'RCG-EXPIRED', status: oldPaid ? 'PAID' : outcome === 'timeout' ? 'PENDING' : 'EXPIRED', retryOrderId: retryCount ? 4 : null,
+      paymentMethod: 'wxpay', paymentIntent: { id: 29, status: oldPaid ? 'PAID' : outcome === 'timeout' ? 'PENDING' : 'EXPIRED', providerTradeNo: 'old-trade',
+        expiresAt: oldDeadline, settlementMoney: { amount: 100, currency: 'CNY', scale: 100 } } })
+    const next = () => ({ id: 4, orderNo: 'RCG-REPLACEMENT', status: newPaid ? 'PAID' : 'PENDING', paymentMethod: 'wxpay',
+      paymentIntent: { id: 30, status: newPaid ? 'PAID' : 'PENDING', expiresAt: new Date(Date.now() + 900000).toISOString(),
+        settlementMoney: { amount: 100, currency: 'CNY', scale: 100 } } })
+    await page.route('**/api/**', route => {
+      const request = route.request(), path = new URL(request.url()).pathname
+      if (path.endsWith('/public/legal')) return route.fulfill({ json: { checkout_ready: true, checkout_disclosure_id: 'retry-v1', terms_version: 't1', privacy_version: 'p1' } })
+      if (path.endsWith('/user/wallet')) return route.fulfill({ json: { plans: [], balance: oldPaid || newPaid ? 10000 : 0 } })
+      if (path.endsWith('/user/recharge-orders')) {
+        expect(request.method()).toBe('GET')
+        return route.fulfill({ json: { items: retryCount ? [next(), old()] : [old()], total: retryCount ? 2 : 1, page: 1, size: 10 } })
+      }
+      if (path.endsWith('/recharge-orders/3')) return route.fulfill({ json: old() })
+      if (path.endsWith('/recharge-orders/4')) return route.fulfill({ json: next() })
+      if (path.endsWith('/payment-intents/29/query')) return outcome === 'query-error'
+        ? route.fulfill({ status: 502, json: { message: '查单失败' } }) : route.fulfill({ json: old().paymentIntent })
+      if (path.endsWith('/recharge-orders/3/retry')) {
+        expect(request.headers()['x-checkout-disclosure']).toBe('retry-v1')
+        if (outcome === 'late-paid') { oldPaid = true; return route.fulfill({ json: old() }) }
+        retryCount++
+        return route.fulfill({ json: next() })
+      }
+      if (path.endsWith('/payment-intents/29/start')) {
+        starts++
+        return route.fulfill({ json: { intent: old().paymentIntent, action: { type: 'QRCODE', url: 'weixin://old' } } })
+      }
+      if (path.endsWith('/payment-intents/30/start')) {
+        starts++
+        if (outcome === 'start-error' && starts === 1) return route.fulfill({ status: 502, json: { message: '暂时无法打开收银台' } })
+        return route.fulfill({ json: { intent: next().paymentIntent, action: { type: 'QRCODE', url: 'weixin://replacement' } } })
+      }
+      if (path.endsWith('/payment-intents/30')) return route.fulfill({ json: next().paymentIntent })
+      return route.fulfill({ json: {} })
+    })
+    await page.goto('/console/wallet')
+    const oldRow = page.getByRole('row').filter({ hasText: 'RCG-EXPIRED' })
+    if (outcome === 'timeout') {
+      await oldRow.getByRole('button', { name: '去支付' }).click()
+      const initial = page.getByRole('dialog', { name: '继续充值支付' })
+      await initial.getByText('我已阅读交易条件和退款政策', { exact: true }).click()
+      await initial.getByRole('button', { name: '去支付', exact: true }).click()
+      await expect(page.locator('.qr-frame')).toBeVisible()
+      await page.clock.fastForward(20000)
+      await expect(page.locator('.qr-frame')).toHaveCount(0)
+      const expiredPayment = page.getByRole('dialog', { name: '完成支付' })
+      await expect(expiredPayment.getByRole('button', { name: '刷新状态' })).toBeVisible()
+      await expiredPayment.getByRole('button', { name: '重新充值', exact: true }).click()
+    } else await oldRow.getByRole('button', { name: '重新充值' }).click()
+    if (outcome === 'query-error') {
+      await expect(page.getByText('查单失败', { exact: true })).toBeVisible()
+      expect(retryCount).toBe(0); expect(starts).toBe(0)
+      return
+    }
+    const confirmation = page.getByRole('dialog', { name: '继续充值支付' })
+    await expect(confirmation).toContainText('原订单已过期')
+    await confirmation.getByText('我已阅读交易条件和退款政策', { exact: true }).click()
+    await confirmation.getByRole('button', { name: '重新充值', exact: true }).click()
+    if (outcome === 'late-paid') {
+      await expect(oldRow.getByRole('button', { name: '收据' })).toBeVisible()
+      await expect(oldRow.getByRole('button', { name: '重新充值' })).toHaveCount(0)
+      expect(retryCount).toBe(0); expect(starts).toBe(0)
+      return
+    }
+    if (outcome === 'start-error') await expect(page.getByText('暂时无法打开收银台', { exact: true })).toBeVisible()
+    else {
+      await expect(page.locator('.qr-frame')).toBeVisible()
+      await page.getByRole('dialog', { name: '完成支付' }).locator('.el-dialog__headerbtn').click()
+    }
+    // Reload and reopen the old record: follow its persisted replacement rather than creating another.
+    await page.reload()
+    await oldRow.getByRole('button', { name: '重新充值' }).click()
+    await expect(confirmation).toContainText('RCG-REPLACEMENT')
+    await confirmation.getByText('我已阅读交易条件和退款政策', { exact: true }).click()
+    await confirmation.getByRole('button', { name: '去支付', exact: true }).click()
+    await expect(page.locator('.qr-frame')).toBeVisible()
+    newPaid = true
+    await expect(page.getByRole('row').filter({ hasText: 'RCG-REPLACEMENT' }).getByRole('button', { name: '收据' })).toBeVisible({ timeout: 10000 })
+    await expect(page.locator('.qr-frame')).toHaveCount(0)
+    expect(retryCount).toBe(1); expect(starts).toBe(outcome === 'timeout' ? 3 : 2)
+  })
+}
+
 for (const outcome of ['callback', 'already-paid', 'expired'] as const) {
   test(`existing recharge resumes its own payment and handles ${outcome}`, async ({ page }) => {
     await page.addInitScript(() => {
