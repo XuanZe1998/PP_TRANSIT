@@ -30,7 +30,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch, onBeforeUnmount } from 'vue'
+import { computed, ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import { loadPaymentContent, paymentContentDefaults } from '@/utils/paymentContent'
 import QrcodeVue from 'qrcode.vue'
 
@@ -40,13 +40,32 @@ const props = defineProps<{ modelValue: boolean; action: PaymentAction | null; p
 const emit = defineEmits<{ 'update:modelValue': [boolean] }>()
 const now = ref(Date.now())
 let timer: ReturnType<typeof setInterval> | undefined
-watch(() => [props.modelValue, props.action?.expiresAt], () => {
+function syncClock() {
+  now.value = Date.now()
+  if (props.action?.expiresAt != null && now.value >= props.action.expiresAt && timer !== undefined) {
+    clearInterval(timer)
+    timer = undefined
+  }
+}
+// The payment lifetime belongs to the order, not to the dialog's visibility.
+watch(() => props.action?.expiresAt, expiresAt => {
   if (timer !== undefined) clearInterval(timer)
   timer = undefined
-  now.value = Date.now()
-  if (props.modelValue && props.action?.expiresAt != null) timer = setInterval(() => { now.value = Date.now() }, 1000)
+  syncClock()
+  if (expiresAt != null && expiresAt > now.value) timer = setInterval(syncClock, 1000)
 }, { immediate: true })
-onBeforeUnmount(() => { if (timer !== undefined) clearInterval(timer) })
+watch(() => props.modelValue, visible => { if (visible) syncClock() }, { flush: 'sync' })
+onMounted(() => {
+  window.addEventListener('focus', syncClock)
+  window.addEventListener('pageshow', syncClock)
+  document.addEventListener('visibilitychange', syncClock)
+})
+onBeforeUnmount(() => {
+  if (timer !== undefined) clearInterval(timer)
+  window.removeEventListener('focus', syncClock)
+  window.removeEventListener('pageshow', syncClock)
+  document.removeEventListener('visibilitychange', syncClock)
+})
 const secondsLeft = computed(() => Math.max(0, Math.ceil(((props.action?.expiresAt ?? now.value) - now.value) / 1000)))
 const expired = computed(() => props.action?.expiresAt != null && now.value >= props.action.expiresAt)
 const remaining = computed(() => {
