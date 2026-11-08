@@ -146,14 +146,15 @@ class ReferralServiceIntegrationTests {
     }
 
     @Test
-    void awardsOnePersonalCouponAndPaysOnlyApprovedAgentForLaterOrders() {
+    void ordinaryInviterEarnsCommissionAndOneCouponWhileLaterAgentOrdersUseOnlyAgentLedger() {
         User inviter=user(), buyer=user();
         long version=((Number)referrals.settings().get("version")).longValue();
         referrals.saveSettings(inviter,new ReferralService.Settings(true,7,2000,"审核后打款",version,500L));
         assertThat(referrals.bindInvite(buyer.getId(),invite(inviter),"REGISTER")).isTrue();
         OtherService product=product(inviter);
         ServiceOrder first=createOrder(buyer,product,"alipay",null);
-        assertThat(first.getReferralCommissionCents()).isNull();
+        assertThat(first.getReferralCommissionCents()).isEqualTo(500L);
+        assertThat(jdbc.queryForObject("SELECT status FROM agent_profiles WHERE user_id=?",String.class,inviter.getId())).isEqualTo("INVITER");
         assertThat(orders.startPayment(buyer,first.getId(),"127.0.0.1").getOrder().getStatus()).isEqualTo("FULFILLED");
         referrals.awardFirstPurchaseCoupons();
         referrals.awardFirstPurchaseCoupons();
@@ -162,6 +163,10 @@ class ReferralServiceIntegrationTests {
         String code=(String)page.getItems().get(0).get("code");
         assertThatThrownBy(() -> orders.quote(buyer,product.getId(),1,code)).isInstanceOf(ResponseStatusException.class);
         assertThat(orders.quote(inviter,product.getId(),1,code).getCouponDiscountCents()).isEqualTo(500L);
+        assertThat(referrals.summary(inviter.getId())).containsEntry("earnedCents",500L).containsEntry("pendingCents",500L);
+        assertThat(referrals.list("commissions",inviter.getId(),1,10,null,null,null,null).getTotal()).isEqualTo(1);
+        mature(first);
+        assertThat(balance(inviter)).isEqualTo(500L);
 
         var agent=agents.apply(inviter.getId(),200);
         agents.reviewAgent(inviter.getId(),((Number)agent.get("id")).longValue(),"ACTIVE","BASIC");
@@ -173,6 +178,7 @@ class ReferralServiceIntegrationTests {
         assertThat(jdbc.queryForObject("SELECT balance FROM users WHERE id=?",Long.class,buyer.getId())).isEqualTo(690000L);
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM payment_intents WHERE business_type='SERVICE_ORDER' AND business_id=?",Long.class,next.getId())).isZero();
         mature(next);
+        assertThat(balance(inviter)).isEqualTo(500L);
         assertThat(agents.summary(inviter.getId()).get("availableCommission")).isEqualTo(50000L);
         assertThat(agents.requestWithdrawal(inviter.getId(),50000L,"MANUAL",null)).containsEntry("status","PENDING");
         assertThat(agents.summary(inviter.getId()).get("availableCommission")).isEqualTo(0L);
@@ -206,6 +212,50 @@ class ReferralServiceIntegrationTests {
                 .isNotEqualTo(buyer.getEmail());
         assertThatThrownBy(()->referrals.list("commissions",buyer.getId(),1,200,null,null,null,null)).isInstanceOf(ResponseStatusException.class);
         assertThat(referrals.list("commissions",buyer.getId(),1,10,null,null,null,null).getTotal()).isZero();
+    }
+
+    @Test
+    void ordinaryReferralDoesNotDependOnAgentSwitchOrApprovalAndUsesCampaignFreeze() {
+        User inviter=user(),buyer=user(); enable(inviter);
+        assertThat(referrals.bindInvite(buyer.getId(),invite(inviter),"REGISTER")).isTrue();
+        OtherService product=product(inviter);
+        jdbc.update("UPDATE other_services SET price_cents=1000 WHERE id=?",product.getId());
+        jdbc.update("UPDATE referral_rules SET cost_cents=1000 WHERE service_id=?",product.getId());
+        jdbc.update("UPDATE referral_settings SET freeze_days=2 WHERE id=1");
+        jdbc.update("UPDATE agent_profiles SET status='PENDING' WHERE user_id=?",inviter.getId());
+        org.springframework.test.util.ReflectionTestUtils.setField(referrals,"agentsEnabled",false);
+        try {
+            assertThat(referrals.publicOffer(product.getId())).containsEntry("fixed_cents",500L);
+            assertThat(referrals.list("products",inviter.getId(),1,10,product.getName(),null,null,null).getItems().get(0))
+                    .containsEntry("fixed_cents",500L).doesNotContainKey("cost_cents");
+            var order=createOrder(buyer,product,"alipay",null);
+            assertThat(order.getReferralCommissionCents()).isEqualTo(500L);
+            assertThat(jdbc.queryForMap("SELECT mode,freeze_days FROM referral_orders WHERE order_id=?",order.getId()))
+                    .containsEntry("mode","FIXED").containsEntry("freeze_days",2);
+            jdbc.update("UPDATE referral_settings SET enabled=FALSE WHERE id=1");
+            assertThat(createOrder(buyer,product,"alipay",null).getReferralCommissionCents()).isNull();
+            assertThat(referrals.publicOffer(product.getId())).isEmpty();
+        } finally { org.springframework.test.util.ReflectionTestUtils.setField(referrals,"agentsEnabled",true); }
+    }
+
+    @Test
+    void ordinaryCommissionFollowsPaymentDeliveryFreezeAndReversesRefundExactlyOnce() {
+        User inviter=user(),buyer=user();enable(inviter);
+        referrals.bindInvite(buyer.getId(),invite(inviter),"REGISTER");
+        OtherService product=product(inviter);
+        var order=createOrder(buyer,product,"alipay",null);
+        assertThat(referrals.list("commissions",inviter.getId(),1,10,null,null,null,null).getTotal()).isEqualTo(1);
+        assertThat(referrals.summary(inviter.getId())).containsEntry("earnedCents",0L);
+        orders.startPayment(buyer,order.getId(),"127.0.0.1");
+        referrals.settleDue();
+        assertThat(jdbc.queryForObject("SELECT status FROM referral_orders WHERE order_id=?",String.class,order.getId())).isEqualTo("FROZEN");
+        assertThat(referrals.summary(inviter.getId())).containsEntry("pendingCents",500L).containsEntry("availableCents",0L);
+        mature(order);referrals.settleDue();
+        assertThat(balance(inviter)).isEqualTo(500L);
+        assertThat(agents.summary(inviter.getId()).get("availableCommission")).isEqualTo(0L);
+        referrals.refund(inviter,order.getId(),new ReferralService.Refund(order.getPaymentAmountCents(),3000L,"ORDINARY-FULL-"+order.getId(),now()));
+        referrals.refund(inviter,order.getId(),new ReferralService.Refund(order.getPaymentAmountCents(),3000L,"ORDINARY-FULL-"+order.getId(),now()));
+        assertThat(balance(inviter)).isZero();
     }
 
     @Test

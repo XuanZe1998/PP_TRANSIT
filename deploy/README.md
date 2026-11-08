@@ -64,6 +64,22 @@ documents are not stored in this repository.
 
 ## Subscription referral rollout
 
+Members who enroll in the active invitation campaign earn product commissions
+without agent approval. `INVITER` is the normal invitation-only profile status;
+an active `referral_members` record and verified active user establish eligibility.
+Ordinary invitation rewards follow the enabled product rule and campaign freeze
+settings, independently of the agent feature switch. Fixed rewards use the
+configured per-unit amount; percentage rules retain their existing calculation.
+Approved agents retain their existing agent-ledger route, with one commission
+snapshot per order and no duplicate invitation credit. Invitation coupon awards
+remain separate. Wallet top-ups do not create product commissions.
+
+The invitation page shows eligible product rules to ordinary users without
+exposing internal costs. Paid orders appear in pending earnings, delivered orders
+complete their snapshotted freeze window, and refunds reverse the original ledger
+route. Rule and eligibility changes affect new order snapshots; do not rewrite
+historical financial records or promote users to agents to enable invitations.
+
 Migration V39 creates the subscription referral tables with the campaign disabled,
 a seven-day delivery freeze and a CNY 20 withdrawal minimum. Existing API-agent
 balances and withdrawal history remain in the agent console; new subscription

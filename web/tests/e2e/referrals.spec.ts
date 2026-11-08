@@ -48,6 +48,11 @@ test('user confirms destination and amount before submitting an idempotent withd
   await page.setViewportSize({ width: 390, height: 844 })
   const calls = await prepare(page, false)
   await expect(page.getByText('当前首购券面额 ¥5.00。')).toBeVisible()
+  await expect(page.getByText('普通邀请人无需申请代理。商品返佣按每笔有效订单计算，钱包充值不参与商品返佣。')).toBeVisible()
+  await page.getByRole('tab', { name: '商品返佣', exact: true }).click()
+  await expect(page.getByText('Plus 订阅', { exact: true })).toBeVisible()
+  await expect(page.getByRole('columnheader', { name: '单份成本' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '配置规则' })).toHaveCount(0)
   await page.getByRole('button', { name: '确认并申请提现' }).click()
   const dialog = page.getByRole('dialog', { name: '确认提现' })
   await expect(dialog).toContainText('¥20.00')
@@ -72,7 +77,7 @@ test('user confirms destination and amount before submitting an idempotent withd
 
 test('administrator previews a rule and claims payout before revealing private details', async ({ page }) => {
   const calls = await prepare(page, true)
-  await page.getByRole('tab', { name: '订阅代理佣金', exact: true }).click()
+  await page.getByRole('tab', { name: '商品返佣', exact: true }).click()
   await page.getByRole('button', { name: '配置规则' }).click()
   const rule = page.getByRole('dialog', { name: '商品返佣规则', exact: true })
   await expect(rule.getByRole('button', { name: '应用已预览规则' })).toBeDisabled()
@@ -96,7 +101,7 @@ test('administrator previews a rule and claims payout before revealing private d
 test('fixed commission preview is independent of profit and requires a fresh preview after editing', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   const calls = await prepare(page, true)
-  await page.getByRole('tab', { name: '订阅代理佣金', exact: true }).click()
+  await page.getByRole('tab', { name: '商品返佣', exact: true }).click()
   await page.getByRole('button', { name: '配置规则' }).click()
   const dialog = page.getByRole('dialog', { name: '商品返佣规则', exact: true })
   await dialog.getByRole('spinbutton', { name: '可靠的人民币单份成本（元）', exact: true }).fill('130')
@@ -119,7 +124,7 @@ test('fixed commission preview is independent of profit and requires a fresh pre
 
 test('a delayed response cannot authorize a rule edited during preview', async ({ page }) => {
   await prepare(page, true)
-  await page.getByRole('tab', { name: '订阅代理佣金', exact: true }).click()
+  await page.getByRole('tab', { name: '商品返佣', exact: true }).click()
   let release: (() => void) | undefined
   const gate = new Promise<void>(resolve => { release = resolve })
   await page.route('**/products/1/preview', async route => {

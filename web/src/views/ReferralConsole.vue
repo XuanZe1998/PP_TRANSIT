@@ -1,7 +1,7 @@
 <template>
   <section class="referral-console">
     <header class="referral-heading">
-      <div><h1>{{ admin ? '邀请与佣金管理' : '邀请有礼' }}</h1><p>好友通过邀请链接注册，首次有效购买并完成交付后，邀请人获得一张订阅优惠券。</p></div>
+      <div><h1>{{ admin ? '邀请与佣金管理' : '邀请有礼' }}</h1><p>好友通过邀请链接注册，购买参与活动的商品后，邀请人按商品规则获得返佣。</p></div>
       <el-space><el-button v-if="!admin" @click="router.push('/console')">返回控制台</el-button><el-button :loading="loading" @click="refresh">刷新</el-button></el-space>
     </header>
     <el-alert v-if="error" :title="error" type="error" :closable="false" />
@@ -16,11 +16,12 @@
         <el-button v-if="!summary.verified" @click="router.push('/console/profile')">前往验证邮箱</el-button>
         <el-button v-else-if="!summary.profile?.invite_code" :disabled="!summary.enabled" :loading="busy" @click="enroll">生成邀请链接</el-button>
         <el-space v-else wrap><el-input :model-value="inviteLink" readonly class="invite-input" /><el-button :disabled="summary.profile.status !== 'ACTIVE'" @click="copyInvite">复制链接</el-button><el-tag>{{ label(summary.profile.status) }}</el-tag></el-space>
-        <p>仅通过链接新注册的好友建立邀请关系。每位好友只触发一次首购奖励。</p>
+        <p>普通邀请人无需申请代理。商品返佣按每笔有效订单计算，钱包充值不参与商品返佣。</p>
+        <p>仅通过链接新注册的好友建立邀请关系。首购优惠券每位好友仅奖励一次。</p>
         <p v-if="summary.first_purchase_coupon_cents">当前首购券面额 {{ money(summary.first_purchase_coupon_cents) }}。</p>
       </el-card>
       <el-card v-if="summary.earnedCents || summary.debtCents || summary.withdrawingCents" shadow="never">
-        <h2>历史邀请佣金提现</h2><p>{{ summary.service_notice }}</p>
+        <h2>邀请佣金提现</h2><p>{{ summary.service_notice }}</p>
         <p v-if="savedAccount.masked_account">已保存 {{ label(savedAccount.channel) }} {{ savedAccount.masked_account }}</p>
         <el-form label-position="top" class="referral-form">
           <el-form-item label="收款方式"><el-select v-model="account.channel"><el-option label="支付宝" value="ALIPAY"/><el-option label="微信" value="WECHAT"/></el-select></el-form-item>
@@ -42,7 +43,7 @@
         </el-form><el-button type="primary" :loading="busy" @click="saveSettings">保存设置</el-button>
       </el-tab-pane>
       <el-tab-pane :label="admin ? '个人优惠券' : '我的优惠券'" name="coupons"/>
-      <el-tab-pane v-if="admin" label="订阅代理佣金" name="products"/>
+      <el-tab-pane label="商品返佣" name="products"/>
       <el-tab-pane label="邀请记录" name="invitations"/>
       <el-tab-pane label="返佣明细" name="commissions"/>
       <el-tab-pane label="提现记录" name="withdrawals"/>

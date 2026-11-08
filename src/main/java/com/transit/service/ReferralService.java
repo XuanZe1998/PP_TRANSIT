@@ -80,7 +80,7 @@ public class ReferralService {
     }
     public Map<String,Object> settings() { return jdbc.queryForMap("SELECT * FROM referral_settings WHERE id=1"); }
     public Map<String,Object> publicOffer(Long serviceId) {
-        if (!agentsEnabled) return Map.of();
+        if (!agentsEnabled && !flag(settings(),"enabled")) return Map.of();
         Map<String,Object> result=first("""
                 SELECT mode,fixed_cents,rate_bps,display_text FROM referral_rules
                 WHERE service_id=? AND enabled=TRUE AND mode='FIXED' AND fixed_cents>0
@@ -215,18 +215,26 @@ public class ReferralService {
         Map<String,Object> binding=first("SELECT agent_user_id FROM agent_customer_bindings WHERE customer_user_id=?",order.getUserId());
         Long inviter=binding==null?null:number(binding,"agent_user_id");
         Map<String,Object> r=first("SELECT * FROM referral_rules WHERE service_id=?",order.getServiceId());
-        boolean eligible=agentsEnabled && inviter!=null && !inviter.equals(order.getUserId())
+        Map<String,Object> config=settings();
+        boolean agentEligible=agentsEnabled && inviter!=null && !inviter.equals(order.getUserId())
                 && r!=null && flag(r,"enabled") && "FIXED".equals(r.get("mode"))
                 && first("""
                     SELECT p.user_id FROM agent_profiles p JOIN agent_tiers t ON t.tier_code=p.tier_code AND t.enabled=TRUE
                     JOIN users u ON u.id=p.user_id AND u.status='ACTIVE'
                     WHERE p.user_id=? AND p.status='ACTIVE'
                     """, inviter)!=null;
+        boolean memberEligible=inviter!=null && !inviter.equals(order.getUserId()) && flag(config,"enabled")
+                && r!=null && flag(r,"enabled") && first("""
+                    SELECT m.user_id FROM referral_members m JOIN users u ON u.id=m.user_id
+                    WHERE m.user_id=? AND m.status='ACTIVE' AND u.status='ACTIVE' AND u.email_verified_at IS NOT NULL
+                    """,inviter)!=null;
+        boolean eligible=agentEligible || memberEligible;
         long sale=BigDecimal.valueOf(Math.max(0,order.getAmountCents()-order.getServiceFeeCents()))
                 .multiply(order.getExchangeRate()).setScale(0,RoundingMode.DOWN).longValueExact();
         Rule rule=r==null?new Rule(false,"FIXED",0,0,0):rule(r);
         long cost=Math.multiplyExact(rule.costCents(),order.getQuantity());
-        long amount=eligible?configuredCommission(sale,order.getQuantity(),rule):0;
+        long amount=!eligible?0:agentEligible || "FIXED".equals(rule.mode())
+                ? configuredCommission(sale,order.getQuantity(),rule):calculate(sale,cost,order.getQuantity(),rule);
         long resale = 0;
         if (resaleAgent != null) {
             long base = Math.multiplyExact(resaleBaseCents, order.getQuantity());
@@ -238,8 +246,8 @@ public class ReferralService {
                 INSERT INTO referral_orders(order_id,inviter_id,customer_id,rule_version,mode,fixed_cents,rate_bps,sale_cents,cost_cents,commission_cents,freeze_days,status,
                     resale_agent_id,resale_base_cents,resale_cents)
                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-                """,order.getId(),inviter,order.getUserId(),r==null?0:number(r,"version"),AGENT_FIXED,rule.fixedCents(),0,sale,cost,amount,
-                Math.max(0, agentFreezeDays),amount>0 || resale>0?"AWAITING_PAYMENT":"INELIGIBLE",
+                """,order.getId(),inviter,order.getUserId(),r==null?0:number(r,"version"),agentEligible?AGENT_FIXED:rule.mode(),rule.fixedCents(),agentEligible?0:rule.rateBps(),sale,cost,amount,
+                Math.max(0, agentEligible?agentFreezeDays:number(config,"freeze_days")),amount>0 || resale>0?"AWAITING_PAYMENT":"INELIGIBLE",
                 resaleAgent,resaleBaseCents,resale);
         order.setReferralCommissionCents(eligible?amount:null);
     }
@@ -607,7 +615,8 @@ public class ReferralService {
         String select,table,where=" WHERE 1=1",sort;
         switch(kind) {
             case "products" -> {
-                select="s.id,s.name,s.price_cents,s.currency,COALESCE(r.enabled,FALSE) enabled,r.mode,r.fixed_cents,r.rate_bps,r.cost_cents,r.display_text,COALESCE(r.version,0) version";
+                select="s.id,s.name,s.price_cents,s.currency,COALESCE(r.enabled,FALSE) enabled,r.mode,r.fixed_cents,r.rate_bps,"
+                        +(owner==null?"r.cost_cents,":"")+"r.display_text,COALESCE(r.version,0) version";
                 table="other_services s LEFT JOIN referral_rules r ON r.service_id=s.id";
                 sort="s.id DESC";
                 if(owner!=null) where+=" AND s.enabled=TRUE AND r.enabled=TRUE AND EXISTS (SELECT 1 FROM referral_settings WHERE id=1 AND enabled=TRUE)";
