@@ -3,7 +3,6 @@
     <button class="contact-trigger" type="button" :aria-expanded="open" :title="copy.drag" @pointerdown="startDrag" @click="toggle">
       <el-icon><ChatDotRound /></el-icon>
       <span>{{ copy.title }}</span>
-      <b>{{ total }}</b>
     </button>
     <div v-show="open" class="contact-card">
       <header :title="copy.drag" @pointerdown="startDrag">

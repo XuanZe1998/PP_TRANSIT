@@ -411,23 +411,17 @@ const orderRules: FormRules<typeof orderForm> = {
     { required: true, message: '请填写账单邮箱', trigger: 'blur' },
     { type: 'email', message: '邮箱格式不正确', trigger: 'blur' }
   ],
-  billingProvince: [{ required: true, message: '请填写省或直辖市', trigger: 'blur' }],
-  billingCity: [{ required: true, message: '请填写城市', trigger: 'blur' }],
-  billingDistrict: [{ required: true, message: '请填写区或县', trigger: 'blur' }],
-  billingAddressLine1: [{ required: true, message: '请填写详细地址', trigger: 'blur' }],
   billingPostalCode: [
-    { required: true, message: '请填写邮政编码', trigger: 'blur' },
     {
       validator: (_rule, value: string, callback) => {
         const mainland = ['china', '中国', "people's republic of china", 'prc']
           .includes(orderForm.billingCountry.trim().toLowerCase())
-        if (mainland && !/^\d{6}$/.test(value)) callback(new Error('中国大陆地址需填写 6 位邮政编码'))
+        if (value?.trim() && mainland && !/^\d{6}$/.test(value.trim())) callback(new Error('中国大陆地址需填写 6 位邮政编码'))
         else callback()
       },
       trigger: 'blur'
     }
   ],
-  billingCountry: [{ required: true, message: '请填写国家或地区', trigger: 'blur' }],
   paymentMethod: [{ required: true, message: '请选择付款方式', trigger: 'change' }]
 }
 

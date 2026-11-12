@@ -24,6 +24,7 @@ test('contact entry is collapsed across public, user and admin routes and can be
   await page.goto('/')
   const widget = page.locator('.contact-widget')
   const trigger = widget.locator('.contact-trigger')
+  await expect(trigger).toHaveText('联系我们')
   await expect(trigger).toHaveAttribute('aria-expanded', 'false')
   await expect(widget.locator('.contact-card')).toBeHidden()
 

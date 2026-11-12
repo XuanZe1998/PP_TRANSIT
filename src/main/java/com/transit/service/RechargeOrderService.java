@@ -110,12 +110,12 @@ public class RechargeOrderService {
                 ? user.getEmail() : "billing@linknux.com";
         order.setContactEmail(invoiceRequested ? email(request.getContactEmail()) : emailOrFallback(request.getContactEmail(), fallbackEmail));
         order.setBillingName(invoiceRequested ? required(request.getBillingName(),"billingName",160) : optional(request.getBillingName(), "个人用户", 160));
-        order.setBillingAddressLine1(invoiceRequested ? required(request.getBillingAddressLine1(),"billingAddressLine1",255) : optional(request.getBillingAddressLine1(), "未提供", 255));
-        order.setBillingDistrict(invoiceRequested ? required(request.getBillingDistrict(),"billingDistrict",120) : optional(request.getBillingDistrict(), "未提供", 120));
-        order.setBillingCity(invoiceRequested ? required(request.getBillingCity(),"billingCity",120) : optional(request.getBillingCity(), "未提供", 120));
-        order.setBillingProvince(invoiceRequested ? required(request.getBillingProvince(),"billingProvince",120) : optional(request.getBillingProvince(), "未提供", 120));
-        order.setBillingPostalCode(invoiceRequested ? required(request.getBillingPostalCode(),"billingPostalCode",20) : optional(request.getBillingPostalCode(), "000000", 20));
-        order.setBillingCountry(invoiceRequested ? required(request.getBillingCountry(),"billingCountry",120) : optional(request.getBillingCountry(), "China", 120));
+        order.setBillingAddressLine1(optional(request.getBillingAddressLine1(), "", 255));
+        order.setBillingDistrict(optional(request.getBillingDistrict(), "", 120));
+        order.setBillingCity(optional(request.getBillingCity(), "", 120));
+        order.setBillingProvince(optional(request.getBillingProvince(), "", 120));
+        order.setBillingPostalCode(optional(request.getBillingPostalCode(), "", 20));
+        order.setBillingCountry(optional(request.getBillingCountry(), "", 120));
         order.setCreatedAt(now); order.setUpdatedAt(now); mapper.insert(order);
         PaymentIntent intent = paymentIntentService.create(user.getId(), PaymentBusinessSettlementService.WALLET_RECHARGE,
                 order.getId(), orderNo, "Wallet recharge - " + order.getPlanName(),

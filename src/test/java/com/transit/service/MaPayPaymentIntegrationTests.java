@@ -46,6 +46,41 @@ class MaPayPaymentIntegrationTests {
     @Autowired MaPayLegacyPaymentMigration legacyMigration;
 
     @Test
+    void serviceOrderAcceptsMissingAddressAndStillValidatesProvidedPostalCode() {
+        User user = verifiedUser();
+        OtherService product = automaticService("Optional address");
+        commerceService.importInventory(product.getId(), "OPTIONAL-ADDRESS-CARD");
+        var request = orderRequest(product, user);
+        request.setBillingProvince(null); request.setBillingCity(""); request.setBillingDistrict("  ");
+        request.setBillingAddressLine1(null); request.setBillingCountry(""); request.setBillingPostalCode(null);
+        var created = orderService.createOrder(user, request).getOrder();
+        var stored = orderMapper.selectById(created.getId());
+        assertThat(stored.getBillingCountry()).isEmpty();
+        assertThat(stored.getBillingPostalCode()).isEmpty();
+        assertThat(stored.getBillingAddressLine1()).isEmpty();
+        assertThat(stored.getBillingProvince()).isEmpty();
+        assertThat(stored.getBillingCity()).isEmpty();
+        assertThat(stored.getBillingDistrict()).isEmpty();
+        commerceService.importInventory(product.getId(), "OPTIONAL-ADDRESS-SECOND");
+        request.setBillingCountry("China"); request.setBillingPostalCode("invalid");
+        assertThatThrownBy(() -> orderService.createOrder(user, request))
+                .isInstanceOf(ResponseStatusException.class).hasMessageContaining("6 digits");
+    }
+
+    @Test
+    void invoiceRechargeAcceptsMissingAddress() {
+        User user = verifiedUser(); user.setInvoiceEnabled(true); userMapper.updateById(user);
+        var request = new RechargeOrderRequest();
+        request.setPlanId(jdbc.queryForObject("SELECT id FROM recharge_plans WHERE enabled=TRUE ORDER BY id LIMIT 1", Long.class));
+        request.setNeedInvoice(true); request.setBillingName("Buyer"); request.setContactEmail(user.getEmail());
+        request.setPaymentMethod("alipay");
+        var created = rechargeOrderService.create(user, request);
+        assertThat(created.getBillingCountry()).isEmpty();
+        assertThat(created.getBillingPostalCode()).isEmpty();
+        assertThat(created.getBillingAddressLine1()).isEmpty();
+    }
+
+    @Test
     void expiredRechargeCallbackCreditsUserAndOrganizationWalletExactlyOnce() {
         User user = verifiedUser();
         Long organizationId = createPersonalWallet(user);

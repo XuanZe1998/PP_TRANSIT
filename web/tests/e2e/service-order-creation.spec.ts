@@ -111,3 +111,18 @@ for (const state of ['missing-terms', 'missing-version'] as const) {
     expect(creates).toEqual([])
   })
 }
+
+
+test('checkout accepts all six address fields empty', async ({ page }) => {
+  const { dialog, creates } = await prepare(page, 'closed-payment')
+  await dialog.getByPlaceholder('例如：张三', { exact: true }).fill('Test buyer')
+  await dialog.getByPlaceholder('name@example.com', { exact: true }).fill('buyer@example.com')
+  await dialog.getByLabel('国家 / 地区', { exact: true }).fill('')
+  await dialog.getByText('我已阅读交易条件和退款政策', { exact: true }).click()
+  await dialog.getByRole('button', { name: '创建订单', exact: true }).click()
+  await expect(dialog).not.toBeVisible()
+  expect(creates).toHaveLength(1)
+  for (const field of ['billingProvince', 'billingCity', 'billingDistrict', 'billingPostalCode', 'billingAddressLine1', 'billingCountry']) {
+    expect(creates[0].body[field]).toBe('')
+  }
+})

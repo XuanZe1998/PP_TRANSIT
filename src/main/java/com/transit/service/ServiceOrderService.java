@@ -132,7 +132,7 @@ public class ServiceOrderService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "订单报价已变化，请核对最新金额后重新提交");
         }
         String contactEmail = normalizeContactEmail(request.getContactEmail(), user);
-        String billingCountry = requiredText(request.getBillingCountry(), "billingCountry", 120);
+        String billingCountry = optionalBillingText(request.getBillingCountry(), "billingCountry", 120);
         String billingPostalCode = normalizePostalCode(request.getBillingPostalCode(), billingCountry);
         String paymentMethod = normalizePaymentMethod(request.getPaymentMethod());
         String orderCurrency = normalizeCurrency(serviceQuote.getCurrency());
@@ -175,10 +175,10 @@ public class ServiceOrderService {
                 .invoiceNumber(generateInvoiceNumber())
                 .receiptNumber(generateReceiptNumber())
                 .billingName(requiredText(request.getBillingName(), "billingName", 160))
-                .billingAddressLine1(requiredText(request.getBillingAddressLine1(), "billingAddressLine1", 255))
-                .billingDistrict(requiredText(request.getBillingDistrict(), "billingDistrict", 120))
-                .billingCity(requiredText(request.getBillingCity(), "billingCity", 120))
-                .billingProvince(requiredText(request.getBillingProvince(), "billingProvince", 120))
+                .billingAddressLine1(optionalBillingText(request.getBillingAddressLine1(), "billingAddressLine1", 255))
+                .billingDistrict(optionalBillingText(request.getBillingDistrict(), "billingDistrict", 120))
+                .billingCity(optionalBillingText(request.getBillingCity(), "billingCity", 120))
+                .billingProvince(optionalBillingText(request.getBillingProvince(), "billingProvince", 120))
                 .billingPostalCode(billingPostalCode)
                 .billingCountry(billingCountry)
                 .paymentMethod(paymentMethod)
@@ -213,7 +213,7 @@ public class ServiceOrderService {
         requireUserId(user);
         if (request == null) throw badRequest("checkout body is required");
         if (quantity < 1 || totalCents <= 0) throw new ResponseStatusException(HttpStatus.CONFLICT,"Supplier quote is invalid");
-        String country=requiredText(request.getBillingCountry(),"billingCountry",120);
+        String country=optionalBillingText(request.getBillingCountry(),"billingCountry",120);
         String postal=normalizePostalCode(request.getBillingPostalCode(),country);
         String paymentMethod=normalizePaymentMethod(request.getPaymentMethod());
         if ("balance".equals(paymentMethod)) throw badRequest("该商品暂不支持余额支付");
@@ -225,9 +225,9 @@ public class ServiceOrderService {
                 .amountCents(totalCents).currency("CNY").paymentAmountCents(paymentQuote.amountCents()).paymentCurrency("CNY")
                 .exchangeRate(paymentQuote.exchangeRate()).status(PENDING).contactEmail(normalizeContactEmail(request.getContactEmail(),user))
                 .invoiceNumber(generateInvoiceNumber()).receiptNumber(generateReceiptNumber()).billingName(requiredText(request.getBillingName(),"billingName",160))
-                .billingAddressLine1(requiredText(request.getBillingAddressLine1(),"billingAddressLine1",255))
-                .billingDistrict(requiredText(request.getBillingDistrict(),"billingDistrict",120)).billingCity(requiredText(request.getBillingCity(),"billingCity",120))
-                .billingProvince(requiredText(request.getBillingProvince(),"billingProvince",120)).billingPostalCode(postal).billingCountry(country)
+                .billingAddressLine1(optionalBillingText(request.getBillingAddressLine1(),"billingAddressLine1",255))
+                .billingDistrict(optionalBillingText(request.getBillingDistrict(),"billingDistrict",120)).billingCity(optionalBillingText(request.getBillingCity(),"billingCity",120))
+                .billingProvince(optionalBillingText(request.getBillingProvince(),"billingProvince",120)).billingPostalCode(postal).billingCountry(country)
                 .paymentMethod(paymentMethod).supplierQuoteJson(supplierQuoteJson).purchasePrompt("Supplier price was snapshotted at checkout; fulfillment is handled manually by an administrator.")
                 .fulfillmentStatus("PENDING").fulfillmentNote("Awaiting verified payment.").createdAt(now).updatedAt(now).build();
         orderMapper.insert(order);
@@ -662,7 +662,8 @@ public class ServiceOrderService {
     }
 
     private String normalizePostalCode(String value, String country) {
-        String postalCode = requiredText(value, "billingPostalCode", 20);
+        String postalCode = optionalBillingText(value, "billingPostalCode", 20);
+        if (postalCode.isEmpty()) return postalCode;
         String normalizedCountry = country.trim().toLowerCase(Locale.ROOT);
         if (Set.of("china", "中国", "people's republic of china", "prc").contains(normalizedCountry)
                 && !MAINLAND_POSTAL_CODE_PATTERN.matcher(postalCode).matches()) {
@@ -852,6 +853,10 @@ public class ServiceOrderService {
 
     private boolean hasFulfillmentEvidence(ServiceOrder order) {
         return !isBlank(order.getFulfillmentReference()) && order.getFulfilledAt() != null;
+    }
+
+    private String optionalBillingText(String value, String field, int maxLength) {
+        return java.util.Objects.toString(optionalText(value, field, maxLength), "");
     }
 
     private String requiredText(String value, String field, int maxLength) {
