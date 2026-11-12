@@ -32,6 +32,11 @@ public class UserProfileService {
     private final AccountVerificationPolicy verificationPolicy;
 
     public User updateBasics(User user, Map<String,Object> request) {
+        if (request.containsKey("avatarPath")) {
+            String avatar = text(request.get("avatarPath"), 120);
+            if (avatar == null || !avatar.matches("/avatars/default-[1-6]\\.svg")) throw bad("Invalid default avatar");
+            user.setAvatarPath(avatar);
+        }
         String displayName = text(request.get("displayName"), 80);
         String locale = text(request.get("locale"), 20);
         String timezone = text(request.get("timezone"), 80);

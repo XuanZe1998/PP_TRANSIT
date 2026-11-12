@@ -12,11 +12,6 @@
           <p>{{ notice.content }}</p>
         </div>
       </aside>
-      <div class="services-count">
-        <span>当前可用</span>
-        <strong>{{ serviceTotal }}</strong>
-        <small>项服务</small>
-      </div>
       <p class="services-description">所有服务统一配置价格、服务费和购买状态，并支持创建订单、支付与进度跟踪。</p>
     </div>
 
@@ -825,15 +820,15 @@ onBeforeUnmount(() => {
 <style scoped>
 .other-services-page.site-section { padding-top: 28px; }
 .services-hero {
-  grid-template-columns: 150px minmax(0, 1fr) 150px;
-  grid-template-areas: "heading notice count" "description description count";
+  grid-template-columns: minmax(140px, .3fr) minmax(0, 1fr);
+  grid-template-areas: "heading notice" "description description";
   align-items: center;
   gap: 12px 20px;
   margin-bottom: 0;
 }
 .services-hero.without-notice {
-  grid-template-columns: minmax(0, 1fr) 150px;
-  grid-template-areas: "heading count" "description count";
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "heading" "description";
 }
 .services-heading { grid-area: heading; }
 .services-heading .eyebrow { margin: 0 0 10px; }
@@ -844,11 +839,11 @@ onBeforeUnmount(() => {
 @media (max-width: 640px) {
   .other-services-page.site-section { padding-top: 20px; }
   .services-hero, .services-hero.without-notice {
-    grid-template-columns: minmax(0, 1fr) 110px;
-    grid-template-areas: "heading count" "notice notice" "description description";
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "heading" "notice" "description";
     gap: 16px;
   }
-  .services-hero.without-notice { grid-template-areas: "heading count" "description description"; }
+  .services-hero.without-notice { grid-template-areas: "heading" "description"; }
   .services-heading h1 { font-size: 34px; }
   .services-count { padding: 14px; }
 }

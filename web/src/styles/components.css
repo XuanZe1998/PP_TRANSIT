@@ -1114,3 +1114,33 @@
   :is(#app, .el-overlay) :is(.el-dialog, .el-drawer) .el-input-number { max-width: 100%; }
   #app .list-pagination { justify-content: flex-start; gap: 8px; }
 }
+
+/* Account overlays are teleported outside #app. */
+.account-dropdown.el-popper, .account-dropdown .el-dropdown-menu { background: #eef4ff !important; border-color: #cad8ee !important; }
+.account-dropdown .el-dropdown-menu__item { color: #243e63 !important; font-weight: 500; white-space: normal; overflow-wrap: anywhere; }
+.account-dropdown .el-dropdown-menu__item:hover, .account-dropdown .el-dropdown-menu__item:focus { background: #dbeafe !important; color: #1d4ed8 !important; }
+.account-dropdown .el-popper__arrow::before { background: #eef4ff !important; }
+#app .sidebar-balance .el-button, #app .sidebar-balance .el-button > span { justify-content: center; text-align: center; }
+#app .sidebar-balance .el-button > span { display: flex; align-items: center; gap: 6px; width: 100%; }
+#app .user-nav button { height: auto; padding-block: 10px; }
+#app .user-nav button > span { white-space: normal; overflow-wrap: anywhere; min-width: 0; line-height: 1.4; }
+#app .user-nav svg, #app .sidebar-balance .el-icon { flex-shrink: 0; }
+#app .console-brand > span { min-width: 0; }
+#app .console-brand :is(strong,small) { white-space: normal; overflow-wrap: anywhere; }
+#app .user-main, #app .profile-grid > *, #app .console-hero > * { min-width: 0; }
+#app .console-hero, #app .console-hero-actions { flex-wrap: wrap; }
+#app .avatar-library { margin-bottom: 20px; }
+#app .avatar-options { display: flex; flex-wrap: wrap; gap: 12px; }
+#app .avatar-options button { width: 64px; height: 64px; padding: 4px; border: 2px solid transparent; border-radius: 50%; background: #eef4ff; cursor: pointer; }
+#app .avatar-options button[aria-pressed="true"] { border-color: #2563eb; }
+#app .avatar-options img { width: 100%; height: 100%; }
+@media (min-width: 981px) and (max-width: 1099px) {
+  #app .user-console { grid-template-columns: 224px minmax(0,1fr); }
+  #app .user-nav button { justify-content: flex-start; padding: 10px 12px; }
+  #app .user-nav button > span, #app .sidebar-balance > span, #app .sidebar-balance > strong, #app .sidebar-balance .el-button .el-icon + span { display: block; }
+  #app .console-brand > span:last-child { display: grid; }
+}
+@media (min-width: 981px) and (max-width: 1180px) {
+  #app .site-links, #app .site-account-desktop { display: none; }
+  #app .site-menu-toggle { display: inline-flex; align-items: center; justify-content: center; }
+}

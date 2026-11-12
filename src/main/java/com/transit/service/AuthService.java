@@ -129,7 +129,7 @@ public class AuthService {
             if ("ENTERPRISE".equals(accountType) && (companyName.isBlank() || companyName.length() > 160))
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "企业名称需为 1–160 个字符");
             User user = User.builder().username(normalizedEmail)
-                    .displayName(name).accountType(accountType)
+                    .displayName(name).avatarPath("/avatars/default-" + java.util.concurrent.ThreadLocalRandom.current().nextInt(1, 7) + ".svg").accountType(accountType)
                     .password(passwordEncoder.encode(request.password())).email(normalizedEmail).phone(normalizedPhone)
                     .emailVerifiedAt(now).phoneVerifiedAt(verificationPolicy.requiresPhone() && "PERSONAL".equals(accountType) ? now : null)
                     .locale("zh-CN").timezone("Asia/Shanghai")

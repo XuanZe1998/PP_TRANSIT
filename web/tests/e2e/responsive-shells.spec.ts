@@ -148,3 +148,41 @@ test.describe('tablet application shells', () => {
     await expectNoDocumentOverflow(page)
   })
 })
+
+for (const locale of ['zh-CN', 'en-US']) {
+  test(`resized console and account menu remain usable in ${locale}`, async ({ page }) => {
+    await mockUserConsole(page)
+    await page.addInitScript(value => localStorage.setItem('linknux.locale', value), locale)
+    await page.goto('/console')
+    for (const width of [1440, 1024, 981, 900, 700, 390]) {
+      await page.setViewportSize({ width, height: 800 })
+      await expectNoDocumentOverflow(page)
+      if (width > 980) {
+        await expect(page.locator('.user-nav button > span').first()).toBeVisible()
+        for (const cls of ['sidebar-home','sidebar-logout']) {
+          await expect(page.locator('.'+cls)).toHaveCSS('justify-content', 'center')
+        }
+      } else await expect(page.locator('.user-sidebar')).toBeHidden()
+    }
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.locator('.account-trigger').first().click()
+    await expect(page.locator('.account-dropdown .el-dropdown-menu__item').first()).toBeVisible()
+    await expect(page.locator('.account-dropdown .el-dropdown-menu__item').first()).toHaveCSS('color', 'rgb(36, 62, 99)')
+    await page.screenshot({path:`test-results/account-${locale}.png`})
+  })
+}
+
+test('default avatar selection persists to the profile and account menu', async ({ page }) => {
+  await mockUserConsole(page)
+  let avatarPath = '/avatars/default-1.svg'
+  await page.route('**/user/profile', async route => {
+    if (route.request().method() === 'PATCH') avatarPath = route.request().postDataJSON().avatarPath
+    return route.fulfill({json:{username:'avatar-user',avatarPath,displayName:'Avatar user'}})
+  })
+  await page.goto('/console/profile')
+  await expect(page.locator('.avatar-options button')).toHaveCount(6)
+  await page.locator('.avatar-options button').nth(3).click()
+  await expect(page.locator('.avatar-options button').nth(3)).toHaveAttribute('aria-pressed','true')
+  await page.reload()
+  await expect(page.locator('.profile-avatar img')).toHaveAttribute('src','/avatars/default-4.svg')
+})

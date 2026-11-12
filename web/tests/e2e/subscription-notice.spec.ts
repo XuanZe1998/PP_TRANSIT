@@ -28,12 +28,13 @@ test('administrators edit and hide the announcement; public pages render plain m
     await page.setViewportSize({ width, height: 900 })
     const heading = await page.locator('.services-heading').boundingBox()
     const banner = await page.locator('.subscription-notice').boundingBox()
-    const count = await page.locator('.services-count').boundingBox()
+    await expect(page.locator('.services-count')).toHaveCount(0)
     const pagePadding = await page.locator('.other-services-page').evaluate(el => parseFloat(getComputedStyle(el).paddingTop))
     expect(pagePadding).toBeLessThanOrEqual(28)
     if (width > 640) {
       expect(banner!.x).toBeGreaterThan(heading!.x + heading!.width)
-      expect(banner!.x + banner!.width).toBeLessThan(count!.x)
+      const hero = await page.locator('.services-hero').boundingBox()
+      expect(banner!.x + banner!.width).toBeCloseTo(hero!.x + hero!.width, 0)
     } else {
       expect(banner!.y).toBeGreaterThanOrEqual(heading!.y + heading!.height)
     }

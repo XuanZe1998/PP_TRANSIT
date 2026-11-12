@@ -1,8 +1,8 @@
 <template>
   <div class="account-menu">
     <template v-if="loggedIn">
-      <el-dropdown trigger="click" @command="command">
-        <button class="account-trigger" aria-label="账户菜单"><img v-if="profile.avatarPath" :src="profile.avatarPath" alt=""><span v-else>{{ initial }}</span><b>{{ profile.displayName || profile.username || '我的账户' }}</b></button>
+      <el-dropdown popper-class="account-dropdown" trigger="click" @command="command">
+        <button class="account-trigger" aria-label="账户菜单"><img :src="profile.avatarPath || '/avatars/default-1.svg'" alt=""><b>{{ profile.displayName || profile.username || '我的账户' }}</b></button>
         <template #dropdown><el-dropdown-menu><el-dropdown-item command="/console/profile">个人中心</el-dropdown-item><el-dropdown-item v-if="profile.accountType==='ENTERPRISE'" command="/console/organization">企业控制台</el-dropdown-item><el-dropdown-item command="/console">控制台</el-dropdown-item><el-dropdown-item command="/console/keys">API Key</el-dropdown-item><el-dropdown-item command="/console/wallet">钱包充值</el-dropdown-item><el-dropdown-item command="/services">我的订单</el-dropdown-item><el-dropdown-item command="/console/docs">开发文档</el-dropdown-item><el-dropdown-item divided command="logout">退出登录</el-dropdown-item></el-dropdown-menu></template>
       </el-dropdown>
     </template>

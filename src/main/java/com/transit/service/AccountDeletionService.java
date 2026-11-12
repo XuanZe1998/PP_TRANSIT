@@ -59,7 +59,7 @@ public class AccountDeletionService {
         if (!"USER".equalsIgnoreCase(String.valueOf(user.get("role")))
                 || !"ACTIVE".equalsIgnoreCase(String.valueOf(user.get("status")))
                 || !"PERSONAL".equalsIgnoreCase(String.valueOf(user.get("account_type")))
-                || user.get("avatar_path") != null || ((Number) user.get("balance")).longValue() != 0) {
+                || (user.get("avatar_path") != null && !user.get("avatar_path").toString().matches("/avatars/default-[1-6]\\.svg")) || ((Number) user.get("balance")).longValue() != 0) {
             throw conflict();
         }
         Object orgValue = user.get("default_organization_id");
