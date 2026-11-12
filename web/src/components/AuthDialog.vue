@@ -37,9 +37,9 @@
         <el-form-item :label="form.accountType==='ENTERPRISE'?'联系人姓名':'显示名称'"><el-input v-model="form.contactName" size="large" maxlength="80" autocomplete="name" /></el-form-item>
         <el-form-item label="邮箱"><el-input v-model="form.email" size="large" autocomplete="email" placeholder="team@example.com" /></el-form-item>
         <el-form-item v-if="form.inviteCode" label="邀请码"><el-input v-model="form.inviteCode" size="large" readonly /></el-form-item>
-        <el-form-item label="邮箱验证码"><div class="verify-row"><el-input v-model="form.emailCode" size="large" maxlength="6" inputmode="numeric" /><el-button :disabled="emailCountdown>0" @click="sendCode('email')">{{ emailCountdown ? `${emailCountdown}s` : '发送验证码' }}</el-button></div></el-form-item>
+        <el-form-item label="邮箱验证码"><div class="verify-row"><el-input v-model="form.emailCode" size="large" maxlength="6" inputmode="numeric" /><el-button :loading="emailSending" :disabled="emailSending || emailCountdown>0" @click="sendCode('email')">{{ emailCountdown ? `${emailCountdown}s` : '发送验证码' }}</el-button></div></el-form-item>
         <el-form-item v-if="phoneRequired" label="手机号"><el-input v-model="form.phone" size="large" autocomplete="tel" placeholder="13800138000 / +8613800138000" /></el-form-item>
-        <el-form-item v-if="requiresPhone && form.accountType==='PERSONAL'" label="短信验证码"><div class="verify-row"><el-input v-model="form.phoneCode" size="large" maxlength="6" inputmode="numeric" /><el-button :disabled="phoneCountdown>0" @click="sendCode('phone')">{{ phoneCountdown ? `${phoneCountdown}s` : '发送验证码' }}</el-button></div></el-form-item>
+        <el-form-item v-if="requiresPhone && form.accountType==='PERSONAL'" label="短信验证码"><div class="verify-row"><el-input v-model="form.phoneCode" size="large" maxlength="6" inputmode="numeric" /><el-button :loading="phoneSending" :disabled="phoneSending || phoneCountdown>0" @click="sendCode('phone')">{{ phoneCountdown ? `${phoneCountdown}s` : '发送验证码' }}</el-button></div></el-form-item>
       </template>
       <el-form-item label="密码"><el-input v-model="form.password" size="large" type="password" show-password :autocomplete="mode==='login'?'current-password':'new-password'" placeholder="10–72 字节，包含字母和数字" /></el-form-item>
       <div v-if="mode === 'login'" class="forgot-password-row"><el-button link type="primary" @click="changeMode('reset')">忘记密码？</el-button></div>
@@ -82,6 +82,7 @@ const form = reactive({ identifier: '', accountType:'PERSONAL' as 'PERSONAL'|'EN
 const resetForm = reactive({ email: '', code: '', password: '', confirmPassword: '' })
 const legal=ref<any>(null),ipChallengeId=ref(''),maskedEmail=ref(''),ipVerifyCode=ref('')
 const emailCountdown=ref(0),phoneCountdown=ref(0),resetCountdown=ref(0)
+const emailSending=ref(false),phoneSending=ref(false)
 let timer: number | undefined, requestId = 0
 
 watch(() => route.query.auth, value => { if (value === 'login' || value === 'register' || value === 'reset') mode.value = value })
@@ -166,11 +167,16 @@ async function confirmPasswordReset() {
   }
 }
 async function sendCode(channel:'email'|'phone'){
+  const sending=channel==='email'?emailSending:phoneSending
+  const countdown=channel==='email'?emailCountdown:phoneCountdown
+  if(sending.value || countdown.value>0)return
   const recipient=channel==='email'?form.email.trim():form.phone.trim()
   if(channel==='email'&&!isEmail(recipient))return ElMessage.warning('请先填写有效邮箱')
   if(channel==='phone'&&!isPhone(recipient))return ElMessage.warning('请先填写有效手机号')
+  sending.value=true
   try{const r=await http.post(`/api/auth/verification/${channel}/send`,{recipient,purpose:'REGISTER'});const debug=r.data?.debugCode;if(debug)ElMessage.info(`本地调试验证码：${debug}`);let left=60;const target=channel==='email'?emailCountdown:phoneCountdown;target.value=left;const id=window.setInterval(()=>{target.value=--left;if(left<=0)window.clearInterval(id)},1000);ElMessage.success('验证码已发送')}
   catch(error){ElMessage.error(getHttpErrorMessage(error,'验证码发送失败'))}
+  finally{sending.value=false}
 }
 function closeDialog() {
   if (loading.value) return
