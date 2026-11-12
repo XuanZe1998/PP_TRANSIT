@@ -2,7 +2,7 @@
 # obtaining a dedicated app authorization code. Never paste the code into chat.
 [CmdletBinding()]
 param(
-    [string]$HostName = '207.57.122.109',
+    [string]$HostName = '85.189.55.96',
     [string]$KeyPath = "$HOME/.ssh/linknux_admin_ed25519",
     [string]$RecipientAddress = ''
 )

@@ -2,6 +2,12 @@
 
 Production releases are built by GitHub Actions after `master` passes the backend and frontend jobs. The same release protocol is available locally through `deploy-production.ps1`.
 
+The production IPv4 address changed to `85.189.55.96` on 2026-11-12.
+The local SSH profile retains the name `server-207`. Keep DNS records, the
+`production` environment's `PROD_HOST` and `PROD_KNOWN_HOSTS`, and the deployment
+script defaults aligned. An IP change does not authorize replacing a host key:
+retain strict verification against the existing server's trusted public keys.
+
 ## Safety properties
 
 - Only committed `master` revisions can be deployed locally.

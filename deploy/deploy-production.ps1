@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$ProductionHost = "207.57.122.109",
+    [string]$ProductionHost = "85.189.55.96",
     [ValidateRange(1, 65535)]
     [int]$Port = 22,
     [string]$DeployUser = "api-deploy",
