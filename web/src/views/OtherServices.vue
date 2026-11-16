@@ -38,6 +38,7 @@
             <el-tag v-if="service.productType === 'CARD_KEY'" type="success" effect="plain">卡密自动发货</el-tag>
           </div>
           <h2>{{ service.name }}</h2>
+          <div class="service-stock">可用库存：{{ service.availableStock ?? '未限制 / 上游供货' }}</div>
           <p>{{ service.description || '服务内容待完善' }}</p>
           <div class="service-order-row">
             <div class="service-price">

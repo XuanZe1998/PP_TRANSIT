@@ -93,11 +93,11 @@ public class OtherService {
     @TableField("max_purchase_quantity")
     private Integer maxPurchaseQuantity;
 
-    @TableField("manual_stock")
+    @TableField(value = "manual_stock", updateStrategy = com.baomidou.mybatisplus.annotation.FieldStrategy.ALWAYS)
     private Integer manualStock;
 
     @JsonIgnore
-    @TableField("manual_reserved")
+    @TableField(value = "manual_reserved", updateStrategy = com.baomidou.mybatisplus.annotation.FieldStrategy.NEVER)
     private Integer manualReserved;
 
     @TableField("wholesale_tiers_json")

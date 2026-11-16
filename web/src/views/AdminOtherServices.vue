@@ -46,6 +46,9 @@
           <el-tag :type="row.purchaseEnabled ? 'success' : 'info'">{{ row.purchaseEnabled ? '启用' : '停用' }}</el-tag>
         </template>
       </el-table-column>
+      <el-table-column label="可用库存" width="130">
+        <template #default="{ row }">{{ row.availableStock ?? '未限制 / 上游供货' }}</template>
+      </el-table-column>
       <el-table-column prop="sortOrder" label="排序" width="90" />
       <el-table-column label="前台展示" width="110">
         <template #default="{ row }">
@@ -102,6 +105,11 @@
             <el-radio-button value="CARD_KEY">卡密自动发货</el-radio-button>
           </el-radio-group>
           <span class="form-tip form-tip-block">卡密服务在付款成功后自动发放加密库存中的一条卡密。</span>
+        </el-form-item>
+        <el-form-item v-if="form.productType === 'STANDARD' && form.supplierType === 'LOCAL_INVENTORY'" label="库存总量">
+          <el-switch v-model="form.unlimitedStock" active-text="不限库存" />
+          <el-input-number v-if="!form.unlimitedStock" v-model="form.manualStock" :min="0" :max="2147483647" :precision="0" />
+          <span class="form-tip form-tip-block">库存总量包含待付款预占数量；付款扣减，取消或超时释放预占。设为零后停止购买。</span>
         </el-form-item>
         <el-form-item label="服务名称" required>
           <el-input v-model="form.name" maxlength="160" show-word-limit placeholder="例如：服务7" />
@@ -274,6 +282,8 @@ type OtherService = {
   currency?: string
   purchaseEnabled?: boolean
   productType?: 'STANDARD' | 'CARD_KEY'
+  manualStock?: number | null
+  availableStock?: number | null
   fulfillmentMode?: string
   redemptionConfigured?: boolean
   maxPurchaseQuantity?: number
@@ -332,6 +342,8 @@ const allowedTabs = ['catalog', 'orders', 'payments', 'redemption-hosts', 'notic
 const initialTab = typeof route.query.tab === 'string' && allowedTabs.includes(route.query.tab) ? route.query.tab : 'catalog'
 const activeTab = ref(initialTab)
 const form = reactive({
+  unlimitedStock: true,
+  manualStock: 0,
   id: null as number | null,
   name: '',
   description: '',
@@ -430,6 +442,8 @@ function openHostManager() {
 }
 
 function resetForm() {
+  form.unlimitedStock = true
+  form.manualStock = 0
   form.id = null
   form.name = ''
   form.description = ''
@@ -468,6 +482,8 @@ function openCreate() {
 async function openEdit(service: OtherService) {
   try{service={...service,...(await http.get<OtherService>(`/api/admin/api/other-services/${service.id}`)).data}}catch{/* list data remains usable */}
   form.id = service.id
+  form.unlimitedStock = service.manualStock == null
+  form.manualStock = service.manualStock ?? 0
   form.name = service.name
   form.description = service.description || ''
   form.imageUrl = service.imageUrl || ''
@@ -575,6 +591,7 @@ async function save() {
     currency: form.currency,
     priceCents: Math.round((form.price || 0) * 100),
     serviceFeeCents: Math.round((form.serviceFee || 0) * 100),
+    manualStock: form.unlimitedStock ? null : form.manualStock,
     purchaseEnabled: form.purchaseEnabled,
     productType: form.productType,
     fulfillmentMode: form.productType === 'CARD_KEY' || form.supplierType === 'DUJIAO_NEXT' ? 'AUTOMATIC_DELIVERY' : 'MANUAL_PROCESSING',
