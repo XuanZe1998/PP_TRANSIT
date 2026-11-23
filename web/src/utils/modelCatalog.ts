@@ -1,5 +1,8 @@
 export type CallableModel = {
   publicName: string
+  comparisonKey?: string
+  billingMode?: string
+  saleUnitPrice?: number | string
   displayName?: string
   upstreamModelName?: string
   type: string
@@ -81,6 +84,24 @@ export function modelsAllowedForToken(
   return catalog.filter(model => allowed.has(model.publicName.toLowerCase()))
 }
 
+export function cheapestCallableModels(models: CallableModel[]): CallableModel[] {
+  function price(model: CallableModel) {
+    if (model.billingMode === 'FREE_PREVIEW') return 0
+    const value = Number(model.pricingUnit === 'TOKEN' ? model.minInputPricePerMillion : model.saleUnitPrice)
+    return model.billingConfigured && value > 0 ? value : Infinity
+  }
+  const winners = new Map<string, CallableModel>()
+  for (const model of models) {
+    const key = JSON.stringify([model.comparisonKey || model.publicName, model.currency, model.pricingUnit])
+    const current = winners.get(key)
+    if (!current || price(model) < price(current) || (price(model) === price(current)
+        && Number(model.minOutputPricePerMillion) < Number(current.minOutputPricePerMillion))) {
+      winners.set(key, model)
+    }
+  }
+  return Array.from(winners.values())
+}
+
 export function modelScopeLabel(allowedModels: string | null | undefined): string {
   const allowed = parseAllowedModels(allowedModels)
   if (allowed === null || allowed.has('*')) return '全部可用模型'
@@ -105,6 +126,9 @@ function normalizeCatalogItem(value: unknown): CallableModel | null {
   const primary=upstreams[0]||{code:'platform-route',name:'平台智能路由'}
   return {
     publicName,
+    comparisonKey: String(item.comparisonKey || ''),
+    billingMode: String(item.billingMode || ''),
+    saleUnitPrice: decimal(item.saleUnitPrice),
     displayName: typeof item.displayName === 'string' ? item.displayName : publicName,
     upstreamModelName: typeof item.upstreamModelName === 'string' ? item.upstreamModelName : publicName,
     type: primary.code,

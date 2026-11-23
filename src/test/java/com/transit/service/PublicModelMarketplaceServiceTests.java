@@ -57,9 +57,11 @@ class PublicModelMarketplaceServiceTests {
 
         assertThat(service.filter(models, filters)).extracting(PublicModel::getPublicName)
                 .containsExactly("platform/gpt", "bank/gpt");
+        assertThat(service.cheapestOffers(service.filter(models, filters))).extracting(PublicModel::getPublicName)
+                .containsExactly("bank/gpt");
         assertThat(service.facets(models, filters).get("publishers"))
                 .extracting(option -> option.value() + ":" + option.count())
-                .containsExactly("openai:2");
+                .containsExactly("openai:1");
     }
 
     @Test

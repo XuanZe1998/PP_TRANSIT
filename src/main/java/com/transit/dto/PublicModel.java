@@ -7,6 +7,7 @@ import java.math.BigDecimal;
 
 @Data
 public class PublicModel {
+    @JsonIgnore private Long offerMappingId;
     private String publicName;
     private String displayName;
     private String upstreamModelName;

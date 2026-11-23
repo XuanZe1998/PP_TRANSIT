@@ -109,7 +109,7 @@ public class PublicController {
         var filters = filters(query, first(routes, source, type), first(publishers, vendor), categories,
                 first(capabilities, capability), inputModalities, outputModalities, protocols, pricingUnits, plans, priceStatuses);
         List<PublicModel> filtered = publicModelMarketplaceService.sort(
-                publicModelMarketplaceService.filter(loadPublicModels(), filters), sort);
+                publicModelMarketplaceService.cheapestOffers(publicModelMarketplaceService.filter(loadMarketOffers(), filters)), sort);
         int offset = Math.multiplyExact(page - 1, size);
         int from = Math.min(offset, filtered.size());
         int to = Math.min(from + size, filtered.size());
@@ -121,7 +121,7 @@ public class PublicController {
 
     @GetMapping("/models/summary")
     public Mono<Map<String, Long>> modelSummary() {
-        return Mono.just(publicModelMarketplaceService.summary(loadPublicModels()));
+        return Mono.just(publicModelMarketplaceService.summary(publicModelMarketplaceService.cheapestOffers(loadMarketOffers())));
     }
 
     @GetMapping("/models/facets")
@@ -140,7 +140,7 @@ public class PublicController {
         validateQuery(query);
         var filters = filters(query, routes, publishers, categories, capabilities, inputModalities,
                 outputModalities, protocols, pricingUnits, plans, priceStatuses);
-        return Mono.just(publicModelMarketplaceService.facets(loadPublicModels(), filters));
+        return Mono.just(publicModelMarketplaceService.facets(loadMarketOffers(), filters));
     }
 
     @GetMapping("/model-comparisons")
@@ -189,7 +189,14 @@ public class PublicController {
     }
 
     private List<PublicModel> loadPublicModels() {
-        List<PublicModel> models = modelMappingMapper.findPublicModels();
+        return enrichModels(modelMappingMapper.findPublicModels());
+    }
+
+    private List<PublicModel> loadMarketOffers() {
+        return enrichModels(modelMappingMapper.findMarketplaceOffers());
+    }
+
+    private List<PublicModel> enrichModels(List<PublicModel> models) {
         if (models == null) models = List.of();
         publicUpstreamMappingService.sanitize(models);
         modelContextPricingService.enrich(models);

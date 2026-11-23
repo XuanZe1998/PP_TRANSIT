@@ -29,7 +29,7 @@
                   <el-option
                     v-for="model in playgroundModels"
                     :key="model.publicName"
-                    :label="model.providerGroup?.channel === 'AiAPIBank' ? `${model.upstreamModelName || model.publicName} · ${String(model.providerGroup.name || '')} · AiAPIBank` : `${model.publicName} · ${model.sourceName || '平台智能路由'}`"
+                    :label="model.displayName || model.upstreamModelName || model.publicName"
                     :value="model.publicName"
                   />
                   <template #empty>
@@ -37,8 +37,7 @@
                   </template>
                 </el-select>
                 <div v-if="selectedModelDetail" class="playground-model-detail">
-                  <div class="playground-model-summary"><span>{{ selectedModelDetail.sourceName || '平台智能路由' }}</span><span>{{ selectedModelDetail.routeCount }} 条可用路由</span></div>
-                  <ModelSalePricing :model="selectedModelDetail" compact />
+                  <ModelSalePricing :model="selectedModelDetail" compact public-only />
                 </div>
               </el-form-item>
               <el-alert

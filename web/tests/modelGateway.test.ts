@@ -11,8 +11,8 @@ describe('model marketplace layout', () => {
     const layout = source('src/layouts/PublicLayout.vue')
     const css = source('src/style.css')
     expect(layout).toContain('site-nav-inner')
-    expect(publicSite).toContain('<SelectablePagination')
-    expect(publicSite).toContain('layout="total, sizes, prev, pager, next, jumper"')
+    expect(publicSite).toContain('<ListPagination')
+    expect(publicSite).toContain(':total="total"')
     expect(publicSite).not.toContain(':page-sizes="[10, 20, 50, 100, 200]"')
     expect(publicSite).toContain('const pageSize = ref(DEFAULT_PAGE_SIZE)')
     expect(publicSite).not.toContain('加载更多（已显示')
@@ -20,11 +20,10 @@ describe('model marketplace layout', () => {
     expect(css).toMatch(/\.site-nav\s*\{[\s\S]*?width:\s*100%/)
   })
 
-  it('offers independent route and publisher facets from the server', () => {
+  it('shows publisher facets without route labels', () => {
     const publicSite = source('src/views/ModelMarket.vue')
-    expect(publicSite).toContain("title: '渠道 / 路由'")
+    expect(publicSite).not.toContain("title: '渠道 / 路由'")
     expect(publicSite).toContain("title: '模型发布方'")
-    expect(publicSite).toContain("routes: []")
     expect(publicSite).toContain("publishers: []")
     expect(publicSite).not.toContain("{ label: '好易智算', value: 'haoee' }")
   })

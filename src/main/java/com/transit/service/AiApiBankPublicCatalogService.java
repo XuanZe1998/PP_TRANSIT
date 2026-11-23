@@ -35,14 +35,16 @@ public class AiApiBankPublicCatalogService {
                 g.image_rate_multiplier,g.long_context_pricing_enabled
                 FROM aiapibank_model_offers o JOIN aiapibank_provider_groups g ON g.id=o.provider_group_id
                 WHERE o.enabled=TRUE AND o.public_model_name IN (""" + placeholders + ")", names.toArray());
+        Map<Long, PublicModel> byMapping = new HashMap<>();
+        models.stream().filter(model -> model.getOfferMappingId() != null).forEach(model -> byMapping.put(model.getOfferMappingId(), model));
         Map<String, PublicModel> byName = new HashMap<>();
-        models.forEach(model -> byName.put(model.getPublicName(), model));
+        models.stream().filter(model -> model.getOfferMappingId() == null).forEach(model -> byName.put(model.getPublicName(), model));
         List<Long> mappingIds = offers.stream().map(row -> longValue(row, "model_mapping_id")).distinct().toList();
         Map<Long, List<AiApiBankPriceTierView>> tiersByMapping = tiers(mappingIds);
         Map<Long, List<AiApiBankUnitPriceVariant>> variantsByMapping = variants(mappingIds);
         for (Map<String, Object> row : offers) {
             String publicName = text(row, "public_model_name");
-            PublicModel model = byName.get(publicName);
+            PublicModel model = byMapping.getOrDefault(longValue(row, "model_mapping_id"), byName.get(publicName));
             if (model == null) continue;
             String upstream = text(row, "upstream_model_name");
             model.setUpstreamModelName(upstream);

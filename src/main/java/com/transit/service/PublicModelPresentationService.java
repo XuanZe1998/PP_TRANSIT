@@ -26,7 +26,7 @@ public class PublicModelPresentationService {
         List<String> names = models.stream().map(PublicModel::getPublicName).filter(Objects::nonNull).distinct().toList();
         String placeholders = String.join(",", Collections.nCopies(names.size(), "?"));
         List<Map<String, Object>> rows = jdbc.queryForList("""
-                SELECT mm.public_model_name,mm.channel_model_name,COALESCE(c.source_code,c.type) source_code,
+                SELECT mm.id mapping_id,mm.public_model_name,mm.channel_model_name,COALESCE(c.source_code,c.type) source_code,
                        mm.vendor mapping_vendor,mm.capability mapping_capability,mm.input_modalities mapping_inputs,
                        mm.output_modalities mapping_outputs,mm.protocols mapping_protocols,
                        a.comparison_key,a.explicit_override,i.metadata_rank
@@ -42,7 +42,9 @@ public class PublicModelPresentationService {
         Map<PublicModel, Resolution> resolutions = new LinkedHashMap<>();
         for (PublicModel model : models) {
             List<Map<String, Object>> candidates = byPublicName.getOrDefault(model.getPublicName(), List.of());
-            Map<String, Object> row = candidates.stream().max(Comparator.comparingInt(candidate -> integer(candidate, "metadata_rank"))).orElse(Map.of());
+            Map<String, Object> row = candidates.stream()
+                    .filter(candidate -> model.getOfferMappingId() == null || model.getOfferMappingId().toString().equals(text(candidate, "mapping_id", "")))
+                    .max(Comparator.comparingInt(candidate -> integer(candidate, "metadata_rank"))).orElse(Map.of());
             String source = text(row, "source_code", Objects.toString(model.getSource(), "other"));
             String upstream = useful(model.getUpstreamModelName()) ? model.getUpstreamModelName()
                     : text(row, "channel_model_name", model.getPublicName());

@@ -55,6 +55,8 @@ public class UserController {
     private final ApiKeyService apiKeyService;
     private final TransitService transitService;
     private final UsageAnalyticsService usageAnalyticsService;
+    private final com.transit.service.PublicModelPresentationService modelPresentation;
+    private final com.transit.service.PublicModelMarketplaceService marketplace;
     private final PublicUpstreamMappingService publicUpstreamMappingService;
     private final ModelContextPricingService modelContextPricingService;
     private final UserProfileService userProfileService;
@@ -295,10 +297,12 @@ public class UserController {
             List<Log> logs = logMapper.selectList(new LambdaQueryWrapper<Log>()
                     .eq(Log::getUserId, user.getId())
                     .orderByDesc(Log::getCreatedAt));
-            List<PublicModel> modelCatalog = modelMappingMapper.findPublicModels();
+            List<PublicModel> modelCatalog = modelMappingMapper.findMarketplaceOffers();
             if (modelCatalog == null) {
                 modelCatalog = List.of();
             }
+            // Keep each callable ID for keys restricted to a specific alias.
+            modelCatalog = marketplace.cheapestOffers(modelCatalog);
             for (PublicModel item : modelCatalog) {
                 item.applyMoney(billingCurrency.toUpperCase(Locale.ROOT),Math.max(1, amountScale));
                 item.setPriceUnit("currency_per_1m_tokens");
@@ -309,6 +313,7 @@ public class UserController {
             }
             publicUpstreamMappingService.sanitize(modelCatalog);
             modelContextPricingService.enrich(modelCatalog);
+            modelPresentation.enrich(modelCatalog);
             LocalDateTime todayStart = LocalDateTime.now().toLocalDate().atStartOfDay();
             LocalDateTime monthStart = LocalDateTime.now().withDayOfMonth(1).toLocalDate().atStartOfDay();
 

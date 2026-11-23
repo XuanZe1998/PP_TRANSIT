@@ -32,7 +32,7 @@
               collapse-tags-tooltip
               filterable
               clearable
-              placeholder="按来源 / 功能 / 厂家选择模型"
+              placeholder="按功能选择模型"
               style="width: 100%"
             />
             <div class="form-hint">仅所选模型会出现在此 Key 的 /v1/models 中。</div>

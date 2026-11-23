@@ -3,8 +3,7 @@
     <div class="market-hero">
       <div class="market-hero-copy">
         <div class="market-hero-label"><img src="/model-icons/model-gateway.png" alt="统一模型网关" /><span>统一模型目录</span></div>
-        <h1>发现、筛选并比较适合你的 AI 模型</h1>
-        <p>平台智能路由、AiAPIBank 与后续渠道使用同一套模型属性和销售价格标准。</p>
+        <h1>模型广场</h1>
       </div>
       <div class="market-stats">
         <article><span>目录模型</span><strong>{{ total }}</strong></article>
@@ -17,7 +16,7 @@
     <div ref="resultsElement" class="market-catalog">
       <div class="market-toolbar">
           <div class="market-result-count"><strong>{{ total }}</strong><span> 个模型</span></div>
-          <el-input v-model="filters.query" clearable placeholder="搜索模型名称、发布方、套餐或能力" class="market-search" />
+          <el-input v-model="filters.query" clearable placeholder="搜索模型名称或发布方" class="market-search" />
           <el-select v-model="filters.sort" class="market-select" aria-label="排序方式">
             <el-option label="优先级（高到低）" value="priority" />
             <el-option label="价格（低到高）" value="price_asc" />
@@ -69,38 +68,34 @@
           <article v-for="index in 6" :key="index" class="market-card"><el-skeleton :rows="6" animated /></article>
         </div>
         <div v-else-if="models.length" class="market-grid">
-          <article v-for="model in models" :key="model.publicName" class="market-card connected">
+          <article v-for="model in models" :key="JSON.stringify([model.publicName,model.pricingUnit])" class="market-card connected">
             <div class="market-card-main">
               <header>
                 <div class="market-publisher">
                   <span class="market-publisher-icon"><img v-if="publisherIcon(model.publisherCode)" :src="publisherIcon(model.publisherCode)" :alt="`${model.publisherName} 图标`" /><span v-else class="market-publisher-fallback">{{ (model.publisherName || '未').slice(0, 1) }}</span></span>
-                  <span><strong>{{ model.publisherName || '未声明' }}</strong><small>{{ model.routeName || '平台智能路由' }}</small></span>
+                  <span><strong>{{ model.publisherName || '未声明' }}</strong></span>
                 </div>
-                <div class="market-card-badges"><span class="market-badge">{{ model.planName || '标准' }}</span><span class="market-badge" :title="model.verificationMessage || '已上架，但尚无当前路由的有效实测记录'">{{ model.verificationStatus === 'AVAILABLE' && model.verifiedAt ? '有历史实测记录' : '已上架 · 未实测' }}</span></div>
+                <div class="market-card-badges"><span class="market-badge">{{ model.verificationStatus === 'AVAILABLE' && model.verifiedAt ? '有历史实测记录' : '已上架 · 未实测' }}</span></div>
               </header>
               <h3>{{ model.displayName || model.upstreamModelName || model.publicName }}</h3>
-              <p class="market-public-id">{{ model.publicName }}</p>
-              <p class="market-card-desc">{{ model.routeName || '平台智能路由' }} · {{ model.planName || '标准' }}，已上架不代表实时调用成功，调用前请在控制台测试。</p>
               <div class="market-tags"><span>{{ categoryLabel(model.category) }}</span><span>{{ capabilityLabel(model.capability) }}</span><span>{{ model.inputModalities || '未声明' }} → {{ model.outputModalities || '未声明' }}</span><span>{{ model.protocols || '未声明' }}</span></div>
             </div>
             <footer>
+                <ModelSalePricing :model="model" :rebate-bps="customerRebateBps" compact public-only class="market-sale-pricing" />
               <details class="market-card-details">
                 <summary>
-                  <span class="market-details-closed">展开模型参数与价格</span>
-                  <span class="market-details-open">收起模型参数与价格</span>
+                  <span class="market-details-closed">展开模型参数</span>
+                  <span class="market-details-open">收起模型参数</span>
                   <span class="market-details-chevron" aria-hidden="true">⌄</span>
                 </summary>
                 <dl class="market-meta">
-                  <div><dt>渠道 / 套餐</dt><dd>{{ model.routeName || '平台智能路由' }} · {{ model.planName || '标准' }}</dd></div>
                   <div><dt>类型 / 能力</dt><dd>{{ categoryLabel(model.category) }} · {{ capabilityLabel(model.capability) }}</dd></div>
                   <div><dt>输入 / 输出模态</dt><dd>{{ model.inputModalities || '未声明' }} → {{ model.outputModalities || '未声明' }}</dd></div>
                   <div><dt>协议 / 计费单位</dt><dd>{{ model.protocols || '未声明' }} · {{ unitLabel(model.pricingUnit) }}</dd></div>
                   <div><dt>价格状态 / 核价时间</dt><dd>{{ priceStatusLabel(model) }} · {{ dateLabel(model.pricingVerifiedAt) }}</dd></div>
                 </dl>
-                <ModelSalePricing :model="model" :rebate-bps="customerRebateBps" compact public-only class="market-sale-pricing" />
               </details>
               <div class="market-card-actions">
-                <el-button @click="openComparison(model)">比价</el-button>
                 <el-button @click="copyModel(model.publicName)">复制模型名</el-button>
                 <el-button type="primary" @click="callModel(model)">立即调用 →</el-button>
               </div>
@@ -110,8 +105,8 @@
         <div v-else class="market-empty"><el-empty description="没有找到匹配模型"><el-button @click="clearFilters">清空筛选</el-button></el-empty></div>
 
         <div v-if="total" class="market-pagination">
-          <SelectablePagination v-model:current-page="page" v-model:page-size="pageSize" :total="total"
-            layout="total, sizes, prev, pager, next, jumper" background aria-label="模型列表分页" @current-change="scrollToResults" @size-change="handlePageSizeChange"  list-id="ModelMarket-1"/>
+          <ListPagination v-model:page="page" v-model:size="pageSize" :total="total"
+            :allow-all="false" @change="scrollToResults" list-id="ModelMarket-1"/>
         </div>
       </div>
     </div>
@@ -119,31 +114,29 @@
 
     <section class="market-guide"><div><p class="eyebrow">快速接入</p><h2>选择模型 ID，通过统一 Base URL 调用。</h2><p>模型广场只公开用户销售价格；采购成本仅管理员可见。</p><div class="hero-actions"><el-button type="primary" @click="router.push('/docs')">查看接入文档</el-button><el-button @click="router.push('/console/playground')">在线调试</el-button></div></div><pre>{{ sdkExample }}</pre></section>
 
-    <ModelPriceComparisonDialog v-model="compareVisible" :model-id="compareTarget?.publicName || ''" :rebate-bps="customerRebateBps" />
     <ModelCallDialog v-model="callVisible" :model-id="callTarget?.publicName || ''" :capability="callTarget?.capability || 'TEXT'" />
   </section>
 </template>
 
 <script setup lang="ts">
-import SelectablePagination from '@/components/SelectablePagination.vue'
+import ListPagination from '@/components/ListPagination.vue'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import http from '@/utils/http'
 import ModelSalePricing from '@/components/ModelSalePricing.vue'
-import ModelPriceComparisonDialog from '@/components/ModelPriceComparisonDialog.vue'
 import ModelCallDialog from '@/components/ModelCallDialog.vue'
 import { getToken } from '@/utils/auth'
 import { clampPage, type ModelFacets, type PublicModelOffer } from '@/utils/modelMarket'
 import { DEFAULT_PAGE_SIZE } from '@/utils/listPage'
 
 type PageResponse<T> = { total: number; page: number; size: number; items: T[] }
-type FilterKey = 'routes' | 'publishers' | 'categories' | 'capabilities' | 'inputModalities' | 'outputModalities' | 'protocols' | 'pricingUnits' | 'plans' | 'priceStatuses'
+type FilterKey = 'publishers' | 'categories' | 'capabilities' | 'inputModalities' | 'outputModalities' | 'protocols' | 'pricingUnits' | 'priceStatuses'
 type FilterState = Record<FilterKey, string[]> & { query: string; sort: string }
 const filterDefinitions: Array<{ key: FilterKey; title: string }> = [
-  { key: 'routes', title: '渠道 / 路由' }, { key: 'publishers', title: '模型发布方' }, { key: 'categories', title: '模型类型' },
+  { key: 'publishers', title: '模型发布方' }, { key: 'categories', title: '模型类型' },
   { key: 'capabilities', title: '模型能力' }, { key: 'inputModalities', title: '输入模态' }, { key: 'outputModalities', title: '输出模态' },
-  { key: 'protocols', title: 'API 协议' }, { key: 'pricingUnits', title: '计费单位' }, { key: 'plans', title: '套餐 / 分组' },
+  { key: 'protocols', title: 'API 协议' }, { key: 'pricingUnits', title: '计费单位' },
   { key: 'priceStatuses', title: '价格状态' }
 ]
 
@@ -151,9 +144,9 @@ const router = useRouter(); const route = useRoute()
 const loading = ref(false); const error = ref(''); const models = ref<PublicModelOffer[]>([]); const facets = ref<ModelFacets>({})
 const total = ref(0); const page = ref(1); const pageSize = ref(DEFAULT_PAGE_SIZE); const filtersOpen = ref(false); const resultsElement = ref<HTMLElement | null>(null)
 const marketResultsElement = ref<HTMLElement | null>(null); const marketResultsHeight = ref(0); let marketResultsObserver: ResizeObserver | undefined
-const callVisible = ref(false); const callTarget = ref<PublicModelOffer | null>(null); const compareVisible = ref(false); const compareTarget = ref<PublicModelOffer | null>(null)
+const callVisible = ref(false); const callTarget = ref<PublicModelOffer | null>(null)
 const customerRebateBps = ref(0); let timer: ReturnType<typeof setTimeout> | undefined; let requestVersion = 0; let hydrating = true
-const filters = reactive<FilterState>({ query: '', sort: 'priority', routes: [], publishers: [], categories: [], capabilities: [], inputModalities: [], outputModalities: [], protocols: [], pricingUnits: [], plans: [], priceStatuses: [] })
+const filters = reactive<FilterState>({ query: '', sort: 'priority', publishers: [], categories: [], capabilities: [], inputModalities: [], outputModalities: [], protocols: [], pricingUnits: [], priceStatuses: [] })
 
 const facetGroups = computed(() => filterDefinitions.map(group => ({ ...group, options: facets.value[group.key] || [], selected: filters[group.key] })))
 const activeFilters = computed(() => filterDefinitions.flatMap(group => filters[group.key].map(value => ({ key: group.key, value, label: facets.value[group.key]?.find(item => item.value === value)?.label || value }))))
@@ -185,15 +178,13 @@ async function fetchCatalog() {
 function scheduleFetch() { clearTimeout(timer); timer = setTimeout(() => { void fetchCatalog() }, 220) }
 function toggleFacet(key: FilterKey, value: string) { const selected = filters[key]; const index = selected.indexOf(value); if (index >= 0) selected.splice(index, 1); else selected.push(value) }
 function clearFilters() { filters.query = ''; filters.sort = 'priority'; for (const group of filterDefinitions) filters[group.key].splice(0); page.value = 1 }
-function handlePageSizeChange() { page.value = 1; scrollToResults() }
 function scrollToResults() { const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches; resultsElement.value?.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'start' }) }
 async function copyModel(name: string) { try { await navigator.clipboard.writeText(name); ElMessage.success('模型名已复制') } catch { ElMessage.error('复制失败，请手动复制模型名') } }
 function callModel(model: PublicModelOffer) { callTarget.value = model; callVisible.value = true }
-function openComparison(model: PublicModelOffer) { compareTarget.value = model; compareVisible.value = true }
 async function fetchRebate() { if (!getToken()) return; try { customerRebateBps.value = Number((await http.get('/api/user/agent')).data?.customerBinding?.customer_rebate_bps || 0) } catch { customerRebateBps.value = 0 } }
 
 function syncUrl() { const query: Record<string, string> = {}; if (filters.query) query.query = filters.query; if (filters.sort !== 'priority') query.sort = filters.sort; for (const group of filterDefinitions) if (filters[group.key].length) query[group.key] = filters[group.key].join(','); if (page.value > 1) query.page = String(page.value); if (pageSize.value !== DEFAULT_PAGE_SIZE) query.size = String(pageSize.value); void router.replace({ query }) }
-function hydrateFromUrl() { filters.query = String(route.query.query || ''); filters.sort = String(route.query.sort || 'priority'); page.value = Math.max(1, Number(route.query.page || 1)); pageSize.value = [10, 20, 50, 100, 200].includes(Number(route.query.size)) ? Number(route.query.size) : DEFAULT_PAGE_SIZE; for (const group of filterDefinitions) filters[group.key] = String(route.query[group.key] || '').split(',').filter(Boolean); hydrating = false }
+function hydrateFromUrl() { filters.query = String(route.query.query || ''); filters.sort = String(route.query.sort || 'priority'); page.value = Math.max(1, Number(route.query.page || 1)); pageSize.value = [10, 20, 50, 100].includes(Number(route.query.size)) ? Number(route.query.size) : DEFAULT_PAGE_SIZE; for (const group of filterDefinitions) filters[group.key] = String(route.query[group.key] || '').split(',').filter(Boolean); hydrating = false }
 
 const icons: Record<string, string> = { nvidia: '/model-icons/nvidia.svg', meta: '/model-icons/meta.svg', google: '/model-icons/google.svg', mistral: '/model-icons/mistral.svg', alibaba: '/model-icons/qwen.svg', deepseek: '/model-icons/deepseek.svg', openai: '/openai-icon.svg', anthropic: '/model-icons/anthropic.svg', xai: '/model-icons/xai.svg', minimax: '/model-icons/minimax.jpg', stepfun: '/model-icons/stepfun.jpg', zai: '/model-icons/z-ai.jpg' }
 function publisherIcon(code?: string | null) { return icons[String(code || '').toLowerCase()] || '' }

@@ -23,6 +23,24 @@ class ModelCatalogIntegrationTests {
     @Autowired private ProviderModelCatalogService providerModelCatalogService;
 
     @Test
+    void marketplaceKeepsTheEntireWinningQuoteWhenRoutesCrossOnOutputPrice() {
+        long first = channel("fold-first", "openai", "HEALTHY", null);
+        long second = channel("fold-second", "deepseek", "HEALTHY", null);
+        mapping("fold-shared", first, true);
+        mapping("fold-shared", second, true);
+        jdbcTemplate.update("UPDATE model_mappings SET input_price_per_million=1, output_price_per_million=12 WHERE channel_id=?", first);
+        jdbcTemplate.update("UPDATE model_mappings SET input_price_per_million=3, output_price_per_million=4 WHERE channel_id=?", second);
+        var offers = modelMappingMapper.findMarketplaceOffers().stream()
+                .filter(model -> "fold-shared".equals(model.getPublicName())).toList();
+        assertThat(offers).hasSize(2);
+        var winners = new PublicModelMarketplaceService().cheapestOffers(offers);
+        assertThat(winners).singleElement().satisfies(model -> {
+            assertThat(model.getMaxInputPricePerMillion()).isEqualByComparingTo("1");
+            assertThat(model.getMaxOutputPricePerMillion()).isEqualByComparingTo("12");
+        });
+    }
+
+    @Test
     void publishesOnlyModelsThatTheGatewayCanActuallyRoute() {
         long healthy = channel("catalog-healthy", "openai", "HEALTHY", null);
         long degraded = channel("catalog-degraded", "deepseek", "DEGRADED", null);

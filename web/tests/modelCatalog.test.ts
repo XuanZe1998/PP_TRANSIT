@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   modelScopeLabel,
+  cheapestCallableModels,
   modelsAllowedForToken,
   normalizeModelCatalog,
 } from '../src/utils/modelCatalog'
@@ -29,6 +30,16 @@ describe('model catalog helpers', () => {
       routeCount: 2,
     })
     expect(JSON.stringify(catalog[1])).not.toContain('openai')
+  })
+
+  it('selects the cheapest alias within the selected key scope', () => {
+    const catalog = normalizeModelCatalog([
+      { publicName: 'alias-a', comparisonKey: 'chat-v1', pricingUnit: 'TOKEN', billingConfigured: true, minInputPricePerMillion: 1 },
+      { publicName: 'alias-b', comparisonKey: 'chat-v1', pricingUnit: 'TOKEN', billingConfigured: true, minInputPricePerMillion: 2 },
+    ])
+    expect(cheapestCallableModels(catalog).map(model => model.publicName)).toEqual(['alias-a'])
+    const allowed = modelsAllowedForToken(catalog, { allowedModels: 'alias-b' })
+    expect(cheapestCallableModels(allowed).map(model => model.publicName)).toEqual(['alias-b'])
   })
 
   it('filters callable models using the selected API Key scope', () => {

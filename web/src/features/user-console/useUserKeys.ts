@@ -3,7 +3,7 @@ import { ElMessage } from 'element-plus';
 import http, { getHttpErrorMessage } from '@/utils/http';
 
 import { number, keyPreview } from './format';
-import { modelScopeLabel } from '@/utils/modelCatalog';
+import { cheapestCallableModels, modelScopeLabel } from '@/utils/modelCatalog';
 
 export function useUserKeys(dashboard: Ref<any>, loadDashboard: () => Promise<void>) {
   const createKeyVisible = ref(false)
@@ -17,27 +17,14 @@ export function useUserKeys(dashboard: Ref<any>, loadDashboard: () => Promise<vo
     allowedModelIds: [] as string[]
   })
   const modelGrantOptions = computed(() => {
-    const sources = new Map<string, any>()
-    for (const model of dashboard.value.modelCatalog || []) {
-      const sourceKey = model.source || 'other'
-      if (!sources.has(sourceKey)) sources.set(sourceKey, {
-        value: sourceKey, label: model.sourceName || sourceKey, children: new Map<string, any>()
-      })
-      const source = sources.get(sourceKey)
+    const categories = new Map<string, { value: string; label: string; children: { value: string; label: string }[] }>()
+    for (const model of cheapestCallableModels(dashboard.value.modelCatalog || [])) {
       const capability = model.capability || 'text'
-      if (!source.children.has(capability)) source.children.set(capability, {
-        value: `${sourceKey}:${capability}`, label: capability, children: new Map<string, any>()
-      })
-      const capabilityNode = source.children.get(capability)
-      const vendor = model.vendor || 'unknown'
-      if (!capabilityNode.children.has(vendor)) capabilityNode.children.set(vendor, {
-        value: `${sourceKey}:${capability}:${vendor}`, label: vendor, children: []
-      })
-      capabilityNode.children.get(vendor).children.push({ value: model.publicName, label: model.publicName })
+      const group = categories.get(capability) || { value: capability, label: capability, children: [] }
+      group.children.push({ value: model.publicName, label: model.displayName || model.publicName })
+      categories.set(capability, group)
     }
-    return [...sources.values()].map(source => ({ ...source, children: [...source.children.values()].map((capability: any) => ({
-      ...capability, children: [...capability.children.values()]
-    })) }))
+    return Array.from(categories.values())
   })
   const openCreateKey = () => {
     clearCreatedKey()

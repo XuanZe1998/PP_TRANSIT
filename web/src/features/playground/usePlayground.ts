@@ -1,7 +1,7 @@
 import { ref, computed, watch, onBeforeUnmount, type Ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import http, { getHttpErrorMessage } from '@/utils/http'
-import { modelsAllowedForToken, type CallableModel } from '@/utils/modelCatalog'
+import { cheapestCallableModels, modelsAllowedForToken, type CallableModel } from '@/utils/modelCatalog'
 import { extractPlaygroundResult, extractPlaygroundUsage, formatPlaygroundRawResponse, type PlaygroundUsage } from './response'
 
 export function usePlayground(dashboard: Ref<any>, current: Ref<{ key: string }>, refreshDashboard: () => Promise<void>) {
@@ -18,10 +18,10 @@ export function usePlayground(dashboard: Ref<any>, current: Ref<{ key: string }>
   })
   const selectedPlaygroundToken = computed(() => (dashboard.value.tokens || [])
     .find((token: any) => Number(token.id) === Number(playground.value.tokenId)) || null)
-  const playgroundModels = computed<CallableModel[]>(() => modelsAllowedForToken(
+  const playgroundModels = computed<CallableModel[]>(() => cheapestCallableModels(modelsAllowedForToken(
     dashboard.value.modelCatalog || [],
     selectedPlaygroundToken.value,
-  ))
+  )))
   const selectedModelDetail = computed<CallableModel | null>(() => playgroundModels.value
     .find(model => model.publicName === playground.value.model) || null)
   function syncSelection(requested?: string) {

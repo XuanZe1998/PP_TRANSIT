@@ -119,6 +119,16 @@ public interface ModelMappingMapper extends BaseMapper<ModelMapping> {
             """ + UPSTREAM_AVAILABLE + " GROUP BY mm.public_model_name ORDER BY mm.public_model_name")
     List<PublicModel> findPublicModels();
 
+    // Keep all dimensions of a quote on the same mapping until the cheapest offer is chosen.
+    @Select("SELECT mm.id AS offerMappingId, " + PUBLIC_COLUMNS + """
+            FROM model_mappings mm
+            JOIN channels c ON mm.channel_id = c.id
+            LEFT JOIN model_price_tiers pt ON pt.model_mapping_id = mm.id
+            LEFT JOIN model_market_display_settings mds ON mds.public_model_name = mm.public_model_name
+            WHERE
+            """ + UPSTREAM_AVAILABLE + " GROUP BY mm.public_model_name, mm.id ORDER BY mm.id")
+    List<PublicModel> findMarketplaceOffers();
+
     @Select("""
             SELECT COUNT(1) FROM (
               SELECT mm.public_model_name

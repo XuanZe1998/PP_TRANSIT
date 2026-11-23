@@ -27,12 +27,12 @@ describe('model marketplace helpers', () => {
     expect(market).toContain('const pageSize = ref(DEFAULT_PAGE_SIZE)')
     expect(market).toContain('pageSize.value !== DEFAULT_PAGE_SIZE')
     expect(market).not.toContain(':page-sizes="[10, 20, 50, 100, 200]"')
-    expect(market).toContain('function handlePageSizeChange() { page.value = 1')
+    expect(market).toContain('<ListPagination v-model:page=')
     expect(market).toContain('watch(filters, () => { if (hydrating) return; page.value = 1')
     expect(market).toContain('const safePage = clampPage(page.value, total.value, pageSize.value)')
   })
 
-  it('keeps card metadata and pricing collapsed until requested and synchronizes column heights', () => {
+  it('shows pricing with expandable card metadata and synchronizes column heights', () => {
     const market = source('src/views/ModelMarket.vue')
     const css = source('src/style.css')
     expect(market).toContain('已上架 · 未实测')
@@ -47,16 +47,16 @@ describe('model marketplace helpers', () => {
     expect(css).toContain('.market-card-details[open] .market-details-open')
   })
 
-  it('exposes unified facets, public-only pricing and channel comparison', () => {
+  it('exposes unified facets, public-only pricing without channel labels', () => {
     const market = source('src/views/ModelMarket.vue')
     const pricing = source('src/components/ModelSalePricing.vue')
     const comparison = source('src/components/ModelPriceComparisonDialog.vue')
     const consoleView = source('src/features/playground/PlaygroundPanel.vue')
 
-    expect(market).toContain("title: '渠道 / 路由'")
+    expect(market).not.toContain("title: '渠道 / 路由'")
     expect(market).toContain("title: '模型发布方'")
     expect(market).toContain("'/api/public/models/facets'")
-    expect(market).toContain('ModelPriceComparisonDialog')
+    expect(market).not.toContain('ModelPriceComparisonDialog')
     expect(market).toContain('<el-drawer v-model="filtersOpen"')
     expect(market).toContain('public-only')
     expect(pricing).toContain('官方参考价')
@@ -66,7 +66,7 @@ describe('model marketplace helpers', () => {
     expect(pricing).toContain('图片分辨率价格')
     expect(comparison).toContain('采购成本不会在模型广场展示')
     expect(comparison).not.toContain('sourcePrice')
-    expect(consoleView).toContain("model.providerGroup?.channel === 'AiAPIBank'")
+    expect(consoleView).not.toContain("model.providerGroup?.channel")
   })
 
   it('keeps only the hero section on the home route and lazy-loads public pages', () => {

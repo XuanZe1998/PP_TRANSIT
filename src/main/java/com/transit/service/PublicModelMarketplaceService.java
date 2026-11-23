@@ -19,6 +19,27 @@ import java.util.function.Function;
 
 @Service
 public class PublicModelMarketplaceService {
+    public List<PublicModel> cheapestOffers(List<PublicModel> offers) {
+        record Group(String identity, String unit, String currency) {}
+        Map<Group, PublicModel> winners = new LinkedHashMap<>();
+        Comparator<BigDecimal> byPrice = Comparator.nullsLast(BigDecimal::compareTo);
+        Comparator<PublicModel> order = Comparator.comparing(this::offerPrice, byPrice)
+                .thenComparing(PublicModel::getMinOutputPricePerMillion, byPrice)
+                .thenComparing(PublicModel::getPublicName)
+                .thenComparing(PublicModel::getOfferMappingId, Comparator.nullsLast(Long::compareTo));
+        for (PublicModel offer : offers) {
+            String identity = normalize(offer.getComparisonKey());
+            Group group = new Group(identity.isEmpty() ? normalize(offer.getPublicName()) : identity,
+                    normalize(offer.getPricingUnit()), normalize(offer.getCurrency()));
+            winners.merge(group, offer, (a, b) -> order.compare(a, b) <= 0 ? a : b);
+        }
+        return List.copyOf(winners.values());
+    }
+
+    private BigDecimal offerPrice(PublicModel model) {
+        return "FREE_PREVIEW".equalsIgnoreCase(model.getBillingMode()) ? BigDecimal.ZERO : comparablePrice(model);
+    }
+
     public Map<String, Long> summary(List<PublicModel> models) {
         long publishers = models.stream().map(model -> normalize(model.getPublisherCode()))
                 .filter(code -> !code.isBlank() && !code.equals("unknown") && !code.equals("multi"))
@@ -50,16 +71,16 @@ public class PublicModelMarketplaceService {
 
     public Map<String, List<PublicModelFacetOption>> facets(List<PublicModel> models, Filters filters) {
         Map<String, List<PublicModelFacetOption>> result = new LinkedHashMap<>();
-        result.put("routes", routeFacets(filter(models, filters, "routes")));
-        result.put("publishers", facet(filter(models, filters, "publishers"), model -> one(model.getPublisherCode()), model -> model.getPublisherName()));
-        result.put("categories", facet(filter(models, filters, "categories"), model -> one(model.getCategory()), model -> categoryLabel(model.getCategory())));
-        result.put("capabilities", facet(filter(models, filters, "capabilities"), model -> one(model.getCapability()), model -> model.getCapability()));
-        result.put("inputModalities", facet(filter(models, filters, "inputModalities"), model -> csv(model.getInputModalities()), ignored -> null));
-        result.put("outputModalities", facet(filter(models, filters, "outputModalities"), model -> csv(model.getOutputModalities()), ignored -> null));
-        result.put("protocols", facet(filter(models, filters, "protocols"), model -> csv(model.getProtocols()), ignored -> null));
-        result.put("pricingUnits", facet(filter(models, filters, "pricingUnits"), model -> one(model.getPricingUnit()), model -> unitLabel(model.getPricingUnit())));
-        result.put("plans", facet(filter(models, filters, "plans"), model -> one(model.getPlanCode()), model -> model.getPlanName()));
-        result.put("priceStatuses", facet(filter(models, filters, "priceStatuses"), model -> one(model.getPricingStatus()), model -> statusLabel(model.getPricingStatus())));
+        result.put("routes", routeFacets(cheapestOffers(filter(models, filters, "routes"))));
+        result.put("publishers", facet(cheapestOffers(filter(models, filters, "publishers")), model -> one(model.getPublisherCode()), model -> model.getPublisherName()));
+        result.put("categories", facet(cheapestOffers(filter(models, filters, "categories")), model -> one(model.getCategory()), model -> categoryLabel(model.getCategory())));
+        result.put("capabilities", facet(cheapestOffers(filter(models, filters, "capabilities")), model -> one(model.getCapability()), model -> model.getCapability()));
+        result.put("inputModalities", facet(cheapestOffers(filter(models, filters, "inputModalities")), model -> csv(model.getInputModalities()), ignored -> null));
+        result.put("outputModalities", facet(cheapestOffers(filter(models, filters, "outputModalities")), model -> csv(model.getOutputModalities()), ignored -> null));
+        result.put("protocols", facet(cheapestOffers(filter(models, filters, "protocols")), model -> csv(model.getProtocols()), ignored -> null));
+        result.put("pricingUnits", facet(cheapestOffers(filter(models, filters, "pricingUnits")), model -> one(model.getPricingUnit()), model -> unitLabel(model.getPricingUnit())));
+        result.put("plans", facet(cheapestOffers(filter(models, filters, "plans")), model -> one(model.getPlanCode()), model -> model.getPlanName()));
+        result.put("priceStatuses", facet(cheapestOffers(filter(models, filters, "priceStatuses")), model -> one(model.getPricingStatus()), model -> statusLabel(model.getPricingStatus())));
         return result;
     }
 
