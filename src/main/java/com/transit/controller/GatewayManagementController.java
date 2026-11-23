@@ -35,15 +35,15 @@ public class GatewayManagementController {
   return jdbc.queryForMap("SELECT COUNT(*) models,COALESCE(SUM(CASE WHEN mm.enabled=TRUE THEN 1 ELSE 0 END),0) published,COALESCE(SUM(CASE WHEN mm.pricing_status<>'VERIFIED' OR mm.pricing_status IS NULL THEN 1 ELSE 0 END),0) pending_price,COALESCE(SUM(CASE WHEN mm.enabled=FALSE AND mm.pricing_status='VERIFIED' THEN 1 ELSE 0 END),0) pending_publish FROM model_mappings mm JOIN channels c ON c.id=mm.channel_id JOIN upstream_site_channels sc ON sc.channel_id=c.id JOIN upstream_sites s ON s.id=sc.site_id WHERE 1=1"+where,args.toArray());
  }
  @GetMapping("/sites") public PageResponse<Map<String,Object>> sites(@RequestHeader(HttpHeaders.AUTHORIZATION)String auth,
-    @RequestParam(defaultValue="1")int page,@RequestParam(defaultValue="10")int size,@RequestParam(defaultValue="false")boolean all,@RequestParam(defaultValue="")String query){
+    @RequestParam(defaultValue="1")int page,@RequestParam(defaultValue="10")int size,@RequestParam(defaultValue="false")boolean all,@RequestParam(defaultValue="")String query,@RequestParam(defaultValue="")String adapter){
   admin(auth);return pages.query("""
    SELECT s.*, (SELECT COUNT(*) FROM upstream_site_channels sc WHERE sc.site_id=s.id) group_count,
     CASE WHEN a.encrypted_refresh_token IS NOT NULL AND a.encrypted_refresh_token<>'' THEN TRUE ELSE FALSE END account_authenticated,
     COALESCE(a.auth_status,'ANONYMOUS') account_auth_status,a.account_email_preview,
     a.last_authenticated_at account_last_authenticated_at,a.last_error account_auth_error
    FROM upstream_sites s LEFT JOIN gateway_account_credentials a ON a.site_id=s.id
-   WHERE s.name LIKE ? AND s.adapter<>'nvidia' ORDER BY s.id
-   """,List.of("%"+query+"%"),page,size,all);
+   WHERE s.name LIKE ? AND s.adapter<>'nvidia' AND (?='' OR s.adapter=?) ORDER BY s.id
+   """,List.of("%"+query+"%",adapter,adapter),page,size,all);
  }
  @GetMapping("/groups") public PageResponse<Map<String,Object>> groups(@RequestHeader(HttpHeaders.AUTHORIZATION)String auth,
     @RequestParam(required=false)Long siteId,@RequestParam(required=false)Long groupId,@RequestParam(defaultValue="")String query,

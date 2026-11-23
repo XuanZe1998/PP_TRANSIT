@@ -114,3 +114,25 @@ test('English delete action and dynamic confirmation are localized', async ({ pa
   await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
   expect(writes).toEqual([])
 })
+
+test('generic upstream wizard imports a model without provider-specific pricing or group fields', async ({ page }) => {
+  await mockGateway(page)
+  let connected: Record<string, unknown> | undefined
+  await page.route('**/gateway/onboard/openai-compatible/*', async route => {
+    const payload = route.request().postDataJSON()
+    if (route.request().url().endsWith('/preview')) {
+      return route.fulfill({ json: { baseUrl: payload.baseUrl, suggestedName: 'Demo', models: ['chat-model'], groups: [], prices: [] } })
+    }
+    connected = payload
+    return route.fulfill({ json: { channelId: 15 } })
+  })
+  await page.getByRole('button', { name: '接入上游' }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByPlaceholder('https://example.com（也支持 /v1 地址）').fill('https://example.org/v1')
+  await dialog.locator('input[type=password]').fill('test-key')
+  await dialog.getByRole('button', { name: '读取模型' }).click()
+  await expect(dialog.getByText('确认该 Key 在上游所属的分组')).toHaveCount(0)
+  await dialog.getByRole('button', { name: '导入模型' }).click()
+  await expect(dialog).not.toBeVisible()
+  expect(connected).toMatchObject({ name: 'Demo', models: ['chat-model'] })
+})

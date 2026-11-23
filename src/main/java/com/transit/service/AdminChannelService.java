@@ -272,6 +272,7 @@ public class AdminChannelService {
     private void normalizeSourceMetadata(Channel channel) {
         String type = defaultString(channel.getType(), "").toLowerCase(java.util.Locale.ROOT);
         String baseUrl = defaultString(channel.getBaseUrl(), "").toLowerCase(java.util.Locale.ROOT);
+        if (OpenAiCompatibleOnboarding.ADAPTER.equals(channel.getSourceCode())) return;
         if (type.equals("haoee") || type.equals("haoee-openai") || baseUrl.contains("haoee.com")) {
             channel.setSourceCode("haoee");
             channel.setSourceName("好易智算");

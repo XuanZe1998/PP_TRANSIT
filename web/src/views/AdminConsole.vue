@@ -11,7 +11,7 @@
       </template>
       <template #actions>
         <el-button :icon="Refresh" @click="load">刷新</el-button>
-        <NewApiConnect v-if="module === 'channels'" @connected="load()" />
+        <UpstreamConnect v-if="module === 'channels'" @connected="load()" />
         <el-button v-if="config.createLabel" type="primary" :icon="Plus" @click="openCreate">
           {{ config.createLabel }}
         </el-button>
@@ -714,7 +714,7 @@ import { formatPerMillionUsd, formatUsd } from '@/utils/money';
 import { money, percent } from '@/features/admin-console/format';
 import { DEFAULT_PAGE_SIZE } from '@/utils/listPage';
 const AdminUsageCharts = defineAsyncComponent(() => import('@/components/AdminUsageCharts.vue'))
-const NewApiConnect = defineAsyncComponent(() => import('@/components/NewApiConnect.vue'))
+const UpstreamConnect = defineAsyncComponent(() => import('@/components/UpstreamConnect.vue'))
 
 const props = defineProps<{ module: ModuleKey }>()
 const route=useRoute()

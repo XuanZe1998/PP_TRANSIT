@@ -19,9 +19,11 @@ public class GatewayNativeOnboarding {
  private final NewApiCatalogManagementService catalogs;
  private final GatewayPricingService pricing;
  private final GatewaySyncJobs jobs;
+ private final OpenAiCompatibleOnboarding compatible;
  private final Sub2ApiOnboardingService sub2api;
  private final TransactionTemplate tx;
  @SuppressWarnings("unchecked") public NewApiOnboardingService.Preview preview(String adapter,NewApiOnboardingService.Request request){
+  if(OpenAiCompatibleOnboarding.ADAPTER.equals(adapter))return compatible.preview(request);
   if("sub2api".equals(adapter))return sub2api.preview(request);
   NewApiOnboardingService.secret(request.apiKey(),true);
   String base=base(adapter);String group=Objects.toString(request.upstreamGroup(),"");
@@ -34,6 +36,7 @@ public class GatewayNativeOnboarding {
   return new NewApiOnboardingService.Preview(base,adapter.equals("aiapibank")?"AiAPIBank":"好易智算",models,groups,prices,"此适配器按整个分组导入；现有模型和售价保留，新增模型核验后集中发布",group);
  }
  public Map<String,Object> connect(String adapter,NewApiOnboardingService.Request request){
+  if(OpenAiCompatibleOnboarding.ADAPTER.equals(adapter))return compatible.connect(request);
   if("sub2api".equals(adapter))return sub2api.connect(request);
   var preview=preview(adapter,request);if(preview.models().isEmpty()||request.upstreamGroup()==null||preview.groups().stream().noneMatch(g->g.name().equals(request.upstreamGroup())))throw new IllegalArgumentException("请选择有效上游分组");
   if(adapter.equals("aiapibank"))bank.discoverGroups();

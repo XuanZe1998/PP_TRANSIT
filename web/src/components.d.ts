@@ -83,7 +83,7 @@ declare module 'vue' {
     ModelProbePanel: typeof import('./components/ModelProbePanel.vue')['default']
     ModelSalePricing: typeof import('./components/ModelSalePricing.vue')['default']
     NewApiCatalogPanel: typeof import('./components/NewApiCatalogPanel.vue')['default']
-    NewApiConnect: typeof import('./components/NewApiConnect.vue')['default']
+    UpstreamConnect: typeof import('./components/UpstreamConnect.vue')['default']
     NewApiSyncPanel: typeof import('./components/NewApiSyncPanel.vue')['default']
     PagedList: typeof import('./components/PagedList.vue')['default']
     PagedTable: typeof import('./components/PagedTable.vue')['default']

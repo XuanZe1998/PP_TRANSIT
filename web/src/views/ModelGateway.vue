@@ -7,7 +7,7 @@
     <el-input class="gateway-search" v-model="query" clearable placeholder="搜索名称" @keyup.enter="filterChanged" @clear="filterChanged"/>
    </template>
    <template #actions>
-    <NewApiConnect @connected="reloadAll"/><el-button :loading="loading" @click="load">刷新</el-button>
+    <UpstreamConnect @connected="reloadAll"/><el-button :loading="loading" @click="load">刷新</el-button>
     <el-button type="primary" :loading="working" @click="synchronize()">同步目录</el-button>
     <el-button v-if="siteOptions.find(s=>s.id===siteId)?.adapter==='aiapibank'" :loading="working" @click="syncGroups(siteId)">同步上游分组</el-button>
     <el-button v-if="siteId" @click="editSite">站点设置</el-button>
@@ -60,7 +60,7 @@ import {useRoute,useRouter} from 'vue-router'
 import {ElMessage,ElMessageBox} from 'element-plus'
 import http,{getHttpErrorMessage} from '../utils/http'
 import ListPagination from '../components/ListPagination.vue'
-import NewApiConnect from '../components/NewApiConnect.vue'
+import UpstreamConnect from '../components/UpstreamConnect.vue'
 import GatewayPricingEditor from '../components/GatewayPricingEditor.vue'
 import GatewayModelEditor from '../components/GatewayModelEditor.vue'
 const route=useRoute(),router=useRouter()
