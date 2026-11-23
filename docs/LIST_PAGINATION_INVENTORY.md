@@ -44,7 +44,7 @@
 | web/src/components/GatewayPricingEditor.vue | 'pricing-tiers-'+row.id | `row.tiers` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
 | web/src/components/ModelProbePanel.vue | ModelProbePanel-1 | `tasks` | 页面服务端分页 |
 | web/src/components/ModelProbePanel.vue | ModelProbePanel-1 | `页面数据` | 页面服务端分页 |
-| web/src/components/UpstreamConnect.vue | NewApiConnect-1 | `selectedPrices`（上游导入报价预览）；归属站点使用服务端筛选和 ListPagination | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
+| web/src/components/UpstreamConnect.vue | 归属站点 | OpenAI 兼容站点 | 服务端搜索，ListPagination 默认 10 条 |
 | web/src/views/AdminAgents.vue | AdminAgents-1 | `agents` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
 | web/src/views/AdminAgents.vue | AdminAgents-2 | `withdrawals` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |
 | web/src/views/AdminAgents.vue | AdminAgents-4 | `oauthClients` | 统一组件；集合来源使用兼容分页，本地派生数据分页 |

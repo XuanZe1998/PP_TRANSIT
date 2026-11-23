@@ -1,8 +1,6 @@
 package com.transit.controller;
 
-import com.transit.model.Channel;
 import com.transit.service.CurrentUserService;
-import com.transit.service.NewApiOnboardingService;
 import com.transit.service.AdminAuditService;
 import com.transit.service.NewApiSyncService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -18,7 +16,6 @@ import reactor.core.publisher.Mono;
 public class NewApiOnboardingController {
     @org.springframework.beans.factory.annotation.Autowired private com.transit.service.GatewaySyncJobs jobs;
     private final CurrentUserService users;
-    private final NewApiOnboardingService onboarding;
     private final AdminAuditService audit;
     private final NewApiSyncService sync;
     private final com.transit.service.NewApiCatalogManagementService catalogs;
@@ -50,20 +47,6 @@ public class NewApiOnboardingController {
                 Map.of("enabled", settings.enabled()), request.getRemoteAddr());
     }
 
-    public record CatalogImport(boolean preview) {}
-    @PostMapping("/catalog/aiapibank/import")
-    public Mono<Object> importCatalog(@RequestHeader(HttpHeaders.AUTHORIZATION) String authorization,
-                                     @RequestBody CatalogImport body, HttpServletRequest request) {
-        var admin = users.requireAdmin(authorization);
-        return Mono.fromCallable(() -> {
-            var result = catalogs.importAiApiBank(body.preview());
-            if (!body.preview()) audit.record(admin, "IMPORT_UPSTREAM_CATALOG", "CHANNEL", null, null,
-                    Map.of("adapter", "aiapibank"), request.getRemoteAddr());
-            return result;
-        });
-    }
-
-
     @GetMapping("/sync")
     public java.util.List<Map<String, Object>> syncStatus(@RequestHeader(HttpHeaders.AUTHORIZATION) String authorization) {
         users.requireAdmin(authorization);
@@ -90,24 +73,4 @@ public class NewApiOnboardingController {
                 Map.of("syncEnabled", settings.syncEnabled(), "updatePrices", settings.updatePrices()), servletRequest.getRemoteAddr());
     }
 
-    @PostMapping("/preview")
-    public Mono<NewApiOnboardingService.Preview> preview(
-            @RequestHeader(HttpHeaders.AUTHORIZATION) String authorization,
-            @RequestBody NewApiOnboardingService.Request request) {
-        users.requireAdmin(authorization);
-        return Mono.fromCallable(() -> onboarding.preview(request));
-    }
-
-    @PostMapping("/connect")
-    public Mono<Channel> connect(@RequestHeader(HttpHeaders.AUTHORIZATION) String authorization,
-                                 @RequestBody NewApiOnboardingService.Request request,
-                                 HttpServletRequest servletRequest) {
-        var admin = users.requireAdmin(authorization);
-        return Mono.fromCallable(() -> {
-            Channel channel = onboarding.connect(request);
-            audit.record(admin, "CONNECT_NEW_API", "CHANNEL", channel.getId(), null,
-                    Map.of("channelName", channel.getName(), "source", "new-api"), servletRequest.getRemoteAddr());
-            return channel;
-        });
-    }
 }

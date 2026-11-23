@@ -25,11 +25,8 @@ public class GatewayManagementController {
  private final com.transit.mapper.ModelMappingMapper modelMapper;
  private void admin(String auth){users.requireAdmin(auth);}
  private final ChannelSecretService secrets;
- private final GatewayNativeOnboarding nativeOnboarding;
  private final ModelPriceTierService modelTiers;
  private final AiApiBankAccountSessionService aiApiBankSessions;
- @PostMapping("/onboard/{adapter}/preview")public Object nativePreview(@RequestHeader(HttpHeaders.AUTHORIZATION)String auth,@PathVariable String adapter,@RequestBody NewApiOnboardingService.Request body){admin(auth);return nativeOnboarding.preview(adapter,body);}
- @PostMapping("/onboard/{adapter}/connect")public Object nativeConnect(@RequestHeader(HttpHeaders.AUTHORIZATION)String auth,@PathVariable String adapter,@RequestBody NewApiOnboardingService.Request body){admin(auth);var result=nativeOnboarding.connect(adapter,body);audit.record(users.requireAdmin(auth),"CONNECT_UPSTREAM","CHANNEL",null,null,Map.of("adapter",adapter),null);return result;}
  @GetMapping("/summary") public Map<String,Object> summary(@RequestHeader(HttpHeaders.AUTHORIZATION)String auth,@RequestParam(required=false)Long siteId,@RequestParam(required=false)Long groupId){
   admin(auth);List<Object> args=new ArrayList<>();String where=filters(siteId,groupId,"c.id",args);
   return jdbc.queryForMap("SELECT COUNT(*) models,COALESCE(SUM(CASE WHEN mm.enabled=TRUE THEN 1 ELSE 0 END),0) published,COALESCE(SUM(CASE WHEN mm.pricing_status<>'VERIFIED' OR mm.pricing_status IS NULL THEN 1 ELSE 0 END),0) pending_price,COALESCE(SUM(CASE WHEN mm.enabled=FALSE AND mm.pricing_status='VERIFIED' THEN 1 ELSE 0 END),0) pending_publish FROM model_mappings mm JOIN channels c ON c.id=mm.channel_id JOIN upstream_site_channels sc ON sc.channel_id=c.id JOIN upstream_sites s ON s.id=sc.site_id WHERE 1=1"+where,args.toArray());

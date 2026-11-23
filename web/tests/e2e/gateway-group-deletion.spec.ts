@@ -128,6 +128,8 @@ test('generic upstream wizard imports a model without provider-specific pricing 
   })
   await page.getByRole('button', { name: '接入上游' }).click()
   const dialog = page.getByRole('dialog')
+  await expect(dialog.getByText('接入方式', { exact: true })).toHaveCount(0)
+  await expect(dialog.getByText(/好易智算|AiAPIBank|sub2api|New API/)).toHaveCount(0)
   await dialog.getByPlaceholder('https://example.com（也支持 /v1 地址）').fill('https://example.org/v1')
   await dialog.locator('input[type=password]').fill('test-key')
   await dialog.getByRole('button', { name: '读取模型' }).click()
